@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Get Started - Beam E-Invoicing</title>
+    <title>Register - Beam E-Invoicing</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -25,7 +25,7 @@
                 <div class="content-card">
                     <div class="card-header">
                         <h1>Start Free Today</h1>
-                        <p class="subtitle">No credit card required • 100 free invoices/month</p>
+                        <p class="subtitle">UAE's leading e-invoicing platform • 100 free invoices/month</p>
                     </div>
 
                     <form id="signup-form" class="form">
@@ -48,24 +48,6 @@
                                 placeholder="Your Company Ltd" 
                                 required
                             >
-                        </div>
-
-                        <div class="form-field">
-                            <label for="business_type">Business Type</label>
-                            <select id="business_type" required>
-                                <option value="">Select type</option>
-                                <option value="LLC">LLC</option>
-                                <option value="FZE">FZE</option>
-                                <option value="FZCO">FZCO</option>
-                                <option value="Branch">Branch</option>
-                                <option value="Sole">Sole Proprietorship</option>
-                                <option value="Partnership">Partnership</option>
-                            </select>
-                        </div>
-
-                        <div class="form-field">
-                            <label for="phone">Phone Number</label>
-                            <input type="tel" id="phone" placeholder="+971 XX XXX XXXX" required>
                         </div>
 
                         <button type="submit" class="btn btn-primary btn-large">
@@ -94,13 +76,33 @@
                 </div>
             </div>
 
+            <div id="verify-email-screen" class="screen">
+                <div class="content-card center">
+                    <div class="email-icon">📧</div>
+                    <h1>Check Your Email</h1>
+                    <p class="subtitle">We've sent a verification link</p>
+                    <p class="success-message">
+                        Please check your inbox at <strong id="sent-email"></strong> and click the verification link to complete your registration.
+                    </p>
+                    
+                    <div class="info-box">
+                        <p><strong>Didn't receive it?</strong></p>
+                        <p>Check your spam folder or <a href="#" onclick="resendVerification(); return false;">resend the email</a></p>
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="window.location.reload()">
+                        Back to Sign Up
+                    </button>
+                </div>
+            </div>
+
             <div id="success-screen" class="screen">
                 <div class="content-card center">
                     <div class="success-icon">✓</div>
-                    <h1>Account Created!</h1>
-                    <p class="subtitle">Your free account is ready</p>
+                    <h1>Email Verified!</h1>
+                    <p class="subtitle">Your account is under review</p>
                     <p class="success-message">
-                        We're reviewing your application and will activate your account within 24 hours.
+                        Our team will review your application and activate your account within 24 hours.
                         You'll receive an email at <strong id="confirmed-email"></strong> once approved.
                     </p>
                     

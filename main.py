@@ -98,6 +98,11 @@ class CompanyDB(Base):
     authorized_person_email = Column(String, nullable=True)
     authorized_person_phone = Column(String, nullable=True)
 
+    # Email verification
+    email_verified = Column(Boolean, default=False)
+    verification_token = Column(String, nullable=True)
+    verification_sent_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class SubscriptionPlanDB(Base):
@@ -584,6 +589,81 @@ def finalize_registration(company_id: str, db: Session = Depends(get_db)):
         "status": "PENDING_REVIEW"
     }
 
+@app.post("/register/{company_id}/send-verification", tags=["Registration"])
+def send_verification_email(company_id: str, db: Session = Depends(get_db)):
+    """Send email verification link"""
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if not company.email:
+        raise HTTPException(400, "No email address on file")
+    
+    verification_token = f"verify_{uuid4().hex}"
+    company.verification_token = verification_token
+    company.verification_sent_at = datetime.utcnow()
+    db.commit()
+    
+    verification_url = f"http://your-app-url.com/?verify={verification_token}"
+    
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                    EMAIL WOULD BE SENT                           ║
+╠══════════════════════════════════════════════════════════════════╣
+║  To: {company.email:<58} ║
+║  Subject: Verify Your Email - Beam E-Invoicing                   ║
+║                                                                  ║
+║  Hi {company.legal_name or 'there'},                                          ║
+║                                                                  ║
+║  Thank you for registering! Please verify your email by          ║
+║  clicking the link below:                                        ║
+║                                                                  ║
+║  {verification_url[:62]:<62} ║
+║                                                                  ║
+║  This link will expire in 24 hours.                            ║
+║                                                                  ║
+║  Best regards,                                                   ║
+║  Beam E-Invoicing Team                                          ║
+╚══════════════════════════════════════════════════════════════════╝
+    """)
+    
+    return {
+        "message": "Verification email sent",
+        "email": company.email,
+        "note": "Check server logs for email content (email sending not configured yet)"
+    }
+
+@app.post("/register/verify/{token}", tags=["Registration"])
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """Verify email with token and submit for admin approval"""
+    company = db.query(CompanyDB).filter_by(verification_token=token).first()
+    
+    if not company:
+        raise HTTPException(404, "Invalid verification token")
+    
+    if company.verification_sent_at:
+        time_diff = datetime.utcnow() - company.verification_sent_at
+        if time_diff.total_seconds() > 86400:
+            raise HTTPException(400, "Verification link expired")
+    
+    company.email_verified = True
+    company.verification_token = None
+    company.status = CompanyStatus.PENDING_REVIEW
+    
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company.id).first()
+    if progress:
+        progress.completed = True
+    
+    db.commit()
+    
+    print(f"✅ Email verified for {company.email} - Company {company.legal_name} is now pending admin review")
+    
+    return {
+        "success": True,
+        "email": company.email,
+        "message": "Email verified! Your application is now under review."
+    }
+
 @app.get("/register/{company_id}/progress", response_model=RegistrationProgressOut, tags=["Registration"])
 def get_registration_progress(company_id: str, db: Session = Depends(get_db)):
     """Get current registration progress"""
@@ -658,6 +738,9 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
     company = db.get(CompanyDB, company_id)
     if not company:
         raise HTTPException(404, "Company not found")
+    
+    if not company.email_verified:
+        raise HTTPException(400, "Email must be verified before approval")
 
     company.status = CompanyStatus.ACTIVE
 
@@ -681,10 +764,35 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
         sub.status = SubscriptionStatus.ACTIVE
 
     db.commit()
+    
+    print(f"""
+╔══════════════════════════════════════════════════════════════════╗
+║                    EMAIL WOULD BE SENT                           ║
+╠══════════════════════════════════════════════════════════════════╣
+║  To: {company.email:<58} ║
+║  Subject: Account Approved - Beam E-Invoicing                    ║
+║                                                                  ║
+║  Hi {company.legal_name or 'there'},                                          ║
+║                                                                  ║
+║  Great news! Your account has been approved and activated.       ║
+║                                                                  ║
+║  You now have access to:                                         ║
+║  • 100 free invoices per month                                   ║
+║  • Full API access                                               ║
+║  • All core e-invoicing features                                 ║
+║                                                                  ║
+║  Get started: https://your-app-url.com/docs                      ║
+║                                                                  ║
+║  Best regards,                                                   ║
+║  Beam E-Invoicing Team                                          ║
+╚══════════════════════════════════════════════════════════════════╝
+    """)
+    
     return {
         "message": f"Company '{company.legal_name}' approved and activated",
         "plan": "Free tier (100 invoices/month)",
-        "status": "active"
+        "status": "active",
+        "note": "Approval email sent to " + company.email
     }
 
 @app.post("/admin/companies/{company_id}/reject", tags=["Admin"])
