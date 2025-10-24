@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Registration - Beam E-Invoicing</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🚀 Beam E-Invoicing</h1>
+            <p class="tagline">UAE's Leading E-Invoicing Platform</p>
+        </header>
+
+        <div class="registration-card">
+            <div class="progress-bar">
+                <div class="progress-step active" data-step="1">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Company Info</div>
+                </div>
+                <div class="progress-step" data-step="2">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Business Details</div>
+                </div>
+                <div class="progress-step" data-step="3">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Documents</div>
+                </div>
+                <div class="progress-step" data-step="4">
+                    <div class="step-number">4</div>
+                    <div class="step-label">Select Plan</div>
+                </div>
+                <div class="progress-step" data-step="5">
+                    <div class="step-number">5</div>
+                    <div class="step-label">Review</div>
+                </div>
+            </div>
+
+            <div id="error-message" class="error-message" style="display: none;"></div>
+            <div id="success-message" class="success-message" style="display: none;"></div>
+
+            <form id="registration-form">
+                <!-- Step 1: Company Information -->
+                <div class="form-step active" data-step="1">
+                    <h2>Company Information</h2>
+                    <p class="step-description">Tell us about your company</p>
+                    
+                    <div class="form-group">
+                        <label for="legal_name">Legal Company Name *</label>
+                        <input type="text" id="legal_name" name="legal_name" required placeholder="Enter your company's legal name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="business_type">Business Type *</label>
+                        <select id="business_type" name="business_type" required>
+                            <option value="">Select business type</option>
+                            <option value="LLC">Limited Liability Company (LLC)</option>
+                            <option value="FZE">Free Zone Establishment (FZE)</option>
+                            <option value="FZCO">Free Zone Company (FZCO)</option>
+                            <option value="Branch">Branch of Foreign Company</option>
+                            <option value="Sole">Sole Proprietorship</option>
+                            <option value="Partnership">Partnership</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="registration_number">Registration Number *</label>
+                        <input type="text" id="registration_number" name="registration_number" required placeholder="e.g., 123456">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="registration_date">Registration Date</label>
+                        <input type="date" id="registration_date" name="registration_date">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="business_activity">Business Activity *</label>
+                        <input type="text" id="business_activity" name="business_activity" required placeholder="e.g., IT Services, Trading, Consulting">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-primary" onclick="nextStep()">Next Step →</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Business Details -->
+                <div class="form-step" data-step="2">
+                    <h2>Business Details</h2>
+                    <p class="step-description">Provide your business contact information</p>
+
+                    <div class="form-group">
+                        <label for="email">Business Email *</label>
+                        <input type="email" id="email" name="email" required placeholder="info@yourcompany.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">Phone Number *</label>
+                        <input type="tel" id="phone" name="phone" required placeholder="+971 XX XXX XXXX">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="website">Website</label>
+                        <input type="url" id="website" name="website" placeholder="https://www.yourcompany.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="trn">Tax Registration Number (TRN)</label>
+                        <input type="text" id="trn" name="trn" placeholder="15-digit TRN (if VAT registered)" maxlength="15">
+                        <small>Leave empty if not yet VAT registered</small>
+                    </div>
+
+                    <h3 class="section-title">Address Information</h3>
+
+                    <div class="form-group">
+                        <label for="address_line1">Address Line 1 *</label>
+                        <input type="text" id="address_line1" name="address_line1" required placeholder="Street address">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="address_line2">Address Line 2</label>
+                        <input type="text" id="address_line2" name="address_line2" placeholder="Building, floor, unit">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="city">City *</label>
+                            <input type="text" id="city" name="city" required placeholder="City">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="emirate">Emirate *</label>
+                            <select id="emirate" name="emirate" required>
+                                <option value="">Select emirate</option>
+                                <option value="Abu Dhabi">Abu Dhabi</option>
+                                <option value="Dubai">Dubai</option>
+                                <option value="Sharjah">Sharjah</option>
+                                <option value="Ajman">Ajman</option>
+                                <option value="Umm Al Quwain">Umm Al Quwain</option>
+                                <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                                <option value="Fujairah">Fujairah</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="po_box">P.O. Box</label>
+                        <input type="text" id="po_box" name="po_box" placeholder="P.O. Box number">
+                    </div>
+
+                    <h3 class="section-title">Authorized Person</h3>
+
+                    <div class="form-group">
+                        <label for="authorized_person_name">Full Name *</label>
+                        <input type="text" id="authorized_person_name" name="authorized_person_name" required placeholder="Authorized person's name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="authorized_person_title">Job Title *</label>
+                        <input type="text" id="authorized_person_title" name="authorized_person_title" required placeholder="e.g., CEO, General Manager">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="authorized_person_email">Email *</label>
+                        <input type="email" id="authorized_person_email" name="authorized_person_email" required placeholder="authorized.person@company.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="authorized_person_phone">Phone *</label>
+                        <input type="tel" id="authorized_person_phone" name="authorized_person_phone" required placeholder="+971 XX XXX XXXX">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="prevStep()">← Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep()">Next Step →</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Document Upload -->
+                <div class="form-step" data-step="3">
+                    <h2>Document Upload</h2>
+                    <p class="step-description">Upload required business documents</p>
+
+                    <div class="upload-section">
+                        <h3>Business License *</h3>
+                        <div class="file-upload-area" id="license-upload-area">
+                            <input type="file" id="business_license" accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
+                            <div class="upload-placeholder" onclick="document.getElementById('business_license').click()">
+                                <div class="upload-icon">📄</div>
+                                <p>Click to upload Business License</p>
+                                <small>PDF, JPG, or PNG (max 5MB)</small>
+                            </div>
+                            <div class="file-preview" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>TRN Certificate</h3>
+                        <div class="file-upload-area" id="trn-upload-area">
+                            <input type="file" id="trn_certificate" accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
+                            <div class="upload-placeholder" onclick="document.getElementById('trn_certificate').click()">
+                                <div class="upload-icon">📄</div>
+                                <p>Click to upload TRN Certificate</p>
+                                <small>Optional - PDF, JPG, or PNG (max 5MB)</small>
+                            </div>
+                            <div class="file-preview" style="display: none;"></div>
+                        </div>
+                    </div>
+
+                    <div id="uploaded-documents"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="prevStep()">← Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep()">Next Step →</button>
+                    </div>
+                </div>
+
+                <!-- Step 4: Plan Selection -->
+                <div class="form-step" data-step="4">
+                    <h2>Choose Your Plan</h2>
+                    <p class="step-description">Select the plan that fits your business needs</p>
+
+                    <div id="plans-container" class="plans-grid">
+                        <div class="loading">Loading plans...</div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="prevStep()">← Previous</button>
+                        <button type="button" class="btn btn-primary" onclick="nextStep()">Review & Submit →</button>
+                    </div>
+                </div>
+
+                <!-- Step 5: Review & Submit -->
+                <div class="form-step" data-step="5">
+                    <h2>Review & Submit</h2>
+                    <p class="step-description">Please review your information before submitting</p>
+
+                    <div id="review-content" class="review-section">
+                        <!-- Review content will be populated by JavaScript -->
+                    </div>
+
+                    <div class="terms-section">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="terms_agreed" required>
+                            I agree to the Terms of Service and Privacy Policy
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="prevStep()">← Previous</button>
+                        <button type="submit" class="btn btn-success" id="submit-btn">Submit Application</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <footer class="footer">
+            <p>&copy; 2025 Beam E-Invoicing. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # SQLAlchemy
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text
@@ -299,6 +300,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", tags=["General"])
+def root():
+    """Redirect to registration form"""
+    return FileResponse("static/index.html")
 
 @app.on_event("startup")
 def startup_event():
