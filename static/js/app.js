@@ -1,5 +1,5 @@
 let companyId = null;
-let userData = {};
+let userEmail = null;
 
 document.getElementById('signup-form')?.addEventListener('submit', handleSignup);
 
@@ -12,10 +12,8 @@ async function handleSignup(e) {
     
     const email = document.getElementById('email').value;
     const companyName = document.getElementById('company_name').value;
-    const businessType = document.getElementById('business_type').value;
-    const phone = document.getElementById('phone').value;
     
-    userData.email = email;
+    userEmail = email;
     
     try {
         const initResponse = await fetch('/register/init', {
@@ -27,24 +25,26 @@ async function handleSignup(e) {
         const initData = await initResponse.json();
         companyId = initData.company_id;
         
-        await fetch(`/register/${companyId}/step1`, {
+        const registerResponse = await fetch(`/register/${companyId}/step1`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 legal_name: companyName,
-                business_type: businessType,
-                registration_number: 'TBD',
+                business_type: 'LLC',
+                registration_number: 'PENDING',
                 business_activity: 'General Business',
                 email: email
             })
         });
+        
+        if (!registerResponse.ok) throw new Error('Failed to register');
         
         await fetch(`/register/${companyId}/step2`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 email: email,
-                phone: phone,
+                phone: 'TBD',
                 trn: null,
                 address_line1: 'TBD',
                 city: 'Dubai',
@@ -52,24 +52,37 @@ async function handleSignup(e) {
                 authorized_person_name: companyName,
                 authorized_person_title: 'Administrator',
                 authorized_person_email: email,
-                authorized_person_phone: phone
+                authorized_person_phone: 'TBD'
             })
         });
         
-        const finalizeResponse = await fetch(`/register/${companyId}/finalize`, {
+        const verifyResponse = await fetch(`/register/${companyId}/send-verification`, {
             method: 'POST'
         });
         
-        if (!finalizeResponse.ok) throw new Error('Failed to finalize');
+        if (!verifyResponse.ok) throw new Error('Failed to send verification');
         
-        document.getElementById('confirmed-email').textContent = email;
-        showScreen('success-screen');
+        document.getElementById('sent-email').textContent = email;
+        showScreen('verify-email-screen');
         
     } catch (error) {
         showToast('Registration failed. Please try again.', 'error');
         console.error(error);
         btn.disabled = false;
         btn.textContent = 'Create Free Account →';
+    }
+}
+
+async function resendVerification() {
+    if (!companyId) return;
+    
+    try {
+        await fetch(`/register/${companyId}/send-verification`, {
+            method: 'POST'
+        });
+        showToast('Verification email resent!', 'success');
+    } catch (error) {
+        showToast('Failed to resend email', 'error');
     }
 }
 
@@ -86,4 +99,25 @@ function showToast(message, type = 'info') {
     setTimeout(() => {
         toast.classList.remove('show');
     }, 4000);
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+const verifyToken = urlParams.get('verify');
+
+if (verifyToken) {
+    fetch(`/register/verify/${verifyToken}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('confirmed-email').textContent = data.email;
+            showScreen('success-screen');
+        } else {
+            showToast('Invalid or expired verification link', 'error');
+        }
+    })
+    .catch(error => {
+        showToast('Verification failed', 'error');
+    });
 }
