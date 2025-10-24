@@ -329,6 +329,11 @@ def root():
     """Serve registration form"""
     return FileResponse("static/index.html")
 
+@app.get("/admin", tags=["General"])
+def admin():
+    """Serve admin dashboard"""
+    return FileResponse("static/admin.html")
+
 @app.on_event("startup")
 def startup_event():
     """Seed plans on startup"""
@@ -821,20 +826,24 @@ def reject_company(company_id: str, reason: str = Form(...), db: Session = Depen
 
 # ==================== COMPANY ENDPOINTS ====================
 
-@app.get("/companies/{company_id}", response_model=CompanyOut, tags=["Companies"])
+@app.get("/companies/{company_id}", tags=["Companies"])
 def get_company(company_id: str, db: Session = Depends(get_db)):
     """Get company details"""
     company = db.get(CompanyDB, company_id)
     if not company:
         raise HTTPException(404, "Company not found")
 
-    return CompanyOut(
-        id=company.id,
-        legal_name=company.legal_name,
-        status=company.status,
-        email=company.email,
-        trn=company.trn
-    )
+    return {
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "status": company.status,
+        "email": company.email,
+        "trn": company.trn,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "email_verified": company.email_verified,
+        "created_at": company.created_at.isoformat() if company.created_at else None
+    }
 
 @app.get("/companies/{company_id}/subscription", tags=["Companies"])
 def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
