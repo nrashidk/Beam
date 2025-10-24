@@ -1,0 +1,382 @@
+BACKEND TESTING GUIDE
+Step 1: Access API Documentation
+Your API is running. Open this URL in your browser:
+
+text
+https://beam.nrashidk.repl.co/docs
+This opens Swagger UI where you can test all endpoints interactively.
+
+Step 2: Test the Registration Wizard Flow
+Test Sequence:
+GET /plans - View available subscription plans (Starter, Professional, Enterprise)
+
+POST /register/init - Start registration (returns company_id)
+
+POST /register/{company_id}/step1 - Submit company info
+
+POST /register/{company_id}/step2 - Submit business details
+
+POST /register/{company_id}/documents - Upload documents (Business License + TRN Certificate)
+
+POST /register/{company_id}/step3 - Verify documents uploaded
+
+POST /register/{company_id}/step4 - Select subscription plan
+
+POST /register/{company_id}/finalize - Submit registration
+
+Example Test Data:
+Step 1 - Company Info:
+
+json
+{
+  "legal_name": "Tech Solutions LLC",
+  "business_type": "LLC",
+  "registration_number": "123456",
+  "registration_date": "2024-01-15",
+  "email": "info@techsolutions.ae",
+  "phone": "+971501234567"
+}
+Step 2 - Business Details:
+
+json
+{
+  "business_activity": "Software Development",
+  "address_line1": "Office 123, Business Tower",
+  "city": "Dubai",
+  "emirate": "Dubai",
+  "trn": "100123456789003",
+  "authorized_person_name": "John Doe",
+  "authorized_person_title": "CEO",
+  "authorized_person_email": "john@techsolutions.ae",
+  "authorized_person_phone": "+971501234567"
+}
+Step 3: Test Admin Approval
+GET /admin/companies/pending - See companies awaiting approval
+
+POST /admin/companies/{company_id}/approve - Approve a company
+
+🖥️ FRONTEND - Next.js Registration Wizard
+Now let's create the frontend. Since we can't directly create a new Repl, I'll give you the code to set up manually.
+
+Option 1: Create Frontend in New Repl
+Go to Replit.com
+
+Click "Create Repl"
+
+Select "Next.js" template
+
+Name it "Beam-Frontend"
+
+Once created, follow the file structure below
+
+Frontend File Structure
+text
+beam-frontend/
+├── .env.local
+├── package.json
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── register/
+│       ├── page.tsx
+│       └── components/
+│           ├── Step1CompanyInfo.tsx
+│           ├── Step2BusinessDetails.tsx
+│           ├── Step3Documents.tsx
+│           ├── Step4PlanSelection.tsx
+│           └── Step5Review.tsx
+└── lib/
+    └── api.ts
+FILE 1: .env.local
+text
+NEXT_PUBLIC_API_BASE=https://beam.nrashidk.repl.co
+FILE 2: lib/api.ts
+typescript
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:5000';
+
+export const api = {
+  // Plans
+  getPlans: async () => {
+    const res = await fetch(`${API_BASE}/plans`);
+    return res.json();
+  },
+
+  // Registration
+  initRegistration: async () => {
+    const res = await fetch(`${API_BASE}/register/init`, { method: 'POST' });
+    return res.json();
+  },
+
+  submitStep1: async (companyId: string, data: any) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/step1`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  submitStep2: async (companyId: string, data: any) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/step2`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  uploadDocument: async (companyId: string, formData: FormData) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/documents`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  },
+
+  getDocuments: async (companyId: string) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/documents`);
+    return res.json();
+  },
+
+  submitStep3: async (companyId: string) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/step3`, { method: 'POST' });
+    return res.json();
+  },
+
+  submitStep4: async (companyId: string, planId: string, billingCycle: string) => {
+    const formData = new FormData();
+    formData.append('plan_id', planId);
+    formData.append('billing_cycle', billingCycle);
+    const res = await fetch(`${API_BASE}/register/${companyId}/step4`, {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  },
+
+  finalizeRegistration: async (companyId: string) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/finalize`, { method: 'POST' });
+    return res.json();
+  },
+
+  getProgress: async (companyId: string) => {
+    const res = await fetch(`${API_BASE}/register/${companyId}/progress`);
+    return res.json();
+  },
+};
+FILE 3: app/register/page.tsx
+typescript
+'use client';
+
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
+import Step1CompanyInfo from './components/Step1CompanyInfo';
+import Step2BusinessDetails from './components/Step2BusinessDetails';
+import Step3Documents from './components/Step3Documents';
+import Step4PlanSelection from './components/Step4PlanSelection';
+import Step5Review from './components/Step5Review';
+
+export default function RegisterPage() {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Initialize registration session
+    const init = async () => {
+      setLoading(true);
+      const data = await api.initRegistration();
+      setCompanyId(data.company_id);
+      setLoading(false);
+    };
+    init();
+  }, []);
+
+  const handleStepComplete = () => {
+    setCurrentStep((prev) => prev + 1);
+  };
+
+  const steps = [
+    { number: 1, title: 'Company Information' },
+    { number: 2, title: 'Business Details' },
+    { number: 3, title: 'Upload Documents' },
+    { number: 4, title: 'Choose Plan' },
+    { number: 5, title: 'Review & Submit' },
+  ];
+
+  if (loading || !companyId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Initializing registration...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-4xl mx-auto px-4">
+        {/* Progress Indicator */}
+        <div className="mb-8">
+          <div className="flex justify-between">
+            {steps.map((step, idx) => (
+              <div key={step.number} className="flex items-center flex-1">
+                <div className="flex flex-col items-center flex-1">
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+                      currentStep >= step.number
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-300 text-gray-600'
+                    }`}
+                  >
+                    {step.number}
+                  </div>
+                  <span className="mt-2 text-xs text-center">{step.title}</span>
+                </div>
+                {idx < steps.length - 1 && (
+                  <div
+                    className={`h-1 flex-1 mx-2 ${
+                      currentStep > step.number ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                  ></div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Current Step Content */}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          {currentStep === 1 && (
+            <Step1CompanyInfo companyId={companyId} onComplete={handleStepComplete} />
+          )}
+          {currentStep === 2 && (
+            <Step2BusinessDetails companyId={companyId} onComplete={handleStepComplete} />
+          )}
+          {currentStep === 3 && (
+            <Step3Documents companyId={companyId} onComplete={handleStepComplete} />
+          )}
+          {currentStep === 4 && (
+            <Step4PlanSelection companyId={companyId} onComplete={handleStepComplete} />
+          )}
+          {currentStep === 5 && <Step5Review companyId={companyId} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+FILE 4: app/register/components/Step1CompanyInfo.tsx
+typescript
+'use client';
+
+import { useState } from 'react';
+import { api } from '@/lib/api';
+
+export default function Step1CompanyInfo({ companyId, onComplete }: any) {
+  const [formData, setFormData] = useState({
+    legal_name: '',
+    business_type: 'LLC',
+    registration_number: '',
+    registration_date: '',
+    email: '',
+    phone: '',
+    website: '',
+  });
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await api.submitStep1(companyId, formData);
+      onComplete();
+    } catch (error) {
+      alert('Error submitting form');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-900">Company Information</h2>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Legal Name *</label>
+        <input
+          type="text"
+          required
+          value={formData.legal_name}
+          onChange={(e) => setFormData({ ...formData, legal_name: e.target.value })}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Business Type *</label>
+        <select
+          value={formData.business_type}
+          onChange={(e) => setFormData({ ...formData, business_type: e.target.value })}
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+        >
+          <option value="LLC">LLC</option>
+          <option value="Sole Proprietorship">Sole Proprietorship</option>
+          <option value="Branch">Branch</option>
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Registration Number *</label>
+          <input
+            type="text"
+            required
+            value={formData.registration_number}
+            onChange={(e) => setFormData({ ...formData, registration_number: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Registration Date *</label>
+          <input
+            type="date"
+            required
+            value={formData.registration_date}
+            onChange={(e) => setFormData({ ...formData, registration_date: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Email *</label>
+          <input
+            type="email"
+            required
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Phone *</label>
+          <input
+            type="tel"
+            required
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-4 py-2 border"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700">Website (optional)</label>
+        <input
+          type="url"
+          value={formData.website}
+          onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+          className="mt-1
