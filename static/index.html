@@ -22,32 +22,36 @@
 
         <main class="main-content">
             <div id="signup-screen" class="screen active">
-                <div class="content-card">
-                    <div class="card-header">
-                        <h1>Get Started</h1>
-                        <p class="subtitle">UAE's leading e-invoicing platform for compliant, automated invoicing</p>
-                    </div>
+                <!-- Hero Section -->
+                <div class="hero-section">
+                    <h1 class="hero-title">Simple, Compliant<br>E-Invoicing for UAE</h1>
+                    <p class="hero-subtitle">Automated invoicing that meets UAE VAT standards. Start with 100 free invoices/month.</p>
+                </div>
 
-                    <div class="info-box" style="margin-bottom: 2rem; background: #f0f9ff; border-left: 3px solid var(--primary);">
-                        <p style="margin-bottom: 0.75rem; font-weight: 500; color: var(--text);">
-                            Streamline your business with automated e-invoicing that meets UAE VAT compliance standards
-                        </p>
-                        <ul style="list-style: none; padding: 0; display: grid; gap: 0.5rem;">
-                            <li style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-light); font-size: 0.95rem;">
-                                <span style="color: var(--success);">✓</span> Automated invoice generation & PDF delivery
-                            </li>
-                            <li style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-light); font-size: 0.95rem;">
-                                <span style="color: var(--success);">✓</span> VAT-compliant invoicing with 5% UAE tax support
-                            </li>
-                            <li style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-light); font-size: 0.95rem;">
-                                <span style="color: var(--success);">✓</span> Multi-currency & payment integration
-                            </li>
-                            <li style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-light); font-size: 0.95rem;">
-                                <span style="color: var(--success);">✓</span> Start with 100 free invoices/month
-                            </li>
-                        </ul>
+                <!-- Features Grid -->
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">⚡</div>
+                        <h3>Automated</h3>
+                        <p>Generate & deliver invoices instantly</p>
                     </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">✓</div>
+                        <h3>VAT Compliant</h3>
+                        <p>5% UAE tax support built-in</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💳</div>
+                        <h3>Multi-Payment</h3>
+                        <p>Accept all payment methods</p>
+                    </div>
+                </div>
 
+                <!-- Signup Form Card -->
+                <div class="signup-card">
+                    <h2 class="signup-title">Get Started</h2>
+                    <p class="signup-subtitle">Create your account in seconds</p>
+                    
                     <form id="signup-form" class="form">
                         <div class="form-field">
                             <label for="email">Work Email</label>
@@ -83,13 +87,17 @@
                         </div>
 
                         <button type="submit" class="btn btn-primary btn-large">
-                            Get Started →
+                            Create Account →
                         </button>
 
                         <p class="terms-text">
                             By continuing, you agree to our Terms of Service and Privacy Policy
                         </p>
                     </form>
+
+                    <p class="login-prompt">
+                        Already have an account? <a href="/login" class="login-link">Sign in</a>
+                    </p>
 
                     <div class="trust-badges">
                         <div class="badge">

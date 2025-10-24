@@ -314,22 +314,30 @@ The following Genericode files are expected in `/mnt/data/`:
 
 ## Recent Changes
 
-### 2025-10-24: UI Enhancements - Inter Font & Value Proposition
+### 2025-10-24: Modern Redesign - Groww/Toss-Inspired Landing Page
 
-**✅ Typography Upgrade**
-- Implemented Inter font family from Google Fonts for elegant, professional appearance
-- Added font weights 300-700 for design flexibility
-- Enhanced text rendering with antialiasing for crisp display
+**✅ Complete Homepage Redesign**
+- Implemented Groww.in and Toss.im inspired design aesthetic
+- Clean, minimal, modern fintech-style interface
+- Bold hero section with large typography (3.5rem headline)
+- Gradient background (light gray to blue)
+- Card-based feature highlights with hover effects
+- Concise layout focusing on key information
 
-**✅ Landing Page Value Proposition**
-- Added compelling "what we do" section to registration page
-- Highlighted 4 key platform benefits:
-  - Automated invoice generation & PDF delivery
-  - VAT-compliant invoicing with 5% UAE tax support
-  - Multi-currency & payment integration
-  - 100 free invoices/month starter offer
-- Visually distinct blue-accented info box for better UX
-- Updated button text from "Get Started Free" to "Get Started"
+**✅ New Design Components**
+- **Hero Section**: Bold headline "Simple, Compliant E-Invoicing for UAE"
+- **Feature Cards Grid**: 3 cards showcasing Automated, VAT Compliant, Multi-Payment
+- **Signup Card**: Centered white card with clean form design
+- **Login Link**: Added "Already have an account? Sign in" below form
+- **Button Update**: Changed to "Create Account →" for clarity
+
+**✅ Visual Improvements**
+- Subtle gradient background for depth
+- Glassmorphism navbar with blur effect
+- Rounded corners (16-20px) for modern look
+- Enhanced shadows and hover states
+- Mobile responsive with breakpoints
+- Inter font family for professional typography
 
 ### 2025-10-24: Email Verification & Simplified Registration
 
