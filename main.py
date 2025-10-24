@@ -10,7 +10,7 @@ from datetime import datetime, date, timedelta
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -264,6 +264,34 @@ def get_current_company(token: str, db: Session):
     except JWTError:
         return None
 
+def get_current_user_from_header(authorization: str = Header(None), db: Session = Depends(get_db)) -> UserDB:
+    """Extract and validate user from Authorization header"""
+    if not authorization:
+        raise HTTPException(401, "Not authenticated")
+    
+    try:
+        scheme, token = authorization.split()
+        if scheme.lower() != "bearer":
+            raise HTTPException(401, "Invalid authentication scheme")
+    except ValueError:
+        raise HTTPException(401, "Invalid authorization header")
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        token_type: str = payload.get("type")
+        
+        if user_id is None or token_type != "user":
+            raise HTTPException(401, "Invalid token")
+        
+        user = db.get(UserDB, user_id)
+        if user is None:
+            raise HTTPException(401, "User not found")
+        
+        return user
+    except JWTError:
+        raise HTTPException(401, "Invalid token")
+
 # ==================== HELPER FUNCTIONS ====================
 def is_valid_trn(trn: str) -> bool:
     """Validate UAE TRN (15 digits)"""
@@ -417,26 +445,6 @@ else:
     if os.path.exists("static"):
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.get("/", tags=["General"])
-async def root():
-    """Serve React app or API info"""
-    if os.path.exists("dist/index.html"):
-        return FileResponse("dist/index.html")
-    elif os.path.exists("static/index.html"):
-        return FileResponse("static/index.html")
-    return {"message": "Beam API v2.0 - React dev server at port 5173"}
-
-# Catch-all route for React Router (must be last)
-@app.get("/{full_path:path}", tags=["General"])
-async def serve_react_routes(full_path: str):
-    """Serve React app for client-side routing"""
-    # Skip API routes
-    if full_path.startswith(("api/", "auth/", "admin/", "companies/", "register/", "plans/", "docs", "redoc", "openapi.json")):
-        raise HTTPException(404, "Not found")
-    
-    if os.path.exists("dist/index.html"):
-        return FileResponse("dist/index.html")
-    raise HTTPException(404, "Not found")
 
 @app.on_event("startup")
 def startup_event():
@@ -1187,6 +1195,179 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
         "invoices_this_period": sub.invoices_this_period
     }
 
+# ==================== ADMIN ENDPOINTS ====================
+
+class CompanyApprovalRequest(BaseModel):
+    approved: bool
+    notes: Optional[str] = None
+
+@app.get("/admin/companies/pending", tags=["Admin"])
+def get_pending_companies(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all companies pending approval (Super Admin only)"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    pending = db.query(CompanyDB).filter(
+        CompanyDB.status == CompanyStatus.PENDING_REVIEW
+    ).all()
+    
+    return [{
+        "id": c.id,
+        "legal_name": c.legal_name,
+        "email": c.email,
+        "business_type": c.business_type,
+        "phone": c.phone,
+        "created_at": c.created_at.isoformat(),
+        "status": c.status.value
+    } for c in pending]
+
+@app.get("/admin/companies", tags=["Admin"])
+def get_all_companies(
+    status: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all companies with optional status filter (Super Admin only)"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    query = db.query(CompanyDB)
+    if status:
+        try:
+            status_enum = CompanyStatus(status)
+            query = query.filter(CompanyDB.status == status_enum)
+        except ValueError:
+            pass
+    
+    companies = query.all()
+    
+    return [{
+        "id": c.id,
+        "legal_name": c.legal_name,
+        "email": c.email,
+        "business_type": c.business_type,
+        "phone": c.phone,
+        "status": c.status.value,
+        "created_at": c.created_at.isoformat(),
+        "subscription_plan": c.subscription_plan_id
+    } for c in companies]
+
+@app.post("/admin/companies/{company_id}/approve", tags=["Admin"])
+def approve_company(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Approve a pending company registration (Super Admin only)"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if company.status != CompanyStatus.PENDING_REVIEW:
+        raise HTTPException(400, f"Company is not pending review. Current status: {company.status.value}")
+    
+    # Update company status to ACTIVE
+    company.status = CompanyStatus.ACTIVE
+    
+    # Assign Free plan if not already assigned
+    if not company.subscription_plan_id:
+        free_plan = db.query(SubscriptionPlanDB).filter_by(name="Free").first()
+        if free_plan:
+            company.subscription_plan_id = free_plan.id
+    
+    db.commit()
+    
+    # Simulate email notification
+    print("\n" + "="*70)
+    print("✅ COMPANY APPROVED - EMAIL NOTIFICATION")
+    print("="*70)
+    print(f"To: {company.email}")
+    print(f"Subject: Your Beam Account Has Been Approved!")
+    print(f"\nDear {company.legal_name},")
+    print(f"\nCongratulations! Your account has been approved.")
+    print(f"You can now log in and start using Beam E-Invoicing.")
+    print(f"\nYour Free tier subscription is now active.")
+    print("="*70 + "\n")
+    
+    return {
+        "success": True,
+        "company_id": company_id,
+        "status": company.status.value,
+        "message": "Company approved successfully"
+    }
+
+@app.post("/admin/companies/{company_id}/reject", tags=["Admin"])
+def reject_company(
+    company_id: str,
+    notes: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Reject a pending company registration (Super Admin only)"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if company.status != CompanyStatus.PENDING_REVIEW:
+        raise HTTPException(400, f"Company is not pending review. Current status: {company.status.value}")
+    
+    # Update company status to REJECTED
+    company.status = CompanyStatus.REJECTED
+    db.commit()
+    
+    # Simulate email notification
+    print("\n" + "="*70)
+    print("❌ COMPANY REJECTED - EMAIL NOTIFICATION")
+    print("="*70)
+    print(f"To: {company.email}")
+    print(f"Subject: Beam Account Registration Update")
+    print(f"\nDear {company.legal_name},")
+    print(f"\nThank you for your interest in Beam E-Invoicing.")
+    print(f"Unfortunately, we cannot approve your registration at this time.")
+    if notes:
+        print(f"\nReason: {notes}")
+    print(f"\nPlease contact support if you have any questions.")
+    print("="*70 + "\n")
+    
+    return {
+        "success": True,
+        "company_id": company_id,
+        "status": company.status.value,
+        "message": "Company rejected"
+    }
+
+@app.get("/admin/stats", tags=["Admin"])
+def get_admin_stats(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get dashboard statistics (Super Admin only)"""
+    if current_user.role != UserRole.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    # Count companies by status
+    total_companies = db.query(CompanyDB).count()
+    pending = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
+    active = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    rejected = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.REJECTED).count()
+    
+    return {
+        "total_companies": total_companies,
+        "pending_approval": pending,
+        "active": active,
+        "rejected": rejected,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
 # ==================== HEALTH CHECK ====================
 
 @app.get("/", tags=["Health"])
@@ -1218,6 +1399,30 @@ def health_check(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(500, f"Health check failed: {str(e)}")
+
+# ==================== REACT APP SERVING ====================
+# These routes MUST be last to avoid intercepting API routes
+
+@app.get("/", tags=["General"])
+async def root():
+    """Serve React app or API info"""
+    if os.path.exists("dist/index.html"):
+        return FileResponse("dist/index.html")
+    elif os.path.exists("static/index.html"):
+        return FileResponse("static/index.html")
+    return {"message": "Beam API v2.0 - React dev server at port 5173"}
+
+# Catch-all route for React Router (MUST be absolutely last)
+@app.get("/{full_path:path}", tags=["General"])
+async def serve_react_routes(full_path: str):
+    """Serve React app for client-side routing"""
+    # Skip API routes
+    if full_path.startswith(("api/", "auth/", "admin/", "companies/", "register/", "plans/", "docs", "redoc", "openapi.json")):
+        raise HTTPException(404, "Not found")
+    
+    if os.path.exists("dist/index.html"):
+        return FileResponse("dist/index.html")
+    raise HTTPException(404, "Not found")
 
 # ==================== RUN SERVER ====================
 
