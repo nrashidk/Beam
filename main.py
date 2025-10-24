@@ -400,32 +400,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Serve React app (production) or fallback to development API
+if os.path.exists("dist"):
+    # Production: Serve React build
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+else:
+    # Development: Keep static files available (optional)
+    if os.path.exists("static"):
+        app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", tags=["General"])
-def root():
-    """Serve registration form"""
-    return FileResponse("static/index.html")
+async def root():
+    """Serve React app or API info"""
+    if os.path.exists("dist/index.html"):
+        return FileResponse("dist/index.html")
+    elif os.path.exists("static/index.html"):
+        return FileResponse("static/index.html")
+    return {"message": "Beam API v2.0 - React dev server at port 5173"}
 
-@app.get("/login", tags=["General"])
-def login_page():
-    """Serve login page"""
-    return FileResponse("static/login.html")
-
-@app.get("/dashboard", tags=["General"])
-def dashboard_page():
-    """Serve user dashboard"""
-    return FileResponse("static/dashboard.html")
-
-@app.get("/reset-password", tags=["General"])
-def reset_password_page():
-    """Serve password reset page"""
-    return FileResponse("static/reset-password.html")
-
-@app.get("/admin", tags=["General"])
-def admin():
-    """Serve admin dashboard"""
-    return FileResponse("static/admin.html")
+# Catch-all route for React Router (must be last)
+@app.get("/{full_path:path}", tags=["General"])
+async def serve_react_routes(full_path: str):
+    """Serve React app for client-side routing"""
+    # Skip API routes
+    if full_path.startswith(("api/", "auth/", "admin/", "companies/", "register/", "plans/", "docs", "redoc", "openapi.json")):
+        raise HTTPException(404, "Not found")
+    
+    if os.path.exists("dist/index.html"):
+        return FileResponse("dist/index.html")
+    raise HTTPException(404, "Not found")
 
 @app.on_event("startup")
 def startup_event():
