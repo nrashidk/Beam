@@ -1,45 +1,78 @@
-# Beam E-Invoicing API
+# Beam - Digital Invoicing for UAE
 
-A comprehensive FastAPI-based multi-tenant e-invoicing system for UAE businesses with integrated registration wizard, VAT compliance, invoice generation, and payment processing.
+A modern full-stack digital invoicing platform for UAE businesses with React frontend, FastAPI backend, advanced analytics, and comprehensive admin dashboards.
 
 ## Overview
 
 This platform provides an end-to-end business solution combining:
 
-- **🚀 Registration Wizard** - Multi-step company onboarding with document management
-- **📊 Subscription Management** - Tiered pricing plans (Starter, Professional, Enterprise)
+- **⚡ Modern React UI** - Groww/Toss-inspired design with Tailwind CSS
+- **🎯 Dual Dashboards** - Super Admin analytics & Business Admin portals
+- **🚀 Registration Wizard** - Streamlined company onboarding
+- **📊 Subscription Management** - Free, Starter, Professional, Enterprise tiers
 - **🧾 UAE e-Invoicing** - Automated invoice generation with VAT compliance
 - **💳 Payment Processing** - Multiple payment methods and POS integration
-- **👔 Company Branding** - Custom logos and styling for invoices
-- **⚖️ Compliance** - UBL/PINT-AE format, Schematron validation, AS4 integration stub
+- **👔 Company Branding** - Custom logos and styling
+- **⚖️ Compliance** - UBL/PINT-AE format, Schematron validation
 
 ## Complete Business Flow
 
 ```
-1. Registration → 2. Admin Approval → 3. Subscription → 4. Invoice Generation → 5. Payment Collection
+1. Registration → 2. Email Verification → 3. Admin Approval → 4. Auto Free Tier → 5. Dashboard Access → 6. Invoice Generation
 ```
 
 ## Project Architecture
 
 ### Technology Stack
 
-- **Backend**: FastAPI 2.0
-- **Database**: PostgreSQL (Neon-backed via DATABASE_URL)
-- **ORM**: SQLAlchemy 2.0.36
-- **PDF Generation**: ReportLab 4.2.5
-- **XML Processing**: lxml 5.3.0
-- **Server**: Uvicorn (async)
+**Frontend:**
+- **React 19.2** with Vite 7.1
+- **React Router 7.9** for client-side routing
+- **Tailwind CSS 3.4** for styling
+- **Axios** for API communication
+- **Recharts** for analytics visualization
+- **Radix UI** components
+- **date-fns** for date handling
+
+**Backend:**
+- **FastAPI 2.0** (Python async)
+- **PostgreSQL** (Neon-backed via DATABASE_URL)
+- **SQLAlchemy 2.0.36** ORM
+- **JWT** authentication with bcrypt
+- **CORS** enabled for development
+
+**Development Setup:**
+- Frontend (React/Vite): Port 5000 (webview)
+- Backend (FastAPI): Port 8000 (API)
 
 ### Directory Structure
 
 ```
 .
-├── main.py              # Complete application (all-in-one architecture)
-├── requirements.txt     # Python dependencies
-├── artifacts/          # Generated invoices, documents (XML/PDF)
-├── .replit             # Replit configuration
-├── .gitignore          # Git ignore rules
-└── replit.md           # This documentation
+├── src/                     # React frontend source
+│   ├── components/          # Reusable UI components
+│   │   └── ui/             # Base UI components (Button, Card, Input, Badge)
+│   ├── pages/              # Page components
+│   │   ├── Homepage.jsx    # Landing page with signup
+│   │   ├── Login.jsx       # Login page
+│   │   ├── SuperAdminDashboard.jsx  # Admin analytics
+│   │   └── BusinessDashboard.jsx     # Company dashboard
+│   ├── contexts/           # React contexts
+│   │   └── AuthContext.jsx # Authentication state
+│   ├── lib/                # Utilities
+│   │   ├── api.js          # API client
+│   │   └── utils.js        # Helper functions
+│   ├── App.jsx             # Main app with routing
+│   ├── main.jsx            # React entry point
+│   └── index.css           # Tailwind imports
+├── static/                  # Legacy static files (deprecated)
+├── main.py                  # FastAPI backend
+├── package.json             # Node.js dependencies
+├── vite.config.js           # Vite configuration
+├── tailwind.config.js       # Tailwind CSS config
+├── requirements.txt         # Python dependencies
+├── artifacts/               # Generated invoices, documents
+└── replit.md                # This documentation
 ```
 
 ## Core Features
