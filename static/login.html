@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Beam E-Invoicing</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <nav class="navbar">
+            <div class="nav-content">
+                <div class="logo">
+                    <span class="logo-icon">⚡</span>
+                    <span class="logo-text">Beam</span>
+                </div>
+                <div class="nav-links">
+                    <a href="/" class="nav-link">Sign Up</a>
+                    <a href="/docs" class="nav-link">API Docs</a>
+                </div>
+            </div>
+        </nav>
+
+        <main class="main-content">
+            <div class="screen active">
+                <div class="content-card">
+                    <div class="card-header">
+                        <h1>Welcome Back</h1>
+                        <p class="subtitle">Sign in to your account</p>
+                    </div>
+
+                    <form id="login-form" class="form">
+                        <div class="form-field">
+                            <label for="email">Email</label>
+                            <input 
+                                type="email" 
+                                id="email" 
+                                placeholder="you@company.com" 
+                                required
+                                autocomplete="email"
+                            >
+                        </div>
+
+                        <div class="form-field">
+                            <label for="password">Password</label>
+                            <input 
+                                type="password" 
+                                id="password" 
+                                placeholder="Enter your password" 
+                                required
+                                autocomplete="current-password"
+                            >
+                        </div>
+
+                        <div class="form-field" style="text-align: right;">
+                            <a href="/reset-password" class="link" style="font-size: 0.9rem;">Forgot password?</a>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-large">
+                            Sign In →
+                        </button>
+                    </form>
+
+                    <p class="terms-text">
+                        Don't have an account? <a href="/" class="link">Sign up for free</a>
+                    </p>
+                </div>
+            </div>
+        </main>
+
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script src="/static/js/login.js"></script>
+</body>
+</html>

@@ -12,6 +12,7 @@ async function handleSignup(e) {
     
     const email = document.getElementById('email').value;
     const companyName = document.getElementById('company_name').value;
+    const password = document.getElementById('password').value;
     
     userEmail = email;
     
@@ -33,7 +34,8 @@ async function handleSignup(e) {
                 business_type: 'LLC',
                 registration_number: 'PENDING',
                 business_activity: 'General Business',
-                email: email
+                email: email,
+                password: password
             })
         });
         

@@ -3,14 +3,14 @@ UAE e-Invoicing Platform with Registration Wizard
 ==================================================
 Beam API - Multi-tenant e-invoicing with subscription plans
 """
-import os, enum, hashlib
+import os, enum, hashlib, secrets
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,11 +19,22 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
+# Password & JWT
+import bcrypt
+from jose import JWTError, jwt
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
 os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
+
+# JWT settings
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "beam-secret-key-change-in-production")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+
+# Password hashing (using bcrypt directly to avoid passlib issues)
 
 engine = create_engine(DATABASE_URL, future=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
@@ -184,6 +195,56 @@ def get_db():
     finally:
         db.close()
 
+# ==================== AUTH HELPERS ====================
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    """Create JWT access token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against hash"""
+    if not hashed_password:
+        return False
+    password_bytes = plain_password.encode('utf-8')[:72]  # bcrypt max 72 bytes
+    hashed_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(password_bytes, hashed_bytes)
+
+def get_password_hash(password: str) -> str:
+    """Hash a password"""
+    password_bytes = password.encode('utf-8')[:72]  # bcrypt max 72 bytes
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
+
+def authenticate_company(email: str, password: str, db: Session):
+    """Authenticate company by email and password"""
+    company = db.query(CompanyDB).filter(CompanyDB.email == email).first()
+    if not company:
+        return None
+    if not company.password_hash:
+        return None
+    if not verify_password(password, company.password_hash):
+        return None
+    return company
+
+def get_current_company(token: str, db: Session):
+    """Get current company from JWT token"""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        company_id: str = payload.get("sub")
+        if company_id is None:
+            return None
+        company = db.get(CompanyDB, company_id)
+        return company
+    except JWTError:
+        return None
+
 # ==================== HELPER FUNCTIONS ====================
 def is_valid_trn(trn: str) -> bool:
     """Validate UAE TRN (15 digits)"""
@@ -263,6 +324,7 @@ class CompanyInfoCreate(BaseModel):
     registration_number: Optional[str] = None
     registration_date: Optional[date] = None
     email: str
+    password: str = Field(..., min_length=8, description="Password (min 8 characters)")
     phone: Optional[str] = None
     website: Optional[str] = None
 
@@ -334,6 +396,21 @@ def root():
     """Serve registration form"""
     return FileResponse("static/index.html")
 
+@app.get("/login", tags=["General"])
+def login_page():
+    """Serve login page"""
+    return FileResponse("static/login.html")
+
+@app.get("/dashboard", tags=["General"])
+def dashboard_page():
+    """Serve user dashboard"""
+    return FileResponse("static/dashboard.html")
+
+@app.get("/reset-password", tags=["General"])
+def reset_password_page():
+    """Serve password reset page"""
+    return FileResponse("static/reset-password.html")
+
 @app.get("/admin", tags=["General"])
 def admin():
     """Serve admin dashboard"""
@@ -386,11 +463,17 @@ def register_step1(
     if not company:
         raise HTTPException(404, "Registration session not found")
 
+    # Check if email already exists
+    existing = db.query(CompanyDB).filter(CompanyDB.email == payload.email, CompanyDB.id != company_id).first()
+    if existing:
+        raise HTTPException(400, "Email already registered")
+
     company.legal_name = payload.legal_name
     company.business_type = payload.business_type
     company.registration_number = payload.registration_number
     company.registration_date = payload.registration_date
     company.email = payload.email
+    company.password_hash = get_password_hash(payload.password)  # Hash password (max 72 bytes)
     company.phone = payload.phone
     company.website = payload.website
 
@@ -738,6 +821,128 @@ def get_plan(plan_id: str, db: Session = Depends(get_db)):
         allow_api_access=plan.allow_api_access
     )
 
+# ==================== AUTH ENDPOINTS ====================
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    company_id: str
+    company_name: str
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+@app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    """Login endpoint - returns JWT token"""
+    company = authenticate_company(payload.email, payload.password, db)
+    
+    if not company:
+        raise HTTPException(401, "Invalid email or password")
+    
+    if company.status != CompanyStatus.ACTIVE:
+        raise HTTPException(403, f"Account not active. Status: {company.status.value}")
+    
+    # Create access token
+    access_token = create_access_token(data={"sub": company.id})
+    
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        company_id=company.id,
+        company_name=company.legal_name or "Company"
+    )
+
+@app.post("/auth/logout", tags=["Auth"])
+def logout():
+    """Logout endpoint (client-side token removal)"""
+    return {"message": "Logged out successfully"}
+
+@app.post("/auth/forgot-password", tags=["Auth"])
+def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)):
+    """Request password reset - sends reset token via email"""
+    company = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
+    
+    if not company:
+        # Don't reveal if email exists
+        return {"message": "If your email is registered, you will receive a password reset link"}
+    
+    # Generate reset token
+    reset_token = f"reset_{secrets.token_hex(16)}"
+    company.password_reset_token = reset_token
+    company.password_reset_expires = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
+    
+    db.commit()
+    
+    # Simulate sending email
+    print("\n" + "="*70)
+    print("╔" + "="*68 + "╗")
+    print("║" + " "*25 + "EMAIL WOULD BE SENT" + " "*24 + "║")
+    print("╠" + "="*68 + "╣")
+    print(f"║  To: {payload.email:<60} ║")
+    print(f"║  Subject: Reset Your Password - Beam E-Invoicing{' '*18} ║")
+    print("║" + " "*68 + "║")
+    print(f"║  Hi {(company.legal_name or 'User'):<60} ║")
+    print("║" + " "*68 + "║")
+    print("║  You requested to reset your password. Click the link below:    ║")
+    print("║" + " "*68 + "║")
+    print(f"║  http://your-app-url.com/reset-password?token={reset_token[:20]:<22} ║")
+    print("║" + " "*68 + "║")
+    print("║  This link will expire in 1 hour.                               ║")
+    print("║" + " "*68 + "║")
+    print("║  If you didn't request this, please ignore this email.          ║")
+    print("║" + " "*68 + "║")
+    print("║  Best regards,                                                   ║")
+    print("║  Beam E-Invoicing Team                                          ║")
+    print("╚" + "="*68 + "╝")
+    print("="*70 + "\n")
+    
+    return {"message": "If your email is registered, you will receive a password reset link"}
+
+@app.post("/auth/reset-password", tags=["Auth"])
+def reset_password(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """Reset password using token"""
+    company = db.query(CompanyDB).filter(
+        CompanyDB.password_reset_token == payload.token
+    ).first()
+    
+    if not company:
+        raise HTTPException(400, "Invalid or expired reset token")
+    
+    if not company.password_reset_expires or company.password_reset_expires < datetime.utcnow():
+        raise HTTPException(400, "Reset token has expired")
+    
+    # Update password
+    company.password_hash = get_password_hash(payload.new_password)
+    company.password_reset_token = None
+    company.password_reset_expires = None
+    
+    db.commit()
+    
+    return {"message": "Password reset successfully. You can now login with your new password."}
+
+@app.get("/auth/me", tags=["Auth"])
+def get_current_user(token: str, db: Session = Depends(get_db)):
+    """Get current authenticated company"""
+    company = get_current_company(token, db)
+    if not company:
+        raise HTTPException(401, "Not authenticated")
+    
+    return {
+        "company_id": company.id,
+        "company_name": company.legal_name,
+        "email": company.email,
+        "status": company.status.value
+    }
+
 # ==================== ADMIN ENDPOINTS ====================
 
 @app.get("/admin/companies/pending", response_model=List[CompanyOut], tags=["Admin"])
@@ -803,7 +1008,8 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
 ║  • Full API access                                               ║
 ║  • All core e-invoicing features                                 ║
 ║                                                                  ║
-║  Get started: https://your-app-url.com/docs                      ║
+║  Login now: https://your-app-url.com/login                       ║
+║  Email: {company.email:<51} ║
 ║                                                                  ║
 ║  Best regards,                                                   ║
 ║  Beam E-Invoicing Team                                          ║
