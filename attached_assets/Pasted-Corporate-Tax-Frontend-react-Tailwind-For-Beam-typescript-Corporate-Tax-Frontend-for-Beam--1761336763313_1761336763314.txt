@@ -1,0 +1,176 @@
+Corporate Tax Frontend (react + Tailwind) For Beam
+· typescript
+// Corporate Tax Frontend for Beam
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="md:col-span-2 space-y-6">
+              <ProfileForm companyId={activeCompany} />
+              <PeriodsTable companyId={activeCompany} />
+            </div>
+            <div className="md:col-span-1 space-y-6">
+              <CorporateTaxCard companyId={activeCompany} />
+              <Card className="rounded-2xl">
+                <CardHeader>
+                  <CardTitle>Bulk Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-muted-foreground space-y-3">
+                  <p>• Generate next year for this company.</p>
+                  <p>• Review overdue statuses and nudge.</p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ================================
+// Optional nested routes helper
+// ================================
+export function CorporateTaxRoutes({ basePath = "/ct", companyId }){
+  return (
+    <Routes>
+      <Route path={`${basePath}/admin`} element={<CorporateTaxAdminPage />} />
+      <Route path={`${basePath}/company`} element={<CorporateTaxPage companyId={companyId} />} />
+    </Routes>
+  );
+}
+
+
+// Default export: a simple page wrapper that expects companyId (Business Admin)
+export default function CorporateTaxRoot({ companyId }){
+  return <CorporateTaxPage companyId={companyId} />;
+}
+
+
+// ================================
+// INTEGRATION NOTES (copy-paste into your app)
+// ================================
+// 1) Router
+//    import CorporateTaxRoot, { CorporateTaxAdminPage } from "./CorporateTax";
+//    <Route path="/corporate-tax" element={<CorporateTaxRoot companyId={currentCompanyId} />} />
+//    <Route path="/admin/corporate-tax" element={<CorporateTaxAdminPage />} />
+//
+// 2) Dashboard card
+//    import { CorporateTaxCard } from "./CorporateTax";
+//    <CorporateTaxCard companyId={currentCompanyId} />
+//
+// 3) API base URL
+//    Vite: set VITE_API_BASE_URL (or keep same-origin)
+//
+// 4) Permissions
+//    - Business Admins: mount /corporate-tax under company app shell
+//    - Super Admins: mount /admin/corporate-tax under admin shell
+//
+// 5) Styling
+//    - Tailwind classes used throughout; shadcn/ui components imported.
+//    - Ensure shadcn is configured in your project.
+// -----------------------------------------------------------------------------
+
+
+
+done! I added a full React frontend (business admin + super admin) to the canvas:
+
+Business Admin: Corporate Tax profile form, period generation/listing, file/mark return, dashboard card
+
+Super Admin: quick company picker with same controls (so you can follow up like you do for VAT)
+
+Optional nested routes + a tiny fetch-based API client wired to your new FastAPI endpoints
+
+Tailwind + shadcn/ui styling so it matches your existing look
+
+Plug-in steps (super short):
+
+add routes
+
+/corporate-tax → Business Admin page (pass companyId)
+
+/admin/corporate-tax → Super Admin page
+
+drop the CorporateTaxCard on your dashboard (it shows the nearest due date/status)
+
+set VITE_API_BASE_URL if your API runs on a different host/port
+
+want me to integrate this into your existing router files and push a ready-to-merge PR-style diff next?
+
+You said:
+yes
+ChatGPT said:
+
+thanks for the green light — quick correction first: your app isn’t a React SPA; it serves static HTML from /static with vanilla JS. So I built the Corporate Tax frontend to match your stack (HTML + JS + your existing CSS), and I integrated it around your current admin/business layout.
+
+what I added
+
+/static/corporate-tax.html
+Business admin page with:
+
+Corporate Tax Profile (applicable, reg no., effective date, FY start month, rate, free-zone flag, notes)
+
+Financial Periods table (Start/End/Due/Status + File/Update actions)
+
+“Generate periods” + “Refresh” buttons
+
+Upcoming Due card (like your VAT follow-ups)
+
+/static/js/corporate-tax.js
+Vanilla JS client calling the new FastAPI endpoints you now have:
+
+POST /companies/{id}/corporate-tax/profile
+
+POST /companies/{id}/corporate-tax/generate-periods?years=N
+
+GET /companies/{id}/corporate-tax/periods
+
+POST /companies/{id}/corporate-tax/returns
+
+Download the files I generated:
+
+corporate-tax.html
+
+corporate-tax.js
+
+how to wire it into your UI
+
+link it from your nav (admin or business dashboard)
+
+In static/dashboard.html (or static/admin.html) add a menu/link:
+
+<li><a href="/static/corporate-tax.html?company_id={{COMPANY_ID}}">Corporate Tax</a></li>
+
+
+Replace {{COMPANY_ID}} with how you already pass company context on your links (if you prefer, you can set it in the page and have the JS read it).
+
+open the page
+
+Go to:
+/static/corporate-tax.html?company_id=<YOUR_COMPANY_ID>
+
+use it
+
+Fill profile → Save
+
+Generate 1–N years of periods → they appear in the table
+
+Click File/Update → enter filed/payment dates, amount, reference → status updates to FILED/PAID
+
+super admin usage
+
+Super admins can open the same page with any company_id to monitor/follow up, just like VAT. If you want a dedicated super-admin list screen later, I can add a company picker and bulk actions.
+
+notes
+
+Styling uses your /static/css/style.css plus a small scoped style block; it blends with the existing look.
+
+JS uses simple fetch with JSON; no extra libs.
+
+The page assumes your new backend endpoints from the earlier patch to main.py are live (they create the tables automatically on startup).
+
+Want me to:
+
+add a nav item + server-side link into admin.html and dashboard.html for you (I can produce ready-to-paste diffs), or
+
+add email reminders for upcoming CT due dates (cron-like background job + template)?
+
+ChatGPT can make mistakes. Check i
