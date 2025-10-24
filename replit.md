@@ -44,30 +44,32 @@ This platform provides an end-to-end business solution combining:
 
 ## Core Features
 
-### 1. Registration Wizard (NEW)
+### 1. Quick Registration
 
-**Multi-step company onboarding process:**
+**Simple, fast company signup:**
 
-- **Step 1**: Company Information (legal name, business type, registration number)
-- **Step 2**: Business Details (address, TRN, authorized person)
-- **Step 3**: Document Upload (Business License, TRN Certificate)
-- **Step 4**: Plan Selection (subscription tier choice)
-- **Step 5**: Review & Submit for admin approval
+- Email and company name
+- Business type and phone
+- Instant submission (no documents required upfront)
+- Free tier activated automatically upon approval
 
 **Endpoints:**
 - `POST /register/init` - Initialize registration session
 - `POST /register/{company_id}/step1` - Submit company info
-- `POST /register/{company_id}/step2` - Submit business details
-- `POST /register/{company_id}/documents` - Upload documents
-- `GET /register/{company_id}/documents` - List uploaded documents
-- `POST /register/{company_id}/step3` - Verify documents
-- `POST /register/{company_id}/step4` - Select subscription plan
+- `POST /register/{company_id}/step2` - Submit business details (optional fields)
 - `POST /register/{company_id}/finalize` - Submit for approval
 - `GET /register/{company_id}/progress` - Check registration progress
 
 ### 2. Subscription Plans
 
-**Three tiers available:**
+**Four tiers available:**
+
+**Free** ($0/month) **← Automatically assigned on approval**
+- 100 invoices/month
+- 1 user
+- API access
+- All core features
+- No credit card required
 
 **Starter** ($99/month, $990/year)
 - 100 invoices/month
@@ -91,15 +93,15 @@ This platform provides an end-to-end business solution combining:
 - Priority support
 
 **Endpoints:**
-- `GET /plans` - List all subscription plans
+- `GET /plans` - List all subscription plans (including Free tier)
 - `GET /plans/{plan_id}` - Get plan details
 
 ### 3. Admin Approval Workflow
 
-Admins review and approve/reject company registrations:
+Admins review and approve/reject company registrations. **Upon approval, companies automatically receive free tier access.**
 
 - `GET /admin/companies/pending` - List companies awaiting approval
-- `POST /admin/companies/{company_id}/approve` - Approve registration
+- `POST /admin/companies/{company_id}/approve` - Approve and activate with free tier
 - `POST /admin/companies/{company_id}/reject` - Reject registration
 
 ### 4. Company Management
@@ -224,16 +226,20 @@ Server starts on `http://0.0.0.0:5000` and is accessible via Replit webview.
 
 ### Testing the Complete Flow
 
-1. **Access API Docs**: Go to `/docs` in your browser
-2. **View Plans**: `GET /plans` to see subscription options
-3. **Start Registration**: `POST /register/init`
-4. **Submit Company Info**: `POST /register/{company_id}/step1`
-5. **Submit Business Details**: `POST /register/{company_id}/step2`
-6. **Upload Documents**: `POST /register/{company_id}/documents`
-7. **Select Plan**: `POST /register/{company_id}/step4`
-8. **Finalize**: `POST /register/{company_id}/finalize`
-9. **Admin Approval**: `POST /admin/companies/{company_id}/approve`
-10. **Create Invoice**: `POST /events` (after approval)
+**Via Web Interface:**
+1. Open `/` in your browser to access the registration form
+2. Fill in email, company name, business type, and phone
+3. Click "Create Free Account"
+4. View success message confirming submission
+
+**Via API:**
+1. **View Plans**: `GET /plans` to see all tiers including Free
+2. **Start Registration**: `POST /register/init`
+3. **Submit Company Info**: `POST /register/{company_id}/step1`
+4. **Submit Business Details**: `POST /register/{company_id}/step2`
+5. **Finalize**: `POST /register/{company_id}/finalize`
+6. **Admin Approval**: `POST /admin/companies/{company_id}/approve` (auto-assigns free tier)
+7. **Create Invoice**: `POST /events` (after approval)
 
 ### Production Deployment
 
