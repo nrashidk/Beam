@@ -44,21 +44,36 @@ This platform provides an end-to-end business solution combining:
 
 ## Core Features
 
-### 1. Quick Registration
+### 1. Quick Registration with Email Verification
 
-**Simple, fast company signup:**
+**Simple, streamlined company signup:**
 
-- Email and company name
-- Business type and phone
-- Instant submission (no documents required upfront)
+- Only requires work email and company name
+- Email verification before admin review
 - Free tier activated automatically upon approval
+- Email notifications at each stage
+
+**Registration Flow:**
+1. User submits email + company name
+2. System sends verification email (with token link)
+3. User clicks verification link
+4. Email verified → Status changes to PENDING_REVIEW
+5. Admin approves company
+6. System sends approval email
+7. Free tier activated (100 invoices/month)
 
 **Endpoints:**
 - `POST /register/init` - Initialize registration session
-- `POST /register/{company_id}/step1` - Submit company info
-- `POST /register/{company_id}/step2` - Submit business details (optional fields)
-- `POST /register/{company_id}/finalize` - Submit for approval
+- `POST /register/{company_id}/step1` - Submit company info (only email + company name required)
+- `POST /register/{company_id}/step2` - Submit business details (all fields optional)
+- `POST /register/{company_id}/send-verification` - Send email verification link
+- `POST /register/verify/{token}` - Verify email with token
 - `GET /register/{company_id}/progress` - Check registration progress
+
+**Email Notifications (simulated):**
+- Verification email sent after registration
+- Approval email sent after admin approval
+- Both are currently logged to console (ready for Resend/SendGrid integration)
 
 ### 2. Subscription Plans
 
@@ -299,32 +314,44 @@ The following Genericode files are expected in `/mnt/data/`:
 
 ## Recent Changes
 
-### 2025-10-24: Major Integration Update
+### 2025-10-24: Email Verification & Simplified Registration
 
-**✅ Registration Wizard Integration**
+**✅ Email Verification System**
+- Added email verification with token-based workflow
+- Verification required before admin review process
+- Email notifications for verification and approval stages
+- Added email_verified, verification_token, verification_sent_at fields to CompanyDB
+- Token expiration (24 hours)
+- Simulated email sending (logged to console, ready for Resend/SendGrid integration)
+
+**✅ Simplified Registration Flow**
+- Reduced registration to 2 required fields: email + company name only
+- All other fields made optional for flexibility
+- Updated Pydantic models (CompanyInfoCreate, BusinessDetailsCreate)
+- Streamlined UI to single-page form
+
+**✅ Free Tier Auto-Assignment**
+- Companies automatically receive free tier upon approval
+- 100 invoices/month at $0/month
+- No credit card required
+- Instant activation after admin approval
+
+**✅ Email Integration Points**
+- POST /register/{company_id}/send-verification - Send verification email
+- POST /register/verify/{token} - Verify email and submit for review
+- Approval endpoint updated to send approval notification
+- Email content templates ready for integration with Resend or SendGrid
+
+**Previous Updates:**
+
+### 2025-10-24: Registration Wizard Integration
 - Added multi-step company onboarding flow
 - Integrated subscription plan management
-- Added document upload functionality (Business License, TRN Certificate)
 - Created admin approval workflow
 - Enhanced company model with registration fields
-
-**✅ Database Schema Updates**
-- Recreated database with new registration tables
-- Added subscription_plans, company_documents, registration_progress
-- Enhanced companies table with business registration data
-- Seeded subscription plans (Starter, Professional, Enterprise)
-
-**✅ API Enhancements**
+- Database schema updates with new tables
 - Added 15+ new registration endpoints
-- Integrated approval workflow
-- Added plan selection functionality
-- Created progress tracking system
-
-**Initial Setup**
-- Configured PostgreSQL database
-- Set up Python 3.11 environment
-- Fixed FastAPI response model issues (BillingEventOut)
-- Configured workflow to run on port 5000
+- Configured PostgreSQL database and Python 3.11 environment
 - Set up deployment configuration (VM mode)
 
 ## Support
