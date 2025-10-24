@@ -23,19 +23,18 @@ export default function Homepage() {
     setError('');
 
     try {
-      const response = await axios.post('/register/init');
-      const companyId = response.data.company_id;
-      
-      await axios.post(`/register/${companyId}/step1`, {
+      const response = await axios.post('/register/quick', {
         email: formData.email,
-        legal_name: formData.company_name,
+        company_name: formData.company_name,
         business_type: formData.business_type,
         phone: formData.phone,
         password: formData.password,
       });
 
-      alert('Registration successful! Awaiting admin approval.');
-      setFormData({ email: '', company_name: '', business_type: '', phone: '', password: '' });
+      if (response.data.success) {
+        alert('Registration successful! Awaiting admin approval.');
+        setFormData({ email: '', company_name: '', business_type: '', phone: '', password: '' });
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
     } finally {
