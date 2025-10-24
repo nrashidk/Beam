@@ -1207,7 +1207,7 @@ def get_pending_companies(
     db: Session = Depends(get_db)
 ):
     """Get all companies pending approval (Super Admin only)"""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     pending = db.query(CompanyDB).filter(
@@ -1231,7 +1231,7 @@ def get_all_companies(
     db: Session = Depends(get_db)
 ):
     """Get all companies with optional status filter (Super Admin only)"""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     query = db.query(CompanyDB)
@@ -1262,7 +1262,7 @@ def approve_company(
     db: Session = Depends(get_db)
 ):
     """Approve a pending company registration (Super Admin only)"""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     company = db.get(CompanyDB, company_id)
@@ -1310,7 +1310,7 @@ def reject_company(
     db: Session = Depends(get_db)
 ):
     """Reject a pending company registration (Super Admin only)"""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     company = db.get(CompanyDB, company_id)
@@ -1351,7 +1351,7 @@ def get_admin_stats(
     db: Session = Depends(get_db)
 ):
     """Get dashboard statistics (Super Admin only)"""
-    if current_user.role != UserRole.SUPER_ADMIN:
+    if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     # Count companies by status
