@@ -1,0 +1,100 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, Filter, X } from "lucide-react";
+import { format } from "date-fns";
+
+/**
+ * Update: Enabled interactive date range picker and made 'More filters' apply immediately.
+ */
+
+// Stub DateRangePicker Component
+function DateRangePicker({ range, onChange }: { range: { from: Date; to: Date }; onChange: (r: { from: Date; to: Date }) => void }) {
+  function shiftDays(days: number) {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - days);
+    onChange({ from, to });
+  }
+  return (
+    <div className="flex gap-2">
+      <Button variant="secondary" onClick={() => shiftDays(7)}>Last 7 days</Button>
+      <Button variant="secondary" onClick={() => shiftDays(30)}>Last 30 days</Button>
+      <Button variant="secondary" onClick={() => shiftDays(90)}>Last 90 days</Button>
+      <div className="flex items-center text-sm text-muted-foreground">
+        <CalendarIcon size={16} className="mr-1" />
+        {format(range.from, "MMM d")} – {format(range.to, "MMM d, yyyy")}
+      </div>
+    </div>
+  );
+}
+
+export default function SuperAdminDashboard() {
+  const [range, setRange] = useState({ from: new Date(new Date().setDate(new Date().getDate() - 29)), to: new Date() });
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({ region: "all", vat: "all", minArpu: "", joinedAfter: "" });
+
+  useEffect(() => {
+    // Automatically refetch when filters change
+    console.log("Refetch with filters", filters);
+  }, [filters]);
+
+  return (
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Super Admin Dashboard</h1>
+      <DateRangePicker range={range} onChange={setRange} />
+      <Button variant="outline" className="gap-2" onClick={() => setShowFilters(true)}>
+        <Filter size={16} /> More filters
+      </Button>
+      {showFilters && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex justify-between mb-3">
+              <h2 className="font-semibold text-lg">Advanced Filters</h2>
+              <Button size="icon" variant="outline" onClick={() => setShowFilters(false)}><X size={16} /></Button>
+            </div>
+            <div className="grid gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Region</label>
+                <Select value={filters.region} onValueChange={(v) => setFilters({ ...filters, region: v })}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Select region" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="DXB">Dubai (DXB)</SelectItem>
+                    <SelectItem value="AUH">Abu Dhabi (AUH)</SelectItem>
+                    <SelectItem value="SHJ">Sharjah (SHJ)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">VAT compliance</label>
+                <Select value={filters.vat} onValueChange={(v) => setFilters({ ...filters, vat: v })}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Select VAT" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="ok">Compliant</SelectItem>
+                    <SelectItem value="review">Needs review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Min ARPU (AED)</label>
+                <Input type="number" value={filters.minArpu} onChange={(e) => setFilters({ ...filters, minArpu: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Joined after</label>
+                <Input type="date" value={filters.joinedAfter} onChange={(e) => setFilters({ ...filters, joinedAfter: e.target.value })} />
+              </div>
+            </div>
+            <div className="flex justify-end mt-4">
+              <Button onClick={() => setShowFilters(false)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
