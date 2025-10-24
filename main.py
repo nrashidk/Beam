@@ -36,7 +36,15 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
-engine = create_engine(DATABASE_URL, future=True)
+# Database connection with pooling configuration for reliability
+engine = create_engine(
+    DATABASE_URL, 
+    future=True,
+    pool_pre_ping=True,  # Verify connections before using them
+    pool_recycle=3600,   # Recycle connections after 1 hour
+    pool_size=5,
+    max_overflow=10
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 Base = declarative_base()
 
@@ -440,31 +448,99 @@ def startup_event():
 
 # ==================== REGISTRATION ENDPOINTS ====================
 
+class QuickRegisterCreate(BaseModel):
+    email: str
+    company_name: str
+    business_type: Optional[str] = None
+    phone: Optional[str] = None
+    password: str
+
+@app.post("/register/quick", tags=["Registration"])
+def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
+    """Quick registration - submit all data in one request"""
+    # Check if email already exists
+    existing = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
+    if existing:
+        raise HTTPException(400, "Email already registered")
+    
+    company_id = f"co_{uuid4().hex[:8]}"
+    
+    try:
+        # Create company
+        company = CompanyDB(
+            id=company_id,
+            legal_name=payload.company_name,
+            email=payload.email,
+            business_type=payload.business_type,
+            phone=payload.phone,
+            password_hash=get_password_hash(payload.password),
+            status=CompanyStatus.PENDING_REVIEW,
+            country="AE",
+            email_verified=False
+        )
+        db.add(company)
+        
+        # Create progress tracker
+        progress = RegistrationProgressDB(
+            id=f"prog_{uuid4().hex[:8]}",
+            company_id=company_id,
+            current_step=1,
+            step_company_info=True
+        )
+        db.add(progress)
+        
+        # Create user account
+        user = UserDB(
+            id=f"user_{uuid4().hex[:8]}",
+            email=payload.email,
+            password_hash=get_password_hash(payload.password),
+            role=Role.COMPANY_ADMIN,
+            company_id=company_id
+        )
+        db.add(user)
+        
+        db.commit()
+        db.refresh(company)
+        
+        return {
+            "success": True,
+            "company_id": company_id,
+            "message": "Registration successful! Awaiting admin approval.",
+            "status": company.status
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Registration failed: {str(e)}")
+
 @app.post("/register/init", tags=["Registration"])
 def init_registration(db: Session = Depends(get_db)):
-    """Initialize a new registration session"""
+    """Initialize a new registration session (deprecated - use /register/quick)"""
     company_id = f"co_{uuid4().hex[:8]}"
 
-    company = CompanyDB(
-        id=company_id,
-        status=CompanyStatus.PENDING_REVIEW,
-        country="AE"
-    )
-    db.add(company)
+    try:
+        company = CompanyDB(
+            id=company_id,
+            status=CompanyStatus.PENDING_REVIEW,
+            country="AE"
+        )
+        db.add(company)
 
-    progress = RegistrationProgressDB(
-        id=f"prog_{uuid4().hex[:8]}",
-        company_id=company_id,
-        current_step=1
-    )
-    db.add(progress)
-    db.commit()
+        progress = RegistrationProgressDB(
+            id=f"prog_{uuid4().hex[:8]}",
+            company_id=company_id,
+            current_step=1
+        )
+        db.add(progress)
+        db.commit()
 
-    return {
-        "company_id": company_id,
-        "current_step": 1,
-        "message": "Registration session initialized"
-    }
+        return {
+            "company_id": company_id,
+            "current_step": 1,
+            "message": "Registration session initialized"
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Initialization failed: {str(e)}")
 
 @app.post("/register/{company_id}/step1", tags=["Registration"])
 def register_step1(
