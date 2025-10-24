@@ -405,6 +405,15 @@ class CreateEventIn(BaseModel):
     quantity: float = 1
     unit_price: float = 500.0
 
+class BillingEventOut(BaseModel):
+    id: str
+    company_id: str
+    customer_name: str
+    occurred_at: datetime
+    description: str
+    quantity: float
+    unit_price: float
+
 class UploadLogoOut(BaseModel):
     asset_id: str; logo_url: str
 
@@ -751,7 +760,7 @@ if SSL_AVAILABLE:
 
 # --------------------------- Events → Auto Invoice ---------------------------
 if SSL_AVAILABLE:
-    @app.post("/events", response_model=BillingEventDB, tags=["Invoicing"], summary="Ingest billable event; auto‑generate invoice")
+    @app.post("/events", response_model=BillingEventOut, tags=["Invoicing"], summary="Ingest billable event; auto‑generate invoice")
     def ingest_event(ev: CreateEventIn, BackgroundTasks=BackgroundTasks, db: Session = Depends(get_db)):
         be = BillingEventDB(id=f"e_{uuid4().hex[:8]}", **ev.dict())
         db.add(be); db.commit()
@@ -759,7 +768,9 @@ if SSL_AVAILABLE:
         def _bg(task_id: str):
             generate_invoice_from_event(task_id)
         _bg(be.id)
-        return be
+        return BillingEventOut(id=be.id, company_id=be.company_id, customer_name=be.customer_name, 
+                               occurred_at=be.occurred_at, description=be.description, 
+                               quantity=be.quantity, unit_price=be.unit_price)
 
 _counter = {}
 
@@ -859,4 +870,4 @@ if SSL_AVAILABLE:
 # --------------------------- Main (optional) ---------------------------
 if __name__ == "__main__" and SSL_AVAILABLE:
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=5000)
