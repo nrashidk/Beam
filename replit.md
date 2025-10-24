@@ -332,10 +332,10 @@ The following Genericode files are expected in `/mnt/data/`:
 **✅ 6 Feature Cards Grid**
 1. **Boost Digitalisation** - Fully paperless invoicing ecosystem
 2. **Operational Efficiency** - Streamlined workflows & automation
-3. **Reduce Paper Waste** - Sustainable digital-first approach
+3. **Eliminate Printed Invoices** - Sustainable digital-first approach
 4. **Tax and Audit Compliance** - Full regulatory compliance built-in
 5. **Enhanced Transparency** - Real-time visibility & traceability
-6. **Multi-Payment** - Accept all payment methods
+6. **Multi-Payment** - Integrate and accept all payment methods
 
 **✅ Visual Improvements**
 - Subtle gradient background for depth
