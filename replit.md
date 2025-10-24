@@ -324,20 +324,28 @@ The following Genericode files are expected in `/mnt/data/`:
 - Card-based feature highlights with hover effects
 - Concise layout focusing on key information
 
-**✅ New Design Components**
-- **Hero Section**: Bold headline "Simple, Compliant E-Invoicing for UAE"
-- **Feature Cards Grid**: 3 cards showcasing Automated, VAT Compliant, Multi-Payment
-- **Signup Card**: Centered white card with clean form design
-- **Login Link**: Added "Already have an account? Sign in" below form
-- **Button Update**: Changed to "Create Account →" for clarity
+**✅ Hero Section**
+- **Headline**: "Simple, Compliant Digital Invoicing for UAE"
+- **Subtitle**: "Automated invoicing in structured electronic formats."
+- Aligns with UAE Ministry of Finance's paperless economy initiative
+
+**✅ 6 Feature Cards Grid**
+1. **Boost Digitalisation** - Fully paperless invoicing ecosystem
+2. **Operational Efficiency** - Streamlined workflows & automation
+3. **Reduce Paper Waste** - Sustainable digital-first approach
+4. **Tax and Audit Compliance** - Full regulatory compliance built-in
+5. **Enhanced Transparency** - Real-time visibility & traceability
+6. **Multi-Payment** - Accept all payment methods
 
 **✅ Visual Improvements**
 - Subtle gradient background for depth
 - Glassmorphism navbar with blur effect
 - Rounded corners (16-20px) for modern look
 - Enhanced shadows and hover states
-- Mobile responsive with breakpoints
+- Mobile responsive (3 cols → 2 cols → 1 col)
 - Inter font family for professional typography
+- **Signup Card**: Centered white card with "Create Account →" button
+- **Login Link**: "Already have an account? Sign in"
 
 ### 2025-10-24: Email Verification & Simplified Registration
 
