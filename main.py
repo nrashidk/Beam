@@ -188,6 +188,20 @@ def seed_plans(db: Session):
 
     plans = [
         SubscriptionPlanDB(
+            id="plan_free",
+            name="Free",
+            description="Start free with essential features",
+            price_monthly=0.0,
+            price_yearly=0.0,
+            max_invoices_per_month=100,
+            max_users=1,
+            max_pos_devices=0,
+            allow_api_access=True,
+            allow_branding=False,
+            allow_multi_currency=False,
+            priority_support=False
+        ),
+        SubscriptionPlanDB(
             id="plan_starter",
             name="Starter",
             description="Perfect for small businesses",
@@ -305,7 +319,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", tags=["General"])
 def root():
-    """Redirect to registration form"""
+    """Serve registration form"""
     return FileResponse("static/index.html")
 
 @app.on_event("startup")
@@ -553,21 +567,14 @@ def register_step4(
 
 @app.post("/register/{company_id}/finalize", tags=["Registration"])
 def finalize_registration(company_id: str, db: Session = Depends(get_db)):
-    """Step 5: Finalize and submit registration"""
+    """Finalize and submit registration for approval"""
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
     progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
-    if not progress:
-        raise HTTPException(404, "Registration not found")
-
-    # Verify all steps completed
-    if not all([
-        progress.step_company_info,
-        progress.step_business_details,
-        progress.step_documents,
-        progress.step_plan_selection
-    ]):
-        raise HTTPException(400, "All previous steps must be completed")
-
-    progress.step_review = True
+    if progress:
+        progress.step_review = True
     progress.completed = True
     db.commit()
 
@@ -654,13 +661,31 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
 
     company.status = CompanyStatus.ACTIVE
 
-    # Activate subscription
+    # Check if subscription exists, if not create free tier
     sub = db.query(CompanySubscriptionDB).filter_by(company_id=company_id).first()
-    if sub:
+    if not sub:
+        # Auto-assign free tier
+        free_plan = db.query(SubscriptionPlanDB).filter_by(id="plan_free").first()
+        if free_plan:
+            sub = CompanySubscriptionDB(
+                id=f"sub_{uuid4().hex[:8]}",
+                company_id=company_id,
+                plan_id="plan_free",
+                status=SubscriptionStatus.ACTIVE,
+                billing_cycle="monthly",
+                current_period_start=datetime.utcnow(),
+                current_period_end=datetime.utcnow() + timedelta(days=365)
+            )
+            db.add(sub)
+    else:
         sub.status = SubscriptionStatus.ACTIVE
 
     db.commit()
-    return {"message": f"Company '{company.legal_name}' approved and activated"}
+    return {
+        "message": f"Company '{company.legal_name}' approved and activated",
+        "plan": "Free tier (100 invoices/month)",
+        "status": "active"
+    }
 
 @app.post("/admin/companies/{company_id}/reject", tags=["Admin"])
 def reject_company(company_id: str, reason: str = Form(...), db: Session = Depends(get_db)):

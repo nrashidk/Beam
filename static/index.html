@@ -21,14 +21,14 @@
         </nav>
 
         <main class="main-content">
-            <div id="email-verification-screen" class="screen active">
+            <div id="signup-screen" class="screen active">
                 <div class="content-card">
                     <div class="card-header">
-                        <h1>Get Started with Beam</h1>
-                        <p class="subtitle">Join UAE's leading e-invoicing platform</p>
+                        <h1>Start Free Today</h1>
+                        <p class="subtitle">No credit card required • 100 free invoices/month</p>
                     </div>
 
-                    <form id="email-form" class="form">
+                    <form id="signup-form" class="form">
                         <div class="form-field">
                             <label for="email">Work Email</label>
                             <input 
@@ -50,112 +50,45 @@
                             >
                         </div>
 
+                        <div class="form-field">
+                            <label for="business_type">Business Type</label>
+                            <select id="business_type" required>
+                                <option value="">Select type</option>
+                                <option value="LLC">LLC</option>
+                                <option value="FZE">FZE</option>
+                                <option value="FZCO">FZCO</option>
+                                <option value="Branch">Branch</option>
+                                <option value="Sole">Sole Proprietorship</option>
+                                <option value="Partnership">Partnership</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="phone">Phone Number</label>
+                            <input type="tel" id="phone" placeholder="+971 XX XXX XXXX" required>
+                        </div>
+
                         <button type="submit" class="btn btn-primary btn-large">
-                            Continue →
+                            Create Free Account →
                         </button>
+
+                        <p class="terms-text">
+                            By continuing, you agree to our Terms of Service and Privacy Policy
+                        </p>
                     </form>
 
                     <div class="trust-badges">
                         <div class="badge">
-                            <span class="badge-icon">🔒</span>
-                            <span class="badge-text">Secure & Compliant</span>
+                            <span class="badge-icon">✓</span>
+                            <span class="badge-text">100 Free Invoices</span>
                         </div>
                         <div class="badge">
                             <span class="badge-icon">⚡</span>
-                            <span class="badge-text">Quick Setup</span>
+                            <span class="badge-text">Instant Setup</span>
                         </div>
                         <div class="badge">
-                            <span class="badge-icon">✓</span>
-                            <span class="badge-text">UAE VAT Ready</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="onboarding-screen" class="screen">
-                <div class="content-card large">
-                    <div class="progress-header">
-                        <div class="progress-info">
-                            <h2>Complete Your Profile</h2>
-                            <p class="progress-subtitle">Step <span id="current-step">1</span> of 2</p>
-                        </div>
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="progress-bar"></div>
-                        </div>
-                    </div>
-
-                    <div id="step-1" class="step active">
-                        <h3 class="step-title">Business Information</h3>
-                        
-                        <div class="form-grid">
-                            <div class="form-field">
-                                <label for="business_type">Business Type</label>
-                                <select id="business_type" required>
-                                    <option value="">Select type</option>
-                                    <option value="LLC">LLC</option>
-                                    <option value="FZE">FZE</option>
-                                    <option value="FZCO">FZCO</option>
-                                    <option value="Branch">Branch</option>
-                                    <option value="Sole">Sole Proprietorship</option>
-                                </select>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="registration_number">Registration Number</label>
-                                <input type="text" id="registration_number" placeholder="123456" required>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="phone">Phone Number</label>
-                                <input type="tel" id="phone" placeholder="+971 XX XXX XXXX" required>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="trn">TRN (Optional)</label>
-                                <input type="text" id="trn" placeholder="15-digit TRN" maxlength="15">
-                            </div>
-
-                            <div class="form-field full-width">
-                                <label for="address">Business Address</label>
-                                <input type="text" id="address" placeholder="Street, Building, City" required>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="emirate">Emirate</label>
-                                <select id="emirate" required>
-                                    <option value="">Select emirate</option>
-                                    <option value="Abu Dhabi">Abu Dhabi</option>
-                                    <option value="Dubai">Dubai</option>
-                                    <option value="Sharjah">Sharjah</option>
-                                    <option value="Ajman">Ajman</option>
-                                    <option value="RAK">Ras Al Khaimah</option>
-                                    <option value="UAQ">Umm Al Quwain</option>
-                                    <option value="Fujairah">Fujairah</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="step-actions">
-                            <button type="button" class="btn btn-primary" onclick="goToStep(2)">
-                                Continue →
-                            </button>
-                        </div>
-                    </div>
-
-                    <div id="step-2" class="step">
-                        <h3 class="step-title">Choose Your Plan</h3>
-                        
-                        <div class="plans-container" id="plans-container">
-                            <div class="loading-spinner">Loading plans...</div>
-                        </div>
-
-                        <div class="step-actions">
-                            <button type="button" class="btn btn-secondary" onclick="goToStep(1)">
-                                ← Back
-                            </button>
-                            <button type="button" class="btn btn-primary" onclick="submitOnboarding()">
-                                Complete Setup
-                            </button>
+                            <span class="badge-icon">🔒</span>
+                            <span class="badge-text">UAE Compliant</span>
                         </div>
                     </div>
                 </div>
@@ -164,15 +97,30 @@
             <div id="success-screen" class="screen">
                 <div class="content-card center">
                     <div class="success-icon">✓</div>
-                    <h1>Welcome to Beam!</h1>
-                    <p class="subtitle">Your account is under review</p>
+                    <h1>Account Created!</h1>
+                    <p class="subtitle">Your free account is ready</p>
                     <p class="success-message">
-                        Our team will verify your information and activate your account within 24 hours.
-                        We'll send you an email at <strong id="confirmed-email"></strong> once approved.
+                        We're reviewing your application and will activate your account within 24 hours.
+                        You'll receive an email at <strong id="confirmed-email"></strong> once approved.
                     </p>
-                    <button class="btn btn-secondary" onclick="window.location.href='/docs'">
-                        View API Documentation
-                    </button>
+                    
+                    <div class="info-box">
+                        <h3>What's Next?</h3>
+                        <ul class="next-steps">
+                            <li>✓ <strong>Free Tier Included</strong> - 100 invoices/month at no cost</li>
+                            <li>✓ <strong>Full Features</strong> - Access all invoicing features</li>
+                            <li>✓ <strong>Upgrade Anytime</strong> - Scale when your business grows</li>
+                        </ul>
+                    </div>
+
+                    <div class="action-group">
+                        <button class="btn btn-primary" onclick="window.location.href='/docs'">
+                            Explore API Documentation
+                        </button>
+                        <button class="btn btn-secondary" onclick="window.location.reload()">
+                            Register Another Company
+                        </button>
+                    </div>
                 </div>
             </div>
         </main>
