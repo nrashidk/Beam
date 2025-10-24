@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "glibcLocales", "libxcrypt", "xcodebuild", "zlib"]
+packages = ["cargo", "freetype", "glibcLocales", "libiconv", "libxcrypt", "rustc", "xcodebuild", "zlib"]
 
 [workflows]
 runButton = "Project"
