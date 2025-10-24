@@ -254,25 +254,27 @@ def seed_plans(db: Session):
 # ==================== PYDANTIC SCHEMAS ====================
 class CompanyInfoCreate(BaseModel):
     legal_name: str = Field(..., min_length=2, max_length=255)
-    business_type: str = Field(..., example="LLC")
-    registration_number: str
-    registration_date: date
+    business_type: Optional[str] = Field(default="LLC", example="LLC")
+    registration_number: Optional[str] = None
+    registration_date: Optional[date] = None
     email: str
-    phone: str
+    phone: Optional[str] = None
     website: Optional[str] = None
 
 class BusinessDetailsCreate(BaseModel):
-    business_activity: str
-    address_line1: str
+    business_activity: Optional[str] = None
+    address_line1: Optional[str] = None
     address_line2: Optional[str] = None
-    city: str
-    emirate: str = Field(..., example="Dubai")
+    city: Optional[str] = None
+    emirate: Optional[str] = Field(default="Dubai", example="Dubai")
     po_box: Optional[str] = None
     trn: Optional[str] = None
-    authorized_person_name: str
-    authorized_person_title: str
-    authorized_person_email: str
-    authorized_person_phone: str
+    authorized_person_name: Optional[str] = None
+    authorized_person_title: Optional[str] = None
+    authorized_person_email: Optional[str] = None
+    authorized_person_phone: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
 
 class DocumentUploadResponse(BaseModel):
     id: str
@@ -400,12 +402,22 @@ def register_step2(
     if not company:
         raise HTTPException(404, "Registration session not found")
 
-    company.business_activity = payload.business_activity
-    company.address_line1 = payload.address_line1
-    company.address_line2 = payload.address_line2
-    company.city = payload.city
-    company.emirate = payload.emirate
-    company.po_box = payload.po_box
+    if payload.business_activity:
+        company.business_activity = payload.business_activity
+    if payload.address_line1:
+        company.address_line1 = payload.address_line1
+    if payload.address_line2:
+        company.address_line2 = payload.address_line2
+    if payload.city:
+        company.city = payload.city
+    if payload.emirate:
+        company.emirate = payload.emirate
+    if payload.po_box:
+        company.po_box = payload.po_box
+    if payload.email:
+        company.email = payload.email
+    if payload.phone:
+        company.phone = payload.phone
 
     if payload.trn:
         if not is_valid_trn(payload.trn):
