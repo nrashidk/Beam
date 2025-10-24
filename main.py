@@ -103,6 +103,11 @@ class CompanyDB(Base):
     verification_token = Column(String, nullable=True)
     verification_sent_at = Column(DateTime, nullable=True)
 
+    # Password & authentication
+    password_hash = Column(String, nullable=True)
+    password_reset_token = Column(String, nullable=True)
+    password_reset_expires = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class SubscriptionPlanDB(Base):
