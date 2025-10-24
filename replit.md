@@ -1,110 +1,196 @@
-# UAE e-Invoicing Platform
+# Beam E-Invoicing API
 
-A comprehensive FastAPI-based multi-tenant e-invoicing system for UAE compliance with VAT regulations, XML/PDF invoice generation, payment processing, and AS4 integration stub.
+A comprehensive FastAPI-based multi-tenant e-invoicing system for UAE businesses with integrated registration wizard, VAT compliance, invoice generation, and payment processing.
 
 ## Overview
 
-This application provides a complete e-invoicing solution designed for UAE businesses, featuring:
+This platform provides an end-to-end business solution combining:
 
-- **Multi-tenant company management** with VAT state machine
-- **Automated invoice generation** in UBL/PINT-AE format (XML + PDF)
-- **VAT compliance** with automatic threshold detection
-- **Payment processing** with multiple payment methods (Cash, Card, POS, Bank Transfer, Wallet)
-- **Company branding** with custom logos and styling
-- **Schematron validation** for invoice compliance
-- **AS4 messaging stub** for Peppol network integration
+- **🚀 Registration Wizard** - Multi-step company onboarding with document management
+- **📊 Subscription Management** - Tiered pricing plans (Starter, Professional, Enterprise)
+- **🧾 UAE e-Invoicing** - Automated invoice generation with VAT compliance
+- **💳 Payment Processing** - Multiple payment methods and POS integration
+- **👔 Company Branding** - Custom logos and styling for invoices
+- **⚖️ Compliance** - UBL/PINT-AE format, Schematron validation, AS4 integration stub
+
+## Complete Business Flow
+
+```
+1. Registration → 2. Admin Approval → 3. Subscription → 4. Invoice Generation → 5. Payment Collection
+```
 
 ## Project Architecture
 
 ### Technology Stack
 
-- **Backend**: FastAPI 0.115.0
-- **Database**: PostgreSQL (via DATABASE_URL environment variable)
+- **Backend**: FastAPI 2.0
+- **Database**: PostgreSQL (Neon-backed via DATABASE_URL)
 - **ORM**: SQLAlchemy 2.0.36
 - **PDF Generation**: ReportLab 4.2.5
 - **XML Processing**: lxml 5.3.0
-- **Server**: Uvicorn with async support
+- **Server**: Uvicorn (async)
 
 ### Directory Structure
 
 ```
 .
-├── main.py              # Main application file (all-in-one)
+├── main.py              # Complete application (all-in-one architecture)
 ├── requirements.txt     # Python dependencies
-├── artifacts/          # Generated invoices (XML/PDF) and reports
+├── artifacts/          # Generated invoices, documents (XML/PDF)
 ├── .replit             # Replit configuration
 ├── .gitignore          # Git ignore rules
 └── replit.md           # This documentation
 ```
 
-## Features
+## Core Features
 
-### 1. Company Management
+### 1. Registration Wizard (NEW)
 
-- Create companies with TRN (Tax Registration Number) validation
+**Multi-step company onboarding process:**
+
+- **Step 1**: Company Information (legal name, business type, registration number)
+- **Step 2**: Business Details (address, TRN, authorized person)
+- **Step 3**: Document Upload (Business License, TRN Certificate)
+- **Step 4**: Plan Selection (subscription tier choice)
+- **Step 5**: Review & Submit for admin approval
+
+**Endpoints:**
+- `POST /register/init` - Initialize registration session
+- `POST /register/{company_id}/step1` - Submit company info
+- `POST /register/{company_id}/step2` - Submit business details
+- `POST /register/{company_id}/documents` - Upload documents
+- `GET /register/{company_id}/documents` - List uploaded documents
+- `POST /register/{company_id}/step3` - Verify documents
+- `POST /register/{company_id}/step4` - Select subscription plan
+- `POST /register/{company_id}/finalize` - Submit for approval
+- `GET /register/{company_id}/progress` - Check registration progress
+
+### 2. Subscription Plans
+
+**Three tiers available:**
+
+**Starter** ($99/month, $990/year)
+- 100 invoices/month
+- 2 users
+- API access
+- Basic features
+
+**Professional** ($299/month, $2990/year)
+- 500 invoices/month
+- 5 users
+- API access
+- Custom branding
+- Multi-currency
+
+**Enterprise** ($999/month, $9990/year)
+- Unlimited invoices
+- 50 users
+- API access
+- Custom branding
+- Multi-currency
+- Priority support
+
+**Endpoints:**
+- `GET /plans` - List all subscription plans
+- `GET /plans/{plan_id}` - Get plan details
+
+### 3. Admin Approval Workflow
+
+Admins review and approve/reject company registrations:
+
+- `GET /admin/companies/pending` - List companies awaiting approval
+- `POST /admin/companies/{company_id}/approve` - Approve registration
+- `POST /admin/companies/{company_id}/reject` - Reject registration
+
+### 4. Company Management
+
+After approval, companies can access full platform features:
+
+- TRN (Tax Registration Number) validation (15 digits)
 - Automatic VAT state transitions based on turnover thresholds (AED 375,000)
-- Support for Peppol endpoint IDs
-- Admin approval workflow
+- Peppol endpoint ID support
+- Custom branding profiles
 
-### 2. VAT State Machine
-
-Three states tracked automatically:
+**VAT State Machine:**
 - `NON_VAT`: Company below VAT threshold
 - `VAT_PENDING`: Above threshold, awaiting registration
 - `VAT_ACTIVE`: Registered and issuing VAT invoices
 
-### 3. Invoice Generation
+**Endpoints:**
+- `GET /companies/{company_id}` - Get company details
+- `GET /companies/{company_id}/subscription` - View subscription
 
-- Automatic invoice creation from billing events
+### 5. Invoice Generation
+
+**Automated invoice creation:**
 - Two invoice types: Commercial and VAT Tax Invoice
 - UBL/PINT-AE compliant XML generation
 - PDF invoices with embedded XML hash
-- Schematron validation (UAE + global rules)
+- Schematron validation (global + UAE rules)
+- Auto-generation from billing events
 
-### 4. Payment Integration
+**Endpoints:**
+- `POST /events` - Ingest billing event (auto-generates invoice)
+- `GET /companies/{company_id}/invoices` - List company invoices
+- `GET /invoices/{invoice_id}/pdf` - Download PDF
+- `GET /invoices/{invoice_id}/xml` - Download XML
 
-- Multiple payment methods supported
-- Payment intents pattern for secure transactions
-- POS device registration
+### 6. Payment Processing
+
+**Multiple payment methods:**
+- Cash
+- Card (credit/debit)
+- POS terminals
+- Bank transfer
+- Digital wallets
+
+**Features:**
+- Payment intents pattern
 - Card surcharge configuration
 - Metadata tracking for reconciliation
+- POS device registration
 
-### 5. Branding
+**Endpoints:**
+- `PUT /companies/{company_id}/payment-policy` - Configure payment methods
+- `POST /companies/{company_id}/pos-devices` - Register POS device
+- `POST /invoices/{invoice_id}/payment-intents` - Create payment intent
+- `POST /payment-intents/{intent_id}/capture` - Capture payment
 
-- Custom company logos (PNG/SVG)
+### 7. Branding
+
+**Company customization:**
+- Custom logos (PNG/SVG)
 - Configurable colors and fonts
 - Custom header/footer text
 - Asset management with SHA-256 checksums
 
-## API Endpoints
-
-The API documentation is available at `/docs` when the server is running.
-
-### Key Endpoints
-
-- `POST /companies` - Create a new company
-- `POST /admin/companies/approve/{company_id}` - Approve company
+**Endpoints:**
 - `POST /companies/{company_id}/branding/logo` - Upload company logo
-- `PUT /companies/{company_id}/payment-policy` - Set payment policy
-- `POST /companies/{company_id}/pos-devices` - Register POS device
-- `POST /events` - Ingest billing event (auto-generates invoice)
-- `GET /companies/{company_id}/invoices` - List company invoices
-- `GET /invoices/{invoice_id}/pdf` - Download invoice PDF
-- `GET /invoices/{invoice_id}/xml` - Download invoice XML
-- `POST /invoices/{invoice_id}/payment-intents` - Create payment intent
-- `POST /payment-intents/{intent_id}/capture` - Capture payment
+
+## API Documentation
+
+The complete interactive API documentation is available at:
+
+**Swagger UI**: `https://your-repl-url.replit.dev/docs`
 
 ## Database Schema
 
 ### Core Tables
 
-- `companies` - Company profiles with VAT state
+**Registration & Onboarding:**
+- `companies` - Company profiles with extended registration data
+- `subscription_plans` - Available subscription tiers
+- `company_subscriptions` - Active subscriptions
+- `company_documents` - Uploaded business licenses and TRN certificates
+- `registration_progress` - Track multi-step registration status
+
+**Invoicing & Payments:**
 - `users` - User accounts with role-based access
 - `branding_profiles` - Company branding configuration
-- `assets` - Uploaded files (logos, etc.)
+- `assets` - Uploaded files (logos, documents)
 - `billing_events` - Billable events that trigger invoices
 - `invoices` - Generated invoices with XML/PDF paths
-- `turnover_buckets` - Monthly turnover aggregates for VAT calculation
+- `turnover_buckets` - Monthly turnover aggregates for VAT
 - `payment_policies` - Company payment preferences
 - `pos_devices` - Registered POS terminals
 - `payment_intents` - Payment initiation records
@@ -114,16 +200,14 @@ The API documentation is available at `/docs` when the server is running.
 
 ### Environment Variables
 
-The application uses the following environment variables:
-
-- `DATABASE_URL` - PostgreSQL connection string (automatically configured)
+- `DATABASE_URL` - PostgreSQL connection (auto-configured by Replit)
 - `ARTIFACT_ROOT` - Directory for generated files (default: `./artifacts`)
 - `PEPPOL_ENDPOINT_SCHEME` - Default Peppol scheme (default: `0088`)
 - `RETENTION_YEARS` - Document retention period (default: `7`)
 
 ### VAT Settings
 
-- Standard VAT rate: 5% (AED_VAT_STANDARD)
+- Standard VAT rate: 5%
 - Mandatory registration threshold: AED 375,000
 
 ## Running the Application
@@ -136,51 +220,53 @@ The application runs automatically via the configured workflow:
 python main.py
 ```
 
-The server starts on `http://0.0.0.0:5000` and is accessible via the Replit webview.
+Server starts on `http://0.0.0.0:5000` and is accessible via Replit webview.
+
+### Testing the Complete Flow
+
+1. **Access API Docs**: Go to `/docs` in your browser
+2. **View Plans**: `GET /plans` to see subscription options
+3. **Start Registration**: `POST /register/init`
+4. **Submit Company Info**: `POST /register/{company_id}/step1`
+5. **Submit Business Details**: `POST /register/{company_id}/step2`
+6. **Upload Documents**: `POST /register/{company_id}/documents`
+7. **Select Plan**: `POST /register/{company_id}/step4`
+8. **Finalize**: `POST /register/{company_id}/finalize`
+9. **Admin Approval**: `POST /admin/companies/{company_id}/approve`
+10. **Create Invoice**: `POST /events` (after approval)
 
 ### Production Deployment
 
-The deployment is configured as a VM (always-on) deployment suitable for stateful applications. The server maintains:
-- Database connections
-- In-memory invoice counters
-- Payment state
+**Deployment Type**: Reserved VM (Always-On)
 
-## Code Structure
+This stateful application is configured for Reserved VM deployment because it:
+- Maintains persistent database connections
+- Uses in-memory invoice counters
+- Handles payment state
+- Stores artifacts locally
+- Requires 24/7 availability
 
-The `main.py` file is organized into sections:
-
-1. **SSL Availability Probe** - Handles environments without OpenSSL
-2. **Database Setup** - SQLAlchemy models and engine configuration
-3. **Enums** - Role, VATState, CompanyStatus, PaymentStatus, etc.
-4. **SQLAlchemy Models** - Database schema definitions
-5. **Security** - User authentication stub
-6. **Helpers & Services** - Turnover tracking, VAT state evaluation
-7. **Genericode Loader** - Code list validation (ISO currencies, UNCL codes, etc.)
-8. **Schematron Validation** - UAE compliance checking
-9. **Pydantic Schemas** - API request/response models
-10. **Invoice Builders** - XML/PDF generation
-11. **AS4 Client Stub** - Peppol integration placeholder
-12. **FastAPI Routes** - API endpoint definitions
+**To Deploy**: Click the "Deploy" button in Replit interface.
 
 ## Compliance Notes
 
 ### UAE E-Invoicing Requirements
 
-The system implements:
+**Implemented standards:**
 - PINT/PINT-AE specification compliance
 - Schematron validation (global + UAE jurisdiction rules)
 - Required code lists: ISO4217, ISO3166, UNCL, EAS, ICD
 - TRN validation (15-digit format)
 - Proper tax categorization and exemption codes
 
-### Data Files Required
+### Required Data Files
 
 The following Genericode files are expected in `/mnt/data/`:
-- eas.gc, ISO4217.gc, ISO3166.gc
-- UNCL*.gc (1001, 2005, 4461, 5189, 7161, 7143)
-- UNECERec20.gc, MimeCode.gc
-- Aligned-TaxCategoryCodes.gc, Aligned-TaxExemptionCodes.gc
-- transactiontype.gc, FreqBilling.gc, ICD.gc
+- `eas.gc`, `ISO4217.gc`, `ISO3166.gc`
+- `UNCL*.gc` (1001, 2005, 4461, 5189, 7161, 7143)
+- `UNECERec20.gc`, `MimeCode.gc`
+- `Aligned-TaxCategoryCodes.gc`, `Aligned-TaxExemptionCodes.gc`
+- `transactiontype.gc`, `FreqBilling.gc`, `ICD.gc`
 
 ### Schematron XSLT Files
 
@@ -189,30 +275,56 @@ The following Genericode files are expected in `/mnt/data/`:
 
 ## Security Considerations
 
-- Current implementation uses a stub authentication system
-- Production deployment requires proper JWT/OAuth integration
-- Database credentials are managed via environment variables
-- File uploads are validated for type and size
+- Authentication uses stub system (implement JWT/OAuth for production)
+- Database credentials managed via environment variables
+- File uploads validated for type and size (max 5MB)
 - SQL injection protection via SQLAlchemy ORM
-- CORS enabled for development (configure for production)
+- CORS enabled for development
+- Document storage with checksums (SHA-256)
 
 ## Known Limitations
 
-1. Authentication is stubbed - implement proper auth before production
-2. AS4 client is a mock - integrate with real Peppol access point
-3. Invoice counters are in-memory - use database for distributed systems
-4. No rate limiting implemented
-5. File storage is local - consider S3/object storage for scale
+1. **Authentication**: Currently stubbed - implement proper auth before production
+2. **AS4 Client**: Mock implementation - integrate with real Peppol access point
+3. **Invoice Counters**: In-memory - use database for distributed systems
+4. **Rate Limiting**: Not implemented
+5. **File Storage**: Local filesystem - consider S3/object storage for scale
+6. **Document Verification**: Manual admin review - could automate with OCR/AI
 
 ## Recent Changes
 
-- **2025-10-24**: Initial Replit setup
-  - Configured PostgreSQL database
-  - Set up Python 3.11 environment
-  - Fixed FastAPI response model issues (BillingEventOut)
-  - Configured workflow to run on port 5000
-  - Set up deployment configuration (VM mode)
+### 2025-10-24: Major Integration Update
+
+**✅ Registration Wizard Integration**
+- Added multi-step company onboarding flow
+- Integrated subscription plan management
+- Added document upload functionality (Business License, TRN Certificate)
+- Created admin approval workflow
+- Enhanced company model with registration fields
+
+**✅ Database Schema Updates**
+- Recreated database with new registration tables
+- Added subscription_plans, company_documents, registration_progress
+- Enhanced companies table with business registration data
+- Seeded subscription plans (Starter, Professional, Enterprise)
+
+**✅ API Enhancements**
+- Added 15+ new registration endpoints
+- Integrated approval workflow
+- Added plan selection functionality
+- Created progress tracking system
+
+**Initial Setup**
+- Configured PostgreSQL database
+- Set up Python 3.11 environment
+- Fixed FastAPI response model issues (BillingEventOut)
+- Configured workflow to run on port 5000
+- Set up deployment configuration (VM mode)
 
 ## Support
 
-For questions or issues, contact the development team at support@example.tld.
+For questions or issues, contact the development team at support@example.tld
+
+## License
+
+Proprietary - All rights reserved
