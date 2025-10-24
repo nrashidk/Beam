@@ -222,6 +222,17 @@ def get_password_hash(password: str) -> str:
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode('utf-8')
 
+def authenticate_user(email: str, password: str, db: Session):
+    """Authenticate user (super admin, company admin, etc) by email and password"""
+    user = db.query(UserDB).filter(UserDB.email == email).first()
+    if not user:
+        return None
+    if not user.password_hash:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    return user
+
 def authenticate_company(email: str, password: str, db: Session):
     """Authenticate company by email and password"""
     company = db.query(CompanyDB).filter(CompanyDB.email == email).first()
