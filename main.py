@@ -841,8 +841,10 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str
-    company_id: str
-    company_name: str
+    user_id: Optional[str] = None
+    company_id: Optional[str] = None
+    company_name: Optional[str] = None
+    role: Optional[str] = None
 
 class PasswordResetRequest(BaseModel):
     email: str
@@ -853,24 +855,42 @@ class PasswordResetConfirm(BaseModel):
 
 @app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    """Login endpoint - returns JWT token"""
+    """Login endpoint - returns JWT token for both users and companies"""
+    
+    # Try user authentication first (for super admins, company admins, etc)
+    user = authenticate_user(payload.email, payload.password, db)
+    if user:
+        # Create access token with user ID
+        access_token = create_access_token(data={"sub": user.id, "type": "user"})
+        
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            user_id=user.id,
+            company_id=user.company_id,
+            company_name=None,
+            role=user.role.value
+        )
+    
+    # Try company authentication
     company = authenticate_company(payload.email, payload.password, db)
+    if company:
+        if company.status != CompanyStatus.ACTIVE:
+            raise HTTPException(403, f"Account not active. Status: {company.status.value}")
+        
+        # Create access token with company ID
+        access_token = create_access_token(data={"sub": company.id, "type": "company"})
+        
+        return LoginResponse(
+            access_token=access_token,
+            token_type="bearer",
+            company_id=company.id,
+            company_name=company.legal_name or "Company",
+            role="COMPANY"
+        )
     
-    if not company:
-        raise HTTPException(401, "Invalid email or password")
-    
-    if company.status != CompanyStatus.ACTIVE:
-        raise HTTPException(403, f"Account not active. Status: {company.status.value}")
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": company.id})
-    
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        company_id=company.id,
-        company_name=company.legal_name or "Company"
-    )
+    # Neither user nor company authenticated
+    raise HTTPException(401, "Invalid email or password")
 
 @app.post("/auth/logout", tags=["Auth"])
 def logout():
