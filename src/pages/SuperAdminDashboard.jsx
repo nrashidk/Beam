@@ -44,22 +44,29 @@ export default function SuperAdminDashboard() {
     search: '' 
   });
   const [companies, setCompanies] = useState([]);
+  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, active: 0, rejected: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchCompanies();
+    fetchData();
   }, [filters]);
 
-  const fetchCompanies = async () => {
+  const fetchData = async () => {
     try {
-      const response = await adminAPI.getPendingCompanies();
-      setCompanies(response.data);
+      const [companiesResponse, statsResponse] = await Promise.all([
+        adminAPI.getPendingCompanies(),
+        adminAPI.getStats()
+      ]);
+      setCompanies(companiesResponse.data);
+      setStats(statsResponse.data);
     } catch (error) {
-      console.error('Failed to fetch companies', error);
+      console.error('Failed to fetch data', error);
     } finally {
       setLoading(false);
     }
   };
+
+  const fetchCompanies = fetchData;
 
   const handleApprove = async (companyId) => {
     try {
@@ -117,7 +124,7 @@ export default function SuperAdminDashboard() {
               <CardTitle className="text-sm text-gray-600">Total Companies</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{companies.length}</div>
+              <div className="text-3xl font-bold">{stats.total_companies}</div>
             </CardContent>
           </Card>
           <Card>
@@ -125,7 +132,7 @@ export default function SuperAdminDashboard() {
               <CardTitle className="text-sm text-gray-600">Pending Approval</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">{companies.length}</div>
+              <div className="text-3xl font-bold text-yellow-600">{stats.pending_approval}</div>
             </CardContent>
           </Card>
           <Card>
@@ -133,7 +140,7 @@ export default function SuperAdminDashboard() {
               <CardTitle className="text-sm text-gray-600">Active</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">0</div>
+              <div className="text-3xl font-bold text-green-600">{stats.active}</div>
             </CardContent>
           </Card>
           <Card>
@@ -141,7 +148,7 @@ export default function SuperAdminDashboard() {
               <CardTitle className="text-sm text-gray-600">Rejected</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-red-600">0</div>
+              <div className="text-3xl font-bold text-red-600">{stats.rejected}</div>
             </CardContent>
           </Card>
         </div>
