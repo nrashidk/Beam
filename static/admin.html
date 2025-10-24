@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Beam E-Invoicing</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .admin-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .admin-header {
+            margin-bottom: 2rem;
+        }
+
+        .admin-header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-light);
+            font-size: 0.875rem;
+        }
+
+        table {
+            width: 100%;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            border-collapse: collapse;
+            overflow: hidden;
+        }
+
+        thead {
+            background: var(--background);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text);
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:hover {
+            background: var(--background);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-verified {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        .btn-approve {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-approve:hover {
+            background: #059669;
+        }
+
+        .btn-reject {
+            background: var(--error);
+            color: white;
+        }
+
+        .btn-reject:hover {
+            background: #dc2626;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-light);
+        }
+
+        .company-details {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        .refresh-btn {
+            margin-left: auto;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <nav class="navbar">
+            <div class="nav-content">
+                <div class="logo">
+                    <span class="logo-icon">⚡</span>
+                    <span class="logo-text">Beam Admin</span>
+                </div>
+                <div class="nav-links">
+                    <a href="/" class="nav-link">Public Site</a>
+                    <a href="/docs" class="nav-link">API Docs</a>
+                </div>
+            </div>
+        </nav>
+
+        <main class="admin-container">
+            <div class="admin-header">
+                <h1>Admin Dashboard</h1>
+                <p class="subtitle">Review and approve company registrations</p>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-pending">-</div>
+                    <div class="stat-label">Pending Review</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-verified">-</div>
+                    <div class="stat-label">Email Verified</div>
+                </div>
+            </div>
+
+            <div class="section-header">
+                <h2>Pending Registrations</h2>
+                <button class="btn btn-secondary btn-small refresh-btn" onclick="loadPendingCompanies()">
+                    🔄 Refresh
+                </button>
+            </div>
+
+            <table id="companies-table">
+                <thead>
+                    <tr>
+                        <th>Company Name</th>
+                        <th>Email</th>
+                        <th>Email Status</th>
+                        <th>Registration Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="companies-tbody">
+                    <tr>
+                        <td colspan="5" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </main>
+
+        <div id="toast" class="toast"></div>
+    </div>
+
+    <script>
+        async function loadPendingCompanies() {
+            try {
+                const response = await fetch('/admin/companies/pending');
+                const companies = await response.json();
+                
+                const tbody = document.getElementById('companies-tbody');
+                
+                if (companies.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No pending registrations</td></tr>';
+                    document.getElementById('stat-pending').textContent = '0';
+                    document.getElementById('stat-verified').textContent = '0';
+                    return;
+                }
+
+                // Update stats
+                document.getElementById('stat-pending').textContent = companies.length;
+                
+                // Get detailed info for each company
+                const companiesWithDetails = await Promise.all(
+                    companies.map(async (company) => {
+                        try {
+                            const detailResponse = await fetch(`/companies/${company.id}`);
+                            const details = await detailResponse.json();
+                            return { ...company, ...details };
+                        } catch (e) {
+                            return company;
+                        }
+                    })
+                );
+
+                const verifiedCount = companiesWithDetails.filter(c => c.email_verified).length;
+                document.getElementById('stat-verified').textContent = verifiedCount;
+                
+                tbody.innerHTML = companiesWithDetails.map(company => {
+                    const name = company.legal_name || 'Not provided';
+                    const safeEmail = (company.email || 'Not provided').replace(/'/g, "\\'");
+                    const safeName = name.replace(/'/g, "\\'");
+                    
+                    return `
+                    <tr id="row-${company.id}">
+                        <td>
+                            <strong>${name}</strong>
+                            ${company.business_type ? `<div class="company-details">${company.business_type}</div>` : ''}
+                        </td>
+                        <td>
+                            ${company.email || 'Not provided'}
+                            ${company.phone && company.phone !== 'TBD' ? `<div class="company-details">${company.phone}</div>` : ''}
+                        </td>
+                        <td>
+                            ${company.email_verified === true
+                                ? '<span class="status-badge status-verified">✓ Verified</span>' 
+                                : '<span class="status-badge status-pending">⏳ Pending</span>'}
+                        </td>
+                        <td>
+                            ${company.created_at ? new Date(company.created_at).toLocaleDateString() : 'Unknown'}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                <button 
+                                    class="btn btn-approve btn-small" 
+                                    onclick="approveCompany('${company.id}', '${safeName}')"
+                                    ${company.email_verified !== true ? 'disabled title="Email must be verified first"' : ''}
+                                >
+                                    ✓ Approve
+                                </button>
+                                <button 
+                                    class="btn btn-reject btn-small" 
+                                    onclick="rejectCompany('${company.id}', '${safeName}')"
+                                >
+                                    ✗ Reject
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `}).join('');
+                
+            } catch (error) {
+                showToast('Failed to load companies', 'error');
+                console.error(error);
+            }
+        }
+
+        async function approveCompany(companyId, companyName) {
+            if (!confirm(`Approve ${companyName}?\n\nThis will activate their account with free tier access.`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/companies/${companyId}/approve`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    showToast(`${companyName} approved successfully!`, 'success');
+                    document.getElementById(`row-${companyId}`).remove();
+                    
+                    // Update stats
+                    const currentPending = parseInt(document.getElementById('stat-pending').textContent);
+                    document.getElementById('stat-pending').textContent = Math.max(0, currentPending - 1);
+                    
+                    // Reload if table is empty
+                    setTimeout(() => {
+                        const tbody = document.getElementById('companies-tbody');
+                        if (tbody.children.length === 0) {
+                            loadPendingCompanies();
+                        }
+                    }, 1000);
+                } else {
+                    const error = await response.json();
+                    showToast(error.detail || 'Failed to approve company', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to approve company', 'error');
+                console.error(error);
+            }
+        }
+
+        async function rejectCompany(companyId, companyName) {
+            const reason = prompt(`Reject ${companyName}?\n\nPlease provide a reason:`);
+            if (!reason) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('reason', reason);
+
+                const response = await fetch(`/admin/companies/${companyId}/reject`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showToast(`${companyName} rejected`, 'success');
+                    document.getElementById(`row-${companyId}`).remove();
+                    
+                    // Update stats
+                    const currentPending = parseInt(document.getElementById('stat-pending').textContent);
+                    document.getElementById('stat-pending').textContent = Math.max(0, currentPending - 1);
+                    
+                    // Reload if table is empty
+                    setTimeout(() => {
+                        const tbody = document.getElementById('companies-tbody');
+                        if (tbody.children.length === 0) {
+                            loadPendingCompanies();
+                        }
+                    }, 1000);
+                } else {
+                    showToast('Failed to reject company', 'error');
+                }
+            } catch (error) {
+                showToast('Failed to reject company', 'error');
+                console.error(error);
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+
+        // Load companies on page load
+        loadPendingCompanies();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadPendingCompanies, 30000);
+    </script>
+</body>
+</html>
