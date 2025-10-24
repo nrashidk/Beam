@@ -406,6 +406,7 @@ class CreateEventIn(BaseModel):
     unit_price: float = 500.0
 
 class BillingEventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     company_id: str
     customer_name: str
