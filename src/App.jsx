@@ -8,6 +8,7 @@ import BusinessDashboard from './pages/BusinessDashboard';
 import InvoiceDashboard from './pages/InvoiceDashboard';
 import CreateInvoice from './pages/CreateInvoice';
 import InvoiceDetail from './pages/InvoiceDetail';
+import CompanyBranding from './pages/CompanyBranding';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -78,6 +79,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <InvoiceDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/branding"
+            element={
+              <ProtectedRoute>
+                <CompanyBranding />
               </ProtectedRoute>
             }
           />
