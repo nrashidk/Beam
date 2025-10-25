@@ -78,6 +78,27 @@ class DocumentStatus(str, enum.Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
 
+class InvoiceType(str, enum.Enum):
+    TAX_INVOICE = "380"  # Commercial invoice (standard VAT)
+    TAX_CREDIT_NOTE = "381"  # Credit note
+    COMMERCIAL_INVOICE = "480"  # Invoice out of scope of tax
+    CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
+
+class InvoiceStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    ISSUED = "ISSUED"
+    SENT = "SENT"
+    VIEWED = "VIEWED"
+    PAID = "PAID"
+    CANCELLED = "CANCELLED"
+    OVERDUE = "OVERDUE"
+
+class TaxCategory(str, enum.Enum):
+    STANDARD = "S"  # Standard rate (5% in UAE)
+    ZERO = "Z"  # Zero rated
+    EXEMPT = "E"  # Exempt from tax
+    OUT_OF_SCOPE = "O"  # Out of scope
+
 # ==================== DATABASE MODELS ====================
 class UserDB(Base):
     __tablename__ = "users"
@@ -202,6 +223,119 @@ class RegistrationProgressDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     company = relationship("CompanyDB", backref="progress")
+
+class InvoiceDB(Base):
+    __tablename__ = "invoices"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # UBL/PINT-AE Core Fields
+    invoice_number = Column(String, nullable=False, index=True)
+    invoice_type = Column(SQLEnum(InvoiceType), nullable=False)
+    status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT)
+    issue_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
+    currency_code = Column(String, default="AED")
+    
+    # Supplier (Issuer) - Company issuing the invoice
+    supplier_trn = Column(String, nullable=False)  # 15-digit TRN
+    supplier_name = Column(String, nullable=False)
+    supplier_address = Column(Text, nullable=True)
+    supplier_city = Column(String, nullable=True)
+    supplier_country = Column(String, default="AE")
+    supplier_peppol_id = Column(String, nullable=True)  # Peppol endpoint
+    
+    # Customer (Buyer) - Recipient of invoice
+    customer_trn = Column(String, nullable=True)  # May be null for B2C
+    customer_name = Column(String, nullable=False)
+    customer_email = Column(String, nullable=True)
+    customer_address = Column(Text, nullable=True)
+    customer_city = Column(String, nullable=True)
+    customer_country = Column(String, default="AE")
+    customer_peppol_id = Column(String, nullable=True)
+    
+    # Monetary Totals (PINT-AE mandatory)
+    subtotal_amount = Column(Float, default=0.0)  # Line extension total
+    tax_amount = Column(Float, default=0.0)  # Total VAT
+    total_amount = Column(Float, default=0.0)  # Amount including VAT
+    amount_due = Column(Float, default=0.0)  # Payable amount
+    
+    # AED conversion (mandatory if currency != AED)
+    total_amount_aed = Column(Float, nullable=True)
+    
+    # Payment Terms
+    payment_terms = Column(Text, nullable=True)
+    payment_due_days = Column(Integer, default=30)
+    
+    # Notes & References
+    invoice_notes = Column(Text, nullable=True)
+    reference_number = Column(String, nullable=True)  # PO number, etc.
+    preceding_invoice_id = Column(String, ForeignKey("invoices.id"), nullable=True)  # For credit notes
+    
+    # Credit Note specific
+    credit_note_reason = Column(String, nullable=True)  # Mandatory for credit notes
+    
+    # Document Management
+    xml_file_path = Column(String, nullable=True)  # UBL XML storage path
+    pdf_file_path = Column(String, nullable=True)  # PDF storage path
+    xml_hash = Column(String, nullable=True)  # SHA-256 hash of XML
+    
+    # Sharing & Transmission
+    share_token = Column(String, nullable=True, index=True)  # Public share link token
+    sent_at = Column(DateTime, nullable=True)
+    viewed_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="invoices")
+    line_items = relationship("InvoiceLineItemDB", backref="invoice", cascade="all, delete-orphan")
+    tax_breakdowns = relationship("InvoiceTaxBreakdownDB", backref="invoice", cascade="all, delete-orphan")
+
+class InvoiceLineItemDB(Base):
+    __tablename__ = "invoice_line_items"
+    id = Column(String, primary_key=True)
+    invoice_id = Column(String, ForeignKey("invoices.id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)  # Sequential line number
+    
+    # Product/Service Details
+    item_name = Column(String, nullable=False)
+    item_description = Column(Text, nullable=True)
+    item_code = Column(String, nullable=True)  # SKU or product code
+    
+    # Quantity & Unit
+    quantity = Column(Float, nullable=False)
+    unit_code = Column(String, default="C62")  # UN/ECE unit codes (C62 = piece)
+    
+    # Pricing
+    unit_price = Column(Float, nullable=False)
+    line_extension_amount = Column(Float, nullable=False)  # quantity * unit_price
+    
+    # Tax
+    tax_category = Column(SQLEnum(TaxCategory), nullable=False)
+    tax_percent = Column(Float, default=0.0)  # 5% for standard rate in UAE
+    tax_amount = Column(Float, default=0.0)
+    
+    # Total
+    line_total_amount = Column(Float, nullable=False)  # Including tax
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class InvoiceTaxBreakdownDB(Base):
+    __tablename__ = "invoice_tax_breakdowns"
+    id = Column(String, primary_key=True)
+    invoice_id = Column(String, ForeignKey("invoices.id"), nullable=False, index=True)
+    
+    # Tax Category Breakdown (required for UBL)
+    tax_category = Column(SQLEnum(TaxCategory), nullable=False)
+    taxable_amount = Column(Float, nullable=False)  # Base amount before tax
+    tax_percent = Column(Float, nullable=False)
+    tax_amount = Column(Float, nullable=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 # Create tables
 Base.metadata.create_all(engine)
