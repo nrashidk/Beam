@@ -43,8 +43,18 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
 2.  **Subscription Plans:**
     *   Four predefined tiers: Free, Starter, Professional, Enterprise.
     *   Free tier automatically assigned upon company approval.
+    *   **Flexible Free Plan Configuration:**
+        -   Duration-based: Free plan active for a configurable number of months.
+        -   Invoice count-based: Free plan with a configurable invoice limit.
+        -   Admins configure free plan type and limits during company approval.
 3.  **Admin Approval Workflow:**
-    *   Admins review and approve/reject company registrations, automatically activating the Free tier for approved companies.
+    *   Admins review and approve/reject company registrations.
+    *   Approval modal allows configuring free plan type (duration vs invoice count) and limits.
+    *   Automatic Free tier assignment with custom configuration per company.
+    *   **Invoice Tracking:**
+        -   Per-company invoice counters displayed in admin dashboard.
+        -   Total invoices across all companies tracked and displayed.
+        -   Real-time invoice usage shown to logged-in users on homepage.
 4.  **Company Management:**
     *   TRN (Tax Registration Number) validation.
     *   Automatic VAT state transitions based on turnover thresholds (AED 375,000).
@@ -65,6 +75,13 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) due to persistent database connections, in-memory invoice counters, payment state handling, local artifact storage, and 24/7 availability requirement.
 - **Database Schema:** Includes tables for `companies`, `subscription_plans`, `users`, `invoices`, `payment_intents`, `assets`, etc., designed to support registration, invoicing, payments, and branding.
+  - **Free Plan Tracking Fields (added 2025-10-25):**
+    - `free_plan_type`: Type of free plan (DURATION or INVOICE_COUNT)
+    - `free_plan_duration_months`: Duration in months for duration-based plans
+    - `free_plan_invoice_limit`: Invoice limit for count-based plans
+    - `free_plan_start_date`: When the free plan started
+    - `invoices_generated`: Total lifetime invoice counter per company
+    - `subscription_plan_id`: Foreign key to subscription plan
 - **Configuration:** Utilizes environment variables for `DATABASE_URL`, `ARTIFACT_ROOT`, `PEPPOL_ENDPOINT_SCHEME`, and `RETENTION_YEARS`.
 - **VAT Settings:** Standard VAT rate of 5% and a mandatory registration threshold of AED 375,000.
 - **Security:** Uses SQLAlchemy ORM for SQL injection protection, validates file uploads, and manages database credentials via environment variables.

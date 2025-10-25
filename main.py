@@ -1165,6 +1165,36 @@ def reject_company(company_id: str, reason: str = Form(...), db: Session = Depen
 
 # ==================== COMPANY ENDPOINTS ====================
 
+@app.get("/me", tags=["Auth"])
+def get_current_user_info(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get current user and associated company information"""
+    # Get company associated with the user
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    
+    response = {
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "role": current_user.role.value,
+        "company": None
+    }
+    
+    if company:
+        response["company"] = {
+            "id": company.id,
+            "legal_name": company.legal_name,
+            "email": company.email,
+            "status": company.status.value,
+            "invoices_generated": company.invoices_generated or 0,
+            "free_plan_type": company.free_plan_type,
+            "free_plan_invoice_limit": company.free_plan_invoice_limit,
+            "free_plan_duration_months": company.free_plan_duration_months
+        }
+    
+    return response
+
 @app.get("/companies/{company_id}", tags=["Companies"])
 def get_company(company_id: str, db: Session = Depends(get_db)):
     """Get company details"""
