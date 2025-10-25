@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { companiesAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -9,6 +10,7 @@ import { format } from 'date-fns';
 
 export default function BusinessDashboard() {
   const { logout, user } = useAuth();
+  const navigate = useNavigate();
   const [company, setCompany] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [invoices, setInvoices] = useState([]);
@@ -55,6 +57,13 @@ export default function BusinessDashboard() {
             <span>Beam</span>
           </div>
           <div className="flex items-center gap-4">
+            <Button 
+              onClick={() => navigate('/invoices')}
+              className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+            >
+              <FileText size={16} />
+              Invoices
+            </Button>
             <div className="text-sm">
               <Badge variant="info">{user?.role}</Badge>
               <span className="ml-2 text-gray-600">{user?.company_name || company?.legal_name}</span>
