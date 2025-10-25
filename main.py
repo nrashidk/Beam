@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # SQLAlchemy
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
 # Password & JWT
@@ -126,6 +126,16 @@ class CompanyDB(Base):
     password_hash = Column(String, nullable=True)
     password_reset_token = Column(String, nullable=True)
     password_reset_expires = Column(DateTime, nullable=True)
+
+    # Free plan configuration
+    free_plan_type = Column(String, nullable=True)  # "DURATION" or "INVOICE_COUNT"
+    free_plan_duration_months = Column(Integer, nullable=True)  # If duration-based
+    free_plan_invoice_limit = Column(Integer, nullable=True)  # If invoice count-based
+    free_plan_start_date = Column(DateTime, nullable=True)  # When free plan started
+    invoices_generated = Column(Integer, default=0)  # Total lifetime invoices
+    
+    # Subscription tracking
+    subscription_plan_id = Column(String, ForeignKey("subscription_plans.id"), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -1221,7 +1231,8 @@ def get_pending_companies(
         "business_type": c.business_type,
         "phone": c.phone,
         "created_at": c.created_at.isoformat(),
-        "status": c.status.value
+        "status": c.status.value,
+        "invoices_generated": c.invoices_generated or 0
     } for c in pending]
 
 @app.get("/admin/companies", tags=["Admin"])
@@ -1255,13 +1266,19 @@ def get_all_companies(
         "subscription_plan": c.subscription_plan_id
     } for c in companies]
 
+class CompanyApprovalConfig(BaseModel):
+    free_plan_type: str = "INVOICE_COUNT"  # "DURATION" or "INVOICE_COUNT"
+    free_plan_duration_months: Optional[int] = None  # For duration-based
+    free_plan_invoice_limit: Optional[int] = 100  # For invoice count-based
+
 @app.post("/admin/companies/{company_id}/approve", tags=["Admin"])
 def approve_company(
     company_id: str,
+    config: CompanyApprovalConfig = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
-    """Approve a pending company registration (Super Admin only)"""
+    """Approve a pending company registration with configurable free plan (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
@@ -1272,8 +1289,23 @@ def approve_company(
     if company.status != CompanyStatus.PENDING_REVIEW:
         raise HTTPException(400, f"Company is not pending review. Current status: {company.status.value}")
     
+    # Use default config if none provided
+    if config is None:
+        config = CompanyApprovalConfig()
+    
     # Update company status to ACTIVE
     company.status = CompanyStatus.ACTIVE
+    
+    # Configure free plan settings
+    company.free_plan_type = config.free_plan_type
+    company.free_plan_start_date = datetime.utcnow()
+    
+    if config.free_plan_type == "DURATION":
+        company.free_plan_duration_months = config.free_plan_duration_months or 1
+        plan_description = f"{company.free_plan_duration_months} month(s) free duration"
+    else:  # INVOICE_COUNT
+        company.free_plan_invoice_limit = config.free_plan_invoice_limit or 100
+        plan_description = f"{company.free_plan_invoice_limit} free invoices"
     
     # Assign Free plan if not already assigned
     if not company.subscription_plan_id:
@@ -1292,13 +1324,15 @@ def approve_company(
     print(f"\nDear {company.legal_name},")
     print(f"\nCongratulations! Your account has been approved.")
     print(f"You can now log in and start using Beam E-Invoicing.")
-    print(f"\nYour Free tier subscription is now active.")
+    print(f"\nYour Free plan: {plan_description}")
     print("="*70 + "\n")
     
     return {
         "success": True,
         "company_id": company_id,
         "status": company.status.value,
+        "free_plan_type": company.free_plan_type,
+        "free_plan_config": plan_description,
         "message": "Company approved successfully"
     }
 
@@ -1360,11 +1394,15 @@ def get_admin_stats(
     active = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
     rejected = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.REJECTED).count()
     
+    # Calculate total invoices across all companies
+    total_invoices = db.query(func.sum(CompanyDB.invoices_generated)).scalar() or 0
+    
     return {
         "total_companies": total_companies,
         "pending_approval": pending,
         "active": active,
         "rejected": rejected,
+        "total_invoices": total_invoices,
         "timestamp": datetime.utcnow().isoformat()
     }
 
