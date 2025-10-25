@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent } from '../components/ui/card';
-import axios from 'axios';
+import { Badge } from '../components/ui/badge';
+import api from '../lib/api';
 
 export default function Homepage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     company_name: '',
@@ -16,6 +19,22 @@ export default function Homepage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [userInfo, setUserInfo] = useState(null);
+
+  useEffect(() => {
+    if (user) {
+      fetchUserInfo();
+    }
+  }, [user]);
+
+  const fetchUserInfo = async () => {
+    try {
+      const response = await api.get('/me');
+      setUserInfo(response.data);
+    } catch (error) {
+      console.error('Failed to fetch user info:', error);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,7 +42,7 @@ export default function Homepage() {
     setError('');
 
     try {
-      const response = await axios.post('/register/quick', {
+      const response = await api.post('/register/quick', {
         email: formData.email,
         company_name: formData.company_name,
         business_type: formData.business_type,
@@ -50,13 +69,53 @@ export default function Homepage() {
             <span className="text-2xl">⚡</span>
             <span>Beam</span>
           </div>
-          <Button variant="ghost" onClick={() => navigate('/login')}>
-            Sign In
-          </Button>
+          {user ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-600">{user.email}</span>
+              <Button variant="outline" size="sm" onClick={logout}>
+                Logout
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" onClick={() => navigate('/login')}>
+              Sign In
+            </Button>
+          )}
         </div>
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 py-12 space-y-16">
+        {user && userInfo?.company && (
+          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">{userInfo.company.legal_name}</h2>
+                  <div className="flex gap-2 mt-2">
+                    <Badge variant="success">{userInfo.company.status}</Badge>
+                    {userInfo.company.free_plan_type === 'INVOICE_COUNT' && (
+                      <Badge variant="secondary">
+                        {userInfo.company.invoices_generated || 0} / {userInfo.company.free_plan_invoice_limit} invoices used
+                      </Badge>
+                    )}
+                    {userInfo.company.free_plan_type === 'DURATION' && (
+                      <Badge variant="secondary">
+                        Free plan: {userInfo.company.free_plan_duration_months} month(s)
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-4xl font-bold text-blue-600">
+                    {userInfo.company.invoices_generated || 0}
+                  </div>
+                  <div className="text-sm text-gray-600">Total Invoices</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="text-center space-y-4 mb-12">
           <h1 className="text-5xl md:text-6xl font-bold leading-tight">
             Simple, Compliant<br />Digital Invoicing for UAE
