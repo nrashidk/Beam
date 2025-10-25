@@ -143,14 +143,23 @@ export default function InvoiceDetail() {
           {/* Invoice Header */}
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-8 text-white">
             <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <h1 className="text-3xl font-bold">{invoice.invoice_number}</h1>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(invoice.status)}`}>
-                    {invoice.status}
-                  </span>
+              <div className="flex items-start gap-4">
+                {/* Company Logo */}
+                <img 
+                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${invoice.company_id}/branding/logo`}
+                  alt="Company Logo"
+                  className="h-16 w-16 object-contain bg-white rounded-lg p-2"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+                <div>
+                  <div className="flex items-center gap-3 mb-2">
+                    <h1 className="text-3xl font-bold">{invoice.invoice_number}</h1>
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(invoice.status)}`}>
+                      {invoice.status}
+                    </span>
+                  </div>
+                  <p className="text-indigo-100">{getInvoiceTypeName(invoice.invoice_type)}</p>
                 </div>
-                <p className="text-indigo-100">{getInvoiceTypeName(invoice.invoice_type)}</p>
               </div>
               <div className="text-right">
                 <div className="text-4xl font-bold">{invoice.currency_code} {invoice.total_amount.toFixed(2)}</div>
@@ -316,6 +325,19 @@ export default function InvoiceDetail() {
                 </div>
               </div>
             )}
+
+            {/* Company Stamp/Seal */}
+            <div className="flex justify-end pt-8">
+              <div className="text-center">
+                <img 
+                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${invoice.company_id}/branding/stamp`}
+                  alt="Company Stamp"
+                  className="h-24 w-24 object-contain mx-auto mb-2"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+                <p className="text-xs text-gray-500">Authorized Signature</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
