@@ -23,6 +23,9 @@ from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 import bcrypt
 from jose import JWTError, jwt
 
+# UBL XML Generator
+from ubl_generator import generate_pint_ae_xml, calculate_xml_hash, validate_pint_ae_invoice
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
@@ -564,6 +567,120 @@ class RegistrationProgressOut(BaseModel):
     company_id: str
     current_step: int
     completed: bool
+
+# ==================== INVOICE PYDANTIC SCHEMAS ====================
+class InvoiceLineItemCreate(BaseModel):
+    item_name: str
+    item_description: Optional[str] = None
+    item_code: Optional[str] = None
+    quantity: float
+    unit_code: str = "C62"  # UN/ECE code (C62 = piece)
+    unit_price: float
+    tax_category: TaxCategory
+    tax_percent: float = 5.0  # UAE standard VAT rate
+
+class InvoiceCreate(BaseModel):
+    invoice_type: InvoiceType
+    issue_date: str  # ISO date format
+    due_date: Optional[str] = None
+    currency_code: str = "AED"
+    
+    # Customer details
+    customer_name: str
+    customer_email: Optional[str] = None
+    customer_trn: Optional[str] = None
+    customer_address: Optional[str] = None
+    customer_city: Optional[str] = None
+    customer_country: str = "AE"
+    customer_peppol_id: Optional[str] = None
+    
+    # Line items
+    line_items: List[InvoiceLineItemCreate]
+    
+    # Optional fields
+    payment_terms: Optional[str] = None
+    payment_due_days: int = 30
+    invoice_notes: Optional[str] = None
+    reference_number: Optional[str] = None
+    
+    # Credit note specific
+    preceding_invoice_id: Optional[str] = None
+    credit_note_reason: Optional[str] = None
+
+class InvoiceLineItemOut(BaseModel):
+    id: str
+    line_number: int
+    item_name: str
+    item_description: Optional[str]
+    quantity: float
+    unit_code: str
+    unit_price: float
+    line_extension_amount: float
+    tax_category: TaxCategory
+    tax_percent: float
+    tax_amount: float
+    line_total_amount: float
+
+class InvoiceTaxBreakdownOut(BaseModel):
+    id: str
+    tax_category: TaxCategory
+    taxable_amount: float
+    tax_percent: float
+    tax_amount: float
+
+class InvoiceOut(BaseModel):
+    id: str
+    company_id: str
+    invoice_number: str
+    invoice_type: InvoiceType
+    status: InvoiceStatus
+    issue_date: str
+    due_date: Optional[str]
+    currency_code: str
+    
+    # Supplier (auto-filled from company)
+    supplier_trn: str
+    supplier_name: str
+    supplier_address: Optional[str]
+    supplier_peppol_id: Optional[str]
+    
+    # Customer
+    customer_trn: Optional[str]
+    customer_name: str
+    customer_email: Optional[str]
+    customer_address: Optional[str]
+    customer_peppol_id: Optional[str]
+    
+    # Totals
+    subtotal_amount: float
+    tax_amount: float
+    total_amount: float
+    amount_due: float
+    
+    # Documents
+    xml_file_path: Optional[str]
+    pdf_file_path: Optional[str]
+    share_token: Optional[str]
+    
+    # Timestamps
+    created_at: str
+    sent_at: Optional[str]
+    viewed_at: Optional[str]
+    
+    # Related data
+    line_items: List[InvoiceLineItemOut] = []
+    tax_breakdowns: List[InvoiceTaxBreakdownOut] = []
+
+class InvoiceListOut(BaseModel):
+    id: str
+    invoice_number: str
+    invoice_type: InvoiceType
+    status: InvoiceStatus
+    issue_date: str
+    customer_name: str
+    total_amount: float
+    currency_code: str
+    created_at: str
 
 # ==================== FASTAPI APP ====================
 app = FastAPI(
@@ -1569,6 +1686,576 @@ def get_admin_stats(
         "total_invoices": total_invoices,
         "timestamp": datetime.utcnow().isoformat()
     }
+
+# ==================== INVOICE ENDPOINTS ====================
+
+def generate_invoice_number(company_id: str, db: Session) -> str:
+    """Generate sequential invoice number for company"""
+    # Count existing invoices for this company
+    count = db.query(InvoiceDB).filter(InvoiceDB.company_id == company_id).count()
+    next_num = count + 1
+    # Format: INV-YYYYMM-XXXX (e.g., INV-202510-0001)
+    year_month = datetime.utcnow().strftime("%Y%m")
+    return f"INV-{year_month}-{next_num:04d}"
+
+def calculate_line_item_totals(line_item: InvoiceLineItemCreate) -> dict:
+    """Calculate tax and totals for a line item"""
+    line_extension = line_item.quantity * line_item.unit_price
+    tax_amount = line_extension * (line_item.tax_percent / 100) if line_item.tax_category == TaxCategory.STANDARD else 0
+    line_total = line_extension + tax_amount
+    
+    return {
+        "line_extension_amount": round(line_extension, 2),
+        "tax_amount": round(tax_amount, 2),
+        "line_total_amount": round(line_total, 2)
+    }
+
+@app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut)
+def create_invoice(
+    payload: InvoiceCreate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Create a new invoice"""
+    # Get company
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if not company.trn:
+        raise HTTPException(400, "Company TRN is required to issue invoices")
+    
+    # Check free plan limits
+    if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit:
+        if company.invoices_generated >= company.free_plan_invoice_limit:
+            raise HTTPException(403, "Invoice limit reached for free plan. Please upgrade your subscription.")
+    
+    # Generate invoice number
+    invoice_id = f"inv_{uuid4().hex[:12]}"
+    invoice_number = generate_invoice_number(company.id, db)
+    
+    # Calculate totals
+    subtotal = 0.0
+    total_tax = 0.0
+    tax_by_category = {}  # For tax breakdowns
+    
+    # Parse dates
+    from datetime import datetime as dt
+    issue_date = dt.fromisoformat(payload.issue_date).date()
+    due_date = dt.fromisoformat(payload.due_date).date() if payload.due_date else None
+    
+    # Create invoice
+    invoice = InvoiceDB(
+        id=invoice_id,
+        company_id=company.id,
+        invoice_number=invoice_number,
+        invoice_type=payload.invoice_type,
+        status=InvoiceStatus.DRAFT,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency_code=payload.currency_code,
+        
+        # Supplier (from company)
+        supplier_trn=company.trn,
+        supplier_name=company.legal_name or company.email,
+        supplier_address=f"{company.address_line1 or ''} {company.address_line2 or ''}".strip() or None,
+        supplier_city=company.city,
+        supplier_country="AE",
+        supplier_peppol_id=company.trn[:10] if company.trn else None,  # First 10 digits of TRN as TIN
+        
+        # Customer
+        customer_trn=payload.customer_trn,
+        customer_name=payload.customer_name,
+        customer_email=payload.customer_email,
+        customer_address=payload.customer_address,
+        customer_city=payload.customer_city,
+        customer_country=payload.customer_country,
+        customer_peppol_id=payload.customer_peppol_id,
+        
+        payment_terms=payload.payment_terms,
+        payment_due_days=payload.payment_due_days,
+        invoice_notes=payload.invoice_notes,
+        reference_number=payload.reference_number,
+        preceding_invoice_id=payload.preceding_invoice_id,
+        credit_note_reason=payload.credit_note_reason,
+        
+        share_token=f"share_{uuid4().hex[:16]}"
+    )
+    
+    db.add(invoice)
+    db.flush()  # Get invoice ID
+    
+    # Create line items
+    for idx, line_item in enumerate(payload.line_items, 1):
+        totals = calculate_line_item_totals(line_item)
+        
+        line_db = InvoiceLineItemDB(
+            id=f"line_{uuid4().hex[:12]}",
+            invoice_id=invoice.id,
+            line_number=idx,
+            item_name=line_item.item_name,
+            item_description=line_item.item_description,
+            item_code=line_item.item_code,
+            quantity=line_item.quantity,
+            unit_code=line_item.unit_code,
+            unit_price=line_item.unit_price,
+            line_extension_amount=totals["line_extension_amount"],
+            tax_category=line_item.tax_category,
+            tax_percent=line_item.tax_percent,
+            tax_amount=totals["tax_amount"],
+            line_total_amount=totals["line_total_amount"]
+        )
+        db.add(line_db)
+        
+        subtotal += totals["line_extension_amount"]
+        total_tax += totals["tax_amount"]
+        
+        # Aggregate tax by category
+        key = (line_item.tax_category, line_item.tax_percent)
+        if key not in tax_by_category:
+            tax_by_category[key] = {"taxable": 0.0, "tax": 0.0}
+        tax_by_category[key]["taxable"] += totals["line_extension_amount"]
+        tax_by_category[key]["tax"] += totals["tax_amount"]
+    
+    # Create tax breakdowns
+    for (category, percent), amounts in tax_by_category.items():
+        tax_breakdown = InvoiceTaxBreakdownDB(
+            id=f"tax_{uuid4().hex[:12]}",
+            invoice_id=invoice.id,
+            tax_category=category,
+            taxable_amount=round(amounts["taxable"], 2),
+            tax_percent=percent,
+            tax_amount=round(amounts["tax"], 2)
+        )
+        db.add(tax_breakdown)
+    
+    # Update invoice totals
+    invoice.subtotal_amount = round(subtotal, 2)
+    invoice.tax_amount = round(total_tax, 2)
+    invoice.total_amount = round(subtotal + total_tax, 2)
+    invoice.amount_due = round(subtotal + total_tax, 2)
+    
+    db.commit()
+    db.refresh(invoice)
+    
+    # Format response
+    return InvoiceOut(
+        id=invoice.id,
+        company_id=invoice.company_id,
+        invoice_number=invoice.invoice_number,
+        invoice_type=invoice.invoice_type,
+        status=invoice.status,
+        issue_date=invoice.issue_date.isoformat(),
+        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        currency_code=invoice.currency_code,
+        supplier_trn=invoice.supplier_trn,
+        supplier_name=invoice.supplier_name,
+        supplier_address=invoice.supplier_address,
+        supplier_peppol_id=invoice.supplier_peppol_id,
+        customer_trn=invoice.customer_trn,
+        customer_name=invoice.customer_name,
+        customer_email=invoice.customer_email,
+        customer_address=invoice.customer_address,
+        customer_peppol_id=invoice.customer_peppol_id,
+        subtotal_amount=invoice.subtotal_amount,
+        tax_amount=invoice.tax_amount,
+        total_amount=invoice.total_amount,
+        amount_due=invoice.amount_due,
+        xml_file_path=invoice.xml_file_path,
+        pdf_file_path=invoice.pdf_file_path,
+        share_token=invoice.share_token,
+        created_at=invoice.created_at.isoformat(),
+        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
+        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
+        line_items=[
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount
+            ) for li in invoice.line_items
+        ],
+        tax_breakdowns=[
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount
+            ) for tb in invoice.tax_breakdowns
+        ]
+    )
+
+@app.get("/invoices", tags=["Invoices"], response_model=List[InvoiceListOut])
+def list_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """List invoices for the current company"""
+    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == current_user.company_id)
+    
+    if status:
+        try:
+            status_enum = InvoiceStatus(status)
+            query = query.filter(InvoiceDB.status == status_enum)
+        except ValueError:
+            raise HTTPException(400, f"Invalid status: {status}")
+    
+    query = query.order_by(InvoiceDB.created_at.desc())
+    invoices = query.offset(offset).limit(limit).all()
+    
+    return [
+        InvoiceListOut(
+            id=inv.id,
+            invoice_number=inv.invoice_number,
+            invoice_type=inv.invoice_type,
+            status=inv.status,
+            issue_date=inv.issue_date.isoformat(),
+            customer_name=inv.customer_name,
+            total_amount=inv.total_amount,
+            currency_code=inv.currency_code,
+            created_at=inv.created_at.isoformat()
+        ) for inv in invoices
+    ]
+
+@app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
+def get_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get a specific invoice"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    return InvoiceOut(
+        id=invoice.id,
+        company_id=invoice.company_id,
+        invoice_number=invoice.invoice_number,
+        invoice_type=invoice.invoice_type,
+        status=invoice.status,
+        issue_date=invoice.issue_date.isoformat(),
+        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        currency_code=invoice.currency_code,
+        supplier_trn=invoice.supplier_trn,
+        supplier_name=invoice.supplier_name,
+        supplier_address=invoice.supplier_address,
+        supplier_peppol_id=invoice.supplier_peppol_id,
+        customer_trn=invoice.customer_trn,
+        customer_name=invoice.customer_name,
+        customer_email=invoice.customer_email,
+        customer_address=invoice.customer_address,
+        customer_peppol_id=invoice.customer_peppol_id,
+        subtotal_amount=invoice.subtotal_amount,
+        tax_amount=invoice.tax_amount,
+        total_amount=invoice.total_amount,
+        amount_due=invoice.amount_due,
+        xml_file_path=invoice.xml_file_path,
+        pdf_file_path=invoice.pdf_file_path,
+        share_token=invoice.share_token,
+        created_at=invoice.created_at.isoformat(),
+        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
+        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
+        line_items=[
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount
+            ) for li in invoice.line_items
+        ],
+        tax_breakdowns=[
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount
+            ) for tb in invoice.tax_breakdowns
+        ]
+    )
+
+@app.post("/invoices/{invoice_id}/issue", tags=["Invoices"])
+def issue_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Issue a draft invoice (generates UBL XML, changes status to ISSUED, increments counter)"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    if invoice.status != InvoiceStatus.DRAFT:
+        raise HTTPException(400, f"Can only issue draft invoices. Current status: {invoice.status}")
+    
+    # Prepare invoice data for XML generation
+    invoice_data = {
+        "invoice": {
+            "invoice_number": invoice.invoice_number,
+            "issue_date": invoice.issue_date,
+            "due_date": invoice.due_date,
+            "invoice_type": invoice.invoice_type.value,
+            "currency_code": invoice.currency_code,
+            "supplier_trn": invoice.supplier_trn,
+            "supplier_name": invoice.supplier_name,
+            "supplier_address": invoice.supplier_address,
+            "supplier_city": invoice.supplier_city,
+            "supplier_country": invoice.supplier_country,
+            "supplier_peppol_id": invoice.supplier_peppol_id,
+            "customer_trn": invoice.customer_trn,
+            "customer_name": invoice.customer_name,
+            "customer_address": invoice.customer_address,
+            "customer_city": invoice.customer_city,
+            "customer_country": invoice.customer_country,
+            "customer_peppol_id": invoice.customer_peppol_id,
+            "subtotal_amount": invoice.subtotal_amount,
+            "tax_amount": invoice.tax_amount,
+            "total_amount": invoice.total_amount,
+            "amount_due": invoice.amount_due,
+            "payment_terms": invoice.payment_terms,
+            "payment_due_days": invoice.payment_due_days,
+            "invoice_notes": invoice.invoice_notes,
+            "reference_number": invoice.reference_number,
+            "credit_note_reason": invoice.credit_note_reason,
+        },
+        "line_items": [
+            {
+                "line_number": li.line_number,
+                "item_name": li.item_name,
+                "item_description": li.item_description,
+                "item_code": li.item_code,
+                "quantity": li.quantity,
+                "unit_code": li.unit_code,
+                "unit_price": li.unit_price,
+                "line_extension_amount": li.line_extension_amount,
+                "tax_category": li.tax_category.value,
+                "tax_percent": li.tax_percent,
+                "tax_amount": li.tax_amount,
+                "line_total_amount": li.line_total_amount
+            } for li in invoice.line_items
+        ],
+        "tax_breakdowns": [
+            {
+                "tax_category": tb.tax_category.value,
+                "taxable_amount": tb.taxable_amount,
+                "tax_percent": tb.tax_percent,
+                "tax_amount": tb.tax_amount
+            } for tb in invoice.tax_breakdowns
+        ]
+    }
+    
+    # Validate invoice data
+    validation_errors = validate_pint_ae_invoice(invoice_data)
+    if validation_errors:
+        raise HTTPException(400, f"Invoice validation failed: {', '.join(validation_errors)}")
+    
+    # Generate UBL XML
+    try:
+        xml_content = generate_pint_ae_xml(invoice_data)
+        xml_hash = calculate_xml_hash(xml_content)
+        
+        # Save XML file
+        xml_dir = os.path.join(ARTIFACT_ROOT, "invoices", "xml")
+        os.makedirs(xml_dir, exist_ok=True)
+        xml_filename = f"{invoice.invoice_number.replace('/', '_')}.xml"
+        xml_path = os.path.join(xml_dir, xml_filename)
+        
+        with open(xml_path, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+        
+        # Update invoice with XML info
+        invoice.xml_file_path = xml_path
+        invoice.xml_hash = xml_hash
+        
+    except Exception as e:
+        raise HTTPException(500, f"Failed to generate UBL XML: {str(e)}")
+    
+    # Update invoice status
+    invoice.status = InvoiceStatus.ISSUED
+    
+    # Increment company invoice counter
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if company:
+        company.invoices_generated = (company.invoices_generated or 0) + 1
+    
+    db.commit()
+    
+    return {
+        "message": "Invoice issued successfully",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "status": invoice.status,
+        "xml_generated": True,
+        "xml_hash": xml_hash,
+        "compliance": "PINT-AE UBL 2.1"
+    }
+
+@app.post("/invoices/{invoice_id}/send", tags=["Invoices"])
+def send_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Send invoice to customer (simulates ASP transmission and email notification)"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    if invoice.status == InvoiceStatus.DRAFT:
+        raise HTTPException(400, "Cannot send draft invoice. Please issue it first.")
+    
+    if invoice.status == InvoiceStatus.CANCELLED:
+        raise HTTPException(400, "Cannot send cancelled invoice")
+    
+    # Update status
+    invoice.status = InvoiceStatus.SENT
+    invoice.sent_at = datetime.utcnow()
+    db.commit()
+    
+    # In production, this would:
+    # 1. Generate UBL XML
+    # 2. Send to ASP API for Peppol transmission
+    # 3. Send email to customer with share link
+    # 4. ASP reports to FTA
+    
+    return {
+        "message": "Invoice sent successfully",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "sent_to": invoice.customer_email or invoice.customer_name,
+        "share_link": f"/invoices/view/{invoice.share_token}",
+        "peppol_transmission": "simulated",
+        "sent_at": invoice.sent_at.isoformat()
+    }
+
+@app.post("/invoices/{invoice_id}/cancel", tags=["Invoices"])
+def cancel_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Cancel an invoice"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    if invoice.status in [InvoiceStatus.PAID, InvoiceStatus.CANCELLED]:
+        raise HTTPException(400, f"Cannot cancel invoice with status: {invoice.status}")
+    
+    invoice.status = InvoiceStatus.CANCELLED
+    db.commit()
+    
+    return {
+        "message": "Invoice cancelled",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number
+    }
+
+# Public invoice viewing (no authentication required)
+@app.get("/invoices/view/{share_token}", tags=["Public"], response_model=InvoiceOut)
+def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
+    """View invoice via public share link (customer portal)"""
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.share_token == share_token).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Mark as viewed
+    if not invoice.viewed_at:
+        invoice.viewed_at = datetime.utcnow()
+        db.commit()
+    
+    return InvoiceOut(
+        id=invoice.id,
+        company_id=invoice.company_id,
+        invoice_number=invoice.invoice_number,
+        invoice_type=invoice.invoice_type,
+        status=invoice.status,
+        issue_date=invoice.issue_date.isoformat(),
+        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        currency_code=invoice.currency_code,
+        supplier_trn=invoice.supplier_trn,
+        supplier_name=invoice.supplier_name,
+        supplier_address=invoice.supplier_address,
+        supplier_peppol_id=invoice.supplier_peppol_id,
+        customer_trn=invoice.customer_trn,
+        customer_name=invoice.customer_name,
+        customer_email=invoice.customer_email,
+        customer_address=invoice.customer_address,
+        customer_peppol_id=invoice.customer_peppol_id,
+        subtotal_amount=invoice.subtotal_amount,
+        tax_amount=invoice.tax_amount,
+        total_amount=invoice.total_amount,
+        amount_due=invoice.amount_due,
+        xml_file_path=invoice.xml_file_path,
+        pdf_file_path=invoice.pdf_file_path,
+        share_token=invoice.share_token,
+        created_at=invoice.created_at.isoformat(),
+        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
+        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
+        line_items=[
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount
+            ) for li in invoice.line_items
+        ],
+        tax_breakdowns=[
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount
+            ) for tb in invoice.tax_breakdowns
+        ]
+    )
 
 # ==================== HEALTH CHECK ====================
 
