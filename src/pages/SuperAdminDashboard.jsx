@@ -44,8 +44,14 @@ export default function SuperAdminDashboard() {
     search: '' 
   });
   const [companies, setCompanies] = useState([]);
-  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, active: 0, rejected: 0 });
+  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, active: 0, rejected: 0, total_invoices: 0 });
   const [loading, setLoading] = useState(true);
+  const [approvalModal, setApprovalModal] = useState(null);
+  const [freePlanConfig, setFreePlanConfig] = useState({
+    free_plan_type: 'INVOICE_COUNT',
+    free_plan_duration_months: 1,
+    free_plan_invoice_limit: 100
+  });
 
   useEffect(() => {
     fetchData();
@@ -68,10 +74,12 @@ export default function SuperAdminDashboard() {
 
   const fetchCompanies = fetchData;
 
-  const handleApprove = async (companyId) => {
+  const handleApprove = async (companyId, config) => {
     try {
-      await adminAPI.approveCompany(companyId);
+      await adminAPI.approveCompany(companyId, config);
       alert('Company approved successfully!');
+      setApprovalModal(null);
+      setFreePlanConfig({ free_plan_type: 'INVOICE_COUNT', free_plan_duration_months: 1, free_plan_invoice_limit: 100 });
       fetchCompanies();
     } catch (error) {
       alert('Failed to approve company');
@@ -118,7 +126,7 @@ export default function SuperAdminDashboard() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Total Companies</CardTitle>
@@ -149,6 +157,14 @@ export default function SuperAdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-red-600">{stats.rejected}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm text-gray-600">Total Invoices</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-blue-600">{stats.total_invoices}</div>
             </CardContent>
           </Card>
         </div>
@@ -233,14 +249,17 @@ export default function SuperAdminDashboard() {
                         <p className="text-sm text-gray-500">
                           {company.business_type} • {company.phone}
                         </p>
-                        <div className="mt-2">
+                        <div className="mt-2 flex gap-2">
                           <Badge variant="warning">{company.status}</Badge>
+                          <Badge variant="secondary">
+                            {company.invoices_generated || 0} invoices
+                          </Badge>
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <Button 
                           size="sm" 
-                          onClick={() => handleApprove(company.id)}
+                          onClick={() => setApprovalModal(company)}
                           className="gap-2"
                         >
                           <CheckCircle size={16} />
@@ -263,6 +282,76 @@ export default function SuperAdminDashboard() {
             )}
           </CardContent>
         </Card>
+
+        {approvalModal && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+              <div className="flex justify-between mb-4">
+                <h2 className="font-semibold text-lg">Approve Company</h2>
+                <Button size="icon" variant="outline" onClick={() => setApprovalModal(null)}>
+                  <X size={16} />
+                </Button>
+              </div>
+              
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="font-semibold">{approvalModal.legal_name}</p>
+                <p className="text-sm text-gray-600">{approvalModal.email}</p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium block mb-2">Free Plan Type</label>
+                  <select 
+                    className="w-full border rounded-lg px-3 py-2"
+                    value={freePlanConfig.free_plan_type}
+                    onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_type: e.target.value })}
+                  >
+                    <option value="INVOICE_COUNT">Invoice Count Limit</option>
+                    <option value="DURATION">Duration-based (Months)</option>
+                  </select>
+                </div>
+
+                {freePlanConfig.free_plan_type === 'INVOICE_COUNT' ? (
+                  <div>
+                    <label className="text-sm font-medium block mb-2">Invoice Limit</label>
+                    <Input 
+                      type="number" 
+                      min="1"
+                      value={freePlanConfig.free_plan_invoice_limit}
+                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_invoice_limit: parseInt(e.target.value) || 100 })}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Company can generate up to this many free invoices
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-sm font-medium block mb-2">Duration (Months)</label>
+                    <Input 
+                      type="number" 
+                      min="1"
+                      value={freePlanConfig.free_plan_duration_months}
+                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_duration_months: parseInt(e.target.value) || 1 })}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Free plan will be active for this many months
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <Button variant="outline" onClick={() => setApprovalModal(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={() => handleApprove(approvalModal.id, freePlanConfig)} className="gap-2">
+                  <CheckCircle size={16} />
+                  Approve & Configure
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
