@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, UserPlus, Trash2, Shield, User, Mail, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
-import apiClient from '../lib/api';
+import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function TeamManagement() {
@@ -31,7 +31,7 @@ export default function TeamManagement() {
   const fetchTeamMembers = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/users/team');
+      const response = await api.get('/users/team');
       setTeamMembers(response.data);
     } catch (error) {
       console.error('Failed to fetch team members:', error);
@@ -47,7 +47,7 @@ export default function TeamManagement() {
     setInviteResult(null);
 
     try {
-      const response = await apiClient.post('/users/invite', inviteForm);
+      const response = await api.post('/users/invite', inviteForm);
       setInviteResult(response.data);
       setInviteForm({ email: '', full_name: '', role: 'FINANCE_USER' });
       setShowInviteForm(false);
@@ -64,7 +64,7 @@ export default function TeamManagement() {
     }
 
     try {
-      await apiClient.delete(`/users/${userId}`);
+      await api.delete(`/users/${userId}`);
       fetchTeamMembers();
     } catch (error) {
       console.error('Failed to remove user:', error);

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
-import apiClient from '../lib/api';
+import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 function Stat({ label, value, delta, positive }) {
@@ -99,7 +99,7 @@ export default function SuperAdminDashboard() {
     async function fetchStats() {
       try {
         setLoading(true);
-        const response = await apiClient.get(`/admin/stats?from=${fromISO}&to=${toISO}`);
+        const response = await api.get(`/admin/stats?from=${fromISO}&to=${toISO}`);
         setStats(response.data);
       } catch (error) {
         console.error('Failed to fetch admin stats:', error);
