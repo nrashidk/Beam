@@ -5,6 +5,9 @@ import Homepage from './pages/Homepage';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import BusinessDashboard from './pages/BusinessDashboard';
+import InvoiceDashboard from './pages/InvoiceDashboard';
+import CreateInvoice from './pages/CreateInvoice';
+import InvoiceDetail from './pages/InvoiceDetail';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -51,6 +54,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardRouter />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices"
+            element={
+              <ProtectedRoute>
+                <InvoiceDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices/create"
+            element={
+              <ProtectedRoute>
+                <CreateInvoice />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/invoices/:id"
+            element={
+              <ProtectedRoute>
+                <InvoiceDetail />
               </ProtectedRoute>
             }
           />

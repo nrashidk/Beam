@@ -14,7 +14,7 @@ Beam is a modern full-stack digital invoicing platform designed for UAE business
 - Full compliance with UAE e-invoicing regulations.
 
 **Business Flow:**
-Registration → Email Verification → Admin Approval → Auto Free Tier Assignment → Dashboard Access → Invoice Generation
+Registration → Email Verification → Admin Approval → Auto Free Tier Assignment → Dashboard Access → **Create Invoices → Issue (UBL XML Generated) → Send (ASP Transmission) → Customer Views**
 
 ## User Preferences
 Detailed explanations preferred. Updated SuperAdminDashboard with advanced analytics, filtering, and revenue tracking capabilities.
@@ -60,11 +60,34 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
     *   Automatic VAT state transitions based on turnover thresholds (AED 375,000).
     *   Peppol endpoint ID support.
     *   Custom branding profiles.
-5.  **Invoice Generation:**
-    *   Supports Commercial and VAT Tax Invoices.
-    *   UBL/PINT-AE compliant XML generation and PDF invoices with embedded XML hash.
-    *   Schematron validation (global + UAE rules).
-    *   Auto-generation from billing events.
+5.  **Invoice Generation & Management (IMPLEMENTED 2025-10-25):**
+    *   **Full UAE e-Invoicing Compliance:**
+        -   UBL 2.1 / PINT-AE XML generation with all mandatory fields
+        -   Support for multiple invoice types: Tax Invoice (380), Credit Note (381), Commercial (480)
+        -   Automatic validation against PINT-AE specification
+        -   SHA-256 hash calculation for XML integrity
+    *   **Invoice CRUD Operations:**
+        -   Create invoices with line items, customer details, VAT calculations
+        -   List invoices with filtering by status (Draft, Issued, Sent, Paid, Cancelled)
+        -   View detailed invoice information with line items and tax breakdowns
+        -   Issue invoices (generates UBL XML and increments company counter)
+        -   Send invoices (simulated ASP transmission via Peppol network)
+        -   Cancel invoices
+    *   **Invoice Sharing:**
+        -   Public share links with unique tokens for customer viewing
+        -   Customer portal (no login required) to view invoices
+        -   Email notification simulation for invoice delivery
+    *   **Free Plan Enforcement:**
+        -   Invoice counter increment on issuance
+        -   Automatic blocking when invoice limit is reached for invoice-count free plans
+    *   **Business Dashboard Integration:**
+        -   Invoice creation form with multi-line item support
+        -   Invoice list dashboard with status badges and filtering
+        -   Seamless navigation between dashboard and invoice management
+    *   **ASP Integration Architecture:**
+        -   Ready for Accredited Service Provider API integration
+        -   Simulated Peppol network transmission in send endpoint
+        -   Designed for future production ASP connection (Pagero, EDICOM, Comarch, etc.)
 6.  **Payment Processing:**
     *   Supports Cash, Card, POS, Bank transfer, and Digital wallets.
     *   Payment intents pattern, card surcharge configuration, metadata tracking, and POS device registration.
@@ -74,7 +97,7 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) due to persistent database connections, in-memory invoice counters, payment state handling, local artifact storage, and 24/7 availability requirement.
-- **Database Schema:** Includes tables for `companies`, `subscription_plans`, `users`, `invoices`, `payment_intents`, `assets`, etc., designed to support registration, invoicing, payments, and branding.
+- **Database Schema:** Includes tables for `companies`, `subscription_plans`, `users`, `invoices`, `invoice_line_items`, `invoice_tax_breakdowns`, `payment_intents`, `assets`, etc., designed to support registration, invoicing, payments, and branding.
   - **Free Plan Tracking Fields (added 2025-10-25):**
     - `free_plan_type`: Type of free plan (DURATION or INVOICE_COUNT)
     - `free_plan_duration_months`: Duration in months for duration-based plans
@@ -82,6 +105,11 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
     - `free_plan_start_date`: When the free plan started
     - `invoices_generated`: Total lifetime invoice counter per company
     - `subscription_plan_id`: Foreign key to subscription plan
+  - **Invoice Tables (added 2025-10-25):**
+    - `invoices`: Core invoice data with UBL/PINT-AE fields (TRN, Peppol IDs, totals, status, XML hash)
+    - `invoice_line_items`: Line item details (quantity, unit price, tax category, totals)
+    - `invoice_tax_breakdowns`: Tax category breakdowns required for UBL compliance
+    - Relationships: company → invoices → line_items + tax_breakdowns
 - **Configuration:** Utilizes environment variables for `DATABASE_URL`, `ARTIFACT_ROOT`, `PEPPOL_ENDPOINT_SCHEME`, and `RETENTION_YEARS`.
 - **VAT Settings:** Standard VAT rate of 5% and a mandatory registration threshold of AED 375,000.
 - **Security:** Uses SQLAlchemy ORM for SQL injection protection, validates file uploads, and manages database credentials via environment variables.
