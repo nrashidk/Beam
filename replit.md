@@ -17,7 +17,14 @@ Beam is a modern full-stack digital invoicing platform designed for UAE business
 Registration → Email Verification → Admin Approval → Auto Free Tier Assignment → Dashboard Access → **Create Invoices → Issue (UBL XML Generated) → Send (ASP Transmission) → Customer Views**
 
 ## User Preferences
-Detailed explanations preferred. Updated SuperAdminDashboard with advanced analytics, filtering, and revenue tracking capabilities.
+Detailed explanations preferred. Comprehensive SuperAdminDashboard implemented with advanced analytics, revenue tracking, and company explorer. Multi-user team management system enables businesses to invite and manage team members with role-based access control.
+
+## Recent Updates (2025-10-25)
+1. **Company Branding System**: Complete UI for uploading logos and stamps with drag-and-drop interface, live preview, and invoice integration
+2. **Multi-User Team Management**: Full team member invitation system with role-based access (Owner, Admin, Finance User)
+3. **SuperAdmin Analytics Dashboard**: Comprehensive analytics with MRR/ARR tracking, company explorer, CSV export, and revenue breakdown by tier
+4. **Enhanced Admin API**: New `/admin/stats` endpoint providing real-time metrics for revenue, companies, and invoices
+5. **User Management APIs**: Three new endpoints for inviting, listing, and removing team members
 
 ## System Architecture
 
@@ -91,9 +98,64 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
 6.  **Payment Processing:**
     *   Supports Cash, Card, POS, Bank transfer, and Digital wallets.
     *   Payment intents pattern, card surcharge configuration, metadata tracking, and POS device registration.
-7.  **Branding:**
+7.  **Branding (IMPLEMENTED 2025-10-25):**
     *   Custom logos (PNG/SVG), configurable colors and fonts, custom header/footer text.
     *   Asset management with SHA-256 checksums.
+    *   **Upload Interface:**
+        -   Drag-and-drop logo and stamp upload via CompanyBranding.jsx
+        -   File validation (PNG/SVG, max 2MB)
+        -   Live preview before upload
+        -   Replace/delete functionality
+    *   **Display Integration:**
+        -   Logo displayed in invoice header
+        -   Stamp displayed in invoice footer signature area
+        -   Graceful fallback for missing assets
+        -   Subscription plan gating (paid tiers only)
+8.  **Multi-User Team Management (IMPLEMENTED 2025-10-25):**
+    *   **Team Structure:**
+        -   Support for unlimited team members per company
+        -   Owner designation for company registrant
+        -   Role-based access: Super Admin, Company Admin, Finance User
+        -   Invitation system with temporary passwords
+    *   **User Management Features:**
+        -   Invite team members via email
+        -   Remove team members (except owner)
+        -   View team member details (email, role, join date, last login)
+        -   Role permissions clearly defined
+    *   **Database Schema Updates:**
+        -   `is_owner`: Boolean flag for company owner
+        -   `full_name`: User's full name
+        -   `invited_by`: Foreign key to user who invited this member
+        -   `created_at`: User creation timestamp
+        -   `last_login`: Last login timestamp
+    *   **Security:**
+        -   Owners cannot be removed
+        -   Users cannot remove themselves
+        -   Only admins can invite/remove users
+        -   Cross-company protection (users cannot manage other companies' teams)
+9.  **SuperAdmin Analytics Dashboard (IMPLEMENTED 2025-10-25):**
+    *   **Comprehensive Revenue Metrics:**
+        -   Monthly Recurring Revenue (MRR) calculation by subscription tier
+        -   Annual Recurring Revenue (ARR) projection
+        -   Revenue breakdown by plan (Free, Starter, Professional, Enterprise)
+        -   Active companies per tier with ARPU (Average Revenue Per User)
+    *   **Company Explorer:**
+        -   Full company list with real-time invoice counts
+        -   Advanced filtering: by plan, status, region, invoice count
+        -   Search functionality by company name
+        -   VAT compliance status indicators
+        -   CSV export for reporting
+    *   **Registration Analytics:**
+        -   Pending, approved, and rejected registration counts
+        -   Active vs inactive company tracking
+    *   **Invoice Statistics:**
+        -   Month-to-date invoice counts
+        -   Month-over-month comparison
+        -   Per-company invoice tracking
+    *   **Quick Actions:**
+        -   Navigate to approval workflow
+        -   Manage companies and plans
+        -   Export comprehensive data
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) due to persistent database connections, in-memory invoice counters, payment state handling, local artifact storage, and 24/7 availability requirement.
@@ -110,6 +172,17 @@ Detailed explanations preferred. Updated SuperAdminDashboard with advanced analy
     - `invoice_line_items`: Line item details (quantity, unit price, tax category, totals)
     - `invoice_tax_breakdowns`: Tax category breakdowns required for UBL compliance
     - Relationships: company → invoices → line_items + tax_breakdowns
+  - **User Management Fields (added 2025-10-25):**
+    - `is_owner`: Boolean flag indicating company owner (first registrant)
+    - `full_name`: User's full name for display
+    - `invited_by`: Foreign key to user who invited this member
+    - `created_at`: User creation timestamp
+    - `last_login`: Last successful login timestamp
+    - Multi-user support: Multiple users can belong to same company
+  - **Branding Tables (added 2025-10-25):**
+    - `company_branding`: Logo and stamp storage with file metadata
+    - Columns: logo_file_name, logo_file_path, stamp_file_name, stamp_file_path
+    - File size and MIME type tracking for uploaded assets
 - **Configuration:** Utilizes environment variables for `DATABASE_URL`, `ARTIFACT_ROOT`, `PEPPOL_ENDPOINT_SCHEME`, and `RETENTION_YEARS`.
 - **VAT Settings:** Standard VAT rate of 5% and a mandatory registration threshold of AED 375,000.
 - **Security:** Uses SQLAlchemy ORM for SQL injection protection, validates file uploads, and manages database credentials via environment variables.
