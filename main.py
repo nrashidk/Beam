@@ -212,6 +212,35 @@ class CompanyDocumentDB(Base):
 
     company = relationship("CompanyDB", backref="documents")
 
+class CompanyBrandingDB(Base):
+    __tablename__ = "company_branding"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), unique=True, nullable=False, index=True)
+    
+    # Logo
+    logo_file_name = Column(String, nullable=True)
+    logo_file_path = Column(String, nullable=True)
+    logo_file_size = Column(Integer, nullable=True)
+    logo_mime_type = Column(String, nullable=True)
+    logo_uploaded_at = Column(DateTime, nullable=True)
+    
+    # Company Stamp/Seal
+    stamp_file_name = Column(String, nullable=True)
+    stamp_file_path = Column(String, nullable=True)
+    stamp_file_size = Column(Integer, nullable=True)
+    stamp_mime_type = Column(String, nullable=True)
+    stamp_uploaded_at = Column(DateTime, nullable=True)
+    
+    # Optional: Brand Colors & Fonts (for future PDF generation)
+    primary_color = Column(String, nullable=True)  # Hex color
+    secondary_color = Column(String, nullable=True)  # Hex color
+    font_family = Column(String, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = relationship("CompanyDB", backref="branding")
+
 class RegistrationProgressDB(Base):
     __tablename__ = "registration_progress"
     id = Column(String, primary_key=True)
@@ -681,6 +710,21 @@ class InvoiceListOut(BaseModel):
     total_amount: float
     currency_code: str
     created_at: str
+
+class CompanyBrandingOut(BaseModel):
+    id: str
+    company_id: str
+    logo_file_name: Optional[str] = None
+    logo_file_path: Optional[str] = None
+    logo_uploaded_at: Optional[str] = None
+    stamp_file_name: Optional[str] = None
+    stamp_file_path: Optional[str] = None
+    stamp_uploaded_at: Optional[str] = None
+    primary_color: Optional[str] = None
+    secondary_color: Optional[str] = None
+    font_family: Optional[str] = None
+    created_at: str
+    updated_at: str
 
 # ==================== FASTAPI APP ====================
 app = FastAPI(
@@ -2256,6 +2300,322 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
             ) for tb in invoice.tax_breakdowns
         ]
     )
+
+# ==================== COMPANY BRANDING ENDPOINTS ====================
+
+@app.post("/companies/{company_id}/branding/logo", tags=["Branding"])
+async def upload_company_logo(
+    company_id: str,
+    logo: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Upload company logo (PNG/SVG, max 2MB)"""
+    # Verify user owns this company
+    if current_user.company_id != company_id:
+        raise HTTPException(403, "Not authorized to upload logo for this company")
+    
+    # Check if company has branding permission
+    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Get company's subscription plan
+    subscription = db.query(CompanySubscriptionDB).filter(
+        CompanySubscriptionDB.company_id == company_id
+    ).first()
+    
+    if subscription:
+        plan = db.query(SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.id == subscription.plan_id
+        ).first()
+        
+        if plan and not plan.allow_branding:
+            raise HTTPException(403, "Your subscription plan does not allow branding. Please upgrade to use this feature.")
+    
+    # Validate file
+    if not logo.content_type in ["image/png", "image/svg+xml"]:
+        raise HTTPException(400, "Only PNG and SVG files are allowed")
+    
+    # Read file content
+    content = await logo.read()
+    file_size = len(content)
+    
+    if file_size > 2 * 1024 * 1024:  # 2MB limit
+        raise HTTPException(400, "File size must be less than 2MB")
+    
+    # Create branding directory
+    branding_dir = os.path.join(ARTIFACT_ROOT, "branding", company_id)
+    os.makedirs(branding_dir, exist_ok=True)
+    
+    # Save file
+    file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
+    file_name = f"logo.{file_extension}"
+    file_path = os.path.join(branding_dir, file_name)
+    
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Get or create branding record
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding:
+        branding = CompanyBrandingDB(
+            id=f"br_{uuid4().hex[:8]}",
+            company_id=company_id
+        )
+        db.add(branding)
+    
+    # Delete old logo if exists
+    if branding.logo_file_path and os.path.exists(branding.logo_file_path):
+        os.remove(branding.logo_file_path)
+    
+    # Update branding record
+    branding.logo_file_name = file_name
+    branding.logo_file_path = file_path
+    branding.logo_file_size = file_size
+    branding.logo_mime_type = logo.content_type
+    branding.logo_uploaded_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "message": "Logo uploaded successfully",
+        "file_name": file_name,
+        "file_size": file_size,
+        "uploaded_at": branding.logo_uploaded_at.isoformat()
+    }
+
+@app.post("/companies/{company_id}/branding/stamp", tags=["Branding"])
+async def upload_company_stamp(
+    company_id: str,
+    stamp: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Upload company stamp/seal (PNG/SVG, max 2MB)"""
+    # Verify user owns this company
+    if current_user.company_id != company_id:
+        raise HTTPException(403, "Not authorized to upload stamp for this company")
+    
+    # Check if company has branding permission
+    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Get company's subscription plan
+    subscription = db.query(CompanySubscriptionDB).filter(
+        CompanySubscriptionDB.company_id == company_id
+    ).first()
+    
+    if subscription:
+        plan = db.query(SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.id == subscription.plan_id
+        ).first()
+        
+        if plan and not plan.allow_branding:
+            raise HTTPException(403, "Your subscription plan does not allow branding. Please upgrade to use this feature.")
+    
+    # Validate file
+    if not stamp.content_type in ["image/png", "image/svg+xml"]:
+        raise HTTPException(400, "Only PNG and SVG files are allowed")
+    
+    # Read file content
+    content = await stamp.read()
+    file_size = len(content)
+    
+    if file_size > 2 * 1024 * 1024:  # 2MB limit
+        raise HTTPException(400, "File size must be less than 2MB")
+    
+    # Create branding directory
+    branding_dir = os.path.join(ARTIFACT_ROOT, "branding", company_id)
+    os.makedirs(branding_dir, exist_ok=True)
+    
+    # Save file
+    file_extension = "svg" if stamp.content_type == "image/svg+xml" else "png"
+    file_name = f"stamp.{file_extension}"
+    file_path = os.path.join(branding_dir, file_name)
+    
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Get or create branding record
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding:
+        branding = CompanyBrandingDB(
+            id=f"br_{uuid4().hex[:8]}",
+            company_id=company_id
+        )
+        db.add(branding)
+    
+    # Delete old stamp if exists
+    if branding.stamp_file_path and os.path.exists(branding.stamp_file_path):
+        os.remove(branding.stamp_file_path)
+    
+    # Update branding record
+    branding.stamp_file_name = file_name
+    branding.stamp_file_path = file_path
+    branding.stamp_file_size = file_size
+    branding.stamp_mime_type = stamp.content_type
+    branding.stamp_uploaded_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "message": "Stamp uploaded successfully",
+        "file_name": file_name,
+        "file_size": file_size,
+        "uploaded_at": branding.stamp_uploaded_at.isoformat()
+    }
+
+@app.get("/companies/{company_id}/branding", tags=["Branding"], response_model=CompanyBrandingOut)
+def get_company_branding(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get company branding information"""
+    # Verify user owns this company
+    if current_user.company_id != company_id:
+        raise HTTPException(403, "Not authorized to view branding for this company")
+    
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding:
+        raise HTTPException(404, "No branding configured for this company")
+    
+    return CompanyBrandingOut(
+        id=branding.id,
+        company_id=branding.company_id,
+        logo_file_name=branding.logo_file_name,
+        logo_file_path=branding.logo_file_path,
+        logo_uploaded_at=branding.logo_uploaded_at.isoformat() if branding.logo_uploaded_at else None,
+        stamp_file_name=branding.stamp_file_name,
+        stamp_file_path=branding.stamp_file_path,
+        stamp_uploaded_at=branding.stamp_uploaded_at.isoformat() if branding.stamp_uploaded_at else None,
+        primary_color=branding.primary_color,
+        secondary_color=branding.secondary_color,
+        font_family=branding.font_family,
+        created_at=branding.created_at.isoformat(),
+        updated_at=branding.updated_at.isoformat()
+    )
+
+@app.get("/companies/{company_id}/branding/logo", tags=["Branding"])
+def get_company_logo(
+    company_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get company logo file (public endpoint for invoice display)"""
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding or not branding.logo_file_path:
+        raise HTTPException(404, "Logo not found")
+    
+    if not os.path.exists(branding.logo_file_path):
+        raise HTTPException(404, "Logo file not found")
+    
+    return FileResponse(
+        branding.logo_file_path,
+        media_type=branding.logo_mime_type,
+        filename=branding.logo_file_name
+    )
+
+@app.get("/companies/{company_id}/branding/stamp", tags=["Branding"])
+def get_company_stamp(
+    company_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get company stamp file (public endpoint for invoice display)"""
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding or not branding.stamp_file_path:
+        raise HTTPException(404, "Stamp not found")
+    
+    if not os.path.exists(branding.stamp_file_path):
+        raise HTTPException(404, "Stamp file not found")
+    
+    return FileResponse(
+        branding.stamp_file_path,
+        media_type=branding.stamp_mime_type,
+        filename=branding.stamp_file_name
+    )
+
+@app.delete("/companies/{company_id}/branding/logo", tags=["Branding"])
+def delete_company_logo(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Delete company logo"""
+    # Verify user owns this company
+    if current_user.company_id != company_id:
+        raise HTTPException(403, "Not authorized to delete logo for this company")
+    
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding or not branding.logo_file_path:
+        raise HTTPException(404, "Logo not found")
+    
+    # Delete file from disk
+    if os.path.exists(branding.logo_file_path):
+        os.remove(branding.logo_file_path)
+    
+    # Clear database fields
+    branding.logo_file_name = None
+    branding.logo_file_path = None
+    branding.logo_file_size = None
+    branding.logo_mime_type = None
+    branding.logo_uploaded_at = None
+    
+    db.commit()
+    
+    return {"message": "Logo deleted successfully"}
+
+@app.delete("/companies/{company_id}/branding/stamp", tags=["Branding"])
+def delete_company_stamp(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Delete company stamp"""
+    # Verify user owns this company
+    if current_user.company_id != company_id:
+        raise HTTPException(403, "Not authorized to delete stamp for this company")
+    
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id
+    ).first()
+    
+    if not branding or not branding.stamp_file_path:
+        raise HTTPException(404, "Stamp not found")
+    
+    # Delete file from disk
+    if os.path.exists(branding.stamp_file_path):
+        os.remove(branding.stamp_file_path)
+    
+    # Clear database fields
+    branding.stamp_file_name = None
+    branding.stamp_file_path = None
+    branding.stamp_file_size = None
+    branding.stamp_mime_type = None
+    branding.stamp_uploaded_at = None
+    
+    db.commit()
+    
+    return {"message": "Stamp deleted successfully"}
 
 # ==================== HEALTH CHECK ====================
 
