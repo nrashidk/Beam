@@ -1,114 +1,146 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { adminAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle } from 'lucide-react';
+import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, LogOut } from 'lucide-react';
 import { format } from 'date-fns';
+import apiClient from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 
-function DateRangePicker({ range, onChange }) {
-  function shiftDays(days) {
-    const to = new Date();
-    const from = new Date();
-    from.setDate(to.getDate() - days);
-    onChange({ from, to });
-  }
-  
+function Stat({ label, value, delta, positive }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(7)}>Last 7 days</Button>
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(30)}>Last 30 days</Button>
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(90)}>Last 90 days</Button>
-      <div className="flex items-center text-sm text-gray-600">
-        <Calendar size={16} className="mr-1" />
-        {format(range.from, 'MMM d')} – {format(range.to, 'MMM d, yyyy')}
+    <Card className="rounded-2xl shadow-sm">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="flex items-end justify-between">
+          <div className="text-3xl font-semibold tracking-tight">{value}</div>
+          {delta && (
+            <div className={`flex items-center gap-1 text-xs ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {positive ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+              <span>{delta}</span>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function Section({ title, children, action }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {action}
       </div>
+      {children}
     </div>
   );
 }
 
+function csvEscape(val) {
+  if (val === null || val === undefined) return '';
+  const s = String(val);
+  if (/[",\n]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function buildCompaniesCsv(rows) {
+  const header = ['Company', 'Status', 'Plan', 'ARPU', 'InvoicesMTD', 'Region', 'VATCompliant'];
+  const lines = rows.map((r) => [
+    csvEscape(r.name),
+    csvEscape(r.status),
+    csvEscape(r.plan || ''),
+    csvEscape(r.arpu ?? ''),
+    csvEscape(r.invoicesThisMonth),
+    csvEscape(r.region || ''),
+    csvEscape(r.vatCompliant ? 'Yes' : 'No'),
+  ].join(','));
+  return [header.join(','), ...lines].join('\n');
+}
+
 export default function SuperAdminDashboard() {
-  const { logout, user } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
-  const [range, setRange] = useState({ 
-    from: new Date(new Date().setDate(new Date().getDate() - 29)), 
-    to: new Date() 
-  });
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ 
-    region: 'all', 
-    status: 'all', 
-    search: '' 
-  });
-  const [companies, setCompanies] = useState([]);
-  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, active: 0, rejected: 0, total_invoices: 0 });
+  const [range, setRange] = useState(() => ({
+    from: new Date(new Date().setDate(new Date().getDate() - 29)),
+    to: new Date()
+  }));
   const [loading, setLoading] = useState(true);
-  const [approvalModal, setApprovalModal] = useState(null);
-  const [freePlanConfig, setFreePlanConfig] = useState({
-    free_plan_type: 'INVOICE_COUNT',
-    free_plan_duration_months: 1,
-    free_plan_invoice_limit: 100
-  });
+  const [stats, setStats] = useState(null);
+
+  const [q, setQ] = useState('');
+  const [plan, setPlan] = useState('all');
+  const [status, setStatus] = useState('all');
+  const [minInvoices, setMinInvoices] = useState('');
+
+  function exportCompaniesCsv(rows) {
+    const csv = buildCompaniesCsv(rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `companies-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const fromISO = useMemo(() => range.from.toISOString(), [range.from]);
+  const toISO = useMemo(() => range.to.toISOString(), [range.to]);
 
   useEffect(() => {
-    fetchData();
-  }, [filters]);
-
-  const fetchData = async () => {
-    try {
-      const [companiesResponse, statsResponse] = await Promise.all([
-        adminAPI.getPendingCompanies(),
-        adminAPI.getStats()
-      ]);
-      setCompanies(companiesResponse.data);
-      setStats(statsResponse.data);
-    } catch (error) {
-      console.error('Failed to fetch data', error);
-    } finally {
-      setLoading(false);
+    async function fetchStats() {
+      try {
+        setLoading(true);
+        const response = await apiClient.get(`/admin/stats?from=${fromISO}&to=${toISO}`);
+        setStats(response.data);
+      } catch (error) {
+        console.error('Failed to fetch admin stats:', error);
+      } finally {
+        setLoading(false);
+      }
     }
-  };
+    fetchStats();
+  }, [fromISO, toISO]);
 
-  const fetchCompanies = fetchData;
+  const mtdDelta = useMemo(() => {
+    if (!stats) return { pct: '', positive: true };
+    const { monthToDate, lastMonth } = stats.invoices;
+    const delta = lastMonth === 0 ? 0 : ((monthToDate - lastMonth) / lastMonth) * 100;
+    return { pct: `${delta > 0 ? '+' : ''}${delta.toFixed(1)}% vs last month`, positive: delta >= 0 };
+  }, [stats]);
 
-  const handleApprove = async (companyId, config) => {
-    try {
-      await adminAPI.approveCompany(companyId, config);
-      alert('Company approved successfully!');
-      setApprovalModal(null);
-      setFreePlanConfig({ free_plan_type: 'INVOICE_COUNT', free_plan_duration_months: 1, free_plan_invoice_limit: 100 });
-      fetchCompanies();
-    } catch (error) {
-      alert('Failed to approve company');
-    }
-  };
-
-  const handleReject = async (companyId) => {
-    try {
-      await adminAPI.rejectCompany(companyId);
-      alert('Company rejected');
-      fetchCompanies();
-    } catch (error) {
-      alert('Failed to reject company');
-    }
-  };
+  const filteredCompanies = useMemo(() => {
+    const list = stats?.companies.all || [];
+    const ql = q.trim().toLowerCase();
+    return list.filter((c) => {
+      if (plan !== 'all' && c.plan !== plan) return false;
+      if (status !== 'all' && c.status !== status) return false;
+      if (minInvoices && c.invoicesThisMonth < Number(minInvoices)) return false;
+      if (ql && !`${c.name}`.toLowerCase().includes(ql)) return false;
+      return true;
+    });
+  }, [stats, q, plan, status, minInvoices]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-xl font-bold">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <nav className="bg-white/70 backdrop-blur-md border-b sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xl font-bold cursor-pointer" onClick={() => navigate('/')}>
             <span className="text-2xl">⚡</span>
             <span>Beam Admin</span>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-sm">
-              <Badge variant="info">{user?.role}</Badge>
-              <span className="ml-2 text-gray-600">{user?.user_id}</span>
-            </div>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin/approvals')}>
+              Approvals
+            </Button>
             <Button variant="outline" size="sm" onClick={logout} className="gap-2">
               <LogOut size={16} />
               Logout
@@ -117,242 +149,171 @@ export default function SuperAdminDashboard() {
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
-          <Button variant="outline" size="sm" onClick={fetchCompanies} className="gap-2">
-            <RefreshCcw size={16} />
-            Refresh
-          </Button>
+      <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Super Admin Overview</h1>
+            <p className="text-sm text-muted-foreground">As of {stats ? format(new Date(stats.asOf), 'PPpp') : '—'}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => setRange({ from: new Date(new Date().setDate(new Date().getDate() - 29)), to: new Date() })}>
+              <RefreshCcw size={16} />
+              Reset Range
+            </Button>
+            <Button variant="secondary" className="gap-2" disabled>
+              <CalendarIcon size={16} />
+              {format(range.from, 'MMM d')} – {format(range.to, 'MMM d, yyyy')}
+            </Button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Total Companies</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{stats.total_companies}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Pending Approval</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">{stats.pending_approval}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Active</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-green-600">{stats.active}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Rejected</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-red-600">{stats.rejected}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Total Invoices</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{stats.total_invoices}</div>
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Stat label="Pending registrations" value={loading ? '—' : stats?.registrations.pending ?? '—'} />
+          <Stat label="Approved registrations" value={loading ? '—' : stats?.registrations.approved ?? '—'} />
+          <Stat label="Rejected registrations" value={loading ? '—' : stats?.registrations.rejected ?? '—'} />
+          <Stat label="Active companies" value={loading ? '—' : stats?.companies.active ?? '—'} />
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <DateRangePicker range={range} onChange={setRange} />
-          <Button variant="outline" className="gap-2" onClick={() => setShowFilters(true)}>
-            <Filter size={16} /> More filters
-          </Button>
-        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="space-y-6">
+            <Stat label="Inactive companies" value={loading ? '—' : stats?.companies.inactive ?? '—'} />
+            <Stat label="Invoices month-to-date" value={loading ? '—' : stats?.invoices.monthToDate.toLocaleString() ?? '—'} delta={mtdDelta.pct} positive={mtdDelta.positive} />
+          </div>
 
-        {showFilters && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-              <div className="flex justify-between mb-4">
-                <h2 className="font-semibold text-lg">Advanced Filters</h2>
-                <Button size="icon" variant="outline" onClick={() => setShowFilters(false)}>
-                  <X size={16} />
-                </Button>
-              </div>
-              <div className="space-y-4">
+          <Card className="lg:col-span-2 rounded-2xl shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">Revenue summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Region</label>
-                  <select 
-                    className="w-full border rounded-lg px-3 py-2"
-                    value={filters.region}
-                    onChange={(e) => setFilters({ ...filters, region: e.target.value })}
-                  >
-                    <option value="all">All</option>
-                    <option value="DXB">Dubai (DXB)</option>
-                    <option value="AUH">Abu Dhabi (AUH)</option>
-                    <option value="SHJ">Sharjah (SHJ)</option>
-                  </select>
+                  <p className="text-xs text-muted-foreground mb-1">Total MRR</p>
+                  <p className="text-2xl font-semibold">{loading ? '—' : `AED ${stats?.revenue.mrr.toLocaleString()}`}</p>
                 </div>
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Status</label>
-                  <select 
-                    className="w-full border rounded-lg px-3 py-2"
-                    value={filters.status}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                  >
-                    <option value="all">All</option>
-                    <option value="pending">Pending Review</option>
-                    <option value="active">Active</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-600 block mb-1">Search</label>
-                  <Input 
-                    type="text" 
-                    placeholder="Company name..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                  />
+                  <p className="text-xs text-muted-foreground mb-1">Total ARR</p>
+                  <p className="text-2xl font-semibold">{loading ? '—' : `AED ${stats?.revenue.arr.toLocaleString()}`}</p>
                 </div>
               </div>
-              <div className="flex justify-end mt-4">
-                <Button onClick={() => setShowFilters(false)}>Apply</Button>
+              <div className="overflow-hidden rounded-2xl border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/40">
+                    <tr className="text-left">
+                      <th className="px-4 py-3 font-medium">Plan</th>
+                      <th className="px-4 py-3 font-medium">Active companies</th>
+                      <th className="px-4 py-3 font-medium">Price / company</th>
+                      <th className="px-4 py-3 font-medium">MRR</th>
+                      <th className="px-4 py-3 font-medium">ARR</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stats?.revenue.tiers || []).map((t) => (
+                      <tr key={t.plan} className="border-t">
+                        <td className="px-4 py-3">{t.plan}</td>
+                        <td className="px-4 py-3">{t.activeCompanies.toLocaleString()}</td>
+                        <td className="px-4 py-3">AED {t.pricePerCompany.toLocaleString()}</td>
+                        <td className="px-4 py-3 font-medium">AED {t.mrr.toLocaleString()}</td>
+                        <td className="px-4 py-3">AED {t.arr.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Section
+          title="Company Explorer"
+          action={
+            <div className="flex flex-col md:flex-row gap-2 md:items-center">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2" size={16} />
+                <Input className="pl-8" placeholder="Search company name" value={q} onChange={(e) => setQ(e.target.value)} />
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Select value={plan} onValueChange={setPlan}>
+                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Plan" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All plans</SelectItem>
+                    <SelectItem value="Enterprise">Enterprise</SelectItem>
+                    <SelectItem value="Professional">Professional</SelectItem>
+                    <SelectItem value="Starter">Starter</SelectItem>
+                    <SelectItem value="Free">Free</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input type="number" min={0} placeholder="Min invoices" value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[140px]" />
+                <Button variant="outline" onClick={() => exportCompaniesCsv(filteredCompanies)}>Export CSV</Button>
               </div>
             </div>
-          </div>
-        )}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending Company Approvals</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
-            ) : companies.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No pending companies</div>
-            ) : (
-              <div className="space-y-4">
-                {companies.map((company) => (
-                  <div key={company.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-semibold text-lg">{company.legal_name || 'Unnamed Company'}</h3>
-                        <p className="text-sm text-gray-600">{company.email}</p>
-                        <p className="text-sm text-gray-500">
-                          {company.business_type} • {company.phone}
-                        </p>
-                        <div className="mt-2 flex gap-2">
-                          <Badge variant="warning">{company.status}</Badge>
-                          <Badge variant="secondary">
-                            {company.invoices_generated || 0} invoices
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          onClick={() => setApprovalModal(company)}
-                          className="gap-2"
-                        >
-                          <CheckCircle size={16} />
-                          Approve
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => handleReject(company.id)}
-                          className="gap-2"
-                        >
-                          <XCircle size={16} />
-                          Reject
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+          }
+        >
+          <div className="overflow-hidden rounded-2xl border bg-card">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr className="text-left">
+                  <th className="px-4 py-3 font-medium">Company</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Plan</th>
+                  <th className="px-4 py-3 font-medium">ARPU</th>
+                  <th className="px-4 py-3 font-medium">Invoices (MTD)</th>
+                  <th className="px-4 py-3 font-medium">VAT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCompanies.map((c) => (
+                  <tr key={c.id} className="border-t">
+                    <td className="px-4 py-3">{c.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
+                    </td>
+                    <td className="px-4 py-3">{c.plan || '—'}</td>
+                    <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td>
+                    <td className="px-4 py-3">{c.invoicesThisMonth.toLocaleString()}</td>
+                    <td className="px-4 py-3">{c.vatCompliant ? <Badge className="bg-emerald-600">Compliant</Badge> : <Badge variant="secondary">Review</Badge>}</td>
+                  </tr>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {approvalModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-              <div className="flex justify-between mb-4">
-                <h2 className="font-semibold text-lg">Approve Company</h2>
-                <Button size="icon" variant="outline" onClick={() => setApprovalModal(null)}>
-                  <X size={16} />
-                </Button>
-              </div>
-              
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-                <p className="font-semibold">{approvalModal.legal_name}</p>
-                <p className="text-sm text-gray-600">{approvalModal.email}</p>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium block mb-2">Free Plan Type</label>
-                  <select 
-                    className="w-full border rounded-lg px-3 py-2"
-                    value={freePlanConfig.free_plan_type}
-                    onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_type: e.target.value })}
-                  >
-                    <option value="INVOICE_COUNT">Invoice Count Limit</option>
-                    <option value="DURATION">Duration-based (Months)</option>
-                  </select>
-                </div>
-
-                {freePlanConfig.free_plan_type === 'INVOICE_COUNT' ? (
-                  <div>
-                    <label className="text-sm font-medium block mb-2">Invoice Limit</label>
-                    <Input 
-                      type="number" 
-                      min="1"
-                      value={freePlanConfig.free_plan_invoice_limit}
-                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_invoice_limit: parseInt(e.target.value) || 100 })}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Company can generate up to this many free invoices
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-sm font-medium block mb-2">Duration (Months)</label>
-                    <Input 
-                      type="number" 
-                      min="1"
-                      value={freePlanConfig.free_plan_duration_months}
-                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_duration_months: parseInt(e.target.value) || 1 })}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Free plan will be active for this many months
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 mt-6">
-                <Button variant="outline" onClick={() => setApprovalModal(null)}>
-                  Cancel
-                </Button>
-                <Button onClick={() => handleApprove(approvalModal.id, freePlanConfig)} className="gap-2">
-                  <CheckCircle size={16} />
-                  Approve & Configure
-                </Button>
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
-        )}
-      </main>
+          <p className="text-xs text-muted-foreground mt-2">Showing {filteredCompanies.length} of {stats?.companies.all.length || 0} companies</p>
+        </Section>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3">
+              <Button variant="outline" onClick={() => navigate('/admin/approvals')}>Review Pending</Button>
+              <Button variant="outline" onClick={() => navigate('/admin/companies')}>Manage Companies</Button>
+              <Button variant="outline" onClick={() => exportCompaniesCsv(stats?.companies.all || [])}>Export All Data</Button>
+              <Button variant="outline" onClick={() => navigate('/plans')}>Manage Plans</Button>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">System Info</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="list-disc pl-5 text-sm space-y-2 text-muted-foreground">
+                <li>Revenue calculated based on active subscription plans</li>
+                <li>Invoice counts updated in real-time</li>
+                <li>Export feature includes all company data with VAT compliance status</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

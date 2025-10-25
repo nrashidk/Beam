@@ -4,11 +4,13 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Homepage from './pages/Homepage';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import SuperAdminApprovals from './pages/SuperAdminApprovals';
 import BusinessDashboard from './pages/BusinessDashboard';
 import InvoiceDashboard from './pages/InvoiceDashboard';
 import CreateInvoice from './pages/CreateInvoice';
 import InvoiceDetail from './pages/InvoiceDetail';
 import CompanyBranding from './pages/CompanyBranding';
+import TeamManagement from './pages/TeamManagement';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -87,6 +89,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <CompanyBranding />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/team"
+            element={
+              <ProtectedRoute>
+                <TeamManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/approvals"
+            element={
+              <ProtectedRoute>
+                <SuperAdminApprovals />
               </ProtectedRoute>
             }
           />
