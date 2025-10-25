@@ -110,6 +110,11 @@ class UserDB(Base):
     password_hash = Column(String, nullable=True)
     role = Column(SQLEnum(Role), nullable=False)
     company_id = Column(String, ForeignKey("companies.id"), nullable=True)
+    is_owner = Column(Boolean, default=False)  # First user who registered the company
+    full_name = Column(String, nullable=True)
+    invited_by = Column(String, ForeignKey("users.id"), nullable=True)  # Who invited this user
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -802,13 +807,15 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
         )
         db.add(progress)
         
-        # Create user account
+        # Create user account (owner)
         user = UserDB(
             id=f"user_{uuid4().hex[:8]}",
             email=payload.email,
             password_hash=get_password_hash(payload.password),
             role=Role.COMPANY_ADMIN,
-            company_id=company_id
+            company_id=company_id,
+            is_owner=True,
+            full_name=payload.company_name  # Use company name as default
         )
         db.add(user)
         
@@ -1706,29 +1713,244 @@ def reject_company(
 
 @app.get("/admin/stats", tags=["Admin"])
 def get_admin_stats(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
-    """Get dashboard statistics (Super Admin only)"""
+    """Get comprehensive dashboard statistics for SuperAdmin (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
     # Count companies by status
-    total_companies = db.query(CompanyDB).count()
     pending = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
-    active = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    approved = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
     rejected = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.REJECTED).count()
+    active_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    inactive_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.SUSPENDED).count()
     
-    # Calculate total invoices across all companies
-    total_invoices = db.query(func.sum(CompanyDB.invoices_generated)).scalar() or 0
+    # Get all companies with details for explorer
+    companies = db.query(CompanyDB).all()
+    all_companies_list = []
+    for company in companies:
+        # Get plan info
+        plan = None
+        arpu = 0
+        if company.subscription_plan_id:
+            plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
+            if plan_obj:
+                plan = plan_obj.name
+                arpu = plan_obj.price_monthly
+        
+        # Get invoice count for this month
+        now = datetime.utcnow()
+        month_start = datetime(now.year, now.month, 1)
+        invoices_this_month = db.query(InvoiceDB).filter(
+            InvoiceDB.company_id == company.id,
+            InvoiceDB.created_at >= month_start
+        ).count()
+        
+        all_companies_list.append({
+            "id": company.id,
+            "name": company.legal_name or "Unnamed Company",
+            "status": "active" if company.status == CompanyStatus.ACTIVE else "inactive",
+            "invoicesThisMonth": invoices_this_month,
+            "invoicesLimit": company.free_plan_invoice_limit,
+            "plan": plan,
+            "arpu": arpu,
+            "region": company.emirate,
+            "vatCompliant": bool(company.trn)
+        })
+    
+    # Invoice statistics
+    now = datetime.utcnow()
+    month_start = datetime(now.year, now.month, 1)
+    last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+    
+    invoices_mtd = db.query(InvoiceDB).filter(InvoiceDB.created_at >= month_start).count()
+    invoices_last_month = db.query(InvoiceDB).filter(
+        InvoiceDB.created_at >= last_month_start,
+        InvoiceDB.created_at < month_start
+    ).count()
+    
+    # Revenue calculations by tier
+    tiers_data = []
+    all_plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
+    total_mrr = 0
+    
+    for plan in all_plans:
+        active_on_plan = db.query(CompanyDB).filter(
+            CompanyDB.subscription_plan_id == plan.id,
+            CompanyDB.status == CompanyStatus.ACTIVE
+        ).count()
+        
+        mrr = active_on_plan * plan.price_monthly
+        total_mrr += mrr
+        
+        tiers_data.append({
+            "plan": plan.name,
+            "activeCompanies": active_on_plan,
+            "pricePerCompany": plan.price_monthly,
+            "mrr": mrr,
+            "arr": mrr * 12,
+            "newActivations": 0  # Could track this with created_at filters
+        })
     
     return {
-        "total_companies": total_companies,
-        "pending_approval": pending,
-        "active": active,
-        "rejected": rejected,
-        "total_invoices": total_invoices,
-        "timestamp": datetime.utcnow().isoformat()
+        "asOf": datetime.utcnow().isoformat(),
+        "registrations": {
+            "pending": pending,
+            "approved": approved,
+            "rejected": rejected
+        },
+        "companies": {
+            "active": active_companies,
+            "inactive": inactive_companies,
+            "all": all_companies_list
+        },
+        "invoices": {
+            "monthToDate": invoices_mtd,
+            "lastMonth": invoices_last_month
+        },
+        "revenue": {
+            "mrr": total_mrr,
+            "arr": total_mrr * 12,
+            "deltaPctVsLastMonth": 0,  # Could calculate from historical data
+            "tiers": tiers_data
+        }
+    }
+
+# ==================== USER MANAGEMENT ENDPOINTS ====================
+
+class UserInvite(BaseModel):
+    email: str
+    full_name: str
+    role: Role = Role.FINANCE_USER
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    full_name: Optional[str]
+    role: str
+    is_owner: bool
+    created_at: str
+    last_login: Optional[str]
+
+@app.post("/users/invite", tags=["Users"])
+def invite_user(
+    payload: UserInvite,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Invite a team member to the company (Company Admin only)"""
+    # Only company admins or owners can invite users
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only admins can invite users")
+    
+    if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(400, "User must belong to a company to invite others")
+    
+    # Check if email already exists
+    existing = db.query(UserDB).filter(UserDB.email == payload.email).first()
+    if existing:
+        raise HTTPException(400, "User with this email already exists")
+    
+    # Create new user
+    user_id = f"usr_{uuid4().hex[:12]}"
+    temp_password = secrets.token_urlsafe(16)
+    password_hash = bcrypt.hashpw(temp_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    new_user = UserDB(
+        id=user_id,
+        email=payload.email,
+        full_name=payload.full_name,
+        password_hash=password_hash,
+        role=payload.role,
+        company_id=current_user.company_id,
+        is_owner=False,
+        invited_by=current_user.id
+    )
+    
+    db.add(new_user)
+    db.commit()
+    
+    # Simulate email notification
+    print("\n" + "="*70)
+    print("✉️  TEAM MEMBER INVITATION - EMAIL NOTIFICATION")
+    print("="*70)
+    print(f"To: {payload.email}")
+    print(f"Subject: You've been invited to join Beam!")
+    print(f"\nHello {payload.full_name},")
+    print(f"\nYou have been invited to join a team on Beam E-Invoicing.")
+    print(f"Your temporary password is: {temp_password}")
+    print(f"Please log in and change your password immediately.")
+    print("="*70 + "\n")
+    
+    return {
+        "success": True,
+        "user_id": user_id,
+        "email": payload.email,
+        "temporary_password": temp_password,
+        "message": "User invited successfully"
+    }
+
+@app.get("/users/team", response_model=List[UserOut], tags=["Users"])
+def get_team_members(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all team members for the current user's company"""
+    if not current_user.company_id:
+        return []
+    
+    users = db.query(UserDB).filter(UserDB.company_id == current_user.company_id).all()
+    
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "is_owner": user.is_owner,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None
+        }
+        for user in users
+    ]
+
+@app.delete("/users/{user_id}", tags=["Users"])
+def remove_team_member(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Remove a team member (Company Admin only)"""
+    # Only company admins can remove users
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only admins can remove users")
+    
+    user_to_remove = db.get(UserDB, user_id)
+    if not user_to_remove:
+        raise HTTPException(404, "User not found")
+    
+    # Can't remove users from other companies
+    if user_to_remove.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Cannot remove users from other companies")
+    
+    # Can't remove the owner
+    if user_to_remove.is_owner:
+        raise HTTPException(400, "Cannot remove the company owner")
+    
+    # Can't remove yourself
+    if user_to_remove.id == current_user.id:
+        raise HTTPException(400, "Cannot remove yourself")
+    
+    db.delete(user_to_remove)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "User removed successfully"
     }
 
 # ==================== INVOICE ENDPOINTS ====================
