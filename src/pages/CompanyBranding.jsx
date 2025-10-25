@@ -165,7 +165,7 @@ export default function CompanyBranding() {
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Header */}
         <button
-          onClick={() => navigate('/business-dashboard')}
+          onClick={() => navigate('/dashboard')}
           className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-medium mb-6"
         >
           <ArrowLeft className="w-5 h-5" />
