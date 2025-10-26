@@ -19,6 +19,7 @@ export default function Homepage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [publicStats, setPublicStats] = useState({ totalInvoices: 0, totalCompanies: 0 });
 
@@ -62,7 +63,7 @@ export default function Homepage() {
       });
 
       if (response.data.success) {
-        alert('Registration successful! Awaiting admin approval.');
+        setSuccess(true);
         setFormData({ email: '', company_name: '', business_type: '', phone: '', password: '' });
       }
     } catch (err) {
@@ -132,18 +133,40 @@ export default function Homepage() {
 
         <Card className="max-w-md mx-auto">
           <CardContent className="p-8 space-y-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-semibold mb-2">Get Started</h2>
-              <p className="text-sm text-gray-600">Create your free account</p>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
+            {success ? (
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-semibold text-gray-900">Registration Successful!</h2>
+                <div className="space-y-2">
+                  <p className="text-gray-700">Awaiting Admin approval.</p>
+                  <p className="text-sm text-gray-600">A confirmation email will be sent upon approval.</p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSuccess(false)}
+                  className="mt-4"
+                >
+                  Register Another Account
+                </Button>
               </div>
-            )}
+            ) : (
+              <>
+                <div className="text-center">
+                  <h2 className="text-2xl font-semibold mb-2">Get Started</h2>
+                  <p className="text-sm text-gray-600">Create your free account</p>
+                </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                    {error}
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Email*</label>
                 <Input
@@ -210,6 +233,8 @@ export default function Homepage() {
                 Sign in
               </button>
             </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </main>
