@@ -11,13 +11,8 @@ import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 function Stat({ label, value, delta, positive, onClick }) {
-  const CardComponent = onClick ? 'button' : 'div';
-  const cardProps = onClick 
-    ? { onClick, className: "rounded-2xl shadow-sm cursor-pointer hover:shadow-md transition-shadow w-full text-left" }
-    : { className: "rounded-2xl shadow-sm" };
-  
-  return (
-    <Card {...cardProps}>
+  const content = (
+    <Card className="rounded-2xl shadow-sm h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
@@ -34,6 +29,19 @@ function Stat({ label, value, delta, positive, onClick }) {
       </CardContent>
     </Card>
   );
+  
+  if (onClick) {
+    return (
+      <button 
+        onClick={onClick} 
+        className="cursor-pointer hover:opacity-80 transition-opacity w-full h-full"
+      >
+        {content}
+      </button>
+    );
+  }
+  
+  return content;
 }
 
 function Section({ title, children, action }) {
