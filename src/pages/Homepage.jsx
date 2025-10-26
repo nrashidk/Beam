@@ -126,20 +126,9 @@ export default function Homepage() {
 
         <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
           <CardContent className="p-8">
-            <div className="grid grid-cols-2 gap-8 max-w-2xl mx-auto">
-              <div className="text-center">
-                <div className="text-5xl font-bold text-blue-600 mb-2">
-                  {(publicStats?.totalInvoices || 0).toLocaleString()}
-                </div>
-                <div className="text-base text-gray-700 font-medium">Total Invoices</div>
-                <p className="text-xs text-gray-600 mt-1">Generated on Beam</p>
-              </div>
-              <div className="text-center">
-                <div className="text-5xl font-bold text-indigo-600 mb-2">
-                  {(publicStats?.totalCompanies || 0).toLocaleString()}
-                </div>
-                <div className="text-base text-gray-700 font-medium">Active Companies</div>
-                <p className="text-xs text-gray-600 mt-1">Using our platform</p>
+            <div className="text-center">
+              <div className="text-5xl font-bold text-gray-900">
+                {(publicStats?.totalInvoices || 0).toLocaleString()} <span className="font-normal text-gray-700">invoices generated today</span>
               </div>
             </div>
           </CardContent>
