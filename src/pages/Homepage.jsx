@@ -77,8 +77,8 @@ export default function Homepage() {
       <nav className="backdrop-blur-md bg-white/80 border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2 text-xl font-bold">
-            <span className="text-2xl">⚡</span>
-            <span>Beam</span>
+            <span className="text-2xl">🔗</span>
+            <span>InvoLinks</span>
           </div>
           {user ? (
             <div className="flex items-center gap-4">
@@ -124,15 +124,11 @@ export default function Homepage() {
           ))}
         </div>
 
-        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-          <CardContent className="p-8">
-            <div className="text-center">
-              <div className="text-5xl font-bold text-gray-900">
-                {(publicStats?.totalInvoices || 0).toLocaleString()} <span className="font-normal text-gray-700">invoices generated today</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="text-center py-4">
+          <div className="text-2xl font-bold text-gray-900">
+            {(publicStats?.totalInvoices || 0).toLocaleString()} <span className="font-normal text-gray-600">invoices generated today</span>
+          </div>
+        </div>
 
         <Card className="max-w-md mx-auto">
           <CardContent className="p-8 space-y-6">
