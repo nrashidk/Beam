@@ -1554,7 +1554,7 @@ def get_pending_companies(
     
     pending = db.query(CompanyDB).filter(
         CompanyDB.status == CompanyStatus.PENDING_REVIEW
-    ).all()
+    ).order_by(CompanyDB.created_at.desc()).all()
     
     return [{
         "id": c.id,
@@ -1564,7 +1564,7 @@ def get_pending_companies(
         "phone": c.phone,
         "created_at": c.created_at.isoformat(),
         "status": c.status.value,
-        "invoices_generated": c.invoices_generated or 0
+        "invoices_generated": 0  # Pending companies haven't generated invoices yet
     } for c in pending]
 
 @app.get("/admin/companies", tags=["Admin"])
@@ -1668,10 +1668,13 @@ def approve_company(
         "message": "Company approved successfully"
     }
 
+class RejectCompanyRequest(BaseModel):
+    notes: Optional[str] = None
+
 @app.post("/admin/companies/{company_id}/reject", tags=["Admin"])
 def reject_company(
     company_id: str,
-    notes: str = None,
+    payload: RejectCompanyRequest = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
@@ -1685,6 +1688,8 @@ def reject_company(
     
     if company.status != CompanyStatus.PENDING_REVIEW:
         raise HTTPException(400, f"Company is not pending review. Current status: {company.status.value}")
+    
+    notes = payload.notes if payload else None
     
     # Update company status to REJECTED
     company.status = CompanyStatus.REJECTED

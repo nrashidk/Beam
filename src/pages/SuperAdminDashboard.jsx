@@ -10,9 +10,14 @@ import { format } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
-function Stat({ label, value, delta, positive }) {
+function Stat({ label, value, delta, positive, onClick }) {
+  const CardComponent = onClick ? 'button' : 'div';
+  const cardProps = onClick 
+    ? { onClick, className: "rounded-2xl shadow-sm cursor-pointer hover:shadow-md transition-shadow w-full text-left" }
+    : { className: "rounded-2xl shadow-sm" };
+  
   return (
-    <Card className="rounded-2xl shadow-sm">
+    <Card {...cardProps}>
       <CardHeader className="pb-2">
         <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
@@ -168,11 +173,43 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Pending registrations" value={loading ? '—' : stats?.registrations.pending ?? '—'} />
-          <Stat label="Approved registrations" value={loading ? '—' : stats?.registrations.approved ?? '—'} />
-          <Stat label="Rejected registrations" value={loading ? '—' : stats?.registrations.rejected ?? '—'} />
-          <Stat label="Active companies" value={loading ? '—' : stats?.companies.active ?? '—'} />
-          <Stat label="Inactive companies" value={loading ? '—' : stats?.companies.inactive ?? '—'} />
+          <Stat 
+            label="Pending registrations" 
+            value={loading ? '—' : stats?.registrations.pending ?? '—'} 
+            onClick={() => navigate('/admin/approvals')}
+          />
+          <Stat 
+            label="Approved registrations" 
+            value={loading ? '—' : stats?.registrations.approved ?? '—'}
+            onClick={() => {
+              setStatusFilter('ACTIVE');
+              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
+          <Stat 
+            label="Rejected registrations" 
+            value={loading ? '—' : stats?.registrations.rejected ?? '—'}
+            onClick={() => {
+              setStatusFilter('REJECTED');
+              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
+          <Stat 
+            label="Active companies" 
+            value={loading ? '—' : stats?.companies.active ?? '—'}
+            onClick={() => {
+              setStatusFilter('ACTIVE');
+              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
+          <Stat 
+            label="Inactive companies" 
+            value={loading ? '—' : stats?.companies.inactive ?? '—'}
+            onClick={() => {
+              setStatusFilter('SUSPENDED');
+              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
           <Stat label="Invoices month-to-date" value={loading ? '—' : stats?.invoices.monthToDate.toLocaleString() ?? '—'} delta={mtdDelta.pct} positive={mtdDelta.positive} />
         </div>
 
@@ -220,7 +257,7 @@ export default function SuperAdminDashboard() {
           </Card>
         </div>
 
-        <div>
+        <div id="company-explorer">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold">Company Explorer</h2>
             <div className="flex items-center gap-2">
