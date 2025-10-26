@@ -7,3 +7,12 @@
     @apply bg-gradient-to-br from-gray-50 to-blue-50 text-gray-900 font-sans antialiased;
   }
 }
+
+@layer components {
+  [data-radix-select-content-wrapper] {
+    height: auto !important;
+    max-height: max-content !important;
+    width: var(--radix-select-trigger-width) !important;
+    overflow: visible !important;
+  }
+}
