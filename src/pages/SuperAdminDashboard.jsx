@@ -14,14 +14,14 @@ function Stat({ label, value, delta, positive }) {
   return (
     <Card className="rounded-2xl shadow-sm">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="flex items-end justify-between">
-          <div className="text-3xl font-semibold tracking-tight">{value}</div>
+        <div className="flex flex-col gap-1">
+          <div className="text-2xl font-semibold tracking-tight">{value}</div>
           {delta && (
             <div className={`flex items-center gap-1 text-xs ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {positive ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+              {positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
               <span>{delta}</span>
             </div>
           )}
@@ -167,20 +167,17 @@ export default function SuperAdminDashboard() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <Stat label="Pending registrations" value={loading ? '—' : stats?.registrations.pending ?? '—'} />
           <Stat label="Approved registrations" value={loading ? '—' : stats?.registrations.approved ?? '—'} />
           <Stat label="Rejected registrations" value={loading ? '—' : stats?.registrations.rejected ?? '—'} />
           <Stat label="Active companies" value={loading ? '—' : stats?.companies.active ?? '—'} />
+          <Stat label="Inactive companies" value={loading ? '—' : stats?.companies.inactive ?? '—'} />
+          <Stat label="Invoices month-to-date" value={loading ? '—' : stats?.invoices.monthToDate.toLocaleString() ?? '—'} delta={mtdDelta.pct} positive={mtdDelta.positive} />
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6">
-            <Stat label="Inactive companies" value={loading ? '—' : stats?.companies.inactive ?? '—'} />
-            <Stat label="Invoices month-to-date" value={loading ? '—' : stats?.invoices.monthToDate.toLocaleString() ?? '—'} delta={mtdDelta.pct} positive={mtdDelta.positive} />
-          </div>
-
-          <Card className="lg:col-span-2 rounded-2xl shadow-sm">
+        <div>
+          <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">Revenue summary</CardTitle>
             </CardHeader>
@@ -223,39 +220,36 @@ export default function SuperAdminDashboard() {
           </Card>
         </div>
 
-        <Section
-          title="Company Explorer"
-          action={
-            <div className="flex flex-col md:flex-row gap-2 md:items-center">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2" size={16} />
-                <Input className="pl-8" placeholder="Search company name" value={q} onChange={(e) => setQ(e.target.value)} />
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Select value={plan} onValueChange={setPlan}>
-                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Plan" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All plans</SelectItem>
-                    <SelectItem value="Enterprise">Enterprise</SelectItem>
-                    <SelectItem value="Professional">Professional</SelectItem>
-                    <SelectItem value="Starter">Starter</SelectItem>
-                    <SelectItem value="Free">Free</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={status} onValueChange={setStatus}>
-                  <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="inactive">Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input type="number" min={0} placeholder="Min invoices" value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[140px]" />
-                <Button variant="outline" onClick={() => exportCompaniesCsv(filteredCompanies)}>Export CSV</Button>
-              </div>
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold">Company Explorer</h2>
+          </div>
+          <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2">
+            <div className="relative flex-shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <Input className="pl-9 w-[200px]" placeholder="Search company name" value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
-          }
-        >
+            <Select value={plan} onValueChange={setPlan}>
+              <SelectTrigger className="w-[140px] flex-shrink-0"><SelectValue placeholder="Plan" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All plans</SelectItem>
+                <SelectItem value="Enterprise">Enterprise</SelectItem>
+                <SelectItem value="Professional">Professional</SelectItem>
+                <SelectItem value="Starter">Starter</SelectItem>
+                <SelectItem value="Free">Free</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger className="w-[140px] flex-shrink-0"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input type="number" min={0} placeholder="Min invoices" value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[130px] flex-shrink-0" />
+            <Button variant="outline" onClick={() => exportCompaniesCsv(filteredCompanies)} className="flex-shrink-0">Export CSV</Button>
+          </div>
           <div className="overflow-hidden rounded-2xl border bg-card">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
@@ -285,7 +279,7 @@ export default function SuperAdminDashboard() {
             </table>
           </div>
           <p className="text-xs text-muted-foreground mt-2">Showing {filteredCompanies.length} of {stats?.companies.all.length || 0} companies</p>
-        </Section>
+        </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card className="rounded-2xl shadow-sm">

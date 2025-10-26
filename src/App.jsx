@@ -101,6 +101,14 @@ function App() {
             }
           />
           <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <SuperAdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/admin/approvals"
             element={
               <ProtectedRoute>
