@@ -229,7 +229,7 @@ export default function SuperAdminDashboard() {
                 <Input className="pl-8 w-[150px] h-9 text-sm" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
               <Select value={plan} onValueChange={setPlan}>
-                <SelectTrigger className="w-[110px] h-9 text-sm"><SelectValue placeholder="Plan" /></SelectTrigger>
+                <SelectTrigger className="w-[150px] h-9 text-sm"><SelectValue placeholder="Plan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
                   <SelectItem value="Enterprise">Enterprise</SelectItem>
@@ -239,14 +239,14 @@ export default function SuperAdminDashboard() {
                 </SelectContent>
               </Select>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="w-[110px] h-9 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectTrigger className="w-[150px] h-9 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
-              <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[90px] h-9 text-sm" />
+              <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[150px] h-9 text-sm" />
               <Button variant="outline" size="sm" onClick={() => exportCompaniesCsv(filteredCompanies)}>Export</Button>
             </div>
           </div>
