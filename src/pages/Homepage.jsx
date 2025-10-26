@@ -131,10 +131,10 @@ export default function Homepage() {
           </div>
         </div>
 
-        <Card className="max-w-md mx-auto">
+        <Card className="max-w-6xl mx-auto">
           <CardContent className="p-8 space-y-6">
             {success ? (
-              <div className="text-center space-y-4">
+              <div className="text-center space-y-4 max-w-md mx-auto">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
                   <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -167,72 +167,76 @@ export default function Homepage() {
                 )}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Email*</label>
-                <Input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Email*</label>
+                      <Input
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Company Name*</label>
-                <Input
-                  type="text"
-                  required
-                  value={formData.company_name}
-                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                />
-              </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Company Name*</label>
+                      <Input
+                        type="text"
+                        required
+                        value={formData.company_name}
+                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Business Type</label>
-                <Input
-                  type="text"
-                  placeholder="e.g., Retail, IT Services"
-                  value={formData.business_type}
-                  onChange={(e) => setFormData({ ...formData, business_type: e.target.value })}
-                />
-              </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Business Type</label>
+                      <Input
+                        type="text"
+                        placeholder="e.g., Retail, IT Services"
+                        value={formData.business_type}
+                        onChange={(e) => setFormData({ ...formData, business_type: e.target.value })}
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Phone</label>
-                <Input
-                  type="tel"
-                  placeholder="+971..."
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Phone</label>
+                      <Input
+                        type="tel"
+                        placeholder="+971..."
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Password*</label>
-                <Input
-                  type="password"
-                  required
-                  minLength={8}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                />
-              </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Password*</label>
+                      <Input
+                        type="password"
+                        required
+                        minLength={8}
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
 
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Creating Account...' : 'Create Account →'}
-              </Button>
-            </form>
+                    <div className="flex items-end">
+                      <Button type="submit" className="w-full" disabled={loading}>
+                        {loading ? 'Creating Account...' : 'Create Account →'}
+                      </Button>
+                    </div>
+                  </div>
+                </form>
 
-            <p className="text-center text-sm text-gray-600">
-              Already have an account?{' '}
-              <button
-                type="button"
-                className="text-blue-600 hover:underline"
-                onClick={() => navigate('/login')}
-              >
-                Sign in
-              </button>
-            </p>
+                <p className="text-center text-sm text-gray-600">
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline"
+                    onClick={() => navigate('/login')}
+                  >
+                    Sign in
+                  </button>
+                </p>
               </>
             )}
           </CardContent>
