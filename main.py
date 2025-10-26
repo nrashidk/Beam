@@ -2839,6 +2839,24 @@ def delete_company_stamp(
     
     return {"message": "Stamp deleted successfully"}
 
+# ==================== PUBLIC STATS ====================
+
+@app.get("/public/stats", tags=["Public"])
+def get_public_stats(db: Session = Depends(get_db)):
+    """Get public statistics - visible to everyone"""
+    # Count total active companies
+    total_companies = db.query(CompanyDB).filter(
+        CompanyDB.status == CompanyStatus.ACTIVE
+    ).count()
+    
+    # Count total invoices across all companies
+    total_invoices = db.query(InvoiceDB).count()
+    
+    return {
+        "totalCompanies": total_companies,
+        "totalInvoices": total_invoices
+    }
+
 # ==================== HEALTH CHECK ====================
 
 @app.get("/", tags=["Health"])

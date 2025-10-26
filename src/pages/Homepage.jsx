@@ -20,11 +20,13 @@ export default function Homepage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [userInfo, setUserInfo] = useState(null);
+  const [publicStats, setPublicStats] = useState({ totalInvoices: 0, totalCompanies: 0 });
 
   useEffect(() => {
     if (user) {
       fetchUserInfo();
     }
+    fetchPublicStats();
   }, [user]);
 
   const fetchUserInfo = async () => {
@@ -33,6 +35,15 @@ export default function Homepage() {
       setUserInfo(response.data);
     } catch (error) {
       console.error('Failed to fetch user info:', error);
+    }
+  };
+
+  const fetchPublicStats = async () => {
+    try {
+      const response = await api.get('/public/stats');
+      setPublicStats(response.data);
+    } catch (error) {
+      console.error('Failed to fetch public stats:', error);
     }
   };
 
@@ -85,38 +96,7 @@ export default function Homepage() {
       </nav>
 
       <main className="max-w-6xl mx-auto px-6 py-12 space-y-16">
-        {user && userInfo?.company && (
-          <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-            <CardContent className="p-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">{userInfo.company.legal_name}</h2>
-                  <div className="flex gap-2 mt-2">
-                    <Badge variant="success">{userInfo.company.status}</Badge>
-                    {userInfo.company.free_plan_type === 'INVOICE_COUNT' && (
-                      <Badge variant="secondary">
-                        {userInfo.company.invoices_generated || 0} / {userInfo.company.free_plan_invoice_limit} invoices used
-                      </Badge>
-                    )}
-                    {userInfo.company.free_plan_type === 'DURATION' && (
-                      <Badge variant="secondary">
-                        Free plan: {userInfo.company.free_plan_duration_months} month(s)
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-4xl font-bold text-blue-600">
-                    {userInfo.company.invoices_generated || 0}
-                  </div>
-                  <div className="text-sm text-gray-600">Total Invoices</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="text-center space-y-4 mb-12">
+        <div className="text-center space-y-4">
           <h1 className="text-5xl md:text-6xl font-bold leading-tight">
             Simple, Compliant<br />Digital Invoicing for UAE
           </h1>
@@ -125,7 +105,7 @@ export default function Homepage() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[
             { icon: '🚀', title: 'Boost Digitalisation', desc: 'Fully paperless invoicing ecosystem' },
             { icon: '⚡', title: 'Operational Efficiency', desc: 'Streamlined workflows & automation' },
@@ -143,6 +123,27 @@ export default function Homepage() {
             </Card>
           ))}
         </div>
+
+        <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <CardContent className="p-8">
+            <div className="grid grid-cols-2 gap-8 max-w-2xl mx-auto">
+              <div className="text-center">
+                <div className="text-5xl font-bold text-blue-600 mb-2">
+                  {(publicStats?.totalInvoices || 0).toLocaleString()}
+                </div>
+                <div className="text-base text-gray-700 font-medium">Total Invoices</div>
+                <p className="text-xs text-gray-600 mt-1">Generated on Beam</p>
+              </div>
+              <div className="text-center">
+                <div className="text-5xl font-bold text-indigo-600 mb-2">
+                  {(publicStats?.totalCompanies || 0).toLocaleString()}
+                </div>
+                <div className="text-base text-gray-700 font-medium">Active Companies</div>
+                <p className="text-xs text-gray-600 mt-1">Using our platform</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card className="max-w-md mx-auto">
           <CardContent className="p-8 space-y-6">
