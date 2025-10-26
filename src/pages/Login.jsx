@@ -33,8 +33,8 @@ export default function Login() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 text-2xl font-bold mb-2">
-            <span className="text-3xl">⚡</span>
-            <span>Beam</span>
+            <span className="text-3xl">🔗</span>
+            <span>InvoLinks</span>
           </div>
         </div>
 

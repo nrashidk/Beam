@@ -1,7 +1,7 @@
 """
 UAE e-Invoicing Platform with Registration Wizard
 ==================================================
-Beam API - Multi-tenant e-invoicing with subscription plans
+InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
 import os, enum, hashlib, secrets
 from uuid import uuid4
@@ -33,7 +33,7 @@ os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
 # JWT settings
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "beam-secret-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
@@ -733,7 +733,7 @@ class CompanyBrandingOut(BaseModel):
 
 # ==================== FASTAPI APP ====================
 app = FastAPI(
-    title="Beam E-Invoicing API",
+    title="InvoLinks E-Invoicing API",
     version="2.0",
     description="Multi-tenant UAE e-invoicing platform with registration wizard"
 )
@@ -762,7 +762,7 @@ def startup_event():
     db = SessionLocal()
     seed_plans(db)
     db.close()
-    print("✅ Beam API started - Plans seeded")
+    print("✅ InvoLinks API started - Plans seeded")
 
 # ==================== REGISTRATION ENDPOINTS ====================
 
@@ -1126,7 +1126,7 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
 ║                    EMAIL WOULD BE SENT                           ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  To: {company.email:<58} ║
-║  Subject: Verify Your Email - Beam E-Invoicing                   ║
+║  Subject: Verify Your Email - InvoLinks E-Invoicing              ║
 ║                                                                  ║
 ║  Hi {company.legal_name or 'there'},                                          ║
 ║                                                                  ║
@@ -1138,7 +1138,7 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
 ║  This link will expire in 24 hours.                            ║
 ║                                                                  ║
 ║  Best regards,                                                   ║
-║  Beam E-Invoicing Team                                          ║
+║  InvoLinks E-Invoicing Team                                      ║
 ╚══════════════════════════════════════════════════════════════════╝
     """)
     
@@ -1318,7 +1318,7 @@ def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)
     print("║" + " "*25 + "EMAIL WOULD BE SENT" + " "*24 + "║")
     print("╠" + "="*68 + "╣")
     print(f"║  To: {payload.email:<60} ║")
-    print(f"║  Subject: Reset Your Password - Beam E-Invoicing{' '*18} ║")
+    print(f"║  Subject: Reset Your Password - InvoLinks E-Invoicing{' '*13} ║")
     print("║" + " "*68 + "║")
     print(f"║  Hi {(company.legal_name or 'User'):<60} ║")
     print("║" + " "*68 + "║")
@@ -1331,7 +1331,7 @@ def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)
     print("║  If you didn't request this, please ignore this email.          ║")
     print("║" + " "*68 + "║")
     print("║  Best regards,                                                   ║")
-    print("║  Beam E-Invoicing Team                                          ║")
+    print("║  InvoLinks E-Invoicing Team                                      ║")
     print("╚" + "="*68 + "╝")
     print("="*70 + "\n")
     
@@ -1427,7 +1427,7 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
 ║                    EMAIL WOULD BE SENT                           ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  To: {company.email:<58} ║
-║  Subject: Account Approved - Beam E-Invoicing                    ║
+║  Subject: Account Approved - InvoLinks E-Invoicing               ║
 ║                                                                  ║
 ║  Hi {company.legal_name or 'there'},                                          ║
 ║                                                                  ║
@@ -1442,7 +1442,7 @@ def approve_company(company_id: str, db: Session = Depends(get_db)):
 ║  Email: {company.email:<51} ║
 ║                                                                  ║
 ║  Best regards,                                                   ║
-║  Beam E-Invoicing Team                                          ║
+║  InvoLinks E-Invoicing Team                                      ║
 ╚══════════════════════════════════════════════════════════════════╝
     """)
     
@@ -1652,10 +1652,10 @@ def approve_company(
     print("✅ COMPANY APPROVED - EMAIL NOTIFICATION")
     print("="*70)
     print(f"To: {company.email}")
-    print(f"Subject: Your Beam Account Has Been Approved!")
+    print(f"Subject: Your InvoLinks Account Has Been Approved!")
     print(f"\nDear {company.legal_name},")
     print(f"\nCongratulations! Your account has been approved.")
-    print(f"You can now log in and start using Beam E-Invoicing.")
+    print(f"You can now log in and start using InvoLinks E-Invoicing.")
     print(f"\nYour Free plan: {plan_description}")
     print("="*70 + "\n")
     
@@ -1695,9 +1695,9 @@ def reject_company(
     print("❌ COMPANY REJECTED - EMAIL NOTIFICATION")
     print("="*70)
     print(f"To: {company.email}")
-    print(f"Subject: Beam Account Registration Update")
+    print(f"Subject: InvoLinks Account Registration Update")
     print(f"\nDear {company.legal_name},")
-    print(f"\nThank you for your interest in Beam E-Invoicing.")
+    print(f"\nThank you for your interest in InvoLinks E-Invoicing.")
     print(f"Unfortunately, we cannot approve your registration at this time.")
     if notes:
         print(f"\nReason: {notes}")
@@ -1879,9 +1879,9 @@ def invite_user(
     print("✉️  TEAM MEMBER INVITATION - EMAIL NOTIFICATION")
     print("="*70)
     print(f"To: {payload.email}")
-    print(f"Subject: You've been invited to join Beam!")
+    print(f"Subject: You've been invited to join InvoLinks!")
     print(f"\nHello {payload.full_name},")
-    print(f"\nYou have been invited to join a team on Beam E-Invoicing.")
+    print(f"\nYou have been invited to join a team on InvoLinks E-Invoicing.")
     print(f"Your temporary password is: {temp_password}")
     print(f"Please log in and change your password immediately.")
     print("="*70 + "\n")
@@ -2863,7 +2863,7 @@ def get_public_stats(db: Session = Depends(get_db)):
 def root():
     """API Health Check"""
     return {
-        "service": "Beam E-Invoicing API",
+        "service": "InvoLinks E-Invoicing API",
         "version": "2.0",
         "status": "running",
         "features": [
@@ -2899,7 +2899,7 @@ async def root():
         return FileResponse("dist/index.html")
     elif os.path.exists("static/index.html"):
         return FileResponse("static/index.html")
-    return {"message": "Beam API v2.0 - React dev server at port 5173"}
+    return {"message": "InvoLinks API v2.0 - React dev server at port 5173"}
 
 # Catch-all route for React Router (MUST be absolutely last)
 @app.get("/{full_path:path}", tags=["General"])
@@ -2917,6 +2917,6 @@ async def serve_react_routes(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting Beam E-Invoicing API...")
+    print("🚀 Starting InvoLinks E-Invoicing API...")
     print("📚 API Docs: http://0.0.0.0:5000/docs")
     uvicorn.run(app, host="0.0.0.0", port=5000)
