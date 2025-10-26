@@ -12,7 +12,7 @@
   [data-radix-select-content-wrapper] {
     height: auto !important;
     max-height: max-content !important;
-    width: var(--radix-select-trigger-width) !important;
+    width: auto !important;
     overflow: visible !important;
   }
 }
