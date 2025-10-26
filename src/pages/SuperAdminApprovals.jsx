@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle } from 'lucide-react';
+import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 
 function DateRangePicker({ range, onChange }) {
@@ -101,8 +101,8 @@ export default function SuperAdminDashboard() {
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-2 text-xl font-bold">
-            <span className="text-2xl">⚡</span>
-            <span>Beam Admin</span>
+            <span className="text-2xl">🔗</span>
+            <span>InvoLinks Admin</span>
           </div>
           <div className="flex items-center gap-4">
             <div className="text-sm">
@@ -119,7 +119,13 @@ export default function SuperAdminDashboard() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Super Admin Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="gap-2">
+              <ArrowLeft size={16} />
+              Back to Dashboard
+            </Button>
+            <h1 className="text-3xl font-bold">Company Approvals</h1>
+          </div>
           <Button variant="outline" size="sm" onClick={fetchCompanies} className="gap-2">
             <RefreshCcw size={16} />
             Refresh
