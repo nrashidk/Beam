@@ -110,6 +110,35 @@ class TaxCategory(str, enum.Enum):
     EXEMPT = "E"  # Exempt from tax
     OUT_OF_SCOPE = "O"  # Out of scope
 
+class PurchaseOrderStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    SENT = "SENT"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    FULFILLED = "FULFILLED"
+    CANCELLED = "CANCELLED"
+
+class GoodsReceiptStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RECEIVED = "RECEIVED"
+    PARTIAL = "PARTIAL"
+    REJECTED = "REJECTED"
+
+class InwardInvoiceStatus(str, enum.Enum):
+    RECEIVED = "RECEIVED"  # Just received via PEPPOL
+    PENDING_REVIEW = "PENDING_REVIEW"  # Awaiting AP team review
+    MATCHED = "MATCHED"  # Matched with PO/GRN
+    APPROVED = "APPROVED"  # Approved for payment
+    REJECTED = "REJECTED"  # Rejected (invoice issue)
+    PAID = "PAID"  # Payment completed
+    DISPUTED = "DISPUTED"  # Under dispute
+    CANCELLED = "CANCELLED"  # Cancelled by supplier
+
+class MatchingStatus(str, enum.Enum):
+    NOT_MATCHED = "NOT_MATCHED"
+    PARTIAL_MATCH = "PARTIAL_MATCH"  # Some fields match, others don't
+    FULL_MATCH = "FULL_MATCH"  # All fields match
+    VARIANCE_DETECTED = "VARIANCE_DETECTED"  # Within tolerance but variance exists
+
 # ==================== DATABASE MODELS ====================
 class UserDB(Base):
     __tablename__ = "users"
@@ -392,6 +421,275 @@ class InvoiceTaxBreakdownDB(Base):
     taxable_amount = Column(Float, nullable=False)  # Base amount before tax
     tax_percent = Column(Float, nullable=False)
     tax_amount = Column(Float, nullable=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# ==================== CORNER 4: AP MANAGEMENT (Inward Invoicing) ====================
+
+class PurchaseOrderDB(Base):
+    """Purchase Orders - Track expected invoices from suppliers"""
+    __tablename__ = "purchase_orders"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # PO Identification
+    po_number = Column(String, nullable=False, index=True)  # Unique PO number per company
+    status = Column(SQLEnum(PurchaseOrderStatus), default=PurchaseOrderStatus.DRAFT)
+    
+    # Supplier Information
+    supplier_trn = Column(String, nullable=False)
+    supplier_name = Column(String, nullable=False)
+    supplier_contact_email = Column(String, nullable=True)
+    supplier_address = Column(Text, nullable=True)
+    supplier_peppol_id = Column(String, nullable=True)
+    
+    # Order Details
+    order_date = Column(Date, nullable=False)
+    expected_delivery_date = Column(Date, nullable=True)
+    delivery_address = Column(Text, nullable=True)
+    
+    # Financial
+    currency_code = Column(String, default="AED")
+    expected_subtotal = Column(Float, default=0.0)
+    expected_tax = Column(Float, default=0.0)
+    expected_total = Column(Float, nullable=False)
+    
+    # Matching & Fulfillment
+    received_invoice_count = Column(Integer, default=0)  # How many invoices received
+    matched_invoice_count = Column(Integer, default=0)  # How many matched
+    received_amount_total = Column(Float, default=0.0)  # Total invoiced amount
+    variance_amount = Column(Float, default=0.0)  # Difference (expected - actual)
+    
+    # References
+    reference_number = Column(String, nullable=True)  # Internal reference
+    notes = Column(Text, nullable=True)
+    
+    # Approval
+    approved_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="purchase_orders")
+    line_items = relationship("PurchaseOrderLineItemDB", backref="purchase_order", cascade="all, delete-orphan")
+    goods_receipts = relationship("GoodsReceiptDB", backref="purchase_order", cascade="all, delete-orphan")
+
+class PurchaseOrderLineItemDB(Base):
+    """Line items for Purchase Orders"""
+    __tablename__ = "purchase_order_line_items"
+    id = Column(String, primary_key=True)
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)
+    
+    # Product/Service
+    item_name = Column(String, nullable=False)
+    item_description = Column(Text, nullable=True)
+    item_code = Column(String, nullable=True)  # SKU
+    
+    # Quantity & Unit
+    quantity_ordered = Column(Float, nullable=False)
+    quantity_received = Column(Float, default=0.0)
+    unit_code = Column(String, default="C62")
+    
+    # Pricing
+    unit_price = Column(Float, nullable=False)
+    line_total = Column(Float, nullable=False)
+    
+    # Tax
+    tax_category = Column(SQLEnum(TaxCategory), default=TaxCategory.STANDARD)
+    tax_percent = Column(Float, default=5.0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class GoodsReceiptDB(Base):
+    """Goods Receipt Notes (GRN) - Track physical delivery"""
+    __tablename__ = "goods_receipts"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=True, index=True)
+    
+    # GRN Identification
+    grn_number = Column(String, nullable=False, index=True)
+    status = Column(SQLEnum(GoodsReceiptStatus), default=GoodsReceiptStatus.PENDING)
+    
+    # Receipt Details
+    receipt_date = Column(Date, nullable=False)
+    received_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    
+    # Supplier
+    supplier_trn = Column(String, nullable=False)
+    supplier_name = Column(String, nullable=False)
+    supplier_delivery_note = Column(String, nullable=True)  # Supplier's delivery note number
+    
+    # Quantities
+    total_items_received = Column(Integer, default=0)
+    total_value = Column(Float, default=0.0)
+    
+    # Quality Control
+    inspection_passed = Column(Boolean, default=True)
+    quality_notes = Column(Text, nullable=True)
+    damaged_items_count = Column(Integer, default=0)
+    
+    # Notes
+    notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="goods_receipts")
+    line_items = relationship("GoodsReceiptLineItemDB", backref="goods_receipt", cascade="all, delete-orphan")
+
+class GoodsReceiptLineItemDB(Base):
+    """Line items for Goods Receipt Notes"""
+    __tablename__ = "goods_receipt_line_items"
+    id = Column(String, primary_key=True)
+    grn_id = Column(String, ForeignKey("goods_receipts.id"), nullable=False, index=True)
+    po_line_item_id = Column(String, ForeignKey("purchase_order_line_items.id"), nullable=True)
+    
+    line_number = Column(Integer, nullable=False)
+    
+    # Product
+    item_name = Column(String, nullable=False)
+    item_code = Column(String, nullable=True)
+    
+    # Quantities
+    quantity_received = Column(Float, nullable=False)
+    quantity_accepted = Column(Float, nullable=False)
+    quantity_rejected = Column(Float, default=0.0)
+    unit_code = Column(String, default="C62")
+    
+    # Quality
+    condition = Column(String, nullable=True)  # "GOOD", "DAMAGED", "DEFECTIVE"
+    notes = Column(Text, nullable=True)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class InwardInvoiceDB(Base):
+    """Inward Invoices - Received from suppliers via PEPPOL (Corner 4)"""
+    __tablename__ = "inward_invoices"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Invoice Identification
+    supplier_invoice_number = Column(String, nullable=False, index=True)
+    invoice_type = Column(SQLEnum(InvoiceType), default=InvoiceType.TAX_INVOICE)
+    status = Column(SQLEnum(InwardInvoiceStatus), default=InwardInvoiceStatus.RECEIVED)
+    
+    # Dates
+    invoice_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=True)
+    received_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Supplier (Invoice Issuer)
+    supplier_trn = Column(String, nullable=False)
+    supplier_name = Column(String, nullable=False)
+    supplier_address = Column(Text, nullable=True)
+    supplier_peppol_id = Column(String, nullable=True)
+    supplier_company_id = Column(String, ForeignKey("companies.id"), nullable=True)  # If supplier uses InvoLinks
+    
+    # Customer (Our company - the buyer)
+    customer_trn = Column(String, nullable=False)
+    customer_name = Column(String, nullable=False)
+    
+    # Financial
+    currency_code = Column(String, default="AED")
+    subtotal_amount = Column(Float, nullable=False)
+    tax_amount = Column(Float, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    amount_due = Column(Float, nullable=False)
+    
+    # Document Storage
+    xml_file_path = Column(String, nullable=True)  # Received UBL XML
+    pdf_file_path = Column(String, nullable=True)  # Generated PDF for viewing
+    xml_hash = Column(String, nullable=True)
+    
+    # PEPPOL Reception
+    peppol_message_id = Column(String, nullable=True, index=True)
+    peppol_sender_id = Column(String, nullable=True)
+    peppol_provider = Column(String, nullable=True)
+    peppol_received_at = Column(DateTime, nullable=True)
+    
+    # Matching & Approval
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=True, index=True)
+    grn_id = Column(String, ForeignKey("goods_receipts.id"), nullable=True, index=True)
+    matching_status = Column(SQLEnum(MatchingStatus), default=MatchingStatus.NOT_MATCHED)
+    
+    # 3-Way Matching Results
+    po_match_score = Column(Float, default=0.0)  # 0-100% match with PO
+    grn_match_score = Column(Float, default=0.0)  # 0-100% match with GRN
+    amount_variance = Column(Float, default=0.0)  # Difference from expected
+    quantity_variance = Column(Float, default=0.0)  # Qty difference
+    
+    # Approval Workflow
+    reviewed_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    approved_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    
+    # Payment Tracking
+    payment_status = Column(String, nullable=True)  # "PENDING", "SCHEDULED", "PAID"
+    payment_method = Column(String, nullable=True)
+    paid_amount = Column(Float, default=0.0)
+    paid_at = Column(DateTime, nullable=True)
+    payment_reference = Column(String, nullable=True)
+    
+    # Dispute Management
+    disputed_at = Column(DateTime, nullable=True)
+    dispute_reason = Column(Text, nullable=True)
+    dispute_resolved_at = Column(DateTime, nullable=True)
+    
+    # Notes & References
+    notes = Column(Text, nullable=True)
+    reference_number = Column(String, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", foreign_keys=[company_id], backref="inward_invoices")
+    purchase_order = relationship("PurchaseOrderDB", backref="inward_invoices")
+    goods_receipt = relationship("GoodsReceiptDB", backref="inward_invoices")
+    line_items = relationship("InwardInvoiceLineItemDB", backref="inward_invoice", cascade="all, delete-orphan")
+
+class InwardInvoiceLineItemDB(Base):
+    """Line items for Inward Invoices"""
+    __tablename__ = "inward_invoice_line_items"
+    id = Column(String, primary_key=True)
+    inward_invoice_id = Column(String, ForeignKey("inward_invoices.id"), nullable=False, index=True)
+    line_number = Column(Integer, nullable=False)
+    
+    # Product/Service
+    item_name = Column(String, nullable=False)
+    item_description = Column(Text, nullable=True)
+    item_code = Column(String, nullable=True)
+    
+    # Quantity & Unit
+    quantity = Column(Float, nullable=False)
+    unit_code = Column(String, default="C62")
+    
+    # Pricing
+    unit_price = Column(Float, nullable=False)
+    line_extension_amount = Column(Float, nullable=False)
+    
+    # Tax
+    tax_category = Column(SQLEnum(TaxCategory), nullable=False)
+    tax_percent = Column(Float, default=0.0)
+    tax_amount = Column(Float, default=0.0)
+    
+    # Total
+    line_total_amount = Column(Float, nullable=False)
+    
+    # Matching
+    po_line_item_id = Column(String, ForeignKey("purchase_order_line_items.id"), nullable=True)
+    grn_line_item_id = Column(String, ForeignKey("goods_receipt_line_items.id"), nullable=True)
+    match_status = Column(String, nullable=True)  # "MATCHED", "VARIANCE", "NO_PO"
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -736,6 +1034,195 @@ class InvoiceListOut(BaseModel):
     total_amount: float
     currency_code: str
     created_at: str
+
+# ==================== CORNER 4: AP MANAGEMENT MODELS ====================
+
+class PurchaseOrderLineItemCreate(BaseModel):
+    line_number: int
+    item_name: str
+    item_description: Optional[str] = None
+    item_code: Optional[str] = None
+    quantity_ordered: float
+    unit_code: str = "C62"
+    unit_price: float
+    tax_category: TaxCategory = TaxCategory.STANDARD
+    tax_percent: float = 5.0
+
+class PurchaseOrderCreate(BaseModel):
+    po_number: str
+    supplier_trn: str
+    supplier_name: str
+    supplier_contact_email: Optional[str] = None
+    supplier_address: Optional[str] = None
+    supplier_peppol_id: Optional[str] = None
+    order_date: str  # YYYY-MM-DD
+    expected_delivery_date: Optional[str] = None
+    delivery_address: Optional[str] = None
+    currency_code: str = "AED"
+    reference_number: Optional[str] = None
+    notes: Optional[str] = None
+    line_items: List[PurchaseOrderLineItemCreate]
+
+class PurchaseOrderLineItemOut(BaseModel):
+    id: str
+    line_number: int
+    item_name: str
+    item_description: Optional[str]
+    item_code: Optional[str]
+    quantity_ordered: float
+    quantity_received: float
+    unit_code: str
+    unit_price: float
+    line_total: float
+    tax_category: TaxCategory
+    tax_percent: float
+
+class PurchaseOrderOut(BaseModel):
+    id: str
+    company_id: str
+    po_number: str
+    status: PurchaseOrderStatus
+    supplier_trn: str
+    supplier_name: str
+    supplier_contact_email: Optional[str]
+    supplier_address: Optional[str]
+    supplier_peppol_id: Optional[str]
+    order_date: str
+    expected_delivery_date: Optional[str]
+    delivery_address: Optional[str]
+    currency_code: str
+    expected_subtotal: float
+    expected_tax: float
+    expected_total: float
+    received_invoice_count: int
+    matched_invoice_count: int
+    received_amount_total: float
+    variance_amount: float
+    reference_number: Optional[str]
+    notes: Optional[str]
+    approved_by_user_id: Optional[str]
+    approved_at: Optional[str]
+    created_at: str
+    updated_at: str
+    line_items: List[PurchaseOrderLineItemOut] = []
+
+class InwardInvoiceReceive(BaseModel):
+    """Model for receiving an inward invoice via PEPPOL"""
+    supplier_invoice_number: str
+    invoice_date: str  # YYYY-MM-DD
+    due_date: Optional[str] = None
+    supplier_trn: str
+    supplier_name: str
+    supplier_address: Optional[str] = None
+    supplier_peppol_id: Optional[str] = None
+    customer_trn: str
+    customer_name: str
+    currency_code: str = "AED"
+    subtotal_amount: float
+    tax_amount: float
+    total_amount: float
+    amount_due: float
+    xml_content: Optional[str] = None  # UBL XML content
+    peppol_message_id: Optional[str] = None
+    peppol_sender_id: Optional[str] = None
+    peppol_provider: Optional[str] = None
+    line_items: Optional[List[dict]] = None  # JSON line items from XML
+
+class InwardInvoiceLineItemOut(BaseModel):
+    id: str
+    line_number: int
+    item_name: str
+    item_description: Optional[str]
+    item_code: Optional[str]
+    quantity: float
+    unit_code: str
+    unit_price: float
+    line_extension_amount: float
+    tax_category: TaxCategory
+    tax_percent: float
+    tax_amount: float
+    line_total_amount: float
+    po_line_item_id: Optional[str]
+    grn_line_item_id: Optional[str]
+    match_status: Optional[str]
+
+class InwardInvoiceOut(BaseModel):
+    id: str
+    company_id: str
+    supplier_invoice_number: str
+    invoice_type: InvoiceType
+    status: InwardInvoiceStatus
+    invoice_date: str
+    due_date: Optional[str]
+    received_at: str
+    supplier_trn: str
+    supplier_name: str
+    supplier_address: Optional[str]
+    supplier_peppol_id: Optional[str]
+    supplier_company_id: Optional[str]
+    customer_trn: str
+    customer_name: str
+    currency_code: str
+    subtotal_amount: float
+    tax_amount: float
+    total_amount: float
+    amount_due: float
+    xml_file_path: Optional[str]
+    pdf_file_path: Optional[str]
+    xml_hash: Optional[str]
+    peppol_message_id: Optional[str]
+    peppol_sender_id: Optional[str]
+    peppol_provider: Optional[str]
+    peppol_received_at: Optional[str]
+    po_id: Optional[str]
+    grn_id: Optional[str]
+    matching_status: MatchingStatus
+    po_match_score: float
+    grn_match_score: float
+    amount_variance: float
+    quantity_variance: float
+    reviewed_by_user_id: Optional[str]
+    reviewed_at: Optional[str]
+    approved_by_user_id: Optional[str]
+    approved_at: Optional[str]
+    rejection_reason: Optional[str]
+    payment_status: Optional[str]
+    payment_method: Optional[str]
+    paid_amount: float
+    paid_at: Optional[str]
+    payment_reference: Optional[str]
+    disputed_at: Optional[str]
+    dispute_reason: Optional[str]
+    dispute_resolved_at: Optional[str]
+    notes: Optional[str]
+    reference_number: Optional[str]
+    created_at: str
+    updated_at: str
+    line_items: List[InwardInvoiceLineItemOut] = []
+
+class InwardInvoiceListOut(BaseModel):
+    id: str
+    supplier_invoice_number: str
+    status: InwardInvoiceStatus
+    supplier_name: str
+    total_amount: float
+    currency_code: str
+    invoice_date: str
+    received_at: str
+    matching_status: MatchingStatus
+    po_id: Optional[str]
+
+class InwardInvoiceApprove(BaseModel):
+    notes: Optional[str] = None
+    payment_method: Optional[str] = None
+    payment_reference: Optional[str] = None
+
+class InwardInvoiceReject(BaseModel):
+    rejection_reason: str
+    notes: Optional[str] = None
+
+class InwardInvoiceMatchPO(BaseModel):
+    po_id: str
 
 class CompanyBrandingOut(BaseModel):
     id: str
@@ -2728,6 +3215,535 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
             ) for tb in invoice.tax_breakdowns
         ]
     )
+
+# ==================== CORNER 4: AP MANAGEMENT (INWARD INVOICES) ====================
+
+@app.post("/inward-invoices/receive", tags=["AP Management"], response_model=InwardInvoiceOut)
+def receive_inward_invoice(
+    invoice_data: InwardInvoiceReceive,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Receive inward invoice from supplier (via PEPPOL or manual entry)
+    
+    This endpoint:
+    1. Validates the received invoice data
+    2. Stores the invoice in the inward_invoices table
+    3. Saves UBL XML if provided
+    4. Creates line items
+    5. Attempts automatic PO matching if supplier TRN matches
+    """
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Validate that customer TRN matches our company TRN
+    if invoice_data.customer_trn != company.trn:
+        raise HTTPException(
+            400, 
+            f"Invoice customer TRN ({invoice_data.customer_trn}) does not match your company TRN ({company.trn})"
+        )
+    
+    # Check for duplicate invoice number from this supplier
+    existing = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.company_id == current_user.company_id,
+        InwardInvoiceDB.supplier_trn == invoice_data.supplier_trn,
+        InwardInvoiceDB.supplier_invoice_number == invoice_data.supplier_invoice_number
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            409, 
+            f"Invoice {invoice_data.supplier_invoice_number} from supplier {invoice_data.supplier_name} already exists"
+        )
+    
+    # Create inward invoice
+    inward_invoice_id = str(uuid4())
+    
+    # Parse dates
+    from datetime import datetime as dt
+    invoice_date = dt.fromisoformat(invoice_data.invoice_date)
+    due_date = dt.fromisoformat(invoice_data.due_date) if invoice_data.due_date else None
+    
+    # Save XML file if provided
+    xml_file_path = None
+    xml_hash_value = None
+    if invoice_data.xml_content:
+        xml_dir = os.path.join(ARTIFACT_ROOT, "inward_invoices", current_user.company_id)
+        os.makedirs(xml_dir, exist_ok=True)
+        xml_file_path = os.path.join(xml_dir, f"{inward_invoice_id}.xml")
+        
+        with open(xml_file_path, 'w', encoding='utf-8') as f:
+            f.write(invoice_data.xml_content)
+        
+        # Calculate hash
+        from utils.crypto_utils import hash_data
+        xml_hash_value = hash_data(invoice_data.xml_content)
+    
+    # Attempt to find matching PO by supplier TRN
+    matching_po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.company_id == current_user.company_id,
+        PurchaseOrderDB.supplier_trn == invoice_data.supplier_trn,
+        PurchaseOrderDB.status.in_([PurchaseOrderStatus.SENT, PurchaseOrderStatus.ACKNOWLEDGED])
+    ).order_by(PurchaseOrderDB.order_date.desc()).first()
+    
+    po_id = matching_po.id if matching_po else None
+    matching_status = MatchingStatus.NOT_MATCHED
+    amount_variance = 0.0
+    
+    if matching_po:
+        # Calculate variance
+        amount_variance = invoice_data.total_amount - matching_po.expected_total
+        if abs(amount_variance) < 0.01:  # Within 1 cent
+            matching_status = MatchingStatus.FULL_MATCH
+        elif abs(amount_variance) < (matching_po.expected_total * 0.05):  # Within 5%
+            matching_status = MatchingStatus.VARIANCE_DETECTED
+        else:
+            matching_status = MatchingStatus.PARTIAL_MATCH
+    
+    # Create inward invoice record
+    new_invoice = InwardInvoiceDB(
+        id=inward_invoice_id,
+        company_id=current_user.company_id,
+        supplier_invoice_number=invoice_data.supplier_invoice_number,
+        invoice_type=InvoiceType.TAX_INVOICE,
+        status=InwardInvoiceStatus.RECEIVED,
+        invoice_date=invoice_date,
+        due_date=due_date,
+        received_at=datetime.utcnow(),
+        supplier_trn=invoice_data.supplier_trn,
+        supplier_name=invoice_data.supplier_name,
+        supplier_address=invoice_data.supplier_address,
+        supplier_peppol_id=invoice_data.supplier_peppol_id,
+        customer_trn=invoice_data.customer_trn,
+        customer_name=invoice_data.customer_name,
+        currency_code=invoice_data.currency_code,
+        subtotal_amount=invoice_data.subtotal_amount,
+        tax_amount=invoice_data.tax_amount,
+        total_amount=invoice_data.total_amount,
+        amount_due=invoice_data.amount_due,
+        xml_file_path=xml_file_path,
+        xml_hash=xml_hash_value,
+        peppol_message_id=invoice_data.peppol_message_id,
+        peppol_sender_id=invoice_data.peppol_sender_id,
+        peppol_provider=invoice_data.peppol_provider,
+        peppol_received_at=datetime.utcnow() if invoice_data.peppol_message_id else None,
+        po_id=po_id,
+        matching_status=matching_status,
+        amount_variance=amount_variance,
+        payment_status="PENDING"
+    )
+    
+    db.add(new_invoice)
+    
+    # Create line items if provided
+    if invoice_data.line_items:
+        for idx, item_data in enumerate(invoice_data.line_items):
+            line_item = InwardInvoiceLineItemDB(
+                id=str(uuid4()),
+                inward_invoice_id=inward_invoice_id,
+                line_number=idx + 1,
+                item_name=item_data.get('item_name', 'Item'),
+                item_description=item_data.get('item_description'),
+                item_code=item_data.get('item_code'),
+                quantity=float(item_data.get('quantity', 1)),
+                unit_code=item_data.get('unit_code', 'C62'),
+                unit_price=float(item_data.get('unit_price', 0)),
+                line_extension_amount=float(item_data.get('line_extension_amount', 0)),
+                tax_category=TaxCategory(item_data.get('tax_category', 'S')),
+                tax_percent=float(item_data.get('tax_percent', 5.0)),
+                tax_amount=float(item_data.get('tax_amount', 0)),
+                line_total_amount=float(item_data.get('line_total_amount', 0))
+            )
+            db.add(line_item)
+    
+    # Update PO if matched
+    if matching_po:
+        matching_po.received_invoice_count += 1
+        matching_po.received_amount_total += invoice_data.total_amount
+        matching_po.variance_amount = matching_po.expected_total - matching_po.received_amount_total
+    
+    db.commit()
+    db.refresh(new_invoice)
+    
+    # Return response
+    return InwardInvoiceOut(
+        id=new_invoice.id,
+        company_id=new_invoice.company_id,
+        supplier_invoice_number=new_invoice.supplier_invoice_number,
+        invoice_type=new_invoice.invoice_type,
+        status=new_invoice.status,
+        invoice_date=new_invoice.invoice_date.isoformat(),
+        due_date=new_invoice.due_date.isoformat() if new_invoice.due_date else None,
+        received_at=new_invoice.received_at.isoformat(),
+        supplier_trn=new_invoice.supplier_trn,
+        supplier_name=new_invoice.supplier_name,
+        supplier_address=new_invoice.supplier_address,
+        supplier_peppol_id=new_invoice.supplier_peppol_id,
+        supplier_company_id=new_invoice.supplier_company_id,
+        customer_trn=new_invoice.customer_trn,
+        customer_name=new_invoice.customer_name,
+        currency_code=new_invoice.currency_code,
+        subtotal_amount=new_invoice.subtotal_amount,
+        tax_amount=new_invoice.tax_amount,
+        total_amount=new_invoice.total_amount,
+        amount_due=new_invoice.amount_due,
+        xml_file_path=new_invoice.xml_file_path,
+        pdf_file_path=new_invoice.pdf_file_path,
+        xml_hash=new_invoice.xml_hash,
+        peppol_message_id=new_invoice.peppol_message_id,
+        peppol_sender_id=new_invoice.peppol_sender_id,
+        peppol_provider=new_invoice.peppol_provider,
+        peppol_received_at=new_invoice.peppol_received_at.isoformat() if new_invoice.peppol_received_at else None,
+        po_id=new_invoice.po_id,
+        grn_id=new_invoice.grn_id,
+        matching_status=new_invoice.matching_status,
+        po_match_score=new_invoice.po_match_score,
+        grn_match_score=new_invoice.grn_match_score,
+        amount_variance=new_invoice.amount_variance,
+        quantity_variance=new_invoice.quantity_variance,
+        reviewed_by_user_id=new_invoice.reviewed_by_user_id,
+        reviewed_at=new_invoice.reviewed_at.isoformat() if new_invoice.reviewed_at else None,
+        approved_by_user_id=new_invoice.approved_by_user_id,
+        approved_at=new_invoice.approved_at.isoformat() if new_invoice.approved_at else None,
+        rejection_reason=new_invoice.rejection_reason,
+        payment_status=new_invoice.payment_status,
+        payment_method=new_invoice.payment_method,
+        paid_amount=new_invoice.paid_amount,
+        paid_at=new_invoice.paid_at.isoformat() if new_invoice.paid_at else None,
+        payment_reference=new_invoice.payment_reference,
+        disputed_at=new_invoice.disputed_at.isoformat() if new_invoice.disputed_at else None,
+        dispute_reason=new_invoice.dispute_reason,
+        dispute_resolved_at=new_invoice.dispute_resolved_at.isoformat() if new_invoice.dispute_resolved_at else None,
+        notes=new_invoice.notes,
+        reference_number=new_invoice.reference_number,
+        created_at=new_invoice.created_at.isoformat(),
+        updated_at=new_invoice.updated_at.isoformat(),
+        line_items=[
+            InwardInvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+                po_line_item_id=li.po_line_item_id,
+                grn_line_item_id=li.grn_line_item_id,
+                match_status=li.match_status
+            ) for li in new_invoice.line_items
+        ]
+    )
+
+@app.get("/inward-invoices", tags=["AP Management"], response_model=List[InwardInvoiceListOut])
+def list_inward_invoices(
+    status: Optional[str] = None,
+    supplier_trn: Optional[str] = None,
+    matching_status: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    List all inward invoices (AP Inbox)
+    
+    Query parameters:
+    - status: Filter by invoice status (RECEIVED, PENDING_REVIEW, APPROVED, etc.)
+    - supplier_trn: Filter by supplier TRN
+    - matching_status: Filter by PO matching status
+    """
+    query = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.company_id == current_user.company_id
+    )
+    
+    if status:
+        query = query.filter(InwardInvoiceDB.status == status)
+    
+    if supplier_trn:
+        query = query.filter(InwardInvoiceDB.supplier_trn == supplier_trn)
+    
+    if matching_status:
+        query = query.filter(InwardInvoiceDB.matching_status == matching_status)
+    
+    invoices = query.order_by(InwardInvoiceDB.received_at.desc()).all()
+    
+    return [
+        InwardInvoiceListOut(
+            id=inv.id,
+            supplier_invoice_number=inv.supplier_invoice_number,
+            status=inv.status,
+            supplier_name=inv.supplier_name,
+            total_amount=inv.total_amount,
+            currency_code=inv.currency_code,
+            invoice_date=inv.invoice_date.isoformat(),
+            received_at=inv.received_at.isoformat(),
+            matching_status=inv.matching_status,
+            po_id=inv.po_id
+        ) for inv in invoices
+    ]
+
+@app.get("/inward-invoices/{invoice_id}", tags=["AP Management"], response_model=InwardInvoiceOut)
+def get_inward_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get details of a specific inward invoice"""
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    
+    return InwardInvoiceOut(
+        id=invoice.id,
+        company_id=invoice.company_id,
+        supplier_invoice_number=invoice.supplier_invoice_number,
+        invoice_type=invoice.invoice_type,
+        status=invoice.status,
+        invoice_date=invoice.invoice_date.isoformat(),
+        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        received_at=invoice.received_at.isoformat(),
+        supplier_trn=invoice.supplier_trn,
+        supplier_name=invoice.supplier_name,
+        supplier_address=invoice.supplier_address,
+        supplier_peppol_id=invoice.supplier_peppol_id,
+        supplier_company_id=invoice.supplier_company_id,
+        customer_trn=invoice.customer_trn,
+        customer_name=invoice.customer_name,
+        currency_code=invoice.currency_code,
+        subtotal_amount=invoice.subtotal_amount,
+        tax_amount=invoice.tax_amount,
+        total_amount=invoice.total_amount,
+        amount_due=invoice.amount_due,
+        xml_file_path=invoice.xml_file_path,
+        pdf_file_path=invoice.pdf_file_path,
+        xml_hash=invoice.xml_hash,
+        peppol_message_id=invoice.peppol_message_id,
+        peppol_sender_id=invoice.peppol_sender_id,
+        peppol_provider=invoice.peppol_provider,
+        peppol_received_at=invoice.peppol_received_at.isoformat() if invoice.peppol_received_at else None,
+        po_id=invoice.po_id,
+        grn_id=invoice.grn_id,
+        matching_status=invoice.matching_status,
+        po_match_score=invoice.po_match_score,
+        grn_match_score=invoice.grn_match_score,
+        amount_variance=invoice.amount_variance,
+        quantity_variance=invoice.quantity_variance,
+        reviewed_by_user_id=invoice.reviewed_by_user_id,
+        reviewed_at=invoice.reviewed_at.isoformat() if invoice.reviewed_at else None,
+        approved_by_user_id=invoice.approved_by_user_id,
+        approved_at=invoice.approved_at.isoformat() if invoice.approved_at else None,
+        rejection_reason=invoice.rejection_reason,
+        payment_status=invoice.payment_status,
+        payment_method=invoice.payment_method,
+        paid_amount=invoice.paid_amount,
+        paid_at=invoice.paid_at.isoformat() if invoice.paid_at else None,
+        payment_reference=invoice.payment_reference,
+        disputed_at=invoice.disputed_at.isoformat() if invoice.disputed_at else None,
+        dispute_reason=invoice.dispute_reason,
+        dispute_resolved_at=invoice.dispute_resolved_at.isoformat() if invoice.dispute_resolved_at else None,
+        notes=invoice.notes,
+        reference_number=invoice.reference_number,
+        created_at=invoice.created_at.isoformat(),
+        updated_at=invoice.updated_at.isoformat(),
+        line_items=[
+            InwardInvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+                po_line_item_id=li.po_line_item_id,
+                grn_line_item_id=li.grn_line_item_id,
+                match_status=li.match_status
+            ) for li in invoice.line_items
+        ]
+    )
+
+@app.post("/inward-invoices/{invoice_id}/approve", tags=["AP Management"])
+def approve_inward_invoice(
+    invoice_id: str,
+    approval_data: InwardInvoiceApprove,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Approve inward invoice for payment
+    
+    This changes the status to APPROVED and records the approver
+    """
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    
+    if invoice.status == InwardInvoiceStatus.APPROVED:
+        raise HTTPException(400, "Invoice already approved")
+    
+    if invoice.status == InwardInvoiceStatus.REJECTED:
+        raise HTTPException(400, "Cannot approve a rejected invoice")
+    
+    # Update invoice
+    invoice.status = InwardInvoiceStatus.APPROVED
+    invoice.approved_by_user_id = current_user.id
+    invoice.approved_at = datetime.utcnow()
+    
+    if approval_data.notes:
+        invoice.notes = (invoice.notes or "") + f"\n[Approved] {approval_data.notes}"
+    
+    if approval_data.payment_method:
+        invoice.payment_method = approval_data.payment_method
+    
+    if approval_data.payment_reference:
+        invoice.payment_reference = approval_data.payment_reference
+    
+    # Update PO if matched
+    if invoice.po_id:
+        po = db.query(PurchaseOrderDB).filter(PurchaseOrderDB.id == invoice.po_id).first()
+        if po:
+            po.matched_invoice_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Invoice {invoice.supplier_invoice_number} approved for payment",
+        "invoice_id": invoice.id,
+        "approved_by": current_user.email,
+        "approved_at": invoice.approved_at.isoformat()
+    }
+
+@app.post("/inward-invoices/{invoice_id}/reject", tags=["AP Management"])
+def reject_inward_invoice(
+    invoice_id: str,
+    rejection_data: InwardInvoiceReject,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Reject inward invoice with reason
+    """
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    
+    if invoice.status == InwardInvoiceStatus.REJECTED:
+        raise HTTPException(400, "Invoice already rejected")
+    
+    if invoice.status == InwardInvoiceStatus.PAID:
+        raise HTTPException(400, "Cannot reject a paid invoice")
+    
+    # Update invoice
+    invoice.status = InwardInvoiceStatus.REJECTED
+    invoice.reviewed_by_user_id = current_user.id
+    invoice.reviewed_at = datetime.utcnow()
+    invoice.rejection_reason = rejection_data.rejection_reason
+    
+    if rejection_data.notes:
+        invoice.notes = (invoice.notes or "") + f"\n[Rejected] {rejection_data.notes}"
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Invoice {invoice.supplier_invoice_number} rejected",
+        "invoice_id": invoice.id,
+        "rejected_by": current_user.email,
+        "rejection_reason": rejection_data.rejection_reason
+    }
+
+@app.post("/inward-invoices/{invoice_id}/match-po", tags=["AP Management"])
+def match_inward_invoice_to_po(
+    invoice_id: str,
+    match_data: InwardInvoiceMatchPO,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually match inward invoice to a purchase order
+    
+    This updates the matching_status and calculates variances
+    """
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    
+    po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.id == match_data.po_id,
+        PurchaseOrderDB.company_id == current_user.company_id
+    ).first()
+    
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    
+    # Verify supplier matches
+    if invoice.supplier_trn != po.supplier_trn:
+        raise HTTPException(
+            400,
+            f"Supplier mismatch: Invoice supplier TRN ({invoice.supplier_trn}) does not match PO supplier TRN ({po.supplier_trn})"
+        )
+    
+    # Calculate variance
+    amount_variance = invoice.total_amount - po.expected_total
+    
+    # Determine matching status
+    if abs(amount_variance) < 0.01:  # Within 1 cent
+        matching_status = MatchingStatus.FULL_MATCH
+    elif abs(amount_variance) < (po.expected_total * 0.05):  # Within 5%
+        matching_status = MatchingStatus.VARIANCE_DETECTED
+    else:
+        matching_status = MatchingStatus.PARTIAL_MATCH
+    
+    # Update invoice
+    invoice.po_id = po.id
+    invoice.matching_status = matching_status
+    invoice.amount_variance = amount_variance
+    invoice.po_match_score = 100.0 - min(abs(amount_variance / po.expected_total * 100), 100.0) if po.expected_total > 0 else 0.0
+    
+    # Update PO
+    po.received_invoice_count += 1
+    po.received_amount_total += invoice.total_amount
+    po.variance_amount = po.expected_total - po.received_amount_total
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Invoice matched to PO {po.po_number}",
+        "invoice_id": invoice.id,
+        "po_id": po.id,
+        "matching_status": matching_status.value,
+        "amount_variance": amount_variance,
+        "po_match_score": invoice.po_match_score
+    }
 
 # ==================== COMPANY BRANDING ENDPOINTS ====================
 
