@@ -2043,6 +2043,110 @@ def create_invoice(
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
     
+    # ==== PHASE 1: Digital Signatures & UBL XML Generation ====
+    from utils.crypto_utils import get_crypto_instance
+    from utils.ubl_xml_generator import generate_invoice_xml
+    import os
+    
+    # Get previous invoice hash for chain
+    prev_invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == company.id
+    ).order_by(InvoiceDB.created_at.desc()).first()
+    
+    if prev_invoice and prev_invoice.xml_hash:
+        invoice.prev_invoice_hash = prev_invoice.xml_hash
+    
+    # Prepare invoice data for XML generation
+    invoice_data = {
+        'invoice_number': invoice.invoice_number,
+        'issue_date': invoice.issue_date,
+        'due_date': invoice.due_date,
+        'invoice_type': invoice.invoice_type.value,
+        'currency_code': invoice.currency_code,
+        'supplier_trn': invoice.supplier_trn,
+        'supplier_name': invoice.supplier_name,
+        'supplier_address': invoice.supplier_address,
+        'supplier_city': invoice.supplier_city,
+        'supplier_country': invoice.supplier_country,
+        'supplier_peppol_id': invoice.supplier_peppol_id,
+        'customer_trn': invoice.customer_trn,
+        'customer_name': invoice.customer_name,
+        'customer_email': invoice.customer_email,
+        'customer_address': invoice.customer_address,
+        'customer_city': invoice.customer_city,
+        'customer_country': invoice.customer_country,
+        'customer_peppol_id': invoice.customer_peppol_id,
+        'subtotal_amount': invoice.subtotal_amount,
+        'tax_amount': invoice.tax_amount,
+        'total_amount': invoice.total_amount,
+        'amount_due': invoice.amount_due,
+        'payment_terms': invoice.payment_terms,
+        'invoice_notes': invoice.invoice_notes,
+        'reference_number': invoice.reference_number,
+        'preceding_invoice_id': invoice.preceding_invoice_id,
+        'prev_invoice_hash': invoice.prev_invoice_hash
+    }
+    
+    # Get line items for XML
+    line_items_data = []
+    for line in db.query(InvoiceLineItemDB).filter(InvoiceLineItemDB.invoice_id == invoice.id).all():
+        line_items_data.append({
+            'line_number': line.line_number,
+            'item_name': line.item_name,
+            'item_description': line.item_description,
+            'item_code': line.item_code,
+            'quantity': line.quantity,
+            'unit_code': line.unit_code,
+            'unit_price': line.unit_price,
+            'line_extension_amount': line.line_extension_amount,
+            'tax_category': line.tax_category.value,
+            'tax_percent': line.tax_percent,
+            'tax_amount': line.tax_amount,
+            'line_total_amount': line.line_total_amount
+        })
+    
+    # Generate UBL 2.1 XML
+    success, xml_content, errors = generate_invoice_xml(invoice_data, line_items_data)
+    
+    if success and xml_content:
+        # Save XML to file
+        xml_dir = "invoices_xml"
+        os.makedirs(xml_dir, exist_ok=True)
+        xml_filename = f"{invoice.invoice_number}.xml"
+        xml_path = os.path.join(xml_dir, xml_filename)
+        
+        with open(xml_path, 'w', encoding='utf-8') as f:
+            f.write(xml_content)
+        
+        invoice.xml_file_path = xml_path
+        
+        # Compute hash of invoice + XML
+        crypto = get_crypto_instance()
+        invoice_hash = crypto.compute_invoice_hash(invoice_data)
+        invoice.xml_hash = crypto.compute_hash(xml_content)
+        
+        # Sign invoice (using mock signing for now - replace with real cert in production)
+        signature = crypto.sign_invoice(invoice_hash, xml_content)
+        if signature:
+            invoice.signature_b64 = signature
+            invoice.signing_timestamp = datetime.utcnow()
+            invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
+        
+        print(f"\n{'='*70}")
+        print(f"✅ INVOICE {invoice.invoice_number} - SIGNED & XML GENERATED")
+        print(f"{'='*70}")
+        print(f"Invoice Hash: {invoice_hash[:32]}...")
+        print(f"XML Hash: {invoice.xml_hash[:32]}...")
+        print(f"XML File: {xml_path}")
+        print(f"Signature: {'✓ Signed' if signature else '✗ Not signed'}")
+        print(f"Previous Hash: {invoice.prev_invoice_hash[:32] if invoice.prev_invoice_hash else 'None (first invoice)'}")
+        print(f"{'='*70}\n")
+    else:
+        print(f"⚠️ Warning: XML generation failed for {invoice.invoice_number}: {errors}")
+    
+    # Increment company invoice counter
+    company.invoices_generated = (company.invoices_generated or 0) + 1
+    
     db.commit()
     db.refresh(invoice)
     
@@ -2101,6 +2205,176 @@ def create_invoice(
             ) for tb in invoice.tax_breakdowns
         ]
     )
+
+@app.post("/invoices/{invoice_id}/transmit-peppol", tags=["Invoices"])
+def transmit_invoice_via_peppol(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Transmit invoice via PEPPOL network to recipient
+    
+    This endpoint:
+    1. Validates invoice is ready for transmission
+    2. Loads the UBL XML file
+    3. Sends via configured PEPPOL provider
+    4. Updates invoice with transmission status
+    """
+    # Get invoice
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Verify ownership
+    if invoice.company_id != current_user.company_id:
+        raise HTTPException(403, "Access denied")
+    
+    # Validate invoice status
+    if invoice.status == InvoiceStatus.DRAFT:
+        raise HTTPException(400, "Cannot transmit draft invoice. Update status to VALIDATED first.")
+    
+    # Check if XML exists
+    if not invoice.xml_file_path or not os.path.exists(invoice.xml_file_path):
+        raise HTTPException(400, "Invoice XML not found. Please regenerate the invoice.")
+    
+    # Check if already transmitted
+    if invoice.peppol_status in ['SENT', 'DELIVERED']:
+        return {
+            "success": False,
+            "message": f"Invoice already transmitted. Status: {invoice.peppol_status}",
+            "message_id": invoice.peppol_message_id,
+            "sent_at": invoice.peppol_sent_at.isoformat() if invoice.peppol_sent_at else None
+        }
+    
+    # Validate PEPPOL participant IDs
+    if not invoice.supplier_peppol_id:
+        raise HTTPException(400, "Supplier PEPPOL ID is required for transmission")
+    
+    if not invoice.customer_peppol_id:
+        raise HTTPException(400, "Customer PEPPOL ID is required for transmission")
+    
+    # Load XML content
+    try:
+        with open(invoice.xml_file_path, 'r', encoding='utf-8') as f:
+            xml_content = f.read()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to read XML file: {str(e)}")
+    
+    # Transmit via PEPPOL
+    from utils.peppol_provider import send_invoice_via_peppol
+    import json
+    
+    # For now, use MOCK provider (replace with real provider in production)
+    # Set PEPPOL_PROVIDER, PEPPOL_BASE_URL, PEPPOL_API_KEY in environment variables
+    provider_name = os.getenv('PEPPOL_PROVIDER', 'mock')
+    provider_url = os.getenv('PEPPOL_BASE_URL')
+    provider_key = os.getenv('PEPPOL_API_KEY')
+    
+    result = send_invoice_via_peppol(
+        invoice_xml=xml_content,
+        invoice_number=invoice.invoice_number,
+        sender_id=invoice.supplier_peppol_id,
+        receiver_id=invoice.customer_peppol_id,
+        provider_name=provider_name,
+        base_url=provider_url,
+        api_key=provider_key
+    )
+    
+    # Update invoice with transmission result
+    if result.get('success'):
+        invoice.peppol_message_id = result.get('message_id')
+        invoice.peppol_status = result.get('status')
+        invoice.peppol_provider = result.get('provider')
+        invoice.peppol_sent_at = datetime.utcnow()
+        invoice.peppol_response = json.dumps(result.get('response', {}))
+        invoice.status = InvoiceStatus.SENT  # Update invoice status
+        
+        db.commit()
+        db.refresh(invoice)
+        
+        return {
+            "success": True,
+            "message": "Invoice transmitted successfully via PEPPOL",
+            "invoice_number": invoice.invoice_number,
+            "message_id": invoice.peppol_message_id,
+            "status": invoice.peppol_status,
+            "provider": invoice.peppol_provider,
+            "sent_at": invoice.peppol_sent_at.isoformat(),
+            "recipient_id": invoice.customer_peppol_id
+        }
+    else:
+        # Save error response
+        invoice.peppol_status = 'FAILED'
+        invoice.peppol_response = json.dumps({'error': result.get('error')})
+        db.commit()
+        
+        raise HTTPException(500, f"PEPPOL transmission failed: {result.get('error')}")
+
+@app.get("/invoices/{invoice_id}/peppol-status", tags=["Invoices"])
+def get_peppol_transmission_status(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Check PEPPOL transmission status for an invoice"""
+    # Get invoice
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Verify ownership
+    if invoice.company_id != current_user.company_id:
+        raise HTTPException(403, "Access denied")
+    
+    if not invoice.peppol_message_id:
+        return {
+            "transmitted": False,
+            "message": "Invoice has not been transmitted via PEPPOL"
+        }
+    
+    # Query provider for latest status (if needed)
+    from utils.peppol_provider import PeppolProviderFactory
+    import json
+    
+    try:
+        provider_name = invoice.peppol_provider or os.getenv('PEPPOL_PROVIDER', 'mock')
+        provider = PeppolProviderFactory.create_provider(
+            provider_name=provider_name,
+            base_url=os.getenv('PEPPOL_BASE_URL'),
+            api_key=os.getenv('PEPPOL_API_KEY')
+        )
+        
+        status_result = provider.get_status(invoice.peppol_message_id)
+        
+        # Update invoice status if changed
+        if status_result.get('success') and status_result.get('status'):
+            new_status = status_result['status']
+            if new_status != invoice.peppol_status:
+                invoice.peppol_status = new_status
+                invoice.peppol_response = json.dumps(status_result.get('details', {}))
+                db.commit()
+        
+        return {
+            "transmitted": True,
+            "invoice_number": invoice.invoice_number,
+            "message_id": invoice.peppol_message_id,
+            "status": invoice.peppol_status,
+            "provider": invoice.peppol_provider,
+            "sent_at": invoice.peppol_sent_at.isoformat() if invoice.peppol_sent_at else None,
+            "latest_check": status_result if status_result.get('success') else None
+        }
+    
+    except Exception as e:
+        return {
+            "transmitted": True,
+            "invoice_number": invoice.invoice_number,
+            "message_id": invoice.peppol_message_id,
+            "status": invoice.peppol_status,
+            "provider": invoice.peppol_provider,
+            "sent_at": invoice.peppol_sent_at.isoformat() if invoice.peppol_sent_at else None,
+            "error": f"Status check failed: {str(e)}"
+        }
 
 @app.get("/invoices", tags=["Invoices"], response_model=List[InvoiceListOut])
 def list_invoices(
