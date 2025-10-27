@@ -317,6 +317,19 @@ class InvoiceDB(Base):
     pdf_file_path = Column(String, nullable=True)  # PDF storage path
     xml_hash = Column(String, nullable=True)  # SHA-256 hash of XML
     
+    # Digital Signature & Hash Chain (UAE FTA Compliance)
+    prev_invoice_hash = Column(String, nullable=True, index=True)  # Links to previous invoice in chain
+    signature_b64 = Column(Text, nullable=True)  # Base64 encoded digital signature
+    signing_cert_serial = Column(String, nullable=True)  # Certificate serial number for audit trail
+    signing_timestamp = Column(DateTime, nullable=True)  # When invoice was digitally signed
+    
+    # PEPPOL Transmission Tracking
+    peppol_message_id = Column(String, nullable=True, index=True)  # Provider's message ID
+    peppol_status = Column(String, nullable=True)  # SENT, DELIVERED, REJECTED, etc.
+    peppol_provider = Column(String, nullable=True)  # e.g., "tradeshift", "basware"
+    peppol_sent_at = Column(DateTime, nullable=True)  # Transmission timestamp
+    peppol_response = Column(Text, nullable=True)  # Provider API response (JSON)
+    
     # Sharing & Transmission
     share_token = Column(String, nullable=True, index=True)  # Public share link token
     sent_at = Column(DateTime, nullable=True)
