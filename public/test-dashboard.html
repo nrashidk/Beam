@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InvoLinks E2E Testing Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .credentials {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border-left: 4px solid #667eea;
+        }
+        .credentials strong {
+            color: #667eea;
+        }
+        .test-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .test-section h2 {
+            color: #2d3748;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .test-item {
+            padding: 12px;
+            margin: 8px 0;
+            background: #f7fafc;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+        }
+        .test-item:hover {
+            background: #edf2f7;
+            transform: translateX(5px);
+        }
+        .test-item.completed {
+            background: #c6f6d5;
+            border-left: 4px solid #48bb78;
+        }
+        .test-item.failed {
+            background: #fed7d7;
+            border-left: 4px solid #f56565;
+        }
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            cursor: pointer;
+        }
+        .quick-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .quick-link {
+            background: #667eea;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            text-decoration: none;
+            text-align: center;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .quick-link:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #718096;
+            margin-top: 5px;
+        }
+        .accordion {
+            margin-top: 10px;
+        }
+        .accordion-header {
+            background: #667eea;
+            color: white;
+            padding: 12px 15px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .accordion-content {
+            display: none;
+            padding: 10px;
+        }
+        .accordion-content.active {
+            display: block;
+        }
+        .feature-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #ed8936;
+            color: white;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 InvoLinks End-to-End Testing Dashboard</h1>
+            <p style="color: #718096; margin-top: 10px;">Comprehensive testing checklist for all features</p>
+            
+            <div class="credentials">
+                <strong>🔑 SuperAdmin Login:</strong><br>
+                Email: <code>nrashidk@gmail.com</code><br>
+                Password: <code>Admin@123</code>
+            </div>
+            
+            <div class="credentials" style="margin-top: 10px;">
+                <strong>🏢 Test Business User:</strong><br>
+                Email: <code>testuser@involinks.ae</code><br>
+                Password: <code>SecurePass123!@#</code><br>
+                <em style="color: #e53e3e;">⚠️ Must be approved by SuperAdmin first!</em>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalTests">0</div>
+                <div class="stat-label">Total Tests</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="passedTests">0</div>
+                <div class="stat-label">Passed ✅</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="failedTests">0</div>
+                <div class="stat-label">Failed ❌</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="progress">0%</div>
+                <div class="stat-label">Progress</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔗 Quick Navigation Links</h2>
+            <div class="quick-links">
+                <a href="/login" class="quick-link" target="_blank">Login Page</a>
+                <a href="/dashboard" class="quick-link" target="_blank">Dashboard</a>
+                <a href="/admin" class="quick-link" target="_blank">SuperAdmin</a>
+                <a href="/admin/approvals" class="quick-link" target="_blank">Approvals</a>
+                <a href="/invoices" class="quick-link" target="_blank">Invoices</a>
+                <a href="/invoices/create" class="quick-link" target="_blank">Create Invoice</a>
+                <a href="/settings/branding" class="quick-link" target="_blank">Branding</a>
+                <a href="/settings/team" class="quick-link" target="_blank">Team</a>
+            </div>
+        </div>
+
+        <!-- Phase 1: SuperAdmin Tests -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>📊 Phase 1: SuperAdmin Dashboard Testing <span class="feature-badge">HIGH PRIORITY</span></span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content active">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Login as SuperAdmin at <code>/login</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify dashboard redirects and loads analytics cards</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test revenue chart displays correctly</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Use search box to filter companies (try "Test", "Retro")</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "All Statuses" dropdown → select "PENDING_REVIEW"</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "All Plans" dropdown → filter by each plan type</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Export CSV" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click on company row to view details</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test table sorting by clicking column headers</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 2: Approval Workflow -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>✅ Phase 2: Company Approval Workflow <span class="feature-badge">CRITICAL</span></span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Navigate to <code>/admin/approvals</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>View pending company: E2E Test Company LLC</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Approve" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Select subscription plan dropdown (Free, Basic, Pro, Enterprise)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>If Free plan: set invoice limit to 10</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Confirm approval and verify success message</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test "Reject" button on another pending company</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Enter rejection reason and confirm</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 3: Business User -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>🏢 Phase 3: Business User Dashboard</span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Logout from SuperAdmin</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Login as business user: testuser@involinks.ae</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify business dashboard loads with revenue cards</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Check recent invoices list displays</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify subscription plan shows (Free with limits)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Navigate through all menu items</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 4: Invoice Creation -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>📄 Phase 4: Invoice Creation & Management <span class="feature-badge">CORE FEATURE</span></span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Create Invoice" button → navigate to <code>/invoices/create</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Fill customer info: Name, Email, Address, TRN</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Select invoice type dropdown (Tax Invoice, Credit Note, Commercial)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Set invoice date using date picker</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Set due date using date picker</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Add Line Item" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Enter: Description, Quantity: 10, Price: 500, Tax: 5%</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify subtotal calculates: 5,000 AED</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Add second line item with different values</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click delete icon on a line item</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify VAT @ 5% calculates correctly</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Select payment method dropdown (Cash, Card, Bank Transfer, etc.)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Save as Draft" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify success message and redirect to invoice detail</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 5: Invoice Compliance -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>🔒 Phase 5: Invoice Issuance & Compliance <span class="feature-badge">UAE FTA</span></span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>On invoice detail page, click "Issue Invoice" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify status badge changes from DRAFT → ISSUED</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>View "Digital Signature" section appears</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "View XML" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify UBL XML displays with proper structure</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Check signature details: cert serial, timestamp, hash</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify hash chain linking (prev_invoice_hash)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Download XML" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Send via PEPPOL" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Verify PEPPOL transmission status updates</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Check PEPPOL message ID displayed</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 6: Invoice Dashboard -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>📊 Phase 6: Invoice Dashboard & Filters</span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Navigate to <code>/invoices</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Use search box to find invoice by number</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Search by customer name</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Status" filter dropdown</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Filter by: Draft, Issued, Sent, Paid, Overdue, Cancelled</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test date range filter</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click column headers to sort (Date, Amount, Status)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test pagination if >10 invoices</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 7: Settings -->
+        <div class="test-section">
+            <div class="accordion-header" onclick="toggleAccordion(this)">
+                <span>⚙️ Phase 7: Settings & Customization</span>
+                <span>▼</span>
+            </div>
+            <div class="accordion-content">
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Navigate to <code>/settings/branding</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Upload Logo" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Test file upload validation (PNG/SVG only)</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click primary color picker</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click accent color picker</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Select font family from dropdown</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Preview Invoice" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Navigate to <code>/settings/team</code></span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Invite Member" button</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Fill email, name, and select role dropdown</span>
+                </div>
+                <div class="test-item" onclick="toggleTest(this)">
+                    <input type="checkbox" class="checkbox">
+                    <span>Click "Send Invitation" button</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📝 Notes & Bugs</h2>
+            <textarea id="notes" style="width: 100%; min-height: 150px; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-family: inherit;" placeholder="Document any bugs, issues, or observations here..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        function toggleAccordion(element) {
+            const content = element.nextElementSibling;
+            const arrow = element.querySelector('span:last-child');
+            content.classList.toggle('active');
+            arrow.textContent = content.classList.contains('active') ? '▼' : '▶';
+        }
+
+        function toggleTest(element) {
+            const checkbox = element.querySelector('.checkbox');
+            checkbox.checked = !checkbox.checked;
+            
+            if (checkbox.checked) {
+                element.classList.add('completed');
+                element.classList.remove('failed');
+            } else {
+                element.classList.remove('completed');
+            }
+            
+            updateStats();
+        }
+
+        function updateStats() {
+            const allTests = document.querySelectorAll('.test-item');
+            const passedTests = document.querySelectorAll('.test-item.completed');
+            const failedTests = document.querySelectorAll('.test-item.failed');
+            
+            document.getElementById('totalTests').textContent = allTests.length;
+            document.getElementById('passedTests').textContent = passedTests.length;
+            document.getElementById('failedTests').textContent = failedTests.length;
+            
+            const progress = Math.round((passedTests.length / allTests.length) * 100);
+            document.getElementById('progress').textContent = progress + '%';
+        }
+
+        // Allow right-click to mark as failed
+        document.querySelectorAll('.test-item').forEach(item => {
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                const checkbox = item.querySelector('.checkbox');
+                checkbox.checked = false;
+                item.classList.remove('completed');
+                item.classList.add('failed');
+                updateStats();
+            });
+        });
+
+        // Initialize stats
+        updateStats();
+
+        // Save notes to localStorage
+        const notesTextarea = document.getElementById('notes');
+        notesTextarea.value = localStorage.getItem('testNotes') || '';
+        notesTextarea.addEventListener('input', () => {
+            localStorage.setItem('testNotes', notesTextarea.value);
+        });
+    </script>
+</body>
+</html>
