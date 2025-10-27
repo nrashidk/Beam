@@ -790,22 +790,38 @@ else:
 @app.on_event("startup")
 def startup_event():
     """Seed plans on startup and validate environment"""
+    # Check if running in production mode
+    production_mode = os.getenv('PRODUCTION_MODE', 'false').lower() == 'true'
+    
     # Validate cryptographic environment
     from utils.crypto_utils import validate_environment_keys
     try:
-        validation_result = validate_environment_keys()
-        if validation_result.get("warnings"):
-            for warning in validation_result["warnings"]:
-                print(f"⚠️ Startup Warning: {warning}")
+        validation_result = validate_environment_keys(fail_on_missing=production_mode)
+        
+        if production_mode:
+            print("🔒 PRODUCTION MODE: All cryptographic validations passed")
+        else:
+            print("🔧 DEVELOPMENT MODE: Running with permissive validation")
+            if validation_result.get("warnings"):
+                for warning in validation_result["warnings"]:
+                    print(f"⚠️ Startup Warning: {warning}")
+                print("⚠️ Set PRODUCTION_MODE=true to enforce strict validation")
+    
     except ConfigurationError as e:
         print(f"❌ Startup Error: {e.message}")
-        print("⚠️ Continuing with mock keys - NOT PRODUCTION READY")
+        if production_mode:
+            print("❌ PRODUCTION MODE: Cannot start without valid signing keys")
+            raise  # Fail hard in production mode
+        else:
+            print("⚠️ Continuing with mock keys - NOT PRODUCTION READY")
     
     # Seed database plans
     db = SessionLocal()
     seed_plans(db)
     db.close()
-    print("✅ InvoLinks API started - Plans seeded")
+    
+    mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
+    print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
 
 # ==================== REGISTRATION ENDPOINTS ====================
 

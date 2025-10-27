@@ -24,22 +24,51 @@ from .exceptions import SigningError, CertificateError, CryptoError
 class InvoiceCrypto:
     """Handles cryptographic operations for invoice signing and verification"""
     
-    def __init__(self, private_key_pem: Optional[str] = None, cert_serial: Optional[str] = None):
+    def __init__(
+        self, 
+        private_key_pem: Optional[str] = None, 
+        cert_pem: Optional[str] = None,
+        cert_serial: Optional[str] = None
+    ):
         """
         Initialize crypto utilities
         
         Args:
             private_key_pem: PEM-encoded RSA private key for signing
-            cert_serial: Certificate serial number for audit trail
+            cert_pem: PEM-encoded X.509 certificate for validation
+            cert_serial: Certificate serial number (optional if cert_pem provided)
             
         Raises:
-            CertificateError: If key loading fails
+            CertificateError: If key/certificate loading fails
+            SigningError: If private key loading fails
         """
-        self.cert_serial = cert_serial or "MOCK-CERT-001"
         self.private_key = None
         self.certificate = None
+        self.cert_metadata = None
         self.signing_count = 0  # Track number of signatures for audit
         
+        # Load and validate certificate if provided
+        if cert_pem:
+            try:
+                self.certificate = load_certificate_from_pem(cert_pem)
+                self.cert_metadata = validate_certificate(self.certificate)
+                self.cert_serial = self.cert_metadata["serial_number"]
+                
+                print(f"✅ Crypto: Certificate loaded - CN={self.cert_metadata['subject']['common_name']}, "
+                      f"expires {self.cert_metadata['valid_until']}")
+            except CertificateError:
+                raise
+            except Exception as e:
+                raise CertificateError(
+                    f"Failed to load certificate: {str(e)}",
+                    {"error_type": type(e).__name__}
+                )
+        else:
+            # Use provided cert_serial or default to mock
+            self.cert_serial = cert_serial or "MOCK-CERT-001"
+            print(f"⚠️ Crypto: No certificate provided - using mock serial {self.cert_serial}")
+        
+        # Load private key
         if private_key_pem:
             try:
                 self.private_key = serialization.load_pem_private_key(
@@ -49,9 +78,9 @@ class InvoiceCrypto:
                 )
                 print(f"✅ Crypto: Private key loaded successfully (Serial: {self.cert_serial})")
             except Exception as e:
-                raise CertificateError(
+                raise SigningError(
                     f"Failed to load private key: {str(e)}",
-                    {"cert_serial": cert_serial, "error_type": type(e).__name__}
+                    {"cert_serial": self.cert_serial, "error_type": type(e).__name__}
                 )
     
     @staticmethod
@@ -362,22 +391,27 @@ def validate_certificate(cert: x509.Certificate) -> Dict[str, Any]:
         )
 
 
-def validate_environment_keys() -> Dict[str, Any]:
+def validate_environment_keys(fail_on_missing: bool = False) -> Dict[str, Any]:
     """
     Validate cryptographic keys in environment variables
+    
+    Args:
+        fail_on_missing: If True, raises ConfigurationError when keys are missing
+                        (required for production deployment)
     
     Returns:
         Dictionary with validation results
         
     Raises:
-        ConfigurationError: If required keys are missing or invalid
+        ConfigurationError: If required keys are missing/invalid AND fail_on_missing=True
     """
     from .exceptions import ConfigurationError
     
     results = {
         "private_key_present": False,
         "certificate_present": False,
-        "warnings": []
+        "warnings": [],
+        "mode": "production" if fail_on_missing else "development"
     }
     
     # Check for private key
@@ -397,8 +431,15 @@ def validate_environment_keys() -> Dict[str, Any]:
                 {"env_var": "SIGNING_PRIVATE_KEY_PEM"}
             )
     else:
-        results["warnings"].append("SIGNING_PRIVATE_KEY_PEM not set - using mock keys")
+        warning = "SIGNING_PRIVATE_KEY_PEM not set - using mock keys"
+        results["warnings"].append(warning)
         print("⚠️ Environment: SIGNING_PRIVATE_KEY_PEM not set - using mock signing")
+        
+        if fail_on_missing:
+            raise ConfigurationError(
+                "SIGNING_PRIVATE_KEY_PEM is required for production deployment",
+                {"env_var": "SIGNING_PRIVATE_KEY_PEM", "mode": "production"}
+            )
     
     # Check for certificate
     cert_pem = os.getenv('SIGNING_CERTIFICATE_PEM')
@@ -424,8 +465,15 @@ def validate_environment_keys() -> Dict[str, Any]:
                 {"env_var": "SIGNING_CERTIFICATE_PEM", "details": e.details}
             )
     else:
-        results["warnings"].append("SIGNING_CERTIFICATE_PEM not set - using mock certificate")
+        warning = "SIGNING_CERTIFICATE_PEM not set - using mock certificate"
+        results["warnings"].append(warning)
         print("⚠️ Environment: SIGNING_CERTIFICATE_PEM not set - using mock certificate")
+        
+        if fail_on_missing:
+            raise ConfigurationError(
+                "SIGNING_CERTIFICATE_PEM is required for production deployment",
+                {"env_var": "SIGNING_CERTIFICATE_PEM", "mode": "production"}
+            )
     
     return results
 
@@ -434,12 +482,17 @@ def validate_environment_keys() -> Dict[str, Any]:
 _crypto_instance: Optional[InvoiceCrypto] = None
 
 
-def get_crypto_instance(private_key_pem: Optional[str] = None, cert_serial: Optional[str] = None) -> InvoiceCrypto:
+def get_crypto_instance(
+    private_key_pem: Optional[str] = None,
+    cert_pem: Optional[str] = None, 
+    cert_serial: Optional[str] = None
+) -> InvoiceCrypto:
     """
     Get or create crypto instance
     
     Args:
         private_key_pem: Optional PEM-encoded private key
+        cert_pem: Optional PEM-encoded certificate
         cert_serial: Optional certificate serial number
         
     Returns:
@@ -447,5 +500,11 @@ def get_crypto_instance(private_key_pem: Optional[str] = None, cert_serial: Opti
     """
     global _crypto_instance
     if _crypto_instance is None:
-        _crypto_instance = InvoiceCrypto(private_key_pem, cert_serial)
+        # Try to load from environment if not provided
+        if not private_key_pem:
+            private_key_pem = os.getenv('SIGNING_PRIVATE_KEY_PEM')
+        if not cert_pem:
+            cert_pem = os.getenv('SIGNING_CERTIFICATE_PEM')
+        
+        _crypto_instance = InvoiceCrypto(private_key_pem, cert_pem, cert_serial)
     return _crypto_instance

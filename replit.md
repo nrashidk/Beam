@@ -13,6 +13,26 @@ InvoLinks is a full-stack digital invoicing platform for UAE businesses, providi
 ## User Preferences
 Detailed explanations preferred.
 
+## Recent Changes
+
+**October 27, 2025 - Tier 1 Production Hardening:**
+- **Custom Exception Module (`utils/exceptions.py`):** Structured domain exceptions for better error handling and debugging (ValidationError, CryptoError, SigningError, CertificateError, XMLGenerationError, PeppolError, ConfigurationError).
+- **Enhanced Crypto Utilities (`utils/crypto_utils.py`):** 
+  - Certificate loading, validation, expiry checking, and metadata extraction
+  - InvoiceCrypto now accepts and validates X.509 certificates at initialization
+  - Environment key validation with development/production mode support
+- **Environment Validation:** 
+  - **Development Mode** (default): Warns about missing keys, continues with mocks
+  - **Production Mode** (`PRODUCTION_MODE=true`): Fails hard if signing keys/certificates are missing
+  - Validates certificate expiry at startup (warns if < 30 days to expiration)
+- **UBL XML Generator:** Updated with structured error handling and better validation
+- **PEPPOL Provider:** Added canonical error envelopes with error codes (TIMEOUT, NETWORK_ERROR) for observability
+- **Global Exception Handler:** FastAPI automatically converts domain exceptions to structured HTTP responses
+- **Required Environment Variables:**
+  - `SIGNING_PRIVATE_KEY_PEM`: PEM-encoded RSA-2048 private key for invoice signing
+  - `SIGNING_CERTIFICATE_PEM`: PEM-encoded X.509 certificate for validation
+  - `PRODUCTION_MODE`: Set to `true` to enforce strict validation (optional, defaults to false)
+
 ## System Architecture
 
 **Technology Stack:**
