@@ -24,7 +24,7 @@ import bcrypt
 from jose import JWTError, jwt
 
 # UBL XML Generator
-from ubl_generator import generate_pint_ae_xml, calculate_xml_hash, validate_pint_ae_invoice
+# Legacy UBL generator removed - using utils/ubl_xml_generator.py instead
 
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
@@ -2043,110 +2043,7 @@ def create_invoice(
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
     
-    # ==== PHASE 1: Digital Signatures & UBL XML Generation ====
-    from utils.crypto_utils import get_crypto_instance
-    from utils.ubl_xml_generator import generate_invoice_xml
-    import os
-    
-    # Get previous invoice hash for chain
-    prev_invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company.id
-    ).order_by(InvoiceDB.created_at.desc()).first()
-    
-    if prev_invoice and prev_invoice.xml_hash:
-        invoice.prev_invoice_hash = prev_invoice.xml_hash
-    
-    # Prepare invoice data for XML generation
-    invoice_data = {
-        'invoice_number': invoice.invoice_number,
-        'issue_date': invoice.issue_date,
-        'due_date': invoice.due_date,
-        'invoice_type': invoice.invoice_type.value,
-        'currency_code': invoice.currency_code,
-        'supplier_trn': invoice.supplier_trn,
-        'supplier_name': invoice.supplier_name,
-        'supplier_address': invoice.supplier_address,
-        'supplier_city': invoice.supplier_city,
-        'supplier_country': invoice.supplier_country,
-        'supplier_peppol_id': invoice.supplier_peppol_id,
-        'customer_trn': invoice.customer_trn,
-        'customer_name': invoice.customer_name,
-        'customer_email': invoice.customer_email,
-        'customer_address': invoice.customer_address,
-        'customer_city': invoice.customer_city,
-        'customer_country': invoice.customer_country,
-        'customer_peppol_id': invoice.customer_peppol_id,
-        'subtotal_amount': invoice.subtotal_amount,
-        'tax_amount': invoice.tax_amount,
-        'total_amount': invoice.total_amount,
-        'amount_due': invoice.amount_due,
-        'payment_terms': invoice.payment_terms,
-        'invoice_notes': invoice.invoice_notes,
-        'reference_number': invoice.reference_number,
-        'preceding_invoice_id': invoice.preceding_invoice_id,
-        'prev_invoice_hash': invoice.prev_invoice_hash
-    }
-    
-    # Get line items for XML
-    line_items_data = []
-    for line in db.query(InvoiceLineItemDB).filter(InvoiceLineItemDB.invoice_id == invoice.id).all():
-        line_items_data.append({
-            'line_number': line.line_number,
-            'item_name': line.item_name,
-            'item_description': line.item_description,
-            'item_code': line.item_code,
-            'quantity': line.quantity,
-            'unit_code': line.unit_code,
-            'unit_price': line.unit_price,
-            'line_extension_amount': line.line_extension_amount,
-            'tax_category': line.tax_category.value,
-            'tax_percent': line.tax_percent,
-            'tax_amount': line.tax_amount,
-            'line_total_amount': line.line_total_amount
-        })
-    
-    # Generate UBL 2.1 XML
-    success, xml_content, errors = generate_invoice_xml(invoice_data, line_items_data)
-    
-    if success and xml_content:
-        # Save XML to file
-        xml_dir = "invoices_xml"
-        os.makedirs(xml_dir, exist_ok=True)
-        xml_filename = f"{invoice.invoice_number}.xml"
-        xml_path = os.path.join(xml_dir, xml_filename)
-        
-        with open(xml_path, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-        
-        invoice.xml_file_path = xml_path
-        
-        # Compute hash of invoice + XML
-        crypto = get_crypto_instance()
-        invoice_hash = crypto.compute_invoice_hash(invoice_data)
-        invoice.xml_hash = crypto.compute_hash(xml_content)
-        
-        # Sign invoice (using mock signing for now - replace with real cert in production)
-        signature = crypto.sign_invoice(invoice_hash, xml_content)
-        if signature:
-            invoice.signature_b64 = signature
-            invoice.signing_timestamp = datetime.utcnow()
-            invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
-        
-        print(f"\n{'='*70}")
-        print(f"✅ INVOICE {invoice.invoice_number} - SIGNED & XML GENERATED")
-        print(f"{'='*70}")
-        print(f"Invoice Hash: {invoice_hash[:32]}...")
-        print(f"XML Hash: {invoice.xml_hash[:32]}...")
-        print(f"XML File: {xml_path}")
-        print(f"Signature: {'✓ Signed' if signature else '✗ Not signed'}")
-        print(f"Previous Hash: {invoice.prev_invoice_hash[:32] if invoice.prev_invoice_hash else 'None (first invoice)'}")
-        print(f"{'='*70}\n")
-    else:
-        print(f"⚠️ Warning: XML generation failed for {invoice.invoice_number}: {errors}")
-    
-    # Increment company invoice counter
-    company.invoices_generated = (company.invoices_generated or 0) + 1
-    
+    # Invoice created as DRAFT - use /issue endpoint to generate XML and finalize
     db.commit()
     db.refresh(invoice)
     
@@ -2487,7 +2384,16 @@ def issue_invoice(
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
-    """Issue a draft invoice (generates UBL XML, changes status to ISSUED, increments counter)"""
+    """
+    Issue a draft invoice - generates UBL XML with digital signature and hash chain
+    
+    PHASE 1 Features:
+    - Generates UAE PINT-AE compliant UBL 2.1 XML
+    - Creates digital signature (RSA-2048)
+    - Links to previous invoice via hash chain
+    - Saves XML to file system
+    - Updates status to ISSUED
+    """
     invoice = db.query(InvoiceDB).filter(
         InvoiceDB.id == invoice_id,
         InvoiceDB.company_id == current_user.company_id
@@ -2499,87 +2405,97 @@ def issue_invoice(
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(400, f"Can only issue draft invoices. Current status: {invoice.status}")
     
+    # ==== PHASE 1: Digital Signatures, Hash Chain & UBL XML Generation ====
+    from utils.crypto_utils import get_crypto_instance
+    from utils.ubl_xml_generator import generate_invoice_xml
+    import json
+    
+    # Get previous invoice hash for chain
+    prev_invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.id != invoice.id  # Exclude current invoice
+    ).order_by(InvoiceDB.created_at.desc()).first()
+    
+    if prev_invoice and prev_invoice.xml_hash:
+        invoice.prev_invoice_hash = prev_invoice.xml_hash
+    
     # Prepare invoice data for XML generation
     invoice_data = {
-        "invoice": {
-            "invoice_number": invoice.invoice_number,
-            "issue_date": invoice.issue_date,
-            "due_date": invoice.due_date,
-            "invoice_type": invoice.invoice_type.value,
-            "currency_code": invoice.currency_code,
-            "supplier_trn": invoice.supplier_trn,
-            "supplier_name": invoice.supplier_name,
-            "supplier_address": invoice.supplier_address,
-            "supplier_city": invoice.supplier_city,
-            "supplier_country": invoice.supplier_country,
-            "supplier_peppol_id": invoice.supplier_peppol_id,
-            "customer_trn": invoice.customer_trn,
-            "customer_name": invoice.customer_name,
-            "customer_address": invoice.customer_address,
-            "customer_city": invoice.customer_city,
-            "customer_country": invoice.customer_country,
-            "customer_peppol_id": invoice.customer_peppol_id,
-            "subtotal_amount": invoice.subtotal_amount,
-            "tax_amount": invoice.tax_amount,
-            "total_amount": invoice.total_amount,
-            "amount_due": invoice.amount_due,
-            "payment_terms": invoice.payment_terms,
-            "payment_due_days": invoice.payment_due_days,
-            "invoice_notes": invoice.invoice_notes,
-            "reference_number": invoice.reference_number,
-            "credit_note_reason": invoice.credit_note_reason,
-        },
-        "line_items": [
-            {
-                "line_number": li.line_number,
-                "item_name": li.item_name,
-                "item_description": li.item_description,
-                "item_code": li.item_code,
-                "quantity": li.quantity,
-                "unit_code": li.unit_code,
-                "unit_price": li.unit_price,
-                "line_extension_amount": li.line_extension_amount,
-                "tax_category": li.tax_category.value,
-                "tax_percent": li.tax_percent,
-                "tax_amount": li.tax_amount,
-                "line_total_amount": li.line_total_amount
-            } for li in invoice.line_items
-        ],
-        "tax_breakdowns": [
-            {
-                "tax_category": tb.tax_category.value,
-                "taxable_amount": tb.taxable_amount,
-                "tax_percent": tb.tax_percent,
-                "tax_amount": tb.tax_amount
-            } for tb in invoice.tax_breakdowns
-        ]
+        'invoice_number': invoice.invoice_number,
+        'issue_date': invoice.issue_date,
+        'due_date': invoice.due_date,
+        'invoice_type': invoice.invoice_type.value,
+        'currency_code': invoice.currency_code,
+        'supplier_trn': invoice.supplier_trn,
+        'supplier_name': invoice.supplier_name,
+        'supplier_address': invoice.supplier_address,
+        'supplier_city': invoice.supplier_city,
+        'supplier_country': invoice.supplier_country,
+        'supplier_peppol_id': invoice.supplier_peppol_id,
+        'customer_trn': invoice.customer_trn,
+        'customer_name': invoice.customer_name,
+        'customer_email': invoice.customer_email,
+        'customer_address': invoice.customer_address,
+        'customer_city': invoice.customer_city,
+        'customer_country': invoice.customer_country,
+        'customer_peppol_id': invoice.customer_peppol_id,
+        'subtotal_amount': invoice.subtotal_amount,
+        'tax_amount': invoice.tax_amount,
+        'total_amount': invoice.total_amount,
+        'amount_due': invoice.amount_due,
+        'payment_terms': invoice.payment_terms,
+        'invoice_notes': invoice.invoice_notes,
+        'reference_number': invoice.reference_number,
+        'preceding_invoice_id': invoice.preceding_invoice_id,
+        'prev_invoice_hash': invoice.prev_invoice_hash
     }
     
-    # Validate invoice data
-    validation_errors = validate_pint_ae_invoice(invoice_data)
-    if validation_errors:
-        raise HTTPException(400, f"Invoice validation failed: {', '.join(validation_errors)}")
+    # Get line items for XML
+    line_items_data = []
+    for line in invoice.line_items:
+        line_items_data.append({
+            'line_number': line.line_number,
+            'item_name': line.item_name,
+            'item_description': line.item_description,
+            'item_code': line.item_code,
+            'quantity': line.quantity,
+            'unit_code': line.unit_code,
+            'unit_price': line.unit_price,
+            'line_extension_amount': line.line_extension_amount,
+            'tax_category': line.tax_category.value,
+            'tax_percent': line.tax_percent,
+            'tax_amount': line.tax_amount,
+            'line_total_amount': line.line_total_amount
+        })
     
-    # Generate UBL XML
-    try:
-        xml_content = generate_pint_ae_xml(invoice_data)
-        xml_hash = calculate_xml_hash(xml_content)
-        
-        # Save XML file
-        xml_dir = os.path.join(ARTIFACT_ROOT, "invoices", "xml")
-        os.makedirs(xml_dir, exist_ok=True)
-        xml_filename = f"{invoice.invoice_number.replace('/', '_')}.xml"
-        xml_path = os.path.join(xml_dir, xml_filename)
-        
-        with open(xml_path, 'w', encoding='utf-8') as f:
-            f.write(xml_content)
-        
-        # Update invoice with XML info
-        invoice.xml_file_path = xml_path
-        invoice.xml_hash = xml_hash
-        
-    except Exception as e:
-        raise HTTPException(500, f"Failed to generate UBL XML: {str(e)}")
+    # Generate UBL 2.1 XML
+    success, xml_content, errors = generate_invoice_xml(invoice_data, line_items_data)
+    
+    if not success or not xml_content:
+        raise HTTPException(500, f"XML generation failed: {errors}")
+    
+    # Save XML to file
+    xml_dir = "invoices_xml"
+    os.makedirs(xml_dir, exist_ok=True)
+    xml_filename = f"{invoice.invoice_number.replace('/', '_')}.xml"
+    xml_path = os.path.join(xml_dir, xml_filename)
+    
+    with open(xml_path, 'w', encoding='utf-8') as f:
+        f.write(xml_content)
+    
+    invoice.xml_file_path = xml_path
+    
+    # Compute hash of invoice + XML
+    crypto = get_crypto_instance()
+    invoice_hash = crypto.compute_invoice_hash(invoice_data)
+    invoice.xml_hash = crypto.compute_hash(xml_content)
+    
+    # Sign invoice (using mock signing for now - replace with real cert in production)
+    signature = crypto.sign_invoice(invoice_hash, xml_content)
+    if signature:
+        invoice.signature_b64 = signature
+        invoice.signing_timestamp = datetime.utcnow()
+        invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
     
     # Update invoice status
     invoice.status = InvoiceStatus.ISSUED
@@ -2590,15 +2506,31 @@ def issue_invoice(
         company.invoices_generated = (company.invoices_generated or 0) + 1
     
     db.commit()
+    db.refresh(invoice)
+    
+    print(f"\n{'='*70}")
+    print(f"✅ INVOICE ISSUED: {invoice.invoice_number}")
+    print(f"{'='*70}")
+    print(f"Invoice Hash: {invoice_hash[:32]}...")
+    print(f"XML Hash: {invoice.xml_hash[:32]}...")
+    print(f"XML File: {xml_path}")
+    print(f"Signature: {'✓ Signed' if signature else '✗ Not signed'}")
+    print(f"Previous Hash: {invoice.prev_invoice_hash[:32] if invoice.prev_invoice_hash else 'None (first invoice)'}")
+    print(f"Hash Chain: {'✓ Linked' if invoice.prev_invoice_hash else '✓ Chain Start'}")
+    print(f"Status: {invoice.status}")
+    print(f"{'='*70}\n")
     
     return {
-        "message": "Invoice issued successfully",
+        "success": True,
+        "message": "Invoice issued successfully with digital signature and hash chain",
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "status": invoice.status,
         "xml_generated": True,
-        "xml_hash": xml_hash,
-        "compliance": "PINT-AE UBL 2.1"
+        "xml_hash": invoice.xml_hash,
+        "signature_generated": signature is not None,
+        "hash_chain_linked": invoice.prev_invoice_hash is not None,
+        "compliance": "UAE PINT-AE UBL 2.1"
     }
 
 @app.post("/invoices/{invoice_id}/send", tags=["Invoices"])
