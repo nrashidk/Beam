@@ -15,6 +15,32 @@ Detailed explanations preferred.
 
 ## Recent Changes
 
+**October 27, 2025 - MFA Implementation Started (Task 3):**
+- **Legal Requirement:** Article 9.1 of Ministerial Decision No. 64/2025 requires MFA
+- **Installed MFA Packages:** pyotp (TOTP), qrcode (QR generation), pillow (image processing), twilio (SMS)
+- **Twilio Integration Note:** User dismissed Replit Twilio integration - will use manual credentials stored as secrets
+- **Required Secrets for MFA:**
+  - `TWILIO_ACCOUNT_SID`: Twilio account identifier
+  - `TWILIO_AUTH_TOKEN`: Twilio authentication token
+  - `TWILIO_PHONE_NUMBER`: Twilio phone number for SMS (format: +1234567890)
+- **Next Steps:** Create utils/mfa_utils.py, add MFA endpoints, update database schema
+
+**October 27, 2025 - ASP Partnership Model Confirmed:**
+- **CRITICAL DECISION:** InvoLinks is **NOT an Accredited Service Provider (ASP)**
+- **Business Model:** We are **billing software** that partners with ASPs (Tradeshift/Basware)
+- **Invoice Flow:** InvoLinks → ASP Partner → PEPPOL Network → Buyer's ASP → FTA
+- **What We DON'T Build:**
+  - Direct FTA submission APIs (ASP handles this - Corner 5)
+  - PEPPOL certification process (use existing ASPs)
+  - ISO 22301 business continuity certification (only for ASPs)
+- **What We DO Build:**
+  - Corner 1: Invoice creation (✅ Complete)
+  - Corner 2: Integration with ASP for transmission (⚠️ Need partnership)
+  - Corner 3: Integration with ASP for reception (⚠️ Need partnership)
+  - Corner 4: AP Management - receiving invoices (🚧 40% done)
+  - Compliance: MFA, ISO 27001, security monitoring
+- **Partnership Requirements:** Tradeshift or Basware production API credentials needed
+
 **October 27, 2025 - Corner 4: AP Management & Inward Invoicing (UAE 5-Corner Model Compliance):**
 - **Database Schema Extensions for AP Management:**
   - `purchase_orders` + `purchase_order_line_items`: Track expected invoices from suppliers with PO matching
@@ -24,13 +50,20 @@ Detailed explanations preferred.
   - Comprehensive 3-way matching fields (PO ↔ Invoice ↔ GRN) with variance detection
   - Approval workflows with multi-user review and authorization
   - Payment tracking, dispute management, and quality control fields
+- **Corner 4 REST APIs (✅ Completed & Architect Approved):**
+  - POST /inward-invoices/receive - Receive invoices from suppliers
+  - GET /inward-invoices - List AP inbox with filters
+  - GET /inward-invoices/{id} - Get invoice details
+  - POST /inward-invoices/{id}/approve - Approve for payment
+  - POST /inward-invoices/{id}/reject - Reject with reason
+  - POST /inward-invoices/{id}/match-po - Manual PO matching
 - **5-Corner Model Compliance:** InvoLinks now supports full UAE FTA 5-corner e-invoicing model:
   - Corner 1: Invoice Creation (Outward) - ✅ 100% Complete
-  - Corner 2: Validation & Transmission - ✅ 100% Complete  
-  - Corner 3: Secure PEPPOL Transmission - ✅ 95% Complete (architecture ready)
-  - Corner 4: Invoice Receipt (AP Management) - 🚧 Database schema complete, APIs in progress
-  - Corner 5: FTA Submission - ✅ 70% Complete (via ASP partnership)
-- **Next Steps:** Build AP Inbox APIs, PEPPOL webhook handler, 3-way matching engine, and frontend dashboards
+  - Corner 2: ASP Validation & Transmission - ⚠️ 70% Ready (need ASP partnership)
+  - Corner 3: ASP Secure Transmission - ⚠️ 70% Ready (need ASP partnership)
+  - Corner 4: Invoice Receipt (AP Management) - 🚧 40% Complete (database + APIs done)
+  - Corner 5: FTA Submission - ⚠️ Handled by ASP Partner
+- **Next Steps:** MFA implementation (Task 3), PEPPOL webhook handler (Task 4), PO management APIs (Task 5)
 
 **October 27, 2025 - Tier 1 Production Hardening:**
 - **Custom Exception Module (`utils/exceptions.py`):** Structured domain exceptions for better error handling and debugging (ValidationError, CryptoError, SigningError, CertificateError, XMLGenerationError, PeppolError, ConfigurationError).
@@ -111,3 +144,6 @@ Detailed explanations preferred.
 -   **Schematron:** Invoice validation (global and UAE-specific rules).
 -   **Genericode files:** Compliance-related data (`eas.gc`, `ISO4217.gc`, `UNCL*.gc`, etc.) from `/mnt/data/`.
 -   **Schematron XSLT files:** Validation rules (`PINT-UBL-validation-preprocessed.xslt`, `PINT-jurisdiction-aligned-rules.xslt`) from `/mnt/data/`.
+-   **pyotp:** TOTP generation for MFA (installed).
+-   **qrcode + pillow:** QR code generation for TOTP enrollment (installed).
+-   **twilio:** SMS delivery for SMS-based 2FA (installed, needs manual credentials).
