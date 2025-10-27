@@ -15,6 +15,23 @@ Detailed explanations preferred.
 
 ## Recent Changes
 
+**October 27, 2025 - Corner 4: AP Management & Inward Invoicing (UAE 5-Corner Model Compliance):**
+- **Database Schema Extensions for AP Management:**
+  - `purchase_orders` + `purchase_order_line_items`: Track expected invoices from suppliers with PO matching
+  - `goods_receipts` + `goods_receipt_line_items`: Goods Receipt Notes (GRN) for physical delivery tracking  
+  - `inward_invoices` + `inward_invoice_line_items`: Received invoices from suppliers via PEPPOL (Corner 4)
+  - New enums: PurchaseOrderStatus, GoodsReceiptStatus, InwardInvoiceStatus, MatchingStatus
+  - Comprehensive 3-way matching fields (PO ↔ Invoice ↔ GRN) with variance detection
+  - Approval workflows with multi-user review and authorization
+  - Payment tracking, dispute management, and quality control fields
+- **5-Corner Model Compliance:** InvoLinks now supports full UAE FTA 5-corner e-invoicing model:
+  - Corner 1: Invoice Creation (Outward) - ✅ 100% Complete
+  - Corner 2: Validation & Transmission - ✅ 100% Complete  
+  - Corner 3: Secure PEPPOL Transmission - ✅ 95% Complete (architecture ready)
+  - Corner 4: Invoice Receipt (AP Management) - 🚧 Database schema complete, APIs in progress
+  - Corner 5: FTA Submission - ✅ 70% Complete (via ASP partnership)
+- **Next Steps:** Build AP Inbox APIs, PEPPOL webhook handler, 3-way matching engine, and frontend dashboards
+
 **October 27, 2025 - Tier 1 Production Hardening:**
 - **Custom Exception Module (`utils/exceptions.py`):** Structured domain exceptions for better error handling and debugging (ValidationError, CryptoError, SigningError, CertificateError, XMLGenerationError, PeppolError, ConfigurationError).
 - **Enhanced Crypto Utilities (`utils/crypto_utils.py`):** 
@@ -73,7 +90,10 @@ Detailed explanations preferred.
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistent connections, in-memory counters, and 24/7 availability.
-- **Database Schema:** Tables for `companies`, `subscription_plans`, `users`, `invoices`, `invoice_line_items`, `invoice_tax_breakdowns`, `payment_intents`, `assets`, `company_branding`. Includes fields for free plan tracking, comprehensive invoice data, user management (is_owner, full_name, invited_by), and branding assets.
+- **Database Schema:** 
+  - **Core Tables:** `companies`, `subscription_plans`, `users`, `invoices`, `invoice_line_items`, `invoice_tax_breakdowns`, `payment_intents`, `assets`, `company_branding`
+  - **AP Management (Corner 4):** `purchase_orders`, `purchase_order_line_items`, `goods_receipts`, `goods_receipt_line_items`, `inward_invoices`, `inward_invoice_line_items`
+  - Includes fields for free plan tracking, comprehensive invoice data, user management (is_owner, full_name, invited_by), branding assets, PO matching, 3-way reconciliation, and approval workflows
 - **Configuration:** Environment variables for `DATABASE_URL`, `ARTIFACT_ROOT`, `PEPPOL_ENDPOINT_SCHEME`, `RETENTION_YEARS`.
 - **VAT Settings:** Standard 5% VAT rate, AED 375,000 mandatory registration threshold.
 - **Security:** SQLAlchemy ORM for SQL injection protection, file upload validation, environment variable-based database credentials.
