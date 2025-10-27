@@ -3,7 +3,7 @@ UAE e-Invoicing Platform with Registration Wizard
 ==================================================
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
-import os, enum, hashlib, secrets
+import os, enum, hashlib, secrets, json
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
@@ -33,6 +33,9 @@ from utils.exceptions import (
     XMLGenerationError, PeppolError, PeppolProviderError,
     ConfigurationError, exception_to_http_response
 )
+
+# MFA (Multi-Factor Authentication)
+from utils.mfa_utils import MFAManager, EmailOTPManager
 
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
@@ -152,6 +155,14 @@ class UserDB(Base):
     invited_by = Column(String, ForeignKey("users.id"), nullable=True)  # Who invited this user
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+    
+    # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
+    mfa_enabled = Column(Boolean, default=False)
+    mfa_method = Column(String, nullable=True)  # 'totp', 'email', or None
+    mfa_secret = Column(String, nullable=True)  # Base32 encoded TOTP secret
+    mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed backup codes
+    mfa_enrolled_at = Column(DateTime, nullable=True)
+    mfa_last_verified_at = Column(DateTime, nullable=True)
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -160,6 +171,14 @@ class CompanyDB(Base):
     country = Column(String, default="AE")
     status = Column(SQLEnum(CompanyStatus), default=CompanyStatus.PENDING_REVIEW)
     trn = Column(String, nullable=True)
+    
+    # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
+    mfa_enabled = Column(Boolean, default=False)
+    mfa_method = Column(String, nullable=True)  # 'totp' or 'email'
+    mfa_secret = Column(String, nullable=True)  # Base32 TOTP secret
+    mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed codes
+    mfa_enrolled_at = Column(DateTime, nullable=True)
+    mfa_last_verified_at = Column(DateTime, nullable=True)
 
     # Registration fields
     business_type = Column(String, nullable=True)
@@ -780,6 +799,11 @@ def get_current_user_from_header(authorization: str = Header(None), db: Session 
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
+        mfa_challenge: bool = payload.get("mfa_challenge", False)
+        
+        # Reject temporary MFA challenge tokens on protected endpoints
+        if mfa_challenge:
+            raise HTTPException(401, "MFA verification required. Please complete MFA login flow.")
         
         if user_id is None or token_type != "user":
             raise HTTPException(401, "Invalid token")
@@ -1798,39 +1822,118 @@ class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str = Field(..., min_length=8)
 
-@app.post("/auth/login", response_model=LoginResponse, tags=["Auth"])
+# MFA (Multi-Factor Authentication) Pydantic models
+class MFAEnrollTOTPResponse(BaseModel):
+    secret: str
+    qr_code: str
+    backup_codes: List[str]
+
+class MFAVerifyRequest(BaseModel):
+    code: str
+
+class MFAStatusResponse(BaseModel):
+    enabled: bool
+    method: Optional[str] = None
+    enrolled_at: Optional[str] = None
+    last_verified_at: Optional[str] = None
+
+class MFALoginVerifyRequest(BaseModel):
+    temp_token: str
+    code: str
+    method: str = "totp"  # 'totp', 'email', or 'backup'
+
+class MFALoginResponse(BaseModel):
+    mfa_required: bool
+    mfa_method: Optional[str] = None
+    temp_token: Optional[str] = None
+    access_token: Optional[str] = None
+    token_type: Optional[str] = "bearer"
+    user_id: Optional[str] = None
+    company_id: Optional[str] = None
+    role: Optional[str] = None
+
+@app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
 def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
-    """Login endpoint - returns JWT token for both users and companies"""
+    """
+    Login endpoint - supports MFA (Multi-Factor Authentication)
+    
+    Flow:
+    1. If user has MFA enabled: returns temp_token + mfa_required=True
+    2. If user has no MFA: returns access_token directly
+    """
     
     # Try user authentication first (for super admins, company admins, etc)
     user = authenticate_user(payload.email, payload.password, db)
     if user:
-        # Create access token with user ID
+        # Check if MFA is enabled
+        if user.mfa_enabled:
+            # Create temporary token (5 minutes expiry) for MFA verification
+            temp_token = create_access_token(
+                data={"sub": user.id, "type": "user", "mfa_challenge": True},
+                expires_delta=timedelta(minutes=5)
+            )
+            
+            return MFALoginResponse(
+                mfa_required=True,
+                mfa_method=user.mfa_method,
+                temp_token=temp_token,
+                access_token=None,
+                user_id=user.id,
+                company_id=user.company_id,
+                role=user.role.value
+            )
+        
+        # No MFA - return access token directly
         access_token = create_access_token(data={"sub": user.id, "type": "user"})
         
-        return LoginResponse(
+        # Update last login
+        user.last_login = datetime.utcnow()
+        db.commit()
+        
+        return MFALoginResponse(
+            mfa_required=False,
+            mfa_method=None,
+            temp_token=None,
             access_token=access_token,
             token_type="bearer",
             user_id=user.id,
             company_id=user.company_id,
-            company_name=None,
             role=user.role.value
         )
     
-    # Try company authentication
+    # Try company authentication (with MFA support)
     company = authenticate_company(payload.email, payload.password, db)
     if company:
         if company.status != CompanyStatus.ACTIVE:
             raise HTTPException(403, f"Account not active. Status: {company.status.value}")
         
-        # Create access token with company ID
+        # Check if MFA is enabled for company
+        if company.mfa_enabled:
+            # Create temporary token (5 minutes expiry) for MFA verification
+            temp_token = create_access_token(
+                data={"sub": company.id, "type": "company", "mfa_challenge": True},
+                expires_delta=timedelta(minutes=5)
+            )
+            
+            return MFALoginResponse(
+                mfa_required=True,
+                mfa_method=company.mfa_method,
+                temp_token=temp_token,
+                access_token=None,
+                company_id=company.id,
+                role="COMPANY"
+            )
+        
+        # No MFA - return access token directly
         access_token = create_access_token(data={"sub": company.id, "type": "company"})
         
-        return LoginResponse(
+        return MFALoginResponse(
+            mfa_required=False,
+            mfa_method=None,
+            temp_token=None,
             access_token=access_token,
             token_type="bearer",
             company_id=company.id,
-            company_name=company.legal_name or "Company",
             role="COMPANY"
         )
     
@@ -1841,6 +1944,278 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
 def logout():
     """Logout endpoint (client-side token removal)"""
     return {"message": "Logged out successfully"}
+
+# ==================== MFA (MULTI-FACTOR AUTHENTICATION) ENDPOINTS ====================
+
+@app.post("/auth/mfa/enroll/totp", response_model=MFAEnrollTOTPResponse, tags=["MFA"])
+def enroll_totp_mfa(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Enroll in TOTP-based MFA (Google Authenticator, Authy, etc.)
+    
+    Returns:
+        - secret: TOTP secret (Base32 encoded)
+        - qr_code: Data URL for QR code image
+        - backup_codes: 10 backup codes (save these!)
+    """
+    if current_user.mfa_enabled:
+        raise HTTPException(400, "MFA is already enabled. Disable it first to re-enroll.")
+    
+    # Generate TOTP secret
+    secret = MFAManager.generate_totp_secret()
+    
+    # Generate QR code for easy setup
+    qr_code = MFAManager.generate_qr_code(secret, current_user.email)
+    
+    # Generate backup codes
+    backup_codes_plain = MFAManager.generate_backup_codes()
+    backup_codes_hashed = MFAManager.hash_backup_codes(backup_codes_plain)
+    
+    # Store temporarily (will be saved when user verifies)
+    current_user.mfa_secret = secret
+    current_user.mfa_backup_codes = json.dumps(backup_codes_hashed)
+    db.commit()
+    
+    return MFAEnrollTOTPResponse(
+        secret=secret,
+        qr_code=qr_code,
+        backup_codes=backup_codes_plain
+    )
+
+@app.post("/auth/mfa/enroll/verify", tags=["MFA"])
+def verify_mfa_enrollment(
+    payload: MFAVerifyRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify and complete MFA enrollment
+    
+    User must enter the 6-digit code from their authenticator app
+    """
+    if current_user.mfa_enabled:
+        raise HTTPException(400, "MFA is already enabled")
+    
+    if not current_user.mfa_secret:
+        raise HTTPException(400, "MFA enrollment not started. Call /auth/mfa/enroll/totp first")
+    
+    # Verify the TOTP code
+    if not MFAManager.verify_totp(current_user.mfa_secret, payload.code):
+        raise HTTPException(400, "Invalid verification code")
+    
+    # Enable MFA
+    current_user.mfa_enabled = True
+    current_user.mfa_method = "totp"
+    current_user.mfa_enrolled_at = datetime.utcnow()
+    current_user.mfa_last_verified_at = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "MFA enabled successfully",
+        "method": "totp",
+        "enrolled_at": current_user.mfa_enrolled_at.isoformat()
+    }
+
+@app.post("/auth/mfa/verify", response_model=MFALoginResponse, tags=["MFA"])
+def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_db)):
+    """
+    Verify MFA code during login
+    
+    Methods supported:
+    - totp: 6-digit code from authenticator app
+    - email: 6-digit code sent to email
+    - backup: 8-digit backup code
+    """
+    # Decode temp token
+    try:
+        token_data = jwt.decode(payload.temp_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = token_data.get("sub")
+        mfa_challenge = token_data.get("mfa_challenge")
+        
+        if not mfa_challenge:
+            raise HTTPException(401, "Invalid temporary token")
+        
+        user = db.query(UserDB).filter(UserDB.id == user_id).first()
+        if not user:
+            raise HTTPException(401, "User not found")
+        
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired temporary token")
+    
+    # Verify code based on method
+    verified = False
+    
+    if payload.method == "totp":
+        verified = MFAManager.verify_totp(user.mfa_secret, payload.code)
+    
+    elif payload.method == "email":
+        verified = EmailOTPManager.verify(user.email, payload.code)
+    
+    elif payload.method == "backup":
+        if not user.mfa_backup_codes:
+            raise HTTPException(400, "No backup codes available")
+        
+        verified, updated_codes = MFAManager.verify_backup_code(
+            payload.code, 
+            user.mfa_backup_codes
+        )
+        
+        if verified:
+            # Remove used backup code
+            user.mfa_backup_codes = updated_codes
+    
+    if not verified:
+        raise HTTPException(401, "Invalid verification code")
+    
+    # Update last verified timestamp
+    user.mfa_last_verified_at = datetime.utcnow()
+    user.last_login = datetime.utcnow()
+    db.commit()
+    
+    # Create full access token
+    access_token = create_access_token(data={"sub": user.id, "type": "user"})
+    
+    return MFALoginResponse(
+        mfa_required=False,
+        mfa_method=None,
+        temp_token=None,
+        access_token=access_token,
+        token_type="bearer",
+        user_id=user.id,
+        company_id=user.company_id,
+        role=user.role.value
+    )
+
+@app.get("/auth/mfa/status", response_model=MFAStatusResponse, tags=["MFA"])
+def get_mfa_status(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get current MFA status for the user"""
+    return MFAStatusResponse(
+        enabled=current_user.mfa_enabled,
+        method=current_user.mfa_method,
+        enrolled_at=current_user.mfa_enrolled_at.isoformat() if current_user.mfa_enrolled_at else None,
+        last_verified_at=current_user.mfa_last_verified_at.isoformat() if current_user.mfa_last_verified_at else None
+    )
+
+@app.post("/auth/mfa/disable", tags=["MFA"])
+def disable_mfa(
+    payload: MFAVerifyRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Disable MFA (requires current MFA code for security)
+    """
+    if not current_user.mfa_enabled:
+        raise HTTPException(400, "MFA is not enabled")
+    
+    # Verify current MFA code
+    if not MFAManager.verify_totp(current_user.mfa_secret, payload.code):
+        raise HTTPException(401, "Invalid verification code")
+    
+    # Disable MFA
+    current_user.mfa_enabled = False
+    current_user.mfa_method = None
+    current_user.mfa_secret = None
+    current_user.mfa_backup_codes = None
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "MFA disabled successfully"
+    }
+
+@app.post("/auth/mfa/backup-codes/regenerate", tags=["MFA"])
+def regenerate_backup_codes(
+    payload: MFAVerifyRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerate backup codes (requires current MFA code for security)
+    
+    Returns new set of 10 backup codes. Old codes are invalidated.
+    """
+    if not current_user.mfa_enabled:
+        raise HTTPException(400, "MFA is not enabled")
+    
+    # Verify current MFA code
+    if not MFAManager.verify_totp(current_user.mfa_secret, payload.code):
+        raise HTTPException(401, "Invalid verification code")
+    
+    # Generate new backup codes
+    backup_codes_plain = MFAManager.generate_backup_codes()
+    backup_codes_hashed = MFAManager.hash_backup_codes(backup_codes_plain)
+    
+    # Save new codes
+    current_user.mfa_backup_codes = json.dumps(backup_codes_hashed)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Backup codes regenerated",
+        "backup_codes": backup_codes_plain
+    }
+
+@app.post("/auth/mfa/email/send", tags=["MFA"])
+def send_email_otp(
+    user_email: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Send email OTP for MFA verification (backup method)
+    
+    This is a fallback method if user loses their TOTP device.
+    Rate limited to 3 sends per hour.
+    """
+    user = db.query(UserDB).filter(UserDB.email == user_email).first()
+    if not user:
+        # Don't reveal if email exists
+        return {"message": "If the email is registered, an OTP has been sent"}
+    
+    if not user.mfa_enabled:
+        raise HTTPException(400, "MFA is not enabled for this account")
+    
+    # Check rate limiting
+    if not EmailOTPManager.can_send(user_email):
+        raise HTTPException(429, "Too many OTP requests. Please try again later.")
+    
+    # Generate and store OTP
+    otp = EmailOTPManager.generate_and_store(user_email)
+    
+    # Simulate sending email (in production, use actual email service)
+    print("\n" + "="*70)
+    print("╔" + "="*68 + "╗")
+    print("║" + " "*25 + "MFA EMAIL OTP" + " "*30 + "║")
+    print("╠" + "="*68 + "╣")
+    print(f"║  To: {user_email:<60} ║")
+    print(f"║  Subject: Your InvoLinks Verification Code{' '*27} ║")
+    print("║" + " "*68 + "║")
+    print(f"║  Hi {(user.full_name or 'User'):<61} ║")
+    print("║" + " "*68 + "║")
+    print("║  Your verification code is:                                  ║")
+    print("║" + " "*68 + "║")
+    print(f"║         {otp}{' '*58} ║")
+    print("║" + " "*68 + "║")
+    print("║  This code will expire in 10 minutes.                        ║")
+    print("║" + " "*68 + "║")
+    print("║  If you didn't request this code, please ignore this email.  ║")
+    print("║" + " "*68 + "║")
+    print("║  Best regards,                                                ║")
+    print("║  InvoLinks Security Team                                      ║")
+    print("╚" + "="*68 + "╝")
+    print("="*70 + "\n")
+    
+    return {
+        "success": True,
+        "message": "Verification code sent to your email",
+        "expires_in_minutes": 10
+    }
 
 @app.post("/auth/forgot-password", tags=["Auth"])
 def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)):
