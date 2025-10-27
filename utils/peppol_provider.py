@@ -1,6 +1,12 @@
 """
 PEPPOL Provider Adapter for E-Invoice Transmission
 Supports multiple accredited providers (Tradeshift, Basware, etc.)
+
+PRODUCTION NOTES:
+- Add resilient retries with exponential backoff
+- Implement per-call network timeouts (currently global timeout)
+- Add canonical error envelopes for observability
+- Log all transmission attempts to audit trail
 """
 import json
 import httpx
@@ -100,7 +106,16 @@ class TradeshiftProvider(PeppolProvider):
         receiver_id: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Send invoice via Tradeshift API"""
+        """
+        Send invoice via Tradeshift API
+        
+        Returns canonical error envelope on failure with:
+        - success: bool
+        - error: str (error message)
+        - status: PeppolStatus
+        - provider: str
+        - error_code: Optional[str] (provider-specific code)
+        """
         try:
             headers = {
                 'Authorization': f'Bearer {self.api_key}',
@@ -128,17 +143,39 @@ class TradeshiftProvider(PeppolProvider):
                     'sent_at': datetime.utcnow().isoformat()
                 }
             else:
+                # Canonical error envelope
                 return {
                     'success': False,
-                    'error': f'Tradeshift API error: {response.status_code} - {response.text}',
+                    'error': f'Tradeshift API error: HTTP {response.status_code}',
+                    'error_details': response.text[:500],  # Truncate long responses
+                    'error_code': str(response.status_code),
                     'status': PeppolStatus.FAILED.value,
                     'provider': 'tradeshift'
                 }
         
+        except httpx.TimeoutException as e:
+            return {
+                'success': False,
+                'error': f'Tradeshift timeout after {self.timeout}s',
+                'error_code': 'TIMEOUT',
+                'status': PeppolStatus.FAILED.value,
+                'provider': 'tradeshift'
+            }
+        
+        except httpx.NetworkError as e:
+            return {
+                'success': False,
+                'error': f'Tradeshift network error: {str(e)}',
+                'error_code': 'NETWORK_ERROR',
+                'status': PeppolStatus.FAILED.value,
+                'provider': 'tradeshift'
+            }
+        
         except Exception as e:
             return {
                 'success': False,
-                'error': f'Exception sending to Tradeshift: {str(e)}',
+                'error': f'Tradeshift exception: {type(e).__name__}: {str(e)}',
+                'error_code': 'UNKNOWN_ERROR',
                 'status': PeppolStatus.FAILED.value,
                 'provider': 'tradeshift'
             }
