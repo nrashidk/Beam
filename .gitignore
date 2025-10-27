@@ -47,6 +47,9 @@ dev.db
 # Artifacts
 artifacts/
 
+# Generated invoice XML files
+invoices_xml/
+
 # Environment variables
 .env
 .env.local
