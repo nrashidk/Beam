@@ -1,9 +1,15 @@
 """
 UBL 2.1 XML Generator for UAE PINT-AE E-Invoicing
 Generates compliant XML invoices following PEPPOL BIS and UAE FTA requirements
+
+COMPLIANCE NOTES:
+- UBL 2.1 structure with UAE PINT-AE profile
+- PEPPOL BIS 3.0 specification compliance
+- XSD validation: Enable via UBL_XSD_PATH environment variable (requires full schema set)
+- Canonicalization: For strict FTA compliance, apply C14N before signing
 """
 from datetime import datetime, date
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring, ElementTree
 from xml.dom import minidom
 
@@ -20,6 +26,7 @@ class UBLXMLGenerator:
     
     def __init__(self):
         self.root = None
+        self.validation_errors = []
     
     def generate_invoice_xml(self, invoice_data: Dict[str, Any], line_items: List[Dict[str, Any]]) -> str:
         """
@@ -396,23 +403,43 @@ class UBLXMLGenerator:
         return len(errors) == 0, errors
 
 
-def generate_invoice_xml(invoice_data: Dict[str, Any], line_items: List[Dict[str, Any]]) -> tuple[bool, str, Optional[str]]:
+def generate_invoice_xml(invoice_data: Dict[str, Any], line_items: List[Dict[str, Any]]) -> Tuple[bool, Optional[str], Optional[List[str]]]:
     """
     Convenience function to generate and validate UBL XML
     
+    Args:
+        invoice_data: Invoice header data
+        line_items: List of invoice line items
+    
     Returns:
-        tuple: (success, xml_string_or_error, validation_errors)
+        tuple: (success: bool, xml_string: Optional[str], validation_errors: Optional[List[str]])
+        
+    Examples:
+        success, xml, errors = generate_invoice_xml(invoice_data, line_items)
+        if not success:
+            raise XMLGenerationError("Validation failed", {"errors": errors})
     """
+    from .exceptions import XMLGenerationError, InvoiceValidationError
+    
     generator = UBLXMLGenerator()
     
     # Validate first
-    is_valid, errors = generator.validate_invoice_data(invoice_data)
-    if not is_valid:
-        return False, None, errors
+    try:
+        is_valid, errors = generator.validate_invoice_data(invoice_data)
+        if not is_valid:
+            return False, None, errors
+    except Exception as e:
+        return False, None, [f"Validation error: {str(e)}"]
     
     # Generate XML
     try:
         xml_string = generator.generate_invoice_xml(invoice_data, line_items)
+        
+        if not xml_string or len(xml_string) < 100:
+            return False, None, ["Generated XML is empty or too short"]
+        
         return True, xml_string, None
+    
     except Exception as e:
-        return False, None, [f"XML generation error: {str(e)}"]
+        error_msg = f"XML generation failed: {type(e).__name__}: {str(e)}"
+        return False, None, [error_msg]

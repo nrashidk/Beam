@@ -26,6 +26,14 @@ from jose import JWTError, jwt
 # UBL XML Generator
 # Legacy UBL generator removed - using utils/ubl_xml_generator.py instead
 
+# Exception handling
+from utils.exceptions import (
+    InvoLinksException, ValidationError, InvoiceValidationError,
+    CryptoError, SigningError, CertificateError,
+    XMLGenerationError, PeppolError, PeppolProviderError,
+    ConfigurationError, exception_to_http_response
+)
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
@@ -759,6 +767,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global exception handler for domain exceptions
+@app.exception_handler(InvoLinksException)
+async def involinks_exception_handler(request, exc: InvoLinksException):
+    """Convert domain exceptions to HTTP responses with structured error format"""
+    response = exception_to_http_response(exc)
+    return JSONResponse(
+        status_code=response["status_code"],
+        content=response["detail"]
+    )
+
 # Serve React app (production) or fallback to development API
 if os.path.exists("dist"):
     # Production: Serve React build
@@ -771,7 +789,19 @@ else:
 
 @app.on_event("startup")
 def startup_event():
-    """Seed plans on startup"""
+    """Seed plans on startup and validate environment"""
+    # Validate cryptographic environment
+    from utils.crypto_utils import validate_environment_keys
+    try:
+        validation_result = validate_environment_keys()
+        if validation_result.get("warnings"):
+            for warning in validation_result["warnings"]:
+                print(f"⚠️ Startup Warning: {warning}")
+    except ConfigurationError as e:
+        print(f"❌ Startup Error: {e.message}")
+        print("⚠️ Continuing with mock keys - NOT PRODUCTION READY")
+    
+    # Seed database plans
     db = SessionLocal()
     seed_plans(db)
     db.close()
