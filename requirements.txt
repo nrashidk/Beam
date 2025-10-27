@@ -8,3 +8,4 @@ passlib
 python-jose[cryptography]
 cryptography
 jose
+httpx
