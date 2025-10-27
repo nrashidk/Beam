@@ -59,6 +59,22 @@ class UBLXMLGenerator:
         # Convert to pretty XML string
         return self._prettify_xml(self.root)
     
+    def generate_ubl_xml(self, invoice_data: Dict[str, Any], line_items: List[Dict[str, Any]] = None) -> str:
+        """
+        Alias for generate_invoice_xml() for backwards compatibility
+        
+        Args:
+            invoice_data: Dictionary containing invoice header data  
+            line_items: List of invoice line items (can be in invoice_data)
+            
+        Returns:
+            Pretty-printed XML string
+        """
+        # Handle line items either as separate parameter or within invoice_data
+        if line_items is None:
+            line_items = invoice_data.get('line_items', [])
+        return self.generate_invoice_xml(invoice_data, line_items)
+    
     def _add_element(self, parent: Element, tag: str, text: str = None, attributes: Dict[str, str] = None) -> Element:
         """Helper to add element with namespace prefix"""
         if ':' in tag:
