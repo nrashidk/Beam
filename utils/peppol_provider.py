@@ -25,6 +25,13 @@ class PeppolStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class PeppolProviderType(str, Enum):
+    """Supported PEPPOL provider types"""
+    TRADESHIFT = "tradeshift"
+    BASWARE = "basware"
+    MOCK = "mock"
+
+
 class PeppolProvider:
     """Base class for PEPPOL provider integrations"""
     
