@@ -9,3 +9,7 @@ python-jose[cryptography]
 cryptography
 jose
 httpx
+pillow
+pyotp
+qrcode
+twilio
