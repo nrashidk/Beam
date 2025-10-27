@@ -33,6 +33,11 @@ Detailed explanations preferred.
   - `SIGNING_CERTIFICATE_PEM`: PEM-encoded X.509 certificate for validation
   - `PRODUCTION_MODE`: Set to `true` to enforce strict validation (optional, defaults to false)
 
+**Follow-Up Improvements (October 27, 2025):**
+- **Automated Test Suite (`tests/test_crypto_validation.py`):** 11 comprehensive tests covering production mode validation, certificate expiry detection, metadata extraction, and InvoiceCrypto initialization. All tests passing.
+- **Production Runbook (`docs/PRODUCTION_RUNBOOK.md`):** Complete operational guide for certificate management, rotation procedures, monitoring, troubleshooting, and security best practices.
+- **KMS/HSM Migration Plan (`docs/KMS_ARCHITECTURE.md`):** Detailed architecture plan for migrating to AWS KMS/Azure Key Vault, including provider comparison, cost analysis, security benefits, and 6-8 week implementation timeline.
+
 ## System Architecture
 
 **Technology Stack:**
