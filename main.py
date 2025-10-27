@@ -1805,8 +1805,20 @@ def get_admin_stats(
             "arr": total_mrr * 12,
             "deltaPctVsLastMonth": 0,  # Could calculate from historical data
             "tiers": tiers_data
-        }
+        },
+        "total_companies": pending + approved + rejected + active_companies + inactive_companies
     }
+
+# Alias route for analytics endpoint
+@app.get("/admin/analytics", tags=["Admin"])
+def get_admin_analytics(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Alias for /admin/stats - Get comprehensive dashboard analytics (Super Admin only)"""
+    return get_admin_stats(from_date, to_date, current_user, db)
 
 # ==================== USER MANAGEMENT ENDPOINTS ====================
 
