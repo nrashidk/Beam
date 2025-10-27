@@ -15,15 +15,31 @@ Detailed explanations preferred.
 
 ## Recent Changes
 
-**October 27, 2025 - MFA Implementation Started (Task 3):**
-- **Legal Requirement:** Article 9.1 of Ministerial Decision No. 64/2025 requires MFA
-- **Installed MFA Packages:** pyotp (TOTP), qrcode (QR generation), pillow (image processing), twilio (SMS)
-- **Twilio Integration Note:** User dismissed Replit Twilio integration - will use manual credentials stored as secrets
-- **Required Secrets for MFA:**
-  - `TWILIO_ACCOUNT_SID`: Twilio account identifier
-  - `TWILIO_AUTH_TOKEN`: Twilio authentication token
-  - `TWILIO_PHONE_NUMBER`: Twilio phone number for SMS (format: +1234567890)
-- **Next Steps:** Create utils/mfa_utils.py, add MFA endpoints, update database schema
+**October 27, 2025 - MFA Implementation (✅ COMPLETED & ARCHITECT APPROVED - Task 3):**
+- **Legal Requirement:** Article 9.1 of Ministerial Decision No. 64/2025 - "Multifactor authentication mechanisms to secure user access is maintained"
+- **Status:** ✅ Article 9.1 COMPLIANT - Architect confirmed compliance achieved
+- **Implementation:** 3 authentication methods with $0 cost:
+  1. **TOTP** (Time-Based OTP) - Primary method, Google/Microsoft Authenticator compatible
+  2. **Email OTP** - Backup method with 10-minute expiry, rate limited (3/hour)
+  3. **Backup Codes** - 10 single-use recovery codes, SHA-256 hashed storage
+- **Files Created:**
+  - `utils/mfa_utils.py` (~350 lines) - MFAManager, EmailOTPManager classes
+  - 7 new REST API endpoints (enroll, verify, status, disable, backup codes)
+  - QR code generation for authenticator apps
+- **Database Changes:**
+  - Added 6 MFA fields to `users` table: mfa_enabled, mfa_method, mfa_secret, mfa_backup_codes, mfa_enrolled_at, mfa_last_verified_at
+  - Added 6 MFA fields to `companies` table: (same fields for company authentication)
+- **Security Features:**
+  - Temporary tokens (5-minute expiry) for MFA challenge flow
+  - Temp tokens rejected on protected endpoints (prevents bypass)
+  - Email OTP rate limiting: 3 sends per hour, max 5 attempts per code
+  - Backup codes: Single-use, SHA-256 hashed, auto-removed after verification
+  - RFC 6238 compliant TOTP (30-second window, SHA-256 algorithm)
+- **Updated Login Flow:**
+  - Email + Password → If MFA enabled: temp_token + mfa_challenge → Verify 6-digit code → Full access_token
+  - Both user and company authentication paths enforce MFA
+- **Packages:** pyotp (TOTP), qrcode (QR generation), pillow (image processing) - $0 cost forever
+- **Next Steps:** Frontend MFA settings page, MFA enrollment wizard, staging validation
 
 **October 27, 2025 - ASP Partnership Model Confirmed:**
 - **CRITICAL DECISION:** InvoLinks is **NOT an Accredited Service Provider (ASP)**
