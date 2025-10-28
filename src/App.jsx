@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ContentProvider } from './contexts/ContentContext';
 import Homepage from './pages/Homepage';
 import Login from './pages/Login';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
@@ -15,6 +16,7 @@ import MFASettings from './pages/MFASettings';
 import APInbox from './pages/APInbox';
 import POList from './pages/POList';
 import BulkImport from './pages/BulkImport';
+import ContentManager from './pages/ContentManager';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -53,7 +55,8 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <ContentProvider>
+          <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/login" element={<Login />} />
           <Route
@@ -152,8 +155,17 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/content"
+            element={
+              <ProtectedRoute>
+                <ContentManager />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </ContentProvider>
       </AuthProvider>
     </BrowserRouter>
   );
