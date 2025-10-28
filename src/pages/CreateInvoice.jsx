@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
+import { EmailInput, TRNInput } from '../components/ui/validated-input';
 import { ArrowLeft, Plus, Trash2, Save, FileText } from 'lucide-react';
 
 export default function CreateInvoice() {
@@ -177,23 +178,20 @@ export default function CreateInvoice() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Customer Email</label>
-                  <input
-                    type="email"
+                  <EmailInput
                     value={formData.customer_email}
                     onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Customer TRN (15 digits)</label>
-                  <input
-                    type="text"
+                  <TRNInput
                     value={formData.customer_trn}
                     onChange={(e) => setFormData({ ...formData, customer_trn: e.target.value })}
-                    maxLength="15"
                     placeholder="100123456700003"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full"
                   />
                 </div>
 
