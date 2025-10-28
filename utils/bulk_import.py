@@ -1,7 +1,7 @@
 import pandas as pd
 import io
 from typing import Dict, List, Any, Tuple
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
 class BulkImportValidator:
@@ -78,8 +78,9 @@ class BulkImportValidator:
                 if pd.isna(row['invoice_number']) or str(row['invoice_number']).strip() == '':
                     row_errors.append(f"Row {row_num}: Invoice number is required")
                 
-                if pd.isna(row['customer_trn']) or len(str(row['customer_trn']).strip()) != 15:
-                    row_errors.append(f"Row {row_num}: Valid 15-digit TRN is required")
+                trn_value = str(row['customer_trn']).strip() if not pd.isna(row['customer_trn']) else ''
+                if len(trn_value) != 15 or not trn_value.isdigit():
+                    row_errors.append(f"Row {row_num}: Valid 15-digit TRN is required (must be numeric)")
                 
                 if pd.isna(row['customer_name']) or str(row['customer_name']).strip() == '':
                     row_errors.append(f"Row {row_num}: Customer name is required")
@@ -102,13 +103,41 @@ class BulkImportValidator:
                 if invoice_type not in ['TAX_INVOICE', 'CREDIT_NOTE', 'COMMERCIAL']:
                     row_errors.append(f"Row {row_num}: Invalid invoice type. Must be TAX_INVOICE, CREDIT_NOTE, or COMMERCIAL")
                 
+                issue_date_str = None
+                if not pd.isna(row['issue_date']):
+                    try:
+                        date_value = row['issue_date']
+                        if isinstance(date_value, (datetime, date, pd.Timestamp)):
+                            issue_date_str = date_value.strftime('%Y-%m-%d')
+                        else:
+                            date_value_str = str(date_value).strip()
+                            parsed_date = datetime.strptime(date_value_str, '%Y-%m-%d')
+                            issue_date_str = parsed_date.strftime('%Y-%m-%d')
+                    except (ValueError, TypeError):
+                        row_errors.append(f"Row {row_num}: Invalid issue_date format. Must be YYYY-MM-DD (e.g., 2025-01-15)")
+                else:
+                    issue_date_str = datetime.now().strftime('%Y-%m-%d')
+                
+                due_date_str = None
+                if not pd.isna(row['due_date']):
+                    try:
+                        date_value = row['due_date']
+                        if isinstance(date_value, (datetime, date, pd.Timestamp)):
+                            due_date_str = date_value.strftime('%Y-%m-%d')
+                        else:
+                            date_value_str = str(date_value).strip()
+                            parsed_date = datetime.strptime(date_value_str, '%Y-%m-%d')
+                            due_date_str = parsed_date.strftime('%Y-%m-%d')
+                    except (ValueError, TypeError):
+                        row_errors.append(f"Row {row_num}: Invalid due_date format. Must be YYYY-MM-DD (e.g., 2025-02-15)")
+                
                 if row_errors:
                     errors.extend(row_errors)
                 else:
                     invoice_data = {
                         'invoice_number': str(row['invoice_number']).strip(),
-                        'issue_date': str(row['issue_date']).strip() if not pd.isna(row['issue_date']) else datetime.now().strftime('%Y-%m-%d'),
-                        'due_date': str(row['due_date']).strip() if not pd.isna(row['due_date']) else None,
+                        'issue_date': issue_date_str,
+                        'due_date': due_date_str,
                         'invoice_type': invoice_type,
                         'customer_trn': str(row['customer_trn']).strip(),
                         'customer_name': str(row['customer_name']).strip(),
@@ -160,8 +189,9 @@ class BulkImportValidator:
                 if pd.isna(row['vendor_name']) or str(row['vendor_name']).strip() == '':
                     row_errors.append(f"Row {row_num}: Vendor name is required")
                 
-                if pd.isna(row['vendor_trn']) or len(str(row['vendor_trn']).strip()) != 15:
-                    row_errors.append(f"Row {row_num}: Valid 15-digit TRN is required")
+                vendor_trn_value = str(row['vendor_trn']).strip() if not pd.isna(row['vendor_trn']) else ''
+                if len(vendor_trn_value) != 15 or not vendor_trn_value.isdigit():
+                    row_errors.append(f"Row {row_num}: Valid 15-digit TRN is required (must be numeric)")
                 
                 if pd.isna(row['vendor_email']) or '@' not in str(row['vendor_email']):
                     row_errors.append(f"Row {row_num}: Valid email address is required")
