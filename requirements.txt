@@ -13,3 +13,5 @@ pillow
 pyotp
 qrcode
 twilio
+pandas
+openpyxl

@@ -37,6 +37,11 @@ from utils.exceptions import (
 # MFA (Multi-Factor Authentication)
 from utils.mfa_utils import MFAManager, EmailOTPManager
 
+# Bulk Import utilities
+from utils.bulk_import import BulkImportValidator
+import pandas as pd
+from io import BytesIO
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
@@ -5011,6 +5016,237 @@ def health_check(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(500, f"Health check failed: {str(e)}")
+
+# ==================== BULK IMPORT ====================
+
+@app.get("/templates/invoices", tags=["Bulk Import"])
+async def download_invoice_template(format: str = "csv"):
+    """Download CSV/Excel template for bulk invoice import"""
+    try:
+        df = BulkImportValidator.generate_invoice_template()
+        
+        if format.lower() == "excel" or format.lower() == "xlsx":
+            output = BytesIO()
+            df.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=invoice_template.xlsx"}
+            )
+        else:
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=invoice_template.csv"}
+            )
+    except Exception as e:
+        raise HTTPException(500, f"Template generation failed: {str(e)}")
+
+@app.get("/templates/vendors", tags=["Bulk Import"])
+async def download_vendor_template(format: str = "csv"):
+    """Download CSV/Excel template for bulk vendor import"""
+    try:
+        df = BulkImportValidator.generate_vendor_template()
+        
+        if format.lower() == "excel" or format.lower() == "xlsx":
+            output = BytesIO()
+            df.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": "attachment; filename=vendor_template.xlsx"}
+            )
+        else:
+            output = BytesIO()
+            df.to_csv(output, index=False)
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=vendor_template.csv"}
+            )
+    except Exception as e:
+        raise HTTPException(500, f"Template generation failed: {str(e)}")
+
+@app.post("/invoices/bulk-import", tags=["Bulk Import"])
+async def bulk_import_invoices(
+    file: UploadFile = File(...),
+    current_user_data: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload and validate CSV/Excel file for bulk invoice creation"""
+    try:
+        company_id = current_user_data.get("company_id")
+        if not company_id:
+            raise HTTPException(403, "Company context required")
+        
+        company = db.query(CompanyDB).filter_by(id=company_id).first()
+        if not company:
+            raise HTTPException(404, "Company not found")
+        
+        file_content = await file.read()
+        is_valid, parsed_invoices, errors = BulkImportValidator.validate_invoice_file(
+            file_content, file.filename
+        )
+        
+        if not is_valid:
+            return {
+                "success": False,
+                "total_rows": 0,
+                "valid_rows": 0,
+                "errors": errors
+            }
+        
+        subscription = db.query(SubscriptionDB).filter_by(company_id=company_id, active=True).first()
+        if not subscription:
+            raise HTTPException(403, "No active subscription found")
+        
+        plan = db.query(SubscriptionPlanDB).filter_by(id=subscription.plan_id).first()
+        is_free_plan = plan and plan.name.lower() == 'free'
+        
+        if is_free_plan:
+            invoice_count = db.query(InvoiceDB).filter_by(company_id=company_id).count()
+            max_invoices = 10
+            available_slots = max_invoices - invoice_count
+            
+            if available_slots <= 0:
+                raise HTTPException(403, "Free plan limit (10 invoices) reached. Please upgrade.")
+            
+            if len(parsed_invoices) > available_slots:
+                return {
+                    "success": False,
+                    "total_rows": len(parsed_invoices),
+                    "valid_rows": 0,
+                    "errors": [
+                        f"Free plan allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
+                        f"Can only import {available_slots} more. Please upgrade or delete existing invoices."
+                    ]
+                }
+        
+        created_count = 0
+        for invoice_data in parsed_invoices:
+            line_total = invoice_data['quantity'] * invoice_data['unit_price']
+            discount = invoice_data.get('discount_amount', 0)
+            taxable_amount = line_total - discount
+            tax_amount = (taxable_amount * invoice_data['tax_percent']) / 100
+            total = taxable_amount + tax_amount
+            
+            new_invoice = InvoiceDB(
+                id=str(uuid4()),
+                company_id=company_id,
+                invoice_number=invoice_data['invoice_number'],
+                invoice_type=invoice_data['invoice_type'],
+                issue_date=datetime.strptime(invoice_data['issue_date'], '%Y-%m-%d').date() if invoice_data.get('issue_date') else date.today(),
+                due_date=datetime.strptime(invoice_data['due_date'], '%Y-%m-%d').date() if invoice_data.get('due_date') else None,
+                customer_trn=invoice_data['customer_trn'],
+                customer_name=invoice_data['customer_name'],
+                customer_email=invoice_data.get('customer_email'),
+                customer_address=invoice_data.get('customer_address'),
+                subtotal=float(taxable_amount),
+                tax_amount=float(tax_amount),
+                total=float(total),
+                status='DRAFT',
+                notes=invoice_data.get('notes'),
+                created_at=datetime.utcnow()
+            )
+            db.add(new_invoice)
+            created_count += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "total_rows": len(parsed_invoices),
+            "valid_rows": created_count,
+            "errors": [],
+            "message": f"Successfully imported {created_count} invoices"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Bulk import failed: {str(e)}")
+
+@app.post("/vendors/bulk-import", tags=["Bulk Import"])
+async def bulk_import_vendors(
+    file: UploadFile = File(...),
+    current_user_data: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Upload and validate CSV/Excel file for bulk vendor creation (stored as inward invoice metadata)"""
+    try:
+        company_id = current_user_data.get("company_id")
+        if not company_id:
+            raise HTTPException(403, "Company context required")
+        
+        file_content = await file.read()
+        is_valid, parsed_vendors, errors = BulkImportValidator.validate_vendor_file(
+            file_content, file.filename
+        )
+        
+        if not is_valid:
+            return {
+                "success": False,
+                "total_rows": 0,
+                "valid_rows": 0,
+                "errors": errors
+            }
+        
+        created_count = 0
+        updated_count = 0
+        
+        for vendor_data in parsed_vendors:
+            existing_vendor = db.query(InwardInvoiceDB).filter_by(
+                company_id=company_id,
+                supplier_trn=vendor_data['vendor_trn']
+            ).first()
+            
+            if existing_vendor:
+                existing_vendor.supplier_name = vendor_data['vendor_name']
+                existing_vendor.supplier_email = vendor_data['vendor_email']
+                existing_vendor.supplier_peppol_id = vendor_data.get('peppol_id')
+                updated_count += 1
+            else:
+                placeholder_invoice = InwardInvoiceDB(
+                    id=str(uuid4()),
+                    company_id=company_id,
+                    invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
+                    supplier_trn=vendor_data['vendor_trn'],
+                    supplier_name=vendor_data['vendor_name'],
+                    supplier_email=vendor_data['vendor_email'],
+                    supplier_address=vendor_data.get('vendor_address'),
+                    supplier_peppol_id=vendor_data.get('peppol_id'),
+                    issue_date=date.today(),
+                    total=0.00,
+                    status='VENDOR_RECORD',
+                    received_at=datetime.utcnow()
+                )
+                db.add(placeholder_invoice)
+                created_count += 1
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "total_rows": len(parsed_vendors),
+            "valid_rows": created_count + updated_count,
+            "created": created_count,
+            "updated": updated_count,
+            "errors": [],
+            "message": f"Successfully processed {created_count + updated_count} vendors ({created_count} created, {updated_count} updated)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Bulk vendor import failed: {str(e)}")
 
 # ==================== REACT APP SERVING ====================
 # These routes MUST be last to avoid intercepting API routes
