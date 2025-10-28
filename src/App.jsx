@@ -12,6 +12,7 @@ import InvoiceDetail from './pages/InvoiceDetail';
 import CompanyBranding from './pages/CompanyBranding';
 import TeamManagement from './pages/TeamManagement';
 import MFASettings from './pages/MFASettings';
+import APInbox from './pages/APInbox';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -82,6 +83,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <InvoiceDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ap/inbox"
+            element={
+              <ProtectedRoute>
+                <APInbox />
               </ProtectedRoute>
             }
           />
