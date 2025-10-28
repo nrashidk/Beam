@@ -5,6 +5,8 @@ import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
+import POFormModal from '../components/POFormModal';
+import PODetailModal from '../components/PODetailModal';
 import { 
   FileText, 
   CheckCircle, 
@@ -76,6 +78,17 @@ export default function POList() {
       fetchPurchaseOrders();
     } catch (err) {
       alert('Failed to cancel PO: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleCreatePO = async (formData) => {
+    try {
+      await apAPI.createPurchaseOrder(formData);
+      alert('Purchase order created successfully!');
+      setShowCreateModal(false);
+      fetchPurchaseOrders();
+    } catch (err) {
+      alert('Failed to create PO: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -338,63 +351,23 @@ export default function POList() {
           </div>
         )}
 
-        {/* Coming Soon: Create PO Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <CardContent className="p-8">
-                <div className="text-center">
-                  <Plus className="w-16 h-16 text-indigo-300 mx-auto mb-4" />
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Create Purchase Order
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    Coming Soon! PO creation form will be available in the next update.
-                  </p>
-                  <p className="text-sm text-gray-500 mb-6">
-                    The PO creation form will include:
-                    <br />• Supplier selection
-                    <br />• Line items management
-                    <br />• Delivery details
-                    <br />• Terms and conditions
-                  </p>
-                  <Button onClick={() => setShowCreateModal(false)}>
-                    Close
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {/* Create/Edit PO Modal */}
+        <POFormModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreatePO}
+        />
 
-        {/* Coming Soon: PO Detail Modal */}
-        {selectedPOId && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <CardContent className="p-8">
-                <div className="text-center">
-                  <Eye className="w-16 h-16 text-indigo-300 mx-auto mb-4" />
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">
-                    Purchase Order Details
-                  </h3>
-                  <p className="text-gray-600 mb-6">
-                    Coming Soon! Detailed PO view will be available in the next update.
-                  </p>
-                  <p className="text-sm text-gray-500 mb-6">
-                    The detail view will show:
-                    <br />• Complete PO information
-                    <br />• Line items with quantities and pricing
-                    <br />• Linked invoices and GRNs
-                    <br />• Status timeline and history
-                  </p>
-                  <Button onClick={() => setSelectedPOId(null)}>
-                    Close
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {/* PO Detail Modal */}
+        <PODetailModal
+          poId={selectedPOId}
+          isOpen={Boolean(selectedPOId)}
+          onClose={() => setSelectedPOId(null)}
+          onUpdate={() => {
+            setSelectedPOId(null);
+            fetchPurchaseOrders();
+          }}
+        />
       </div>
     </div>
   );
