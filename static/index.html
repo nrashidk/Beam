@@ -69,14 +69,17 @@
                     
                     <form id="signup-form" class="form">
                         <div class="form-field">
-                            <label for="email">Work Email</label>
+                            <label for="email">Work Email <span class="required">*</span></label>
                             <input 
                                 type="email" 
                                 id="email" 
                                 placeholder="you@company.com" 
                                 required
+                                pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                                title="Please enter a valid email address"
                                 autocomplete="email"
                             >
+                            <small class="field-hint">Valid email format required</small>
                         </div>
 
                         <div class="form-field">
@@ -86,18 +89,23 @@
                                 id="company_name" 
                                 placeholder="Your Company LLC" 
                                 required
+                                minlength="3"
                             >
                         </div>
 
                         <div class="form-field">
                             <label for="phone">Phone Number <span class="required">*</span></label>
                             <input 
-                                type="tel" 
+                                type="text" 
                                 id="phone" 
-                                placeholder="+971 50 123 4567" 
+                                placeholder="1234567890" 
                                 required
+                                pattern="[0-9]{10}"
+                                maxlength="10"
+                                title="Please enter exactly 10 digits"
                                 autocomplete="tel"
                             >
+                            <small class="field-hint">10 digits only (e.g., 0501234567)</small>
                         </div>
 
                         <div class="form-field">
@@ -105,11 +113,14 @@
                             <input 
                                 type="password" 
                                 id="password" 
-                                placeholder="Minimum 8 characters" 
+                                placeholder="Enter strong password" 
                                 required
                                 minlength="8"
+                                pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$"
+                                title="Password must contain at least 8 characters, including uppercase, lowercase, and special character"
                                 autocomplete="new-password"
                             >
+                            <small class="field-hint">Min 8 chars: Uppercase, lowercase & special char</small>
                         </div>
 
                         <button type="submit" class="btn btn-primary btn-large">

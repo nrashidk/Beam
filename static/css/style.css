@@ -288,6 +288,14 @@ label {
     color: var(--error);
 }
 
+.field-hint {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-light);
+    font-weight: 400;
+}
+
 input,
 select {
     width: 100%;
