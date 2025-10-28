@@ -13,6 +13,7 @@ import CompanyBranding from './pages/CompanyBranding';
 import TeamManagement from './pages/TeamManagement';
 import MFASettings from './pages/MFASettings';
 import APInbox from './pages/APInbox';
+import POList from './pages/POList';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -91,6 +92,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <APInbox />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ap/purchase-orders"
+            element={
+              <ProtectedRoute>
+                <POList />
               </ProtectedRoute>
             }
           />
