@@ -201,10 +201,6 @@ export default function BusinessDashboard() {
                 <div className="text-sm text-gray-600">Phone</div>
                 <div className="font-medium">{company?.phone || 'N/A'}</div>
               </div>
-              <div>
-                <div className="text-sm text-gray-600">Business Type</div>
-                <div className="font-medium">{company?.business_type || 'N/A'}</div>
-              </div>
             </CardContent>
           </Card>
 

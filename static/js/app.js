@@ -12,6 +12,7 @@ async function handleSignup(e) {
     
     const email = document.getElementById('email').value;
     const companyName = document.getElementById('company_name').value;
+    const phone = document.getElementById('phone').value;
     const password = document.getElementById('password').value;
     
     userEmail = email;
@@ -46,15 +47,15 @@ async function handleSignup(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 email: email,
-                phone: 'TBD',
+                phone: phone,
                 trn: null,
-                address_line1: 'TBD',
+                address_line1: 'Pending',
                 city: 'Dubai',
                 emirate: 'Dubai',
                 authorized_person_name: companyName,
                 authorized_person_title: 'Administrator',
                 authorized_person_email: email,
-                authorized_person_phone: 'TBD'
+                authorized_person_phone: phone
             })
         });
         
