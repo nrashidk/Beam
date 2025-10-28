@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Card, CardContent } from '../components/ui/card';
+import { EmailInput, PasswordInput } from '../components/ui/validated-input';
 import MFAVerificationModal from '../components/MFAVerificationModal';
 
 export default function Login() {
@@ -64,8 +64,7 @@ export default function Login() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-1">Email</label>
-                <Input
-                  type="email"
+                <EmailInput
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -75,8 +74,7 @@ export default function Login() {
 
               <div>
                 <label className="block text-sm font-medium mb-1">Password</label>
-                <Input
-                  type="password"
+                <PasswordInput
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

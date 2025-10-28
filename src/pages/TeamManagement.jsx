@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
+import { EmailInput } from '../components/ui/validated-input';
 import { ArrowLeft, UserPlus, Trash2, Shield, User, Mail, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../lib/api';
@@ -156,8 +157,7 @@ export default function TeamManagement() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email Address
                   </label>
-                  <Input
-                    type="email"
+                  <EmailInput
                     value={inviteForm.email}
                     onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
                     placeholder="john@example.com"
