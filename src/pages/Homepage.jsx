@@ -21,6 +21,11 @@ export default function Homepage() {
   const [success, setSuccess] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [publicStats, setPublicStats] = useState({ totalInvoices: 0, totalCompanies: 0 });
+  const [validationErrors, setValidationErrors] = useState({
+    phone: false,
+    email: false,
+    password: false,
+  });
 
   useEffect(() => {
     if (user) {
@@ -47,6 +52,51 @@ export default function Homepage() {
     }
   };
 
+  const validatePhone = (value) => {
+    const phoneRegex = /^[0-9]{10}$/;
+    return !phoneRegex.test(value);
+  };
+
+  const validateEmail = (value) => {
+    const emailRegex = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+    return !emailRegex.test(value);
+  };
+
+  const validatePassword = (value) => {
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+    return !passwordRegex.test(value);
+  };
+
+  const handlePhoneChange = (e) => {
+    const value = e.target.value.replace(/[^0-9]/g, '');
+    setFormData({ ...formData, phone: value });
+    if (value.length > 0) {
+      setValidationErrors({ ...validationErrors, phone: validatePhone(value) });
+    } else {
+      setValidationErrors({ ...validationErrors, phone: false });
+    }
+  };
+
+  const handleEmailChange = (e) => {
+    const value = e.target.value;
+    setFormData({ ...formData, email: value });
+    if (value.length > 0) {
+      setValidationErrors({ ...validationErrors, email: validateEmail(value) });
+    } else {
+      setValidationErrors({ ...validationErrors, email: false });
+    }
+  };
+
+  const handlePasswordChange = (e) => {
+    const value = e.target.value;
+    setFormData({ ...formData, password: value });
+    if (value.length > 0) {
+      setValidationErrors({ ...validationErrors, password: validatePassword(value) });
+    } else {
+      setValidationErrors({ ...validationErrors, password: false });
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -64,6 +114,7 @@ export default function Homepage() {
       if (response.data.success) {
         setSuccess(true);
         setFormData({ email: '', company_name: '', phone: '', password: '' });
+        setValidationErrors({ phone: false, email: false, password: false });
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
@@ -289,9 +340,11 @@ export default function Homepage() {
                         maxLength={10}
                         title="Please enter exactly 10 digits"
                         value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                        onChange={handlePhoneChange}
                       />
-                      <small className="text-xs text-gray-500">10 digits only (e.g., 0501234567)</small>
+                      {validationErrors.phone && (
+                        <small className="text-xs text-red-500">10 digits only (e.g., 0501234567)</small>
+                      )}
                     </div>
 
                     <div>
@@ -305,9 +358,11 @@ export default function Homepage() {
                         pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
                         title="Please enter a valid email address"
                         value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        onChange={handleEmailChange}
                       />
-                      <small className="text-xs text-gray-500">Valid email format required</small>
+                      {validationErrors.email && (
+                        <small className="text-xs text-red-500">Valid email format required</small>
+                      )}
                     </div>
 
                     <div>
@@ -322,9 +377,11 @@ export default function Homepage() {
                         pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$"
                         title="Password must contain at least 8 characters, including uppercase, lowercase, and special character"
                         value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        onChange={handlePasswordChange}
                       />
-                      <small className="text-xs text-gray-500">Min 8 chars: Uppercase, lowercase & special char</small>
+                      {validationErrors.password && (
+                        <small className="text-xs text-red-500">Min 8 chars: Uppercase, lowercase & special char</small>
+                      )}
                     </div>
                   </div>
 
