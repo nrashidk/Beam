@@ -4120,6 +4120,532 @@ def match_inward_invoice_to_po(
         "po_match_score": invoice.po_match_score
     }
 
+# ==================== PURCHASE ORDER MANAGEMENT ====================
+
+@app.post("/purchase-orders", tags=["AP Management"], response_model=PurchaseOrderOut)
+def create_purchase_order(
+    po_data: PurchaseOrderCreate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new purchase order
+    
+    This endpoint:
+    1. Validates PO data
+    2. Creates PO record
+    3. Creates line items
+    4. Calculates expected totals
+    """
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Check for duplicate PO number
+    existing_po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.company_id == current_user.company_id,
+        PurchaseOrderDB.po_number == po_data.po_number
+    ).first()
+    
+    if existing_po:
+        raise HTTPException(409, f"PO number {po_data.po_number} already exists")
+    
+    # Validate line items
+    if not po_data.line_items:
+        raise HTTPException(400, "At least one line item is required")
+    
+    # Calculate expected totals
+    expected_subtotal = 0.0
+    expected_tax = 0.0
+    
+    for item in po_data.line_items:
+        line_total = item.quantity_ordered * item.unit_price
+        line_tax = line_total * (item.tax_percent / 100)
+        expected_subtotal += line_total
+        expected_tax += line_tax
+    
+    expected_total = expected_subtotal + expected_tax
+    
+    # Parse order date
+    from datetime import datetime as dt
+    order_date = dt.fromisoformat(po_data.order_date).date()
+    expected_delivery_date = dt.fromisoformat(po_data.expected_delivery_date).date() if po_data.expected_delivery_date else None
+    
+    # Create PO
+    po_id = str(uuid4())
+    new_po = PurchaseOrderDB(
+        id=po_id,
+        company_id=current_user.company_id,
+        po_number=po_data.po_number,
+        status=PurchaseOrderStatus.DRAFT,
+        supplier_trn=po_data.supplier_trn,
+        supplier_name=po_data.supplier_name,
+        supplier_contact_email=po_data.supplier_contact_email,
+        supplier_address=po_data.supplier_address,
+        supplier_peppol_id=po_data.supplier_peppol_id,
+        order_date=order_date,
+        expected_delivery_date=expected_delivery_date,
+        delivery_address=po_data.delivery_address,
+        currency_code=po_data.currency_code,
+        expected_subtotal=expected_subtotal,
+        expected_tax=expected_tax,
+        expected_total=expected_total,
+        reference_number=po_data.reference_number,
+        notes=po_data.notes
+    )
+    
+    db.add(new_po)
+    
+    # Create line items
+    for item_data in po_data.line_items:
+        line_total = item_data.quantity_ordered * item_data.unit_price
+        line_item = PurchaseOrderLineItemDB(
+            id=str(uuid4()),
+            po_id=po_id,
+            line_number=item_data.line_number,
+            item_name=item_data.item_name,
+            item_description=item_data.item_description,
+            item_code=item_data.item_code,
+            quantity_ordered=item_data.quantity_ordered,
+            unit_code=item_data.unit_code,
+            unit_price=item_data.unit_price,
+            line_total=line_total,
+            tax_category=item_data.tax_category,
+            tax_percent=item_data.tax_percent
+        )
+        db.add(line_item)
+    
+    db.commit()
+    db.refresh(new_po)
+    
+    # Return PO with line items
+    return PurchaseOrderOut(
+        id=new_po.id,
+        company_id=new_po.company_id,
+        po_number=new_po.po_number,
+        status=new_po.status,
+        supplier_trn=new_po.supplier_trn,
+        supplier_name=new_po.supplier_name,
+        supplier_contact_email=new_po.supplier_contact_email,
+        supplier_address=new_po.supplier_address,
+        supplier_peppol_id=new_po.supplier_peppol_id,
+        order_date=new_po.order_date.isoformat(),
+        expected_delivery_date=new_po.expected_delivery_date.isoformat() if new_po.expected_delivery_date else None,
+        delivery_address=new_po.delivery_address,
+        currency_code=new_po.currency_code,
+        expected_subtotal=new_po.expected_subtotal,
+        expected_tax=new_po.expected_tax,
+        expected_total=new_po.expected_total,
+        received_invoice_count=new_po.received_invoice_count,
+        matched_invoice_count=new_po.matched_invoice_count,
+        received_amount_total=new_po.received_amount_total,
+        variance_amount=new_po.variance_amount,
+        reference_number=new_po.reference_number,
+        notes=new_po.notes,
+        approved_by_user_id=new_po.approved_by_user_id,
+        approved_at=new_po.approved_at.isoformat() if new_po.approved_at else None,
+        created_at=new_po.created_at.isoformat(),
+        updated_at=new_po.updated_at.isoformat(),
+        line_items=[
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent
+            ) for li in new_po.line_items
+        ]
+    )
+
+@app.get("/purchase-orders", tags=["AP Management"])
+def list_purchase_orders(
+    status: Optional[str] = None,
+    supplier_name: Optional[str] = None,
+    po_number: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    List purchase orders with optional filters
+    
+    Filters:
+    - status: Filter by PO status (DRAFT, SENT, ACKNOWLEDGED, FULFILLED, CANCELLED)
+    - supplier_name: Search by supplier name (partial match)
+    - po_number: Search by PO number (partial match)
+    """
+    query = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.company_id == current_user.company_id
+    )
+    
+    # Apply filters
+    if status:
+        try:
+            status_enum = PurchaseOrderStatus(status)
+            query = query.filter(PurchaseOrderDB.status == status_enum)
+        except ValueError:
+            raise HTTPException(400, f"Invalid status: {status}")
+    
+    if supplier_name:
+        query = query.filter(PurchaseOrderDB.supplier_name.ilike(f"%{supplier_name}%"))
+    
+    if po_number:
+        query = query.filter(PurchaseOrderDB.po_number.ilike(f"%{po_number}%"))
+    
+    # Order by creation date (newest first)
+    query = query.order_by(PurchaseOrderDB.created_at.desc())
+    
+    # Pagination
+    total = query.count()
+    purchase_orders = query.offset(skip).limit(limit).all()
+    
+    # Convert to response models
+    results = []
+    for po in purchase_orders:
+        results.append(PurchaseOrderOut(
+            id=po.id,
+            company_id=po.company_id,
+            po_number=po.po_number,
+            status=po.status,
+            supplier_trn=po.supplier_trn,
+            supplier_name=po.supplier_name,
+            supplier_contact_email=po.supplier_contact_email,
+            supplier_address=po.supplier_address,
+            supplier_peppol_id=po.supplier_peppol_id,
+            order_date=po.order_date.isoformat(),
+            expected_delivery_date=po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
+            delivery_address=po.delivery_address,
+            currency_code=po.currency_code,
+            expected_subtotal=po.expected_subtotal,
+            expected_tax=po.expected_tax,
+            expected_total=po.expected_total,
+            received_invoice_count=po.received_invoice_count,
+            matched_invoice_count=po.matched_invoice_count,
+            received_amount_total=po.received_amount_total,
+            variance_amount=po.variance_amount,
+            reference_number=po.reference_number,
+            notes=po.notes,
+            approved_by_user_id=po.approved_by_user_id,
+            approved_at=po.approved_at.isoformat() if po.approved_at else None,
+            created_at=po.created_at.isoformat(),
+            updated_at=po.updated_at.isoformat(),
+            line_items=[
+                PurchaseOrderLineItemOut(
+                    id=li.id,
+                    line_number=li.line_number,
+                    item_name=li.item_name,
+                    item_description=li.item_description,
+                    item_code=li.item_code,
+                    quantity_ordered=li.quantity_ordered,
+                    quantity_received=li.quantity_received,
+                    unit_code=li.unit_code,
+                    unit_price=li.unit_price,
+                    line_total=li.line_total,
+                    tax_category=li.tax_category,
+                    tax_percent=li.tax_percent
+                ) for li in po.line_items
+            ]
+        ))
+    
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "results": results
+    }
+
+@app.get("/purchase-orders/{po_id}", tags=["AP Management"], response_model=PurchaseOrderOut)
+def get_purchase_order(
+    po_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get purchase order details with line items"""
+    po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.id == po_id,
+        PurchaseOrderDB.company_id == current_user.company_id
+    ).first()
+    
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    
+    return PurchaseOrderOut(
+        id=po.id,
+        company_id=po.company_id,
+        po_number=po.po_number,
+        status=po.status,
+        supplier_trn=po.supplier_trn,
+        supplier_name=po.supplier_name,
+        supplier_contact_email=po.supplier_contact_email,
+        supplier_address=po.supplier_address,
+        supplier_peppol_id=po.supplier_peppol_id,
+        order_date=po.order_date.isoformat(),
+        expected_delivery_date=po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
+        delivery_address=po.delivery_address,
+        currency_code=po.currency_code,
+        expected_subtotal=po.expected_subtotal,
+        expected_tax=po.expected_tax,
+        expected_total=po.expected_total,
+        received_invoice_count=po.received_invoice_count,
+        matched_invoice_count=po.matched_invoice_count,
+        received_amount_total=po.received_amount_total,
+        variance_amount=po.variance_amount,
+        reference_number=po.reference_number,
+        notes=po.notes,
+        approved_by_user_id=po.approved_by_user_id,
+        approved_at=po.approved_at.isoformat() if po.approved_at else None,
+        created_at=po.created_at.isoformat(),
+        updated_at=po.updated_at.isoformat(),
+        line_items=[
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent
+            ) for li in po.line_items
+        ]
+    )
+
+@app.put("/purchase-orders/{po_id}", tags=["AP Management"], response_model=PurchaseOrderOut)
+def update_purchase_order(
+    po_id: str,
+    po_data: PurchaseOrderCreate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing purchase order
+    
+    Only DRAFT status POs can be updated
+    """
+    po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.id == po_id,
+        PurchaseOrderDB.company_id == current_user.company_id
+    ).first()
+    
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    
+    if po.status != PurchaseOrderStatus.DRAFT:
+        raise HTTPException(400, "Only DRAFT purchase orders can be updated")
+    
+    # Validate line items
+    if not po_data.line_items:
+        raise HTTPException(400, "At least one line item is required")
+    
+    # Calculate expected totals
+    expected_subtotal = 0.0
+    expected_tax = 0.0
+    
+    for item in po_data.line_items:
+        line_total = item.quantity_ordered * item.unit_price
+        line_tax = line_total * (item.tax_percent / 100)
+        expected_subtotal += line_total
+        expected_tax += line_tax
+    
+    expected_total = expected_subtotal + expected_tax
+    
+    # Parse dates
+    from datetime import datetime as dt
+    order_date = dt.fromisoformat(po_data.order_date).date()
+    expected_delivery_date = dt.fromisoformat(po_data.expected_delivery_date).date() if po_data.expected_delivery_date else None
+    
+    # Update PO fields
+    po.po_number = po_data.po_number
+    po.supplier_trn = po_data.supplier_trn
+    po.supplier_name = po_data.supplier_name
+    po.supplier_contact_email = po_data.supplier_contact_email
+    po.supplier_address = po_data.supplier_address
+    po.supplier_peppol_id = po_data.supplier_peppol_id
+    po.order_date = order_date
+    po.expected_delivery_date = expected_delivery_date
+    po.delivery_address = po_data.delivery_address
+    po.currency_code = po_data.currency_code
+    po.expected_subtotal = expected_subtotal
+    po.expected_tax = expected_tax
+    po.expected_total = expected_total
+    po.reference_number = po_data.reference_number
+    po.notes = po_data.notes
+    po.updated_at = datetime.utcnow()
+    
+    # Delete old line items
+    db.query(PurchaseOrderLineItemDB).filter(
+        PurchaseOrderLineItemDB.po_id == po_id
+    ).delete()
+    
+    # Create new line items
+    for item_data in po_data.line_items:
+        line_total = item_data.quantity_ordered * item_data.unit_price
+        line_item = PurchaseOrderLineItemDB(
+            id=str(uuid4()),
+            po_id=po_id,
+            line_number=item_data.line_number,
+            item_name=item_data.item_name,
+            item_description=item_data.item_description,
+            item_code=item_data.item_code,
+            quantity_ordered=item_data.quantity_ordered,
+            unit_code=item_data.unit_code,
+            unit_price=item_data.unit_price,
+            line_total=line_total,
+            tax_category=item_data.tax_category,
+            tax_percent=item_data.tax_percent
+        )
+        db.add(line_item)
+    
+    db.commit()
+    db.refresh(po)
+    
+    return PurchaseOrderOut(
+        id=po.id,
+        company_id=po.company_id,
+        po_number=po.po_number,
+        status=po.status,
+        supplier_trn=po.supplier_trn,
+        supplier_name=po.supplier_name,
+        supplier_contact_email=po.supplier_contact_email,
+        supplier_address=po.supplier_address,
+        supplier_peppol_id=po.supplier_peppol_id,
+        order_date=po.order_date.isoformat(),
+        expected_delivery_date=po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
+        delivery_address=po.delivery_address,
+        currency_code=po.currency_code,
+        expected_subtotal=po.expected_subtotal,
+        expected_tax=po.expected_tax,
+        expected_total=po.expected_total,
+        received_invoice_count=po.received_invoice_count,
+        matched_invoice_count=po.matched_invoice_count,
+        received_amount_total=po.received_amount_total,
+        variance_amount=po.variance_amount,
+        reference_number=po.reference_number,
+        notes=po.notes,
+        approved_by_user_id=po.approved_by_user_id,
+        approved_at=po.approved_at.isoformat() if po.approved_at else None,
+        created_at=po.created_at.isoformat(),
+        updated_at=po.updated_at.isoformat(),
+        line_items=[
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent
+            ) for li in po.line_items
+        ]
+    )
+
+@app.delete("/purchase-orders/{po_id}", tags=["AP Management"])
+def cancel_purchase_order(
+    po_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancel a purchase order (soft delete)
+    
+    Only DRAFT and SENT status POs can be cancelled
+    """
+    po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.id == po_id,
+        PurchaseOrderDB.company_id == current_user.company_id
+    ).first()
+    
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    
+    if po.status not in [PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SENT]:
+        raise HTTPException(
+            400,
+            f"Cannot cancel PO in {po.status.value} status. Only DRAFT and SENT POs can be cancelled."
+        )
+    
+    # Check if any invoices are matched to this PO
+    matched_invoices = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.po_id == po_id
+    ).count()
+    
+    if matched_invoices > 0:
+        raise HTTPException(
+            400,
+            f"Cannot cancel PO. It has {matched_invoices} matched invoice(s). Unmatch invoices first."
+        )
+    
+    # Cancel the PO
+    po.status = PurchaseOrderStatus.CANCELLED
+    po.updated_at = datetime.utcnow()
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Purchase order {po.po_number} cancelled",
+        "po_id": po.id,
+        "po_number": po.po_number
+    }
+
+@app.post("/purchase-orders/{po_id}/send", tags=["AP Management"])
+def send_purchase_order(
+    po_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Send purchase order to supplier (change status from DRAFT to SENT)
+    
+    This would integrate with email/PEPPOL sending in production
+    """
+    po = db.query(PurchaseOrderDB).filter(
+        PurchaseOrderDB.id == po_id,
+        PurchaseOrderDB.company_id == current_user.company_id
+    ).first()
+    
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+    
+    if po.status != PurchaseOrderStatus.DRAFT:
+        raise HTTPException(400, "Only DRAFT purchase orders can be sent")
+    
+    # Update status
+    po.status = PurchaseOrderStatus.SENT
+    po.updated_at = datetime.utcnow()
+    
+    # In production, this would:
+    # 1. Generate PO PDF
+    # 2. Send via email to supplier_contact_email
+    # 3. Or send via PEPPOL if supplier_peppol_id exists
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Purchase order {po.po_number} sent to {po.supplier_name}",
+        "po_id": po.id,
+        "po_number": po.po_number,
+        "supplier_email": po.supplier_contact_email
+    }
+
 # ==================== COMPANY BRANDING ENDPOINTS ====================
 
 @app.post("/companies/{company_id}/branding/logo", tags=["Branding"])
