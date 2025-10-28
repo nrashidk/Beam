@@ -38,12 +38,13 @@ Detailed explanations preferred.
 8.  **Multi-User Team Management:** Unlimited team members, role-based access (Owner, Admin, Finance User), and invitation system.
 9.  **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes for secure user access, compliant with Ministerial Decision No. 64/2025.
 10. **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
-11. **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, a robust Crypto Utilities Module (SHA-256, RSA-2048 signing/verification), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
-12. **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation (development/production modes), structured error handling, and a global exception handler.
+11. **Content Management System (CMS):** Database-backed content management allowing SuperAdmins to edit all website text without code changes. Features include: content_blocks table with key/value pairs, dedicated SuperAdmin Content Manager UI with inline editing, ContentContext React hook for global content access, automatic content seeding on startup, and real-time updates. All homepage hero text and feature box content is now dynamically loaded from the database via the useContent() hook.
+12. **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, a robust Crypto Utilities Module (SHA-256, RSA-2048 signing/verification), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
+13. **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation (development/production modes), structured error handling, and a global exception handler.
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistence and availability.
-- **Database Schema:** Comprehensive for core entities (companies, subscriptions, users, invoices, payments, assets, branding) and AP Management (purchase orders, goods receipts, inward invoices) including fields for free plan tracking, VAT, security, and approval workflows.
+- **Database Schema:** Comprehensive for core entities (companies, subscriptions, users, invoices, payments, assets, branding), AP Management (purchase orders, goods receipts, inward invoices), and CMS (content_blocks) including fields for free plan tracking, VAT, security, approval workflows, and dynamic content management.
 - **Configuration:** Environment variables for critical settings like `DATABASE_URL`, signing keys, and `PRODUCTION_MODE`.
 - **VAT Settings:** Standard 5% UAE VAT rate.
 - **Security:** SQLAlchemy ORM for SQL injection protection, file upload validation, environment variable-based credentials.
