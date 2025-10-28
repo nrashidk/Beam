@@ -24,20 +24,22 @@
 ## 1. System Overview
 
 ### 1.1 Architecture Pattern
-- **Pattern:** Multi-tenant SaaS with row-level tenant isolation
+- **Pattern:** Multi-tenant SaaS with application-level tenant isolation
 - **Backend:** FastAPI (async Python) with SQLAlchemy ORM
 - **Frontend:** React 19.2 SPA with Vite bundler
-- **Database:** PostgreSQL 14+ (Neon-backed)
+- **Database:** SQLite (`.dev.db`) for development, PostgreSQL (Neon-backed) for production via DATABASE_URL
 - **Authentication:** JWT with role-based access control (RBAC)
 
 ### 1.2 Multi-Tenancy Model
 - **Tenant Identifier:** `company_id` (UUID string)
-- **Isolation:** Row-level security via foreign key relationships
+- **Isolation:** Application-level via foreign key filtering in queries
 - **Shared Resources:** User authentication, subscription plans, content blocks
 - **Isolated Resources:** Invoices, purchase orders, documents, branding
+- **Note:** Database-level row-level security (RLS) not currently implemented
 
 ### 1.3 Deployment Architecture
 - **Deployment Type:** Reserved VM (Always-On)
+- **Database:** SQLite (`.dev.db`) for development, PostgreSQL for production (via DATABASE_URL env var)
 - **Reason:** Maintains state, handles background tasks, ensures availability
 - **Environment:** Replit cloud infrastructure
 - **Scalability:** Horizontal scaling via load balancers (future)
@@ -56,7 +58,7 @@ CREATE TABLE users (
   id VARCHAR PRIMARY KEY,
   email VARCHAR UNIQUE NOT NULL,
   password_hash VARCHAR,
-  role VARCHAR NOT NULL,  -- 'SUPERADMIN', 'ADMIN', 'USER'
+  role VARCHAR NOT NULL,  -- 'SUPER_ADMIN', 'COMPANY_ADMIN', 'FINANCE_USER'
   company_id VARCHAR REFERENCES companies(id),
   is_owner BOOLEAN DEFAULT FALSE,
   full_name VARCHAR,
@@ -80,8 +82,8 @@ CREATE TABLE users (
 
 **Constraints:**
 - Email must be unique across platform
-- `company_id` required for non-SUPERADMIN roles
-- `mfa_enabled` mandatory for ADMIN and SUPERADMIN
+- `company_id` required for non-SUPER_ADMIN roles
+- `mfa_enabled` mandatory for COMPANY_ADMIN and SUPER_ADMIN
 
 ---
 
@@ -93,7 +95,7 @@ CREATE TABLE companies (
   id VARCHAR PRIMARY KEY,
   legal_name VARCHAR,
   country VARCHAR DEFAULT 'AE',
-  status VARCHAR NOT NULL,  -- 'PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'INACTIVE'
+  status VARCHAR NOT NULL,  -- 'PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'REJECTED'
   trn VARCHAR,  -- 15-digit numeric Tax Registration Number
   
   -- MFA settings (company-level)
@@ -224,7 +226,7 @@ CREATE TABLE invoices (
   -- UBL/PINT-AE Core Fields
   invoice_number VARCHAR NOT NULL,
   invoice_type VARCHAR NOT NULL,  -- 'Tax Invoice', 'Credit Note', 'Commercial Invoice'
-  status VARCHAR NOT NULL,  -- 'DRAFT', 'FINALIZED', 'APPROVED', 'SENT', 'PAID', 'CANCELLED'
+  status VARCHAR NOT NULL,  -- 'DRAFT', 'ISSUED', 'SENT', 'VIEWED', 'PAID', 'CANCELLED', 'OVERDUE'
   issue_date DATE NOT NULL,
   due_date DATE,
   currency_code VARCHAR DEFAULT 'AED',
@@ -303,7 +305,7 @@ CREATE TABLE invoices (
 **Constraints:**
 - `invoice_number` unique per company
 - `invoice_type = 'Credit Note'` requires `preceding_invoice_id` and `credit_note_reason`
-- `status = 'APPROVED'` requires `signature_b64` and `xml_hash`
+- `status = 'ISSUED'` or higher requires `signature_b64` and `xml_hash`
 
 ---
 
