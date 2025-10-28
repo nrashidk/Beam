@@ -5,7 +5,7 @@ import { companiesAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users } from 'lucide-react';
+import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function BusinessDashboard() {
@@ -81,6 +81,15 @@ export default function BusinessDashboard() {
             >
               <Users size={16} />
               Team
+            </Button>
+            <Button 
+              onClick={() => navigate('/settings/security')}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <Shield size={16} />
+              Security
             </Button>
             <div className="text-sm">
               <Badge variant="info">{user?.role}</Badge>
