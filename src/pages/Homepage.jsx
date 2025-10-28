@@ -114,8 +114,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">UBL/PINT-AE Compliant</h3>
-              <p className="text-sm text-gray-600">Generate UAE FTA-compliant invoices with UBL 2.1 XML format, digital signatures, and tamper-proof hash chains for complete audit trails.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Government-Approved Invoices</h3>
+              <p className="text-sm text-gray-600">Create professional invoices that meet all UAE government requirements. Every invoice is automatically secured and properly formatted.</p>
             </CardContent>
           </Card>
 
@@ -126,8 +126,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Full AP Management</h3>
-              <p className="text-sm text-gray-600">Create purchase orders, receive supplier invoices, perform 3-way matching (PO-Invoice-GRN), and manage approval workflows seamlessly.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Manage Your Purchases</h3>
+              <p className="text-sm text-gray-600">Create purchase orders, receive supplier invoices, and keep track of all your expenses in one organized place.</p>
             </CardContent>
           </Card>
 
@@ -138,8 +138,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Multi-Factor Authentication</h3>
-              <p className="text-sm text-gray-600">Ministerial Decision No. 64/2025 compliant security with TOTP authenticator apps, email OTP backup, and single-use recovery codes.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Extra Security</h3>
+              <p className="text-sm text-gray-600">Extra protection for your account. Use your phone or email to confirm it's really you when logging in.</p>
             </CardContent>
           </Card>
 
@@ -151,7 +151,7 @@ export default function Homepage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900">Team Collaboration</h3>
-              <p className="text-sm text-gray-600">Unlimited team members with role-based access control (Owner, Admin, Finance User). Invite colleagues and manage permissions effortlessly.</p>
+              <p className="text-sm text-gray-600">Work together with your team. Add unlimited members and control who can view or edit invoices.</p>
             </CardContent>
           </Card>
 
@@ -162,8 +162,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">PEPPOL Network Ready</h3>
-              <p className="text-sm text-gray-600">Architected for seamless integration with accredited PEPPOL providers (Tradeshift, Basware) for secure electronic invoice transmission.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Electronic Delivery</h3>
+              <p className="text-sm text-gray-600">Send invoices electronically to your customers through trusted partners, making delivery fast and secure.</p>
             </CardContent>
           </Card>
 
@@ -175,7 +175,7 @@ export default function Homepage() {
                 </svg>
               </div>
               <h3 className="text-xl font-semibold text-gray-900">Flexible Subscriptions</h3>
-              <p className="text-sm text-gray-600">Choose from Free, Starter, Professional, or Enterprise plans. Start free with 10 invoices, then scale as you grow with unlimited invoicing.</p>
+              <p className="text-sm text-gray-600">Start free with 10 invoices per month. Upgrade anytime as your business grows to send unlimited invoices.</p>
             </CardContent>
           </Card>
         </div>
