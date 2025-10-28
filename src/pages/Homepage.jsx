@@ -106,107 +106,96 @@ export default function Homepage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[
-            { icon: '🚀', title: 'Boost Digitalisation', desc: 'Fully paperless invoicing ecosystem' },
-            { icon: '⚡', title: 'Operational Efficiency', desc: 'Streamlined workflows & automation' },
-            { icon: '🌱', title: 'Eliminate Printed Invoices', desc: 'Sustainable digital-first approach' },
-            { icon: '✓', title: 'Tax and Audit Compliance', desc: 'Full regulatory compliance built-in' },
-            { icon: '🔍', title: 'Enhanced Transparency', desc: 'Real-time visibility & traceability' },
-            { icon: '💳', title: 'Multi-Payment', desc: 'Integrate and accept all payment methods' },
-          ].map((feature, i) => (
-            <Card key={i} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6 text-center space-y-2">
-                <div className="text-4xl">{feature.icon}</div>
-                <h3 className="font-semibold">{feature.title}</h3>
-                <p className="text-sm text-gray-600">{feature.desc}</p>
-              </CardContent>
-            </Card>
-          ))}
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Guaranteed Compliance</h3>
+              <p className="text-sm text-gray-600">Our platform stays perfectly aligned with UAE's PINT AE standards and DCTCE framework.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Rapid Implementation</h3>
+              <p className="text-sm text-gray-600">Go live with E-invoicing as fast as 24 hours with our Excel ingestion method – fastest onboarding in the industry.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Dedicated Local Support</h3>
+              <p className="text-sm text-gray-600">Access 24/7 local assistance from our UAE-based team of technical and compliance experts.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Bank-Grade Data Security</h3>
+              <p className="text-sm text-gray-600">Your financial data is secured within country borders with our ISO27001, VAPT and SOC2 certified platform featuring 256-bit encryption.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Enterprise-Grade Performance</h3>
+              <p className="text-sm text-gray-600">Scalable systems for high-volume invoicing. Effortlessly processes millions of invoices daily.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Multi-Payment Support</h3>
+              <p className="text-sm text-gray-600">Integrate and accept all payment methods seamlessly within your invoicing workflow.</p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Statistics Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-gradient-to-br from-cyan-50 to-cyan-100 rounded-2xl p-8 text-center">
+          <div className="bg-indigo-50 rounded-2xl p-8 text-center">
             <div className="text-4xl font-bold text-gray-900 mb-2">1Bn+</div>
             <p className="text-sm text-gray-700">e-Invoices generated annually on InvoLinks platform</p>
           </div>
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-8 text-center">
+          <div className="bg-indigo-50 rounded-2xl p-8 text-center">
             <div className="text-4xl font-bold text-gray-900 mb-2">99.8%</div>
             <p className="text-sm text-gray-700">Success rate in e-invoice generation</p>
           </div>
-          <div className="bg-gradient-to-br from-pink-50 to-pink-100 rounded-2xl p-8 text-center">
+          <div className="bg-indigo-50 rounded-2xl p-8 text-center">
             <div className="text-4xl font-bold text-gray-900 mb-2">$5Bn+</div>
             <p className="text-sm text-gray-700">Worth Invoices processed</p>
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-8 text-center">
+          <div className="bg-indigo-50 rounded-2xl p-8 text-center">
             <div className="text-4xl font-bold text-gray-900 mb-2">10%+</div>
             <p className="text-sm text-gray-700">Market share in GCC countries</p>
-          </div>
-        </div>
-
-        {/* Why InvoLinks Section */}
-        <div className="space-y-8">
-          <h2 className="text-3xl font-bold text-center text-gray-900">Why Choose InvoLinks?</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Card className="hover:shadow-lg transition-shadow bg-white">
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Guaranteed Compliance</h3>
-                <p className="text-sm text-gray-600">Our platform stays perfectly aligned with UAE's PINT AE standards and DCTCE framework.</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow bg-white">
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Rapid Implementation</h3>
-                <p className="text-sm text-gray-600">Go live with E-invoicing as fast as 24 hours with our Excel ingestion method – fastest onboarding in the industry.</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow bg-white">
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="w-16 h-16 mx-auto bg-purple-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Dedicated Local Support</h3>
-                <p className="text-sm text-gray-600">Access 24/7 local assistance from our UAE-based team of technical and compliance experts.</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow bg-white">
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Bank-Grade Data Security</h3>
-                <p className="text-sm text-gray-600">Your financial data is secured within country borders with our ISO27001, VAPT and SOC2 certified platform featuring 256-bit encryption.</p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover:shadow-lg transition-shadow bg-white">
-              <CardContent className="p-8 text-center space-y-4">
-                <div className="w-16 h-16 mx-auto bg-orange-100 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-semibold text-gray-900">Enterprise-Grade Performance</h3>
-                <p className="text-sm text-gray-600">Scalable systems for high-volume invoicing. Effortlessly processes millions of invoices daily.</p>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
