@@ -322,6 +322,17 @@ class RegistrationProgressDB(Base):
 
     company = relationship("CompanyDB", backref="progress")
 
+class ContentBlockDB(Base):
+    """Content Management System - Editable text blocks for UI"""
+    __tablename__ = "content_blocks"
+    id = Column(String, primary_key=True)
+    key = Column(String, unique=True, nullable=False, index=True)  # e.g., "homepage_hero_title"
+    value = Column(Text, nullable=False)  # The actual text content
+    description = Column(String, nullable=True)  # What this controls
+    section = Column(String, nullable=True, index=True)  # Group by page: "homepage", "feature_boxes", etc.
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String, nullable=True)  # Admin email who made the change
+
 class InvoiceDB(Base):
     __tablename__ = "invoices"
     id = Column(String, primary_key=True)
@@ -949,6 +960,25 @@ class RegistrationProgressOut(BaseModel):
     company_id: str
     current_step: int
     completed: bool
+
+# ==================== CONTENT MANAGEMENT PYDANTIC SCHEMAS ====================
+class ContentBlockCreate(BaseModel):
+    key: str = Field(..., description="Unique key (e.g., homepage_hero_title)")
+    value: str = Field(..., description="The actual text content")
+    description: Optional[str] = Field(None, description="What this controls")
+    section: Optional[str] = Field(None, description="Section/page grouping")
+
+class ContentBlockUpdate(BaseModel):
+    value: str = Field(..., description="Updated text content")
+
+class ContentBlockOut(BaseModel):
+    id: str
+    key: str
+    value: str
+    description: Optional[str]
+    section: Optional[str]
+    updated_at: datetime
+    updated_by: Optional[str]
 
 # ==================== INVOICE PYDANTIC SCHEMAS ====================
 class InvoiceLineItemCreate(BaseModel):
@@ -2686,6 +2716,85 @@ def get_admin_analytics(
 ):
     """Alias for /admin/stats - Get comprehensive dashboard analytics (Super Admin only)"""
     return get_admin_stats(from_date, to_date, current_user, db)
+
+# ==================== CONTENT MANAGEMENT ENDPOINTS ====================
+
+@app.get("/admin/content", response_model=List[ContentBlockOut], tags=["Admin", "Content"])
+def get_all_content(
+    section: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all content blocks (Super Admin only). Optionally filter by section."""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can access content management")
+    
+    query = db.query(ContentBlockDB)
+    if section:
+        query = query.filter(ContentBlockDB.section == section)
+    
+    blocks = query.order_by(ContentBlockDB.section, ContentBlockDB.key).all()
+    
+    return [
+        ContentBlockOut(
+            id=b.id,
+            key=b.key,
+            value=b.value,
+            description=b.description,
+            section=b.section,
+            updated_at=b.updated_at,
+            updated_by=b.updated_by
+        ) for b in blocks
+    ]
+
+@app.put("/admin/content/{key}", response_model=ContentBlockOut, tags=["Admin", "Content"])
+def update_content(
+    key: str,
+    payload: ContentBlockUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update a content block by key (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can edit content")
+    
+    block = db.query(ContentBlockDB).filter(ContentBlockDB.key == key).first()
+    if not block:
+        raise HTTPException(404, f"Content block with key '{key}' not found")
+    
+    block.value = payload.value
+    block.updated_at = datetime.utcnow()
+    block.updated_by = current_user.email
+    
+    db.commit()
+    db.refresh(block)
+    
+    return ContentBlockOut(
+        id=block.id,
+        key=block.key,
+        value=block.value,
+        description=block.description,
+        section=block.section,
+        updated_at=block.updated_at,
+        updated_by=block.updated_by
+    )
+
+@app.get("/content/public", response_model=List[ContentBlockOut], tags=["Content"])
+def get_public_content(db: Session = Depends(get_db)):
+    """Get all content blocks for public consumption (no auth required)"""
+    blocks = db.query(ContentBlockDB).order_by(ContentBlockDB.section, ContentBlockDB.key).all()
+    
+    return [
+        ContentBlockOut(
+            id=b.id,
+            key=b.key,
+            value=b.value,
+            description=b.description,
+            section=b.section,
+            updated_at=b.updated_at,
+            updated_by=b.updated_by
+        ) for b in blocks
+    ]
 
 # ==================== USER MANAGEMENT ENDPOINTS ====================
 
