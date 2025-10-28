@@ -165,69 +165,71 @@ export default function Homepage() {
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4 max-w-md mx-auto">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Work Email <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="email"
-                      required
-                      placeholder="you@company.com"
-                      pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-                      title="Please enter a valid email address"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    />
-                    <small className="text-xs text-gray-500">Valid email format required</small>
-                  </div>
+                <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl mx-auto">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Work Email <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="email"
+                        required
+                        placeholder="you@company.com"
+                        pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                        title="Please enter a valid email address"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      />
+                      <small className="text-xs text-gray-500">Valid email format required</small>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Legal Name <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="text"
-                      required
-                      placeholder="Your Company LLC"
-                      minLength={3}
-                      value={formData.company_name}
-                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                    />
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Legal Name <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        required
+                        placeholder="Your Company LLC"
+                        minLength={3}
+                        value={formData.company_name}
+                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      />
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Phone Number <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="text"
-                      required
-                      placeholder="1234567890"
-                      pattern="[0-9]{10}"
-                      maxLength={10}
-                      title="Please enter exactly 10 digits"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
-                    />
-                    <small className="text-xs text-gray-500">10 digits only (e.g., 0501234567)</small>
-                  </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Phone Number <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        required
+                        placeholder="1234567890"
+                        pattern="[0-9]{10}"
+                        maxLength={10}
+                        title="Please enter exactly 10 digits"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                      />
+                      <small className="text-xs text-gray-500">10 digits only (e.g., 0501234567)</small>
+                    </div>
 
-                  <div>
-                    <label className="block text-sm font-medium mb-1">
-                      Password <span className="text-red-500">*</span>
-                    </label>
-                    <Input
-                      type="password"
-                      required
-                      placeholder="Enter strong password"
-                      minLength={8}
-                      pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$"
-                      title="Password must contain at least 8 characters, including uppercase, lowercase, and special character"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    />
-                    <small className="text-xs text-gray-500">Min 8 chars: Uppercase, lowercase & special char</small>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Password <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="password"
+                        required
+                        placeholder="Enter strong password"
+                        minLength={8}
+                        pattern="^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$"
+                        title="Password must contain at least 8 characters, including uppercase, lowercase, and special character"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                      <small className="text-xs text-gray-500">Min 8 chars: Uppercase, lowercase & special char</small>
+                    </div>
                   </div>
 
                   <div className="flex justify-center pt-2">
