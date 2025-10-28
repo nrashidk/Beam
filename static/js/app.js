@@ -3,6 +3,32 @@ let userEmail = null;
 
 document.getElementById('signup-form')?.addEventListener('submit', handleSignup);
 
+// Phone field - only allow numeric input
+const phoneInput = document.getElementById('phone');
+if (phoneInput) {
+    phoneInput.addEventListener('input', function(e) {
+        this.value = this.value.replace(/[^0-9]/g, '');
+    });
+}
+
+// Real-time password validation feedback
+const passwordInput = document.getElementById('password');
+if (passwordInput) {
+    passwordInput.addEventListener('input', function(e) {
+        const value = this.value;
+        const hasUppercase = /[A-Z]/.test(value);
+        const hasLowercase = /[a-z]/.test(value);
+        const hasSpecial = /[@$!%*?&#]/.test(value);
+        const hasMinLength = value.length >= 8;
+        
+        if (value && (!hasUppercase || !hasLowercase || !hasSpecial || !hasMinLength)) {
+            this.setCustomValidity('Password must contain uppercase, lowercase, and special character');
+        } else {
+            this.setCustomValidity('');
+        }
+    });
+}
+
 async function handleSignup(e) {
     e.preventDefault();
     
