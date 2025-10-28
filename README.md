@@ -116,8 +116,8 @@
 
 ### **Backend**
 - **Framework:** FastAPI 2.0 (Python 3.11+) with async support
-- **Database:** PostgreSQL 14+ (Neon-backed)
-- **ORM:** SQLAlchemy 2.0.36 with async engine
+- **Database:** PostgreSQL 14+ (configurable via DATABASE_URL, defaults to SQLite for development)
+- **ORM:** SQLAlchemy 2.0.36 with async-ready engine
 - **Authentication:** JWT with bcrypt password hashing
 - **CORS:** Configured for cross-origin requests
 

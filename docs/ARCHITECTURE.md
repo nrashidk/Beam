@@ -432,21 +432,21 @@ Login Flow with MFA:
 **Role-Based Access Control (RBAC):**
 
 ```
-SUPERADMIN:
+SUPER_ADMIN:
   - Full platform access
   - Company approval
   - Analytics dashboard
   - Content management
   - All company data (read-only for audit)
 
-ADMIN:
+COMPANY_ADMIN:
   - Full company access
   - Invoice CRUD
   - AP management
   - Team management
   - Company settings
 
-USER (Finance User):
+FINANCE_USER:
   - Invoice read/create
   - AP read access
   - Limited settings access
@@ -461,7 +461,7 @@ invoices = db.query(InvoiceDB).filter(
 ).all()
 
 # SuperAdmin bypass for audit/analytics
-if current_user.role == Role.SUPERADMIN:
+if current_user.role == Role.SUPER_ADMIN:
     # Access all companies
     companies = db.query(CompanyDB).all()
 else:
@@ -621,8 +621,8 @@ provider = PeppolProviderFactory.create_provider(
 │                               │                 │
 │                               ▼                 │
 │                    ┌───────────────────┐        │
-│                    │   PostgreSQL      │        │
-│                    │   (Neon-backed)   │        │
+│                    │ Database (SQLite  │        │
+│                    │ or PostgreSQL)    │        │
 │                    └───────────────────┘        │
 │                               │                 │
 │                               ▼                 │

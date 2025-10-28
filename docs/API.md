@@ -87,7 +87,7 @@ curl -X POST http://localhost:8000/auth/login \
   "user": {
     "id": "user_xyz789",
     "email": "admin@acmecorp.ae",
-    "role": "ADMIN",
+    "role": "COMPANY_ADMIN",
     "company_id": "comp_abc123"
   }
 }
@@ -269,12 +269,12 @@ List all invoices with optional filters.
 
 **Request:**
 ```bash
-curl -X GET "http://localhost:8000/invoices?status=APPROVED&limit=10&offset=0" \
+curl -X GET "http://localhost:8000/invoices?status=ISSUED&limit=10&offset=0" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
 **Query Parameters:**
-- `status`: Filter by status (DRAFT, FINALIZED, APPROVED, SENT, PAID, CANCELLED)
+- `status`: Filter by status (DRAFT, ISSUED, SENT, VIEWED, PAID, CANCELLED, OVERDUE)
 - `invoice_type`: Filter by type (Tax Invoice, Credit Note, Commercial Invoice)
 - `from_date`: Filter invoices issued after this date (YYYY-MM-DD)
 - `to_date`: Filter invoices issued before this date (YYYY-MM-DD)
@@ -288,7 +288,7 @@ curl -X GET "http://localhost:8000/invoices?status=APPROVED&limit=10&offset=0" \
     {
       "id": "inv_abc123",
       "invoice_number": "INV-COMP-00001",
-      "status": "APPROVED",
+      "status": "ISSUED",
       "issue_date": "2025-10-28",
       "customer_name": "Client Corporation LLC",
       "total_amount": 7140.00,
@@ -321,7 +321,7 @@ curl -X GET http://localhost:8000/invoices/inv_abc123 \
   "company_id": "comp_xyz789",
   "invoice_number": "INV-COMP-00001",
   "invoice_type": "Tax Invoice",
-  "status": "APPROVED",
+  "status": "ISSUED",
   "issue_date": "2025-10-28",
   "due_date": "2025-11-28",
   "currency_code": "AED",
@@ -391,10 +391,10 @@ curl -X POST http://localhost:8000/invoices/inv_abc123/finalize \
 **Response:** `200 OK`
 ```json
 {
-  "message": "Invoice finalized successfully",
+  "message": "Invoice finalized and issued successfully",
   "invoice_id": "inv_abc123",
   "invoice_number": "INV-COMP-00001",
-  "status": "FINALIZED",
+  "status": "ISSUED",
   "xml_hash": "sha256:abc123...",
   "signature": "base64:xyz789...",
   "prev_invoice_hash": "sha256:def456...",
@@ -403,37 +403,12 @@ curl -X POST http://localhost:8000/invoices/inv_abc123/finalize \
 ```
 
 **Notes:**
-- Changes status from DRAFT → FINALIZED
+- Changes status from DRAFT → ISSUED
 - Generates UBL 2.1 XML file
 - Computes SHA-256 hash of invoice data
 - Creates RSA-2048 digital signature
 - Links to previous invoice in hash chain
-
----
-
-### POST `/invoices/{invoice_id}/approve`
-
-Approve invoice for sending.
-
-**Request:**
-```bash
-curl -X POST http://localhost:8000/invoices/inv_abc123/approve \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-**Response:** `200 OK`
-```json
-{
-  "message": "Invoice approved successfully",
-  "invoice_id": "inv_abc123",
-  "invoice_number": "INV-COMP-00001",
-  "status": "APPROVED"
-}
-```
-
-**Requirements:**
-- Invoice must be in FINALIZED status
-- Must have valid signature and hash
+- Invoice is ready for sending after this step
 
 ---
 
@@ -465,7 +440,7 @@ curl -X POST http://localhost:8000/invoices/inv_abc123/send \
 ```
 
 **Requirements:**
-- Invoice must be APPROVED status
+- Invoice must be ISSUED status
 - Customer must have valid PEPPOL ID
 - PEPPOL provider must be configured
 
@@ -534,7 +509,7 @@ curl -X DELETE http://localhost:8000/invoices/inv_abc123 \
 
 **Notes:**
 - DRAFT invoices: Soft delete (status → CANCELLED)
-- FINALIZED/APPROVED/SENT: Cannot delete (create Credit Note instead)
+- ISSUED/SENT/VIEWED/PAID: Cannot delete (create Credit Note instead)
 
 ---
 
