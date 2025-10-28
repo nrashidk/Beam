@@ -5,7 +5,7 @@ import { companiesAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox } from 'lucide-react';
+import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function BusinessDashboard() {
@@ -72,6 +72,15 @@ export default function BusinessDashboard() {
             >
               <Inbox size={16} />
               AP Inbox
+            </Button>
+            <Button 
+              onClick={() => navigate('/ap/purchase-orders')}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <ShoppingCart size={16} />
+              Purchase Orders
             </Button>
             <Button 
               onClick={() => navigate('/settings/branding')}
