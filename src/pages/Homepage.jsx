@@ -113,8 +113,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Guaranteed Compliance</h3>
-              <p className="text-sm text-gray-600">Our platform stays perfectly aligned with UAE's PINT AE standards and DCTCE framework.</p>
+              <h3 className="text-xl font-semibold text-gray-900">UBL/PINT-AE Compliant</h3>
+              <p className="text-sm text-gray-600">Generate UAE FTA-compliant invoices with UBL 2.1 XML format, digital signatures, and tamper-proof hash chains for complete audit trails.</p>
             </CardContent>
           </Card>
 
@@ -122,23 +122,11 @@ export default function Homepage() {
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
                 <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Rapid Implementation</h3>
-              <p className="text-sm text-gray-600">Go live with E-invoicing as fast as 24 hours with our Excel ingestion method – fastest onboarding in the industry.</p>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow bg-white">
-            <CardContent className="p-8 text-center space-y-4">
-              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900">Dedicated Local Support</h3>
-              <p className="text-sm text-gray-600">Access 24/7 local assistance from our UAE-based team of technical and compliance experts.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Full AP Management</h3>
+              <p className="text-sm text-gray-600">Create purchase orders, receive supplier invoices, perform 3-way matching (PO-Invoice-GRN), and manage approval workflows seamlessly.</p>
             </CardContent>
           </Card>
 
@@ -149,8 +137,8 @@ export default function Homepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Bank-Grade Data Security</h3>
-              <p className="text-sm text-gray-600">Your financial data is secured within country borders with our ISO27001, VAPT and SOC2 certified platform featuring 256-bit encryption.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Multi-Factor Authentication</h3>
+              <p className="text-sm text-gray-600">Ministerial Decision No. 64/2025 compliant security with TOTP authenticator apps, email OTP backup, and single-use recovery codes.</p>
             </CardContent>
           </Card>
 
@@ -158,11 +146,11 @@ export default function Homepage() {
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
                 <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Enterprise-Grade Performance</h3>
-              <p className="text-sm text-gray-600">Scalable systems for high-volume invoicing. Effortlessly processes millions of invoices daily.</p>
+              <h3 className="text-xl font-semibold text-gray-900">Team Collaboration</h3>
+              <p className="text-sm text-gray-600">Unlimited team members with role-based access control (Owner, Admin, Finance User). Invite colleagues and manage permissions effortlessly.</p>
             </CardContent>
           </Card>
 
@@ -170,11 +158,23 @@ export default function Homepage() {
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
                 <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">Multi-Payment Support</h3>
-              <p className="text-sm text-gray-600">Integrate and accept all payment methods seamlessly within your invoicing workflow.</p>
+              <h3 className="text-xl font-semibold text-gray-900">PEPPOL Network Ready</h3>
+              <p className="text-sm text-gray-600">Architected for seamless integration with accredited PEPPOL providers (Tradeshift, Basware) for secure electronic invoice transmission.</p>
+            </CardContent>
+          </Card>
+
+          <Card className="hover:shadow-lg transition-shadow bg-white">
+            <CardContent className="p-8 text-center space-y-4">
+              <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-900">Flexible Subscriptions</h3>
+              <p className="text-sm text-gray-600">Choose from Free, Starter, Professional, or Enterprise plans. Start free with 10 invoices, then scale as you grow with unlimited invoicing.</p>
             </CardContent>
           </Card>
         </div>
