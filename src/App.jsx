@@ -11,6 +11,7 @@ import CreateInvoice from './pages/CreateInvoice';
 import InvoiceDetail from './pages/InvoiceDetail';
 import CompanyBranding from './pages/CompanyBranding';
 import TeamManagement from './pages/TeamManagement';
+import MFASettings from './pages/MFASettings';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -97,6 +98,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <TeamManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/security"
+            element={
+              <ProtectedRoute>
+                <MFASettings />
               </ProtectedRoute>
             }
           />
