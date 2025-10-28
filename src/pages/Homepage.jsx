@@ -181,19 +181,19 @@ export default function Homepage() {
 
         {/* Statistics Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-100">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-gray-900 mb-2">1Bn+</div>
             <p className="text-sm text-gray-700">e-Invoices generated annually on InvoLinks platform</p>
           </div>
-          <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-100">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-gray-900 mb-2">99.8%</div>
             <p className="text-sm text-gray-700">Success rate in e-invoice generation</p>
           </div>
-          <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-100">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-gray-900 mb-2">$5Bn+</div>
             <p className="text-sm text-gray-700">Worth Invoices processed</p>
           </div>
-          <div className="bg-gray-50 rounded-2xl p-8 text-center border border-gray-100">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-gray-900 mb-2">10%+</div>
             <p className="text-sm text-gray-700">Market share in GCC countries</p>
           </div>
