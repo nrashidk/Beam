@@ -284,6 +284,10 @@ label {
     color: var(--text);
 }
 
+.required {
+    color: var(--error);
+}
+
 input,
 select {
     width: 100%;
@@ -345,9 +349,12 @@ input::placeholder {
 }
 
 .btn-large {
+    max-width: 280px;
     width: 100%;
-    padding: 1rem;
+    padding: 1rem 2rem;
     font-size: 1.125rem;
+    margin: 0 auto;
+    display: block;
 }
 
 .btn:disabled {
