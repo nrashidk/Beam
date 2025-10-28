@@ -904,6 +904,133 @@ def seed_plans(db: Session):
         db.add(plan)
     db.commit()
 
+def seed_content(db: Session):
+    """Seed initial content blocks for Homepage"""
+    if db.query(ContentBlockDB).count() > 0:
+        return  # Already seeded
+    
+    content_blocks = [
+        # Homepage Hero
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="homepage_hero_title",
+            value="Simple, Compliant\nDigital Invoicing for UAE",
+            description="Homepage main heading",
+            section="homepage",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="homepage_hero_subtitle",
+            value="Automated invoicing in structured electronic formats.",
+            description="Homepage subheading",
+            section="homepage",
+            updated_by="system"
+        ),
+        
+        # Feature Boxes
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_1_title",
+            value="Government-Approved Invoices",
+            description="First feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_1_description",
+            value="Create professional invoices that meet all UAE government requirements. Every invoice is automatically secured and properly formatted.",
+            description="First feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_2_title",
+            value="Manage Your Purchases",
+            description="Second feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_2_description",
+            value="Create purchase orders, receive supplier invoices, and keep track of all your expenses in one organized place.",
+            description="Second feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_3_title",
+            value="Extra Security",
+            description="Third feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_3_description",
+            value="Extra protection for your account. Use your phone or email to confirm it's really you when logging in.",
+            description="Third feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_4_title",
+            value="Team Collaboration",
+            description="Fourth feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_4_description",
+            value="Work together with your team. Add unlimited members and control who can view or edit invoices.",
+            description="Fourth feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_5_title",
+            value="Electronic Delivery",
+            description="Fifth feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_5_description",
+            value="Send invoices electronically to your customers through trusted partners, making delivery fast and secure.",
+            description="Fifth feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_6_title",
+            value="Flexible Subscriptions",
+            description="Sixth feature box title",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_6_description",
+            value="Start free with 10 invoices per month. Upgrade anytime as your business grows to send unlimited invoices.",
+            description="Sixth feature box description",
+            section="feature_boxes",
+            updated_by="system"
+        ),
+    ]
+    
+    for block in content_blocks:
+        db.add(block)
+    db.commit()
+
 # ==================== PYDANTIC SCHEMAS ====================
 class CompanyInfoCreate(BaseModel):
     legal_name: str = Field(..., min_length=2, max_length=255)
@@ -1361,9 +1488,10 @@ def startup_event():
         else:
             print("⚠️ Continuing with mock keys - NOT PRODUCTION READY")
     
-    # Seed database plans
+    # Seed database plans and content
     db = SessionLocal()
     seed_plans(db)
+    seed_content(db)
     db.close()
     
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"

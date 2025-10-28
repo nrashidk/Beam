@@ -154,6 +154,9 @@ export default function SuperAdminDashboard() {
             <Button variant="outline" size="sm" onClick={() => navigate('/admin/approvals')}>
               Approvals
             </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
+              Content Manager
+            </Button>
             <Button variant="outline" size="sm" onClick={logout} className="gap-2">
               <LogOut size={16} />
               Logout
