@@ -25,6 +25,7 @@ Detailed explanations preferred.
 - Bold hero sections, card-based feature highlights, glassmorphism navbar.
 - Rounded corners, enhanced shadows, hover states, mobile-responsive design.
 - Inter font family for professional typography.
+- Reusable validation system: Centralized validation utilities (src/utils/validation.js) and validated input components (PhoneInput, EmailInput, PasswordInput, TRNInput) provide consistent UAE-specific validation across all forms with hidden-by-default error hints that only appear on invalid input.
 
 **Core Features & Technical Implementations:**
 1.  **Registration & Subscription:** Simplified signup, email verification, token-based workflow, automatic Free tier assignment, and flexible free plan configuration.
