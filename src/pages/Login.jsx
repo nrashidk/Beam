@@ -86,7 +86,7 @@ export default function Login() {
                 <button
                   type="button"
                   className="text-sm text-blue-600 hover:underline"
-                  onClick={() => alert('Password reset coming soon!')}
+                  onClick={() => navigate('/forgot-password')}
                 >
                   Forgot password?
                 </button>

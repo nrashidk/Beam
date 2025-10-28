@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ContentProvider } from './contexts/ContentContext';
 import Homepage from './pages/Homepage';
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import SuperAdminApprovals from './pages/SuperAdminApprovals';
 import BusinessDashboard from './pages/BusinessDashboard';
@@ -59,6 +61,8 @@ function App() {
           <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route
             path="/dashboard"
             element={
