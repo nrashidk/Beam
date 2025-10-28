@@ -169,22 +169,6 @@ export default function Homepage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium mb-1">
-                        Work Email <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="email"
-                        required
-                        placeholder="you@company.com"
-                        pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-                        title="Please enter a valid email address"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      />
-                      <small className="text-xs text-gray-500">Valid email format required</small>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
                         Legal Name <span className="text-red-500">*</span>
                       </label>
                       <Input
@@ -212,6 +196,22 @@ export default function Homepage() {
                         onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
                       />
                       <small className="text-xs text-gray-500">10 digits only (e.g., 0501234567)</small>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Work Email <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="email"
+                        required
+                        placeholder="you@company.com"
+                        pattern="[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+                        title="Please enter a valid email address"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      />
+                      <small className="text-xs text-gray-500">Valid email format required</small>
                     </div>
 
                     <div>
