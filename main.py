@@ -5295,6 +5295,233 @@ def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(500, f"Health check failed: {str(e)}")
 
+# ==================== FTA AUDIT FILE (FAF) ENDPOINTS ====================
+
+@app.post("/audit-files/generate", tags=["FTA Audit"])
+def generate_fta_audit_file(
+    period_start: str,  # YYYY-MM-DD
+    period_end: str,  # YYYY-MM-DD
+    format: str = "CSV",  # CSV or TXT
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate FTA Audit File (FAF) for a specific period
+    
+    UAE Federal Tax Authority compliant audit file with invoice-level detail.
+    """
+    # Verify company exists and is active
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if company.status != CompanyStatus.ACTIVE:
+        raise HTTPException(400, "Company must be ACTIVE to generate audit files")
+    
+    if not company.trn:
+        raise HTTPException(400, "Company must have a valid TRN to generate audit files")
+    
+    # Parse dates
+    from datetime import datetime as dt
+    try:
+        start_date = dt.strptime(period_start, "%Y-%m-%d").date()
+        end_date = dt.strptime(period_end, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    
+    if start_date > end_date:
+        raise HTTPException(400, "Start date must be before end date")
+    
+    # Validate format
+    if format.upper() not in ["CSV", "TXT"]:
+        raise HTTPException(400, "Format must be CSV or TXT")
+    
+    # Create audit file record
+    audit_file_id = f"faf_{uuid4().hex[:12]}"
+    file_name = f"FTA_Audit_File_{company.trn}_{period_start}_to_{period_end}.{format.lower()}"
+    file_path = os.path.join(ARTIFACT_ROOT, "audit_files", company.id, file_name)
+    
+    audit_file = AuditFileDB(
+        id=audit_file_id,
+        company_id=company.id,
+        file_name=file_name,
+        file_path=file_path,
+        format=format.upper(),
+        period_start_date=start_date,
+        period_end_date=end_date,
+        status=AuditFileStatus.GENERATING,
+        generated_by_user_id=current_user.id
+    )
+    
+    db.add(audit_file)
+    db.commit()
+    
+    try:
+        # Get outgoing invoices (sales) for the period
+        outgoing_invoices = db.query(InvoiceDB).filter(
+            InvoiceDB.company_id == company.id,
+            InvoiceDB.issue_date >= start_date,
+            InvoiceDB.issue_date <= end_date,
+            InvoiceDB.status != InvoiceStatus.DRAFT,  # Exclude drafts
+            InvoiceDB.status != InvoiceStatus.CANCELLED  # Exclude cancelled
+        ).all()
+        
+        # Get inward invoices (purchases) for the period
+        inward_invoices = db.query(InwardInvoiceDB).filter(
+            InwardInvoiceDB.company_id == company.id,
+            InwardInvoiceDB.invoice_date >= start_date,
+            InwardInvoiceDB.invoice_date <= end_date,
+            InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED
+        ).all()
+        
+        # Convert to dicts for generator
+        outgoing_data = [
+            {
+                "invoice_number": inv.invoice_number,
+                "issue_date": inv.issue_date,
+                "invoice_type": inv.invoice_type.value,
+                "customer_trn": inv.customer_trn,
+                "customer_name": inv.customer_name,
+                "customer_country": inv.customer_country,
+                "subtotal_amount": inv.subtotal_amount,
+                "tax_amount": inv.tax_amount,
+                "total_amount": inv.total_amount,
+                "currency_code": inv.currency_code,
+                "status": inv.status.value
+            }
+            for inv in outgoing_invoices
+        ]
+        
+        inward_data = [
+            {
+                "supplier_invoice_number": inv.supplier_invoice_number,
+                "invoice_date": inv.invoice_date,
+                "invoice_type": inv.invoice_type.value,
+                "supplier_trn": inv.supplier_trn,
+                "supplier_name": inv.supplier_name,
+                "subtotal_amount": inv.subtotal_amount,
+                "tax_amount": inv.tax_amount,
+                "total_amount": inv.total_amount,
+                "currency_code": inv.currency_code,
+                "status": inv.status.value
+            }
+            for inv in inward_invoices
+        ]
+        
+        # Generate audit file using utility
+        from utils.fta_audit_generator import FTAAuditFileGenerator
+        
+        company_data = {
+            "trn": company.trn,
+            "legal_name": company.legal_name,
+            "address": f"{company.address_line1 or ''} {company.address_line2 or ''}".strip(),
+            "city": company.city,
+            "emirate": company.emirate
+        }
+        
+        generator = FTAAuditFileGenerator(company_data)
+        
+        if format.upper() == "CSV":
+            stats = generator.generate_csv(outgoing_data, inward_data, file_path)
+        else:
+            stats = generator.generate_txt(outgoing_data, inward_data, file_path)
+        
+        # Update audit file record with stats
+        audit_file.status = AuditFileStatus.COMPLETED
+        audit_file.total_invoices = stats.get("total_invoices", 0)
+        audit_file.total_customers = stats.get("total_customers", 0)
+        audit_file.total_amount = stats.get("total_amount", 0.0)
+        audit_file.total_vat = stats.get("total_vat", 0.0)
+        audit_file.file_size = stats.get("file_size", 0)
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "FTA Audit File generated successfully",
+            "audit_file_id": audit_file_id,
+            "file_name": file_name,
+            "period_start": period_start,
+            "period_end": period_end,
+            "format": format.upper(),
+            "statistics": {
+                "total_invoices": audit_file.total_invoices,
+                "total_sales": stats.get("total_sales", 0),
+                "total_purchases": stats.get("total_purchases", 0),
+                "total_customers": audit_file.total_customers,
+                "total_amount": audit_file.total_amount,
+                "total_vat": audit_file.total_vat
+            }
+        }
+    
+    except Exception as e:
+        # Mark as failed
+        audit_file.status = AuditFileStatus.FAILED
+        audit_file.error_message = str(e)
+        db.commit()
+        
+        raise HTTPException(500, f"Failed to generate audit file: {str(e)}")
+
+@app.get("/audit-files", tags=["FTA Audit"])
+def list_audit_files(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """List all FTA Audit Files for the company"""
+    audit_files = db.query(AuditFileDB).filter(
+        AuditFileDB.company_id == current_user.company_id
+    ).order_by(AuditFileDB.created_at.desc()).all()
+    
+    return {
+        "audit_files": [
+            {
+                "id": af.id,
+                "file_name": af.file_name,
+                "format": af.format,
+                "period_start": af.period_start_date.isoformat(),
+                "period_end": af.period_end_date.isoformat(),
+                "status": af.status.value,
+                "total_invoices": af.total_invoices,
+                "total_amount": af.total_amount,
+                "total_vat": af.total_vat,
+                "file_size": af.file_size,
+                "generated_at": af.generated_at.isoformat() if af.generated_at else None,
+                "error_message": af.error_message
+            }
+            for af in audit_files
+        ]
+    }
+
+@app.get("/audit-files/{audit_file_id}/download", tags=["FTA Audit"])
+def download_audit_file(
+    audit_file_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Download an FTA Audit File"""
+    audit_file = db.query(AuditFileDB).filter(
+        AuditFileDB.id == audit_file_id,
+        AuditFileDB.company_id == current_user.company_id
+    ).first()
+    
+    if not audit_file:
+        raise HTTPException(404, "Audit file not found")
+    
+    if audit_file.status != AuditFileStatus.COMPLETED:
+        raise HTTPException(400, f"Audit file is not ready for download. Status: {audit_file.status.value}")
+    
+    if not os.path.exists(audit_file.file_path):
+        raise HTTPException(404, "Audit file not found on disk")
+    
+    # Determine media type
+    media_type = "text/csv" if audit_file.format == "CSV" else "text/plain"
+    
+    return FileResponse(
+        path=audit_file.file_path,
+        media_type=media_type,
+        filename=audit_file.file_name
+    )
+
 # ==================== BULK IMPORT ====================
 
 @app.get("/templates/invoices", tags=["Bulk Import"])
