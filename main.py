@@ -3943,13 +3943,52 @@ def send_invoice(
     # Update status
     invoice.status = InvoiceStatus.SENT
     invoice.sent_at = datetime.utcnow()
+    
+    # PEPPOL Usage Tracking - Record transmission fee
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    peppol_fee = 0.0
+    peppol_usage_id = None
+    
+    if company:
+        # Get active subscription to determine fee
+        subscription = db.query(SubscriptionDB).filter(
+            SubscriptionDB.company_id == company.id,
+            SubscriptionDB.status == "ACTIVE"
+        ).first()
+        
+        # Determine PEPPOL fee based on tier (pay-per-use pricing)
+        fee_by_tier = {
+            "BASIC": 2.00,      # AED 2.00 per invoice
+            "PRO": 1.00,        # AED 1.00 per invoice
+            "ENTERPRISE": 0.50  # AED 0.50 per invoice
+        }
+        
+        if subscription:
+            peppol_fee = fee_by_tier.get(subscription.tier, 2.00)
+        else:
+            # No active subscription - use highest rate
+            peppol_fee = 2.00
+        
+        # Record PEPPOL usage
+        usage_record = PEPPOLUsageDB(
+            id=f"pep_{uuid4().hex[:12]}",
+            company_id=company.id,
+            invoice_id=invoice.id,
+            transmission_type="PEPPOL",  # Could be PEPPOL, FTA, EMAIL, etc.
+            fee_amount=peppol_fee,
+            status="COMPLETED"  # or PENDING, FAILED
+        )
+        db.add(usage_record)
+        peppol_usage_id = usage_record.id
+    
     db.commit()
     
     # In production, this would:
-    # 1. Generate UBL XML
-    # 2. Send to ASP API for Peppol transmission
-    # 3. Send email to customer with share link
-    # 4. ASP reports to FTA
+    # 1. Send UBL XML to centralized ASP API (Tradeshift/Basware)
+    # 2. ASP transmits via PEPPOL network to customer
+    # 3. ASP reports to FTA for compliance
+    # 4. Send email to customer with share link
+    # 5. Charge accumulated PEPPOL fees on next billing cycle
     
     return {
         "message": "Invoice sent successfully",
@@ -3958,6 +3997,8 @@ def send_invoice(
         "sent_to": invoice.customer_email or invoice.customer_name,
         "share_link": f"/invoices/view/{invoice.share_token}",
         "peppol_transmission": "simulated",
+        "peppol_fee": f"AED {peppol_fee:.2f}",
+        "peppol_usage_id": peppol_usage_id,
         "sent_at": invoice.sent_at.isoformat()
     }
 
