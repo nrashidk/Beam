@@ -41,8 +41,17 @@ Detailed explanations preferred.
     - **Backend API:** Comprehensive REST endpoints for trial status, payment methods (add/list/delete), subscription creation, and billing history
     - **Enforcement:** Invoice creation endpoint blocks expired trials and requires active subscription, with automatic trial counter increment
 4.  **Invoice Generation & Management:** Full UAE e-Invoicing Compliance (UBL 2.1 / PINT-AE XML generation, Tax Invoice, Credit Note, Commercial types). Includes automatic validation, SHA-256 hash calculation, digital signatures, hash chain linking, CRUD operations, public sharing links, trial enforcement, and automatic PEPPOL usage fee recording (AED 2.00/1.00/0.50 per invoice based on subscription tier).
-5.  **Excel/CSV Bulk Import:** Complete data import system for invoices and vendors with template downloads (CSV/Excel), strict UAE compliance validation (15-digit numeric TRN, YYYY-MM-DD dates), row-level error reporting, trial enforcement, and dual-format support (pandas + openpyxl). Includes frontend UI with tabs, drag-and-drop upload, and comprehensive error feedback.
-6.  **Accounts Payable (AP) Management:** Comprehensive AP suite supporting the UAE 5-Corner model with:
+5.  **Invoice Delivery System:** Comprehensive multi-channel invoice delivery for customers without systems:
+    - **QR Code Generation:** Generate scannable QR codes containing public invoice links for in-person transactions
+    - **Email Delivery:** Send invoices via email with PDF attachment support and professional templates
+    - **SMS Delivery:** Send invoice links via SMS for quick mobile delivery
+    - **WhatsApp Delivery:** Send formatted business messages via WhatsApp with invoice links
+    - **Public Invoice View:** Beautiful, responsive customer-facing invoice page accessible via share token (no authentication required) with Download PDF functionality
+    - **Frontend UI:** InvoiceDeliveryActions component with modal-based workflows for QR/Email/SMS/WhatsApp delivery
+    - **Backend API:** REST endpoints for QR generation (/invoices/{id}/qr), email (/invoices/{id}/email), SMS (/invoices/{id}/sms), and WhatsApp (/invoices/{id}/whatsapp)
+    - **Integration Ready:** Designed for SendGrid (email), Twilio (SMS), and WhatsApp Business API integration
+6.  **Excel/CSV Bulk Import:** Complete data import system for invoices and vendors with template downloads (CSV/Excel), strict UAE compliance validation (15-digit numeric TRN, YYYY-MM-DD dates), row-level error reporting, trial enforcement, and dual-format support (pandas + openpyxl). Includes frontend UI with tabs, drag-and-drop upload, and comprehensive error feedback.
+7.  **Accounts Payable (AP) Management:** Comprehensive AP suite supporting the UAE 5-Corner model with:
     - **AP Inbox:** Receive and manage inward invoices from suppliers (Corner 4)
     - **Suppliers Management:** Complete supplier database with TRN tracking, spend analytics, payment terms, and category organization
     - **Purchase Orders & Goods Receipts:** Full PO lifecycle with 3-way matching and approval workflows
