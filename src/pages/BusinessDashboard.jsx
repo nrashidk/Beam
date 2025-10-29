@@ -7,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck, Network } from 'lucide-react';
 import { format } from 'date-fns';
+import Sidebar from '../components/Sidebar';
 
 export default function BusinessDashboard() {
   const { logout, user } = useAuth();
@@ -49,123 +50,31 @@ export default function BusinessDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-xl font-bold">
-            <span className="text-2xl">🔗</span>
-            <span>InvoLinks</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button 
-              onClick={() => navigate('/invoices')}
-              className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
-            >
-              <FileText size={16} />
-              Invoices
-            </Button>
-            <Button 
-              onClick={() => navigate('/ap/inbox')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Inbox size={16} />
-              AP Inbox
-            </Button>
-            <Button 
-              onClick={() => navigate('/ap/purchase-orders')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <ShoppingCart size={16} />
-              Purchase Orders
-            </Button>
-            <Button 
-              onClick={() => navigate('/bulk-import')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Upload size={16} />
-              Bulk Import
-            </Button>
-            <Button 
-              onClick={() => navigate('/audit-files')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <FileCheck size={16} />
-              FTA Audit
-            </Button>
-            <Button 
-              onClick={() => navigate('/settings/peppol')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Network size={16} />
-              PEPPOL
-            </Button>
-            <Button 
-              onClick={() => navigate('/settings/branding')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Palette size={16} />
-              Branding
-            </Button>
-            <Button 
-              onClick={() => navigate('/billing')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <CreditCard size={16} />
-              Billing
-            </Button>
-            <Button 
-              onClick={() => navigate('/settings/team')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Users size={16} />
-              Team
-            </Button>
-            <Button 
-              onClick={() => navigate('/settings/security')}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <Shield size={16} />
-              Security
-            </Button>
-            <div className="text-sm">
-              <Badge variant="info">{user?.role}</Badge>
-              <span className="ml-2 text-gray-600">{user?.company_name || company?.legal_name}</span>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <p className="text-gray-600 mt-1">Welcome back, {user?.full_name || 'User'}</p>
             </div>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2">
-              <LogOut size={16} />
-              Logout
-            </Button>
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-gray-600">
+                <Badge variant="outline" className="mr-2">{user?.role}</Badge>
+                {user?.company_name || company?.legal_name}
+              </div>
+              <Button variant="outline" size="sm" onClick={logout} className="gap-2">
+                <LogOut size={16} />
+                Logout
+              </Button>
+            </div>
           </div>
-        </div>
-      </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Business Dashboard</h1>
-          <p className="text-gray-600 mt-1">
-            Welcome back, {company?.legal_name || 'Business User'}
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-600">
@@ -291,8 +200,9 @@ export default function BusinessDashboard() {
               )}
             </CardContent>
           </Card>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
