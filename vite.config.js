@@ -39,6 +39,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/billing': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/invoices': {
         target: 'http://localhost:8000',
         changeOrigin: true,
