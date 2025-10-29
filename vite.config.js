@@ -38,6 +38,34 @@ export default defineConfig({
       '/plans': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+      },
+      '/invoices': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/inward-invoices': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/purchase-orders': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/vendors': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/templates': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/settings': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/content': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       }
     }
   },
