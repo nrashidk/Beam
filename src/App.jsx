@@ -24,6 +24,7 @@ import ContentManager from './pages/ContentManager';
 import Pricing from './pages/Pricing';
 import BillingSettings from './pages/BillingSettings';
 import FinanceDashboard from './pages/FinanceDashboard';
+import SuppliersManagement from './pages/SuppliersManagement';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -114,6 +115,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <POList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ap/suppliers"
+            element={
+              <ProtectedRoute>
+                <SuppliersManagement />
               </ProtectedRoute>
             }
           />
