@@ -3274,10 +3274,51 @@ def create_invoice(
     if not company.trn:
         raise HTTPException(400, "Company TRN is required to issue invoices")
     
-    # Check free plan limits
-    if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit:
-        if company.invoices_generated >= company.free_plan_invoice_limit:
-            raise HTTPException(403, "Invoice limit reached for free plan. Please upgrade your subscription.")
+    # Check trial limits (100 invoices OR 30 days, whichever comes first)
+    if company.trial_status == "ACTIVE" and company.trial_start_date:
+        days_elapsed = (datetime.utcnow() - company.trial_start_date).days
+        trial_days_remaining = max(0, 30 - days_elapsed)
+        trial_invoices_remaining = max(0, 100 - company.trial_invoice_count)
+        
+        # Check if trial expired
+        if trial_days_remaining == 0:
+            company.trial_status = "EXPIRED"
+            company.trial_ended_at = datetime.utcnow()
+            db.commit()
+            raise HTTPException(
+                403,
+                "Free trial expired (30 days). Please subscribe to continue creating invoices."
+            )
+        
+        if trial_invoices_remaining == 0:
+            company.trial_status = "EXPIRED"
+            company.trial_ended_at = datetime.utcnow()
+            db.commit()
+            raise HTTPException(
+                403,
+                "Free trial expired (100 invoices used). Please subscribe to continue creating invoices."
+            )
+    
+    # Check if trial already expired
+    if company.trial_status == "EXPIRED":
+        # Check if they have an active subscription
+        active_subscription = db.query(SubscriptionDB).filter(
+            SubscriptionDB.company_id == company.id,
+            SubscriptionDB.status == "ACTIVE"
+        ).first()
+        
+        if not active_subscription:
+            raise HTTPException(
+                403,
+                "Free trial expired. Please subscribe to continue creating invoices."
+            )
+    
+    # Initialize trial if this is the first invoice
+    if company.trial_status is None:
+        company.trial_status = "ACTIVE"
+        company.trial_start_date = datetime.utcnow()
+        company.trial_invoice_count = 0
+        db.commit()
     
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
@@ -3383,6 +3424,10 @@ def create_invoice(
     invoice.tax_amount = round(total_tax, 2)
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
+    
+    # Increment trial invoice count if in trial
+    if company.trial_status == "ACTIVE":
+        company.trial_invoice_count += 1
     
     # Invoice created as DRAFT - use /issue endpoint to generate XML and finalize
     db.commit()
