@@ -42,6 +42,9 @@ from utils.bulk_import import BulkImportValidator
 import pandas as pd
 from io import BytesIO
 
+# Stripe payment processing
+import stripe
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
@@ -5800,6 +5803,313 @@ def test_peppol_connection(
             "error": str(e),
             "message": "PEPPOL connection test failed"
         }
+
+# ==================== BILLING & SUBSCRIPTIONS ====================
+
+# Initialize Stripe
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+# Payment method Pydantic models
+class PaymentMethodOut(BaseModel):
+    id: str
+    card_brand: str
+    card_last4: str
+    exp_month: int
+    exp_year: int
+    billing_name: str
+    is_default: bool
+    created_at: str
+
+class SubscriptionOut(BaseModel):
+    id: str
+    tier: str
+    billing_cycle_months: int
+    monthly_price: float
+    discount_percent: float
+    status: str
+    current_period_start: str
+    current_period_end: str
+    created_at: str
+
+class TrialStatusOut(BaseModel):
+    trial_status: str
+    trial_start_date: Optional[str]
+    trial_invoice_count: int
+    trial_days_remaining: Optional[int]
+    trial_invoices_remaining: Optional[int]
+    trial_expired: bool
+
+@app.post("/billing/payment-methods", tags=["Billing"])
+async def add_payment_method(
+    payment_method_token: str = Form(...),
+    billing_name: str = Form(...),
+    billing_email: str = Form(...),
+    set_as_default: bool = Form(False),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Add a new payment method (credit card) via Stripe"""
+    try:
+        if not STRIPE_SECRET_KEY:
+            raise HTTPException(503, "Payment processing not configured. Please contact support.")
+        
+        company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+        if not company:
+            raise HTTPException(404, "Company not found")
+        
+        # Create or get Stripe customer
+        if not company.stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=billing_email,
+                name=company.legal_name or billing_name,
+                metadata={"company_id": company.id}
+            )
+            company.stripe_customer_id = customer.id
+            db.commit()
+        
+        # Attach payment method to customer
+        payment_method = stripe.PaymentMethod.attach(
+            payment_method_token,
+            customer=company.stripe_customer_id
+        )
+        
+        # Set as default if requested
+        if set_as_default:
+            stripe.Customer.modify(
+                company.stripe_customer_id,
+                invoice_settings={"default_payment_method": payment_method.id}
+            )
+        
+        # Save to database
+        pm_db = PaymentMethodDB(
+            id=f"pm_{uuid4().hex[:12]}",
+            company_id=company.id,
+            stripe_payment_method_id=payment_method.id,
+            card_brand=payment_method.card.brand if payment_method.card else None,
+            card_last4=payment_method.card.last4 if payment_method.card else None,
+            exp_month=payment_method.card.exp_month if payment_method.card else None,
+            exp_year=payment_method.card.exp_year if payment_method.card else None,
+            billing_email=billing_email,
+            billing_name=billing_name,
+            is_default=set_as_default
+        )
+        
+        # If setting as default, unset others
+        if set_as_default:
+            db.query(PaymentMethodDB).filter(
+                PaymentMethodDB.company_id == company.id,
+                PaymentMethodDB.id != pm_db.id
+            ).update({"is_default": False})
+        
+        db.add(pm_db)
+        db.commit()
+        
+        return {
+            "message": "Payment method added successfully",
+            "payment_method_id": pm_db.id,
+            "card_last4": pm_db.card_last4
+        }
+    
+    except stripe.error.CardError as e:
+        raise HTTPException(400, f"Card error: {str(e)}")
+    except stripe.error.StripeError as e:
+        raise HTTPException(500, f"Payment processing error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(500, f"Failed to add payment method: {str(e)}")
+
+@app.get("/billing/payment-methods", tags=["Billing"], response_model=List[PaymentMethodOut])
+async def list_payment_methods(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """List all payment methods for current company"""
+    payment_methods = db.query(PaymentMethodDB).filter(
+        PaymentMethodDB.company_id == current_user.company_id
+    ).order_by(PaymentMethodDB.is_default.desc(), PaymentMethodDB.created_at.desc()).all()
+    
+    return [
+        PaymentMethodOut(
+            id=pm.id,
+            card_brand=pm.card_brand or "unknown",
+            card_last4=pm.card_last4 or "0000",
+            exp_month=pm.exp_month or 1,
+            exp_year=pm.exp_year or 2025,
+            billing_name=pm.billing_name or "",
+            is_default=pm.is_default,
+            created_at=pm.created_at.isoformat()
+        )
+        for pm in payment_methods
+    ]
+
+@app.delete("/billing/payment-methods/{payment_method_id}", tags=["Billing"])
+async def delete_payment_method(
+    payment_method_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Delete a payment method"""
+    pm = db.query(PaymentMethodDB).filter(
+        PaymentMethodDB.id == payment_method_id,
+        PaymentMethodDB.company_id == current_user.company_id
+    ).first()
+    
+    if not pm:
+        raise HTTPException(404, "Payment method not found")
+    
+    try:
+        # Detach from Stripe
+        if STRIPE_SECRET_KEY:
+            stripe.PaymentMethod.detach(pm.stripe_payment_method_id)
+        
+        # Delete from database
+        db.delete(pm)
+        db.commit()
+        
+        return {"message": "Payment method deleted successfully"}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to delete payment method: {str(e)}")
+
+@app.get("/billing/subscription", tags=["Billing"], response_model=SubscriptionOut)
+async def get_current_subscription(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get current subscription details"""
+    subscription = db.query(SubscriptionDB).filter(
+        SubscriptionDB.company_id == current_user.company_id,
+        SubscriptionDB.status == "ACTIVE"
+    ).first()
+    
+    if not subscription:
+        raise HTTPException(404, "No active subscription found")
+    
+    return SubscriptionOut(
+        id=subscription.id,
+        tier=subscription.tier,
+        billing_cycle_months=subscription.billing_cycle_months,
+        monthly_price=subscription.monthly_price,
+        discount_percent=subscription.discount_percent,
+        status=subscription.status,
+        current_period_start=subscription.current_period_start.isoformat(),
+        current_period_end=subscription.current_period_end.isoformat(),
+        created_at=subscription.created_at.isoformat()
+    )
+
+@app.post("/billing/subscribe", tags=["Billing"])
+async def create_subscription(
+    tier: str = Form(...),  # BASIC, PRO, ENTERPRISE
+    billing_cycle_months: int = Form(1),  # 1, 3, 6
+    payment_method_id: str = Form(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Create new subscription after trial"""
+    try:
+        company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+        if not company:
+            raise HTTPException(404, "Company not found")
+        
+        # Define pricing (these should come from a pricing table in production)
+        pricing = {
+            "BASIC": {"monthly": 99.0, "3month_discount": 5, "6month_discount": 10},
+            "PRO": {"monthly": 299.0, "3month_discount": 5, "6month_discount": 10},
+            "ENTERPRISE": {"monthly": 799.0, "3month_discount": 10, "6month_discount": 15}
+        }
+        
+        if tier not in pricing:
+            raise HTTPException(400, f"Invalid tier: {tier}")
+        
+        if billing_cycle_months not in [1, 3, 6]:
+            raise HTTPException(400, "Billing cycle must be 1, 3, or 6 months")
+        
+        # Calculate pricing
+        monthly_price = pricing[tier]["monthly"]
+        discount_percent = 0.0
+        if billing_cycle_months == 3:
+            discount_percent = pricing[tier]["3month_discount"]
+        elif billing_cycle_months == 6:
+            discount_percent = pricing[tier]["6month_discount"]
+        
+        # Calculate total
+        subtotal = monthly_price * billing_cycle_months
+        discount_amount = subtotal * (discount_percent / 100)
+        total_amount = subtotal - discount_amount
+        
+        # End trial
+        if company.trial_status == "ACTIVE":
+            company.trial_status = "CONVERTED"
+            company.trial_ended_at = datetime.utcnow()
+        
+        # Create subscription record
+        subscription = SubscriptionDB(
+            id=f"sub_{uuid4().hex[:12]}",
+            company_id=company.id,
+            tier=tier,
+            billing_cycle_months=billing_cycle_months,
+            monthly_price=monthly_price,
+            discount_percent=discount_percent,
+            status="ACTIVE",
+            current_period_start=datetime.utcnow(),
+            current_period_end=datetime.utcnow() + timedelta(days=30 * billing_cycle_months),
+            stripe_customer_id=company.stripe_customer_id
+        )
+        
+        db.add(subscription)
+        db.commit()
+        
+        return {
+            "message": "Subscription created successfully",
+            "subscription_id": subscription.id,
+            "tier": tier,
+            "billing_cycle_months": billing_cycle_months,
+            "total_amount": total_amount,
+            "monthly_price": monthly_price,
+            "discount_percent": discount_percent
+        }
+    
+    except Exception as e:
+        raise HTTPException(500, f"Failed to create subscription: {str(e)}")
+
+@app.get("/billing/trial", tags=["Billing"], response_model=TrialStatusOut)
+async def get_trial_status(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get free trial status"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Calculate remaining
+    trial_days_remaining = None
+    trial_invoices_remaining = None
+    trial_expired = False
+    
+    if company.trial_status == "ACTIVE" and company.trial_start_date:
+        # Calculate days remaining (30 day trial)
+        days_elapsed = (datetime.utcnow() - company.trial_start_date).days
+        trial_days_remaining = max(0, 30 - days_elapsed)
+        
+        # Calculate invoices remaining (100 invoice limit)
+        trial_invoices_remaining = max(0, 100 - company.trial_invoice_count)
+        
+        # Check if expired
+        if trial_days_remaining == 0 or trial_invoices_remaining == 0:
+            trial_expired = True
+            company.trial_status = "EXPIRED"
+            company.trial_ended_at = datetime.utcnow()
+            db.commit()
+    
+    return TrialStatusOut(
+        trial_status=company.trial_status,
+        trial_start_date=company.trial_start_date.isoformat() if company.trial_start_date else None,
+        trial_invoice_count=company.trial_invoice_count,
+        trial_days_remaining=trial_days_remaining,
+        trial_invoices_remaining=trial_invoices_remaining,
+        trial_expired=trial_expired
+    )
 
 # ==================== BULK IMPORT ====================
 
