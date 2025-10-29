@@ -119,6 +119,9 @@ class FTAAuditFileGenerator:
     
     def _create_sales_row(self, invoice: Dict) -> Dict:
         """Create CSV row for sales invoice"""
+        # Validate mandatory fields
+        self._validate_invoice_data(invoice, is_sales=True)
+        
         # Determine tax code and rate
         tax_code, vat_rate = self._get_tax_info(invoice)
         
@@ -148,6 +151,9 @@ class FTAAuditFileGenerator:
     
     def _create_purchase_row(self, invoice: Dict) -> Dict:
         """Create CSV row for purchase invoice"""
+        # Validate mandatory fields
+        self._validate_invoice_data(invoice, is_sales=False)
+        
         # Determine tax code and rate
         tax_code, vat_rate = self._get_tax_info(invoice)
         
@@ -211,6 +217,38 @@ class FTAAuditFileGenerator:
             "81": "Credit Note (Out of Scope)"
         }
         return type_mapping.get(type_code, "Tax Invoice")
+    
+    def _validate_invoice_data(self, invoice: Dict, is_sales: bool) -> None:
+        """
+        Validate that mandatory invoice fields are present
+        
+        Raises:
+            ValueError: If required fields are missing
+        """
+        # Common mandatory fields
+        required_fields = ["subtotal_amount", "tax_amount", "total_amount", "currency_code"]
+        
+        if is_sales:
+            # Sales invoices require invoice_number, issue_date, customer_name
+            required_fields.extend(["invoice_number", "issue_date", "customer_name"])
+            invoice_ref = invoice.get("invoice_number", "UNKNOWN")
+        else:
+            # Purchase invoices require supplier_invoice_number, invoice_date, supplier info
+            required_fields.extend(["supplier_invoice_number", "invoice_date", "supplier_trn", "supplier_name"])
+            invoice_ref = invoice.get("supplier_invoice_number", "UNKNOWN")
+        
+        missing_fields = []
+        for field in required_fields:
+            # Check if field exists and has a value (not None or empty string)
+            value = invoice.get(field)
+            if value is None or (isinstance(value, str) and value.strip() == ""):
+                missing_fields.append(field)
+        
+        if missing_fields:
+            raise ValueError(
+                f"Invoice {invoice_ref} is missing mandatory FTA fields: {', '.join(missing_fields)}. "
+                f"All invoices must have complete data for audit file generation."
+            )
     
     def _format_date(self, date_value) -> str:
         """Format date to YYYY-MM-DD"""

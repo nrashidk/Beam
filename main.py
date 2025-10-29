@@ -5321,7 +5321,7 @@ def generate_fta_audit_file(
     if not company.trn:
         raise HTTPException(400, "Company must have a valid TRN to generate audit files")
     
-    # Parse dates
+    # Parse and validate dates
     from datetime import datetime as dt
     try:
         start_date = dt.strptime(period_start, "%Y-%m-%d").date()
@@ -5331,6 +5331,26 @@ def generate_fta_audit_file(
     
     if start_date > end_date:
         raise HTTPException(400, "Start date must be before end date")
+    
+    # Validate date range is reasonable (not in future, not before company registration)
+    today = date.today()
+    if end_date > today:
+        raise HTTPException(400, f"End date cannot be in the future (today is {today})")
+    
+    if company.registration_date:
+        if start_date < company.registration_date:
+            raise HTTPException(
+                400, 
+                f"Start date cannot be before company registration date ({company.registration_date})"
+            )
+    
+    # Validate period is not excessively long (max 5 years for single audit file)
+    period_days = (end_date - start_date).days
+    if period_days > 365 * 5:
+        raise HTTPException(
+            400, 
+            "Audit period cannot exceed 5 years. Please generate separate files for longer periods."
+        )
     
     # Validate format
     if format.upper() not in ["CSV", "TXT"]:
