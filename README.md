@@ -68,6 +68,17 @@
 - Recent Transactions: Live feed of recent invoices (sent/received) with status indicators
 - Top Customers: Ranked customer list by revenue with visual progress bars
 
+### 📲 **Invoice Delivery System**
+- **QR Code Generation:** Scannable QR codes with public invoice links for in-person transactions
+- **Email Delivery:** Send invoices via email with PDF attachment support
+- **SMS Delivery:** Quick mobile link delivery via SMS
+- **WhatsApp Delivery:** Formatted business messages with invoice links
+- **Public Invoice View:** Beautiful, responsive customer portal (no login required)
+- **Download PDF:** One-click PDF download for customers
+- **Multi-Modal UI:** InvoiceDeliveryActions component with QR/Email/SMS/WhatsApp modals
+- **Integration Ready:** Designed for SendGrid, Twilio, and WhatsApp Business API
+- **Use Case:** Perfect for customers without accounting systems who need invoice copies
+
 ### 🔒 **Multi-Factor Authentication (MFA)**
 - Compliant with Ministerial Decision No. 64/2025
 - TOTP (Time-based One-Time Password) with QR code enrollment
