@@ -222,15 +222,24 @@ class CompanyDB(Base):
     password_reset_token = Column(String, nullable=True)
     password_reset_expires = Column(DateTime, nullable=True)
 
-    # Free plan configuration
+    # Free plan configuration (DEPRECATED - moved to trial system)
     free_plan_type = Column(String, nullable=True)  # "DURATION" or "INVOICE_COUNT"
     free_plan_duration_months = Column(Integer, nullable=True)  # If duration-based
     free_plan_invoice_limit = Column(Integer, nullable=True)  # If invoice count-based
     free_plan_start_date = Column(DateTime, nullable=True)  # When free plan started
     invoices_generated = Column(Integer, default=0)  # Total lifetime invoices
     
-    # Subscription tracking
+    # Subscription tracking (DEPRECATED - moved to subscriptions table)
     subscription_plan_id = Column(String, ForeignKey("subscription_plans.id"), nullable=True)
+    
+    # Free Trial System
+    trial_status = Column(String, default="ACTIVE")  # ACTIVE, EXPIRED, CONVERTED
+    trial_start_date = Column(DateTime, nullable=True)
+    trial_invoice_count = Column(Integer, default=0)  # Invoices sent during trial
+    trial_ended_at = Column(DateTime, nullable=True)
+    
+    # Stripe Integration
+    stripe_customer_id = Column(String, nullable=True, unique=True)
     
     # PEPPOL Configuration
     peppol_enabled = Column(Boolean, default=False)
@@ -777,6 +786,123 @@ class AuditFileDB(Base):
     
     # Relationships
     company = relationship("CompanyDB", backref="audit_files")
+
+class PaymentMethodDB(Base):
+    """Customer payment methods (credit cards via Stripe)"""
+    __tablename__ = "payment_methods"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Stripe details
+    stripe_payment_method_id = Column(String, nullable=False, unique=True)
+    
+    # Card information (for display)
+    card_brand = Column(String, nullable=True)  # visa, mastercard, amex
+    card_last4 = Column(String, nullable=True)
+    exp_month = Column(Integer, nullable=True)
+    exp_year = Column(Integer, nullable=True)
+    
+    # Billing details
+    billing_email = Column(String, nullable=True)
+    billing_name = Column(String, nullable=True)
+    
+    # Status
+    is_default = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="payment_methods")
+
+class SubscriptionDB(Base):
+    """Company subscriptions (Stripe-based)"""
+    __tablename__ = "subscriptions"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Subscription details
+    tier = Column(String, nullable=False)  # FREE, BASIC, PRO, ENTERPRISE
+    billing_cycle_months = Column(Integer, default=1)  # 1, 3, 6
+    monthly_price = Column(Float, default=0.0)
+    discount_percent = Column(Float, default=0.0)
+    
+    # Status
+    status = Column(String, default="ACTIVE")  # ACTIVE, CANCELLED, PAST_DUE, TRIAL
+    
+    # Stripe details
+    stripe_subscription_id = Column(String, nullable=True, unique=True)
+    stripe_customer_id = Column(String, nullable=True)
+    
+    # Period
+    current_period_start = Column(DateTime, nullable=False)
+    current_period_end = Column(DateTime, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    cancelled_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="subscriptions")
+
+class PeppolUsageDB(Base):
+    """PEPPOL transmission tracking for usage-based billing"""
+    __tablename__ = "peppol_usage"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    invoice_id = Column(String, ForeignKey("invoices.id"), nullable=True)
+    
+    # Transmission details
+    transmission_date = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, nullable=False)  # SUCCESS, FAILED
+    
+    # Billing
+    fee_amount = Column(Float, default=1.0)  # AED per transmission
+    month_year = Column(String, nullable=False, index=True)  # "2025-10" for aggregation
+    billed = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="peppol_usage_records")
+
+class BillingInvoiceDB(Base):
+    """Monthly billing invoices (subscription + PEPPOL usage)"""
+    __tablename__ = "billing_invoices"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Invoice details
+    invoice_number = Column(String, unique=True, nullable=False)
+    
+    # Billing period
+    billing_period_start = Column(Date, nullable=False)
+    billing_period_end = Column(Date, nullable=False)
+    
+    # Amounts
+    subscription_fee = Column(Float, default=0.0)
+    peppol_usage_count = Column(Integer, default=0)
+    peppol_usage_fee = Column(Float, default=0.0)
+    total_amount = Column(Float, nullable=False)
+    
+    # Status
+    status = Column(String, default="DRAFT")  # DRAFT, SENT, PAID, OVERDUE, CANCELLED
+    
+    # Stripe details
+    stripe_invoice_id = Column(String, nullable=True, unique=True)
+    
+    # Payment
+    paid_at = Column(DateTime, nullable=True)
+    payment_method_id = Column(String, ForeignKey("payment_methods.id"), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    sent_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="billing_invoices")
 
 # Create tables
 Base.metadata.create_all(engine)
