@@ -284,7 +284,7 @@ class CompanySubscriptionDB(Base):
     invoices_this_period = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    company = relationship("CompanyDB", backref="subscriptions")
+    company = relationship("CompanyDB", backref="old_subscriptions")
     plan = relationship("SubscriptionPlanDB")
 
 class CompanyDocumentDB(Base):
