@@ -25,6 +25,7 @@ import Pricing from './pages/Pricing';
 import BillingSettings from './pages/BillingSettings';
 import FinanceDashboard from './pages/FinanceDashboard';
 import SuppliersManagement from './pages/SuppliersManagement';
+import PublicInvoiceView from './pages/PublicInvoiceView';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -67,6 +68,7 @@ function App() {
           <Routes>
           <Route path="/" element={<Homepage />} />
           <Route path="/pricing" element={<Pricing />} />
+          <Route path="/invoices/view/:shareToken" element={<PublicInvoiceView />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
