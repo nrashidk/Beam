@@ -18,6 +18,7 @@ import MFASettings from './pages/MFASettings';
 import APInbox from './pages/APInbox';
 import POList from './pages/POList';
 import BulkImport from './pages/BulkImport';
+import FTAAuditFiles from './pages/FTAAuditFiles';
 import ContentManager from './pages/ContentManager';
 
 function ProtectedRoute({ children }) {
@@ -116,6 +117,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <BulkImport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/audit-files"
+            element={
+              <ProtectedRoute>
+                <FTAAuditFiles />
               </ProtectedRoute>
             }
           />
