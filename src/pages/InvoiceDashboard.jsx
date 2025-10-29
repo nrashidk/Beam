@@ -4,7 +4,6 @@ import { apiClient } from '../lib/api';
 import { FileText, Plus, Eye, Send, X, CheckCircle, Clock, XCircle } from 'lucide-react';
 import InvoiceDeliveryActions from '../components/InvoiceDeliveryActions';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -54,13 +53,11 @@ export default function InvoiceDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
       
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <BackToDashboard />
-          
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>

@@ -4,7 +4,6 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 

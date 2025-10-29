@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import POFormModal from '../components/POFormModal';
 import PODetailModal from '../components/PODetailModal';
+import Sidebar from '../components/Sidebar';
 import { 
   FileText, 
   CheckCircle, 
@@ -142,21 +143,24 @@ export default function POList() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
-            <p className="text-gray-600 mt-1">Manage purchase orders to suppliers</p>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
+              <p className="text-gray-600 mt-1">Manage purchase orders to suppliers</p>
+            </div>
+            <Button 
+              onClick={() => setShowCreateModal(true)}
+              className="bg-indigo-600 hover:bg-indigo-700"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create PO
+            </Button>
           </div>
-          <Button 
-            onClick={() => setShowCreateModal(true)}
-            className="bg-indigo-600 hover:bg-indigo-700"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create PO
-          </Button>
-        </div>
 
         {/* Filters */}
         <Card className="mb-6">
@@ -368,6 +372,7 @@ export default function POList() {
             fetchPurchaseOrders();
           }}
         />
+        </div>
       </div>
     </div>
   );

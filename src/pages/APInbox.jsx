@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import InwardInvoiceDetailModal from '../components/InwardInvoiceDetailModal';
+import Sidebar from '../components/Sidebar';
 import { 
   FileText, 
   CheckCircle, 
@@ -116,17 +117,20 @@ export default function APInbox() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">AP Invoice Inbox</h1>
-            <p className="text-gray-600 mt-1">Manage received invoices from suppliers</p>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">AP Invoice Inbox</h1>
+              <p className="text-gray-600 mt-1">Manage received invoices from suppliers</p>
+            </div>
+            <Badge className="bg-blue-100 text-blue-800 text-lg px-4 py-2">
+              {invoices.length} Invoice{invoices.length !== 1 ? 's' : ''}
+            </Badge>
           </div>
-          <Badge className="bg-blue-100 text-blue-800 text-lg px-4 py-2">
-            {invoices.length} Invoice{invoices.length !== 1 ? 's' : ''}
-          </Badge>
-        </div>
 
         <Card className="mb-6">
           <CardContent className="p-6">
@@ -306,6 +310,7 @@ export default function APInbox() {
             }}
           />
         )}
+        </div>
       </div>
     </div>
   );

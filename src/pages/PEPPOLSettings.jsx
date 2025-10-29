@@ -7,7 +7,6 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Network, Key, Globe, Info } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 

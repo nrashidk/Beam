@@ -11,7 +11,6 @@ import { format } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 
 export default function TeamManagement() {
   const navigate = useNavigate();
