@@ -119,6 +119,15 @@ export default function BusinessDashboard() {
               Branding
             </Button>
             <Button 
+              onClick={() => navigate('/billing')}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <CreditCard size={16} />
+              Billing
+            </Button>
+            <Button 
               onClick={() => navigate('/settings/team')}
               variant="outline"
               size="sm"
