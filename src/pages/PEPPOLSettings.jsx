@@ -26,6 +26,7 @@ export default function PEPPOLSettings() {
     peppol_configured_at: null,
     peppol_last_tested_at: null
   });
+  const [apiKeyChanged, setApiKeyChanged] = useState(false);
 
   const providers = [
     {
@@ -63,6 +64,7 @@ export default function PEPPOLSettings() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSettings(response.data);
+      setApiKeyChanged(false); // Reset flag when loading fresh settings
     } catch (error) {
       console.error('Failed to fetch PEPPOL settings:', error);
     } finally {
@@ -85,12 +87,26 @@ export default function PEPPOLSettings() {
     setTestResult(null);
     
     try {
-      const response = await axios.put(`${API_URL}/settings/peppol`, settings, {
+      // Prepare payload - only include fields we want to update
+      const payload = {
+        peppol_enabled: settings.peppol_enabled,
+        peppol_provider: settings.peppol_provider,
+        peppol_participant_id: settings.peppol_participant_id,
+        peppol_base_url: settings.peppol_base_url
+      };
+      
+      // Only include API key if user actually changed it
+      if (apiKeyChanged && settings.peppol_api_key) {
+        payload.peppol_api_key = settings.peppol_api_key;
+      }
+      // Otherwise, don't include the field at all to preserve existing key
+      
+      const response = await axios.put(`${API_URL}/settings/peppol`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       alert('PEPPOL settings saved successfully!');
-      fetchSettings(); // Refresh to get updated timestamps
+      fetchSettings(); // Refresh to get updated timestamps and reset apiKeyChanged flag
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert(error.response?.data?.detail || 'Failed to save settings');
@@ -311,13 +327,18 @@ export default function PEPPOLSettings() {
                     </label>
                     <input
                       type="password"
-                      placeholder="Enter your API key"
-                      value={settings.peppol_api_key || ''}
-                      onChange={(e) => setSettings({...settings, peppol_api_key: e.target.value})}
+                      placeholder={settings.peppol_api_key?.startsWith('***') ? "Currently configured (hidden)" : "Enter your API key"}
+                      value={apiKeyChanged ? settings.peppol_api_key : ''}
+                      onChange={(e) => {
+                        setSettings({...settings, peppol_api_key: e.target.value});
+                        setApiKeyChanged(true);
+                      }}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     />
                     <p className="text-sm text-gray-500 mt-1">
-                      Obtain from your provider's developer portal
+                      {settings.peppol_api_key?.startsWith('***') && !apiKeyChanged
+                        ? 'Leave empty to keep current API key, or enter new key to update'
+                        : 'Obtain from your provider\'s developer portal'}
                     </p>
                   </div>
                 )}

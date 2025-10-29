@@ -5595,9 +5595,12 @@ def update_peppol_settings(
     company.peppol_participant_id = settings.get('peppol_participant_id')
     company.peppol_base_url = settings.get('peppol_base_url')
     
-    # Only update API key if provided (not masked)
-    if settings.get('peppol_api_key') and not settings['peppol_api_key'].startswith('***'):
-        company.peppol_api_key = settings['peppol_api_key']
+    # Only update API key if provided and not masked
+    # This preserves the existing key when user updates other fields
+    if 'peppol_api_key' in settings and settings['peppol_api_key']:
+        if not settings['peppol_api_key'].startswith('***'):
+            company.peppol_api_key = settings['peppol_api_key']
+        # If masked, skip update to preserve existing key
     
     company.peppol_configured_at = datetime.utcnow()
     
