@@ -5,6 +5,11 @@ import {
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import StripeCardForm from '../components/StripeCardForm';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 export default function BillingSettings() {
   const navigate = useNavigate();
@@ -55,9 +60,19 @@ export default function BillingSettings() {
     }
   };
 
-  const handleAddCard = async (e) => {
-    e.preventDefault();
-    alert('Stripe payment method integration would go here. This requires Stripe.js and Elements.');
+  const handleAddCard = async (paymentMethodId) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${API_URL}/billing/payment-methods`,
+        { payment_method_id: paymentMethodId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setShowAddCard(false);
+      fetchBillingData();
+    } catch (error) {
+      throw new Error(error.response?.data?.detail || 'Failed to add payment method');
+    }
   };
 
   const handleDeleteCard = async (paymentMethodId) => {
@@ -428,26 +443,12 @@ export default function BillingSettings() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Add Payment Method</h3>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-              <p className="text-sm text-blue-900">
-                <strong>Note:</strong> This demo requires Stripe.js integration with Elements for secure card collection.
-                In production, Stripe Elements would be loaded here.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowAddCard(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAddCard}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Add Card (Demo)
-              </button>
-            </div>
+            <Elements stripe={stripePromise}>
+              <StripeCardForm
+                onSuccess={handleAddCard}
+                onCancel={() => setShowAddCard(false)}
+              />
+            </Elements>
           </div>
         </div>
       )}
