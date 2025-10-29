@@ -4,7 +4,6 @@ import { bulkImportAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 
 export default function BulkImport() {
   const [activeTab, setActiveTab] = useState('invoices');
