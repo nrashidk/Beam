@@ -10,6 +10,8 @@ import { ArrowLeft, UserPlus, Trash2, Shield, User, Mail, Calendar } from 'lucid
 import { format } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function TeamManagement() {
   const navigate = useNavigate();
@@ -84,15 +86,12 @@ export default function TeamManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-medium mb-6"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          Back to Dashboard
-        </button>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-6xl mx-auto px-6 py-8">
+          <BackToDashboard />
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Team Management</h1>
@@ -312,6 +311,7 @@ export default function TeamManagement() {
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );
