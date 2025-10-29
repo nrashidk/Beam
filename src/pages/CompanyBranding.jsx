@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../lib/api';
 import { ArrowLeft, Upload, X, CheckCircle, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function CompanyBranding() {
   const { user } = useAuth();
@@ -161,16 +163,12 @@ export default function CompanyBranding() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        {/* Header */}
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-medium mb-6"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          Back to Dashboard
-        </button>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <BackToDashboard />
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Company Branding</h1>
@@ -385,6 +383,7 @@ export default function CompanyBranding() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
