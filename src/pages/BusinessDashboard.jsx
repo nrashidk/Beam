@@ -5,7 +5,7 @@ import { companiesAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck } from 'lucide-react';
+import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck, Network } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function BusinessDashboard() {
@@ -99,6 +99,15 @@ export default function BusinessDashboard() {
             >
               <FileCheck size={16} />
               FTA Audit
+            </Button>
+            <Button 
+              onClick={() => navigate('/settings/peppol')}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <Network size={16} />
+              PEPPOL
             </Button>
             <Button 
               onClick={() => navigate('/settings/branding')}
