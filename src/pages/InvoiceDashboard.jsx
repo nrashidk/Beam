@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { FileText, Plus, Eye, Send, X, CheckCircle, Clock, XCircle } from 'lucide-react';
+import InvoiceDeliveryActions from '../components/InvoiceDeliveryActions';
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -158,6 +159,13 @@ export default function InvoiceDashboard() {
                     </div>
                   </div>
                 </div>
+                
+                {/* Delivery Actions - Only show for issued/sent invoices */}
+                {invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED' && (
+                  <div className="mt-4 pt-4 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                    <InvoiceDeliveryActions invoice={invoice} />
+                  </div>
+                )}
               </div>
             ))}
           </div>
