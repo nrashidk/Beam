@@ -17,6 +17,8 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
   const showQRCode = () => {
+    setError('');
+    setSuccess('');
     setShowQRModal(true);
   };
 
@@ -125,7 +127,12 @@ export default function InvoiceDeliveryActions({ invoice }) {
           QR Code
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); setShowEmailModal(true); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setError('');
+            setSuccess('');
+            setShowEmailModal(true); 
+          }}
           className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
           title="Email Invoice"
         >
@@ -133,7 +140,12 @@ export default function InvoiceDeliveryActions({ invoice }) {
           Email
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); setShowSMSModal(true); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setError('');
+            setSuccess('');
+            setShowSMSModal(true); 
+          }}
           className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           title="Send via SMS"
         >
@@ -141,7 +153,12 @@ export default function InvoiceDeliveryActions({ invoice }) {
           SMS
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); setShowWhatsAppModal(true); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setError('');
+            setSuccess('');
+            setShowWhatsAppModal(true); 
+          }}
           className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
           title="Send via WhatsApp"
         >
