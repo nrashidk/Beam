@@ -19,6 +19,7 @@ import APInbox from './pages/APInbox';
 import POList from './pages/POList';
 import BulkImport from './pages/BulkImport';
 import FTAAuditFiles from './pages/FTAAuditFiles';
+import PEPPOLSettings from './pages/PEPPOLSettings';
 import ContentManager from './pages/ContentManager';
 
 function ProtectedRoute({ children }) {
@@ -125,6 +126,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <FTAAuditFiles />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/peppol"
+            element={
+              <ProtectedRoute>
+                <PEPPOLSettings />
               </ProtectedRoute>
             }
           />

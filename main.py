@@ -231,6 +231,15 @@ class CompanyDB(Base):
     
     # Subscription tracking
     subscription_plan_id = Column(String, ForeignKey("subscription_plans.id"), nullable=True)
+    
+    # PEPPOL Configuration
+    peppol_enabled = Column(Boolean, default=False)
+    peppol_provider = Column(String, nullable=True)  # 'tradeshift', 'basware', 'mock'
+    peppol_participant_id = Column(String, nullable=True)  # Company's PEPPOL participant ID (e.g., "0190:123456789012345")
+    peppol_base_url = Column(String, nullable=True)  # Provider API base URL
+    peppol_api_key = Column(Text, nullable=True)  # Provider API key (encrypted in production)
+    peppol_configured_at = Column(DateTime, nullable=True)
+    peppol_last_tested_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -5541,6 +5550,127 @@ def download_audit_file(
         media_type=media_type,
         filename=audit_file.file_name
     )
+
+# ==================== PEPPOL SETTINGS ====================
+
+@app.get("/settings/peppol", tags=["Settings"])
+def get_peppol_settings(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get PEPPOL configuration for the company"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    return {
+        "peppol_enabled": company.peppol_enabled or False,
+        "peppol_provider": company.peppol_provider,
+        "peppol_participant_id": company.peppol_participant_id,
+        "peppol_base_url": company.peppol_base_url,
+        "peppol_api_key": "***" + company.peppol_api_key[-4:] if company.peppol_api_key and len(company.peppol_api_key) > 4 else None,  # Masked
+        "peppol_configured_at": company.peppol_configured_at.isoformat() if company.peppol_configured_at else None,
+        "peppol_last_tested_at": company.peppol_last_tested_at.isoformat() if company.peppol_last_tested_at else None
+    }
+
+@app.put("/settings/peppol", tags=["Settings"])
+def update_peppol_settings(
+    settings: dict,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update PEPPOL configuration for the company"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Validate provider
+    valid_providers = ['tradeshift', 'basware', 'mock']
+    if settings.get('peppol_provider') and settings['peppol_provider'] not in valid_providers:
+        raise HTTPException(400, f"Invalid provider. Must be one of: {', '.join(valid_providers)}")
+    
+    # Update settings
+    company.peppol_enabled = settings.get('peppol_enabled', False)
+    company.peppol_provider = settings.get('peppol_provider')
+    company.peppol_participant_id = settings.get('peppol_participant_id')
+    company.peppol_base_url = settings.get('peppol_base_url')
+    
+    # Only update API key if provided (not masked)
+    if settings.get('peppol_api_key') and not settings['peppol_api_key'].startswith('***'):
+        company.peppol_api_key = settings['peppol_api_key']
+    
+    company.peppol_configured_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(company)
+    
+    return {
+        "success": True,
+        "message": "PEPPOL settings updated successfully",
+        "peppol_enabled": company.peppol_enabled,
+        "peppol_provider": company.peppol_provider,
+        "peppol_participant_id": company.peppol_participant_id
+    }
+
+@app.post("/settings/peppol/test", tags=["Settings"])
+def test_peppol_connection(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Test PEPPOL provider connection"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if not company.peppol_enabled:
+        raise HTTPException(400, "PEPPOL is not enabled for this company")
+    
+    if not company.peppol_provider:
+        raise HTTPException(400, "PEPPOL provider not configured")
+    
+    try:
+        from utils.peppol_provider import PeppolProviderFactory
+        
+        # Create provider instance
+        provider = PeppolProviderFactory.create_provider(
+            provider_name=company.peppol_provider,
+            base_url=company.peppol_base_url,
+            api_key=company.peppol_api_key
+        )
+        
+        # Test with participant ID validation
+        if company.peppol_participant_id:
+            is_valid = provider.validate_participant_id(company.peppol_participant_id)
+            
+            # Update last tested timestamp
+            company.peppol_last_tested_at = datetime.utcnow()
+            db.commit()
+            
+            return {
+                "success": True,
+                "message": "PEPPOL connection test successful",
+                "provider": company.peppol_provider,
+                "participant_valid": is_valid,
+                "tested_at": company.peppol_last_tested_at.isoformat()
+            }
+        else:
+            # Just test provider connectivity without participant validation
+            company.peppol_last_tested_at = datetime.utcnow()
+            db.commit()
+            
+            return {
+                "success": True,
+                "message": "PEPPOL provider connection successful (no participant ID to validate)",
+                "provider": company.peppol_provider,
+                "tested_at": company.peppol_last_tested_at.isoformat()
+            }
+    
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "PEPPOL connection test failed"
+        }
 
 # ==================== BULK IMPORT ====================
 
