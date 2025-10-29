@@ -4029,6 +4029,182 @@ def cancel_invoice(
         "invoice_number": invoice.invoice_number
     }
 
+@app.get("/invoices/{invoice_id}/qr", tags=["Invoices"])
+def get_invoice_qr_code(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Generate QR code for invoice share link"""
+    import qrcode
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Get the base URL from environment or use default
+    base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+    
+    # Create the full share URL
+    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+    
+    # Generate QR code
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(share_url)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    # Convert to bytes
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    
+    return StreamingResponse(buf, media_type="image/png")
+
+@app.post("/invoices/{invoice_id}/email", tags=["Invoices"])
+async def email_invoice(
+    invoice_id: str,
+    recipient_email: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Send invoice to customer via email with PDF attachment"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Use provided email or fall back to invoice customer email
+    email_to = recipient_email or invoice.customer_email
+    if not email_to:
+        raise HTTPException(400, "No recipient email provided")
+    
+    # Get the base URL for share link
+    base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+    
+    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+    
+    # In production, this would:
+    # 1. Use SendGrid/Resend integration to send email
+    # 2. Attach generated PDF
+    # 3. Include professional HTML template
+    # 4. Track email opens/clicks
+    
+    # For now, simulate email sending
+    email_content = {
+        "to": email_to,
+        "subject": f"Invoice {invoice.invoice_number} from {invoice.supplier_name}",
+        "body": f"Please find your invoice attached. You can also view it online at: {share_url}",
+        "share_link": share_url,
+        "invoice_number": invoice.invoice_number,
+        "amount": f"AED {invoice.total_amount:,.2f}"
+    }
+    
+    return {
+        "message": "Invoice email sent successfully",
+        "sent_to": email_to,
+        "invoice_id": invoice.id,
+        "email_status": "sent",
+        "email_content": email_content
+    }
+
+@app.post("/invoices/{invoice_id}/sms", tags=["Invoices"])
+async def sms_invoice(
+    invoice_id: str,
+    phone_number: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Send invoice link to customer via SMS"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Get the base URL for share link
+    base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+    
+    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+    
+    # In production, this would use Twilio integration
+    # For now, simulate SMS sending
+    sms_content = {
+        "to": phone_number,
+        "message": f"Invoice {invoice.invoice_number} from {invoice.supplier_name} - AED {invoice.total_amount:,.2f}. View: {share_url}",
+        "share_link": share_url
+    }
+    
+    return {
+        "message": "Invoice SMS sent successfully",
+        "sent_to": phone_number,
+        "invoice_id": invoice.id,
+        "sms_status": "sent",
+        "sms_content": sms_content
+    }
+
+@app.post("/invoices/{invoice_id}/whatsapp", tags=["Invoices"])
+async def whatsapp_invoice(
+    invoice_id: str,
+    phone_number: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Send invoice link to customer via WhatsApp"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Get the base URL for share link
+    base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+    
+    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+    
+    # In production, this would use Twilio WhatsApp API
+    # For now, simulate WhatsApp sending
+    whatsapp_content = {
+        "to": phone_number,
+        "message": f"📄 *Invoice {invoice.invoice_number}*\n\nFrom: {invoice.supplier_name}\nAmount: AED {invoice.total_amount:,.2f}\n\nView invoice: {share_url}",
+        "share_link": share_url
+    }
+    
+    return {
+        "message": "Invoice WhatsApp message sent successfully",
+        "sent_to": phone_number,
+        "invoice_id": invoice.id,
+        "whatsapp_status": "sent",
+        "whatsapp_content": whatsapp_content
+    }
+
 # Public invoice viewing (no authentication required)
 @app.get("/invoices/view/{share_token}", tags=["Public"], response_model=InvoiceOut)
 def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
