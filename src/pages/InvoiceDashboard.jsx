@@ -19,9 +19,10 @@ export default function InvoiceDashboard() {
       setLoading(true);
       const params = filter !== 'all' ? `?status=${filter}` : '';
       const response = await apiClient.get(`/invoices${params}`);
-      setInvoices(response.data);
+      setInvoices(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Failed to load invoices:', error);
+      setInvoices([]);
     } finally {
       setLoading(false);
     }
