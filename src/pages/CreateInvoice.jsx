@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { EmailInput, TRNInput } from '../components/ui/validated-input';
 import { ArrowLeft, Plus, Trash2, Save, FileText } from 'lucide-react';
+import Toast from '../components/ui/Toast';
 
 export default function CreateInvoice() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
   const [formData, setFormData] = useState({
     invoice_type: '380',
     issue_date: new Date().toISOString().split('T')[0],
@@ -81,14 +83,24 @@ export default function CreateInvoice() {
       console.log('Sending POST request to /invoices...');
       const response = await apiClient.post('/invoices', formData);
       console.log('Invoice created successfully:', response.data);
-      alert(`Invoice ${response.data.invoice_number} created successfully!`);
-      navigate(`/invoices/${response.data.id}`);
+      setToast({
+        message: `Invoice ${response.data.invoice_number} created successfully!`,
+        type: 'success',
+        onClose: () => {
+          setToast(null);
+          navigate(`/invoices/${response.data.id}`);
+        }
+      });
     } catch (error) {
       console.error('Failed to create invoice - Full error:', error);
       console.error('Error response:', error.response);
       console.error('Error message:', error.message);
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to create invoice';
-      alert(`Error: ${errorMessage}`);
+      setToast({
+        message: `Error: ${errorMessage}`,
+        type: 'error',
+        onClose: () => setToast(null)
+      });
     } finally {
       setLoading(false);
     }
@@ -366,6 +378,15 @@ export default function CreateInvoice() {
           </form>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={toast.onClose}
+        />
+      )}
     </div>
   );
 }

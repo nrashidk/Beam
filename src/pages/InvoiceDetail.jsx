@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { ArrowLeft, Send, CheckCircle, XCircle, Share2, Download, FileText } from 'lucide-react';
+import Toast from '../components/ui/Toast';
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -9,6 +10,7 @@ export default function InvoiceDetail() {
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     loadInvoice();
@@ -21,7 +23,14 @@ export default function InvoiceDetail() {
       setInvoice(response.data);
     } catch (error) {
       console.error('Failed to load invoice:', error);
-      alert('Failed to load invoice');
+      setToast({
+        message: 'Failed to load invoice',
+        type: 'error',
+        onClose: () => {
+          setToast(null);
+          navigate('/invoices');
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -33,10 +42,20 @@ export default function InvoiceDetail() {
     setActionLoading(true);
     try {
       await apiClient.post(`/invoices/${id}/issue`);
-      alert('Invoice issued successfully! UBL XML generated.');
-      loadInvoice();
+      setToast({
+        message: 'Invoice issued successfully! UBL XML generated.',
+        type: 'success',
+        onClose: () => {
+          setToast(null);
+          loadInvoice();
+        }
+      });
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to issue invoice');
+      setToast({
+        message: error.response?.data?.detail || 'Failed to issue invoice',
+        type: 'error',
+        onClose: () => setToast(null)
+      });
     } finally {
       setActionLoading(false);
     }
@@ -48,10 +67,20 @@ export default function InvoiceDetail() {
     setActionLoading(true);
     try {
       const response = await apiClient.post(`/invoices/${id}/send`);
-      alert(`Invoice sent successfully!\nCustomer share link: ${window.location.origin}/invoices/view/${invoice.share_token}`);
-      loadInvoice();
+      setToast({
+        message: `Invoice sent successfully! Customer share link: ${window.location.origin}/invoices/view/${invoice.share_token}`,
+        type: 'success',
+        onClose: () => {
+          setToast(null);
+          loadInvoice();
+        }
+      });
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to send invoice');
+      setToast({
+        message: error.response?.data?.detail || 'Failed to send invoice',
+        type: 'error',
+        onClose: () => setToast(null)
+      });
     } finally {
       setActionLoading(false);
     }
@@ -63,10 +92,20 @@ export default function InvoiceDetail() {
     setActionLoading(true);
     try {
       await apiClient.post(`/invoices/${id}/cancel`);
-      alert('Invoice cancelled');
-      loadInvoice();
+      setToast({
+        message: 'Invoice cancelled',
+        type: 'success',
+        onClose: () => {
+          setToast(null);
+          loadInvoice();
+        }
+      });
     } catch (error) {
-      alert(error.response?.data?.detail || 'Failed to cancel invoice');
+      setToast({
+        message: error.response?.data?.detail || 'Failed to cancel invoice',
+        type: 'error',
+        onClose: () => setToast(null)
+      });
     } finally {
       setActionLoading(false);
     }
@@ -341,6 +380,15 @@ export default function InvoiceDetail() {
           </div>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={toast.onClose}
+        />
+      )}
     </div>
   );
 }
