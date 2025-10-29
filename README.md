@@ -31,6 +31,8 @@
 - Mock provider for testing without real API credentials
 - Status tracking and delivery confirmation
 - Participant ID validation
+- **Automatic usage tracking:** AED 2.00/1.00/0.50 per invoice fee based on subscription tier
+- Centralized ASP model - InvoLinks manages master account, charges pay-per-use fees
 
 ### 🏢 **Multi-Tenant SaaS Architecture**
 - Company registration workflow with email verification
@@ -54,6 +56,17 @@
 - Automated 3-way matching (PO → GRN → Invoice)
 - Variance detection and approval workflows
 - Supplier/vendor management with PEPPOL ID support
+- Complete supplier database with TRN tracking, spend analytics, payment terms
+
+### 💰 **Finance Dashboard**
+- Comprehensive financial analytics and health monitoring
+- Key metrics: Total revenue, expenses, net profit, profit margin with trend indicators
+- Revenue vs Expenses: Monthly bar chart visualization
+- Cash Flow: Weekly line chart tracking inflows and outflows
+- Expense Breakdown: Pie chart showing categorization (salaries, operations, marketing, supplies)
+- AR/AP Tracking: Real-time accounts receivable and payable balances
+- Recent Transactions: Live feed of recent invoices (sent/received) with status indicators
+- Top Customers: Ranked customer list by revenue with visual progress bars
 
 ### 🔒 **Multi-Factor Authentication (MFA)**
 - Compliant with Ministerial Decision No. 64/2025
