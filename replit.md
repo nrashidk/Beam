@@ -40,8 +40,9 @@ Detailed explanations preferred.
 10. **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes for secure user access, compliant with Ministerial Decision No. 64/2025.
 11. **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
 12. **Content Management System (CMS):** Database-backed content management allowing SuperAdmins to edit all website text without code changes. Features include: content_blocks table with key/value pairs, dedicated SuperAdmin Content Manager UI with inline editing, ContentContext React hook for global content access, automatic content seeding on startup, and real-time updates. All homepage hero text and feature box content is now dynamically loaded from the database via the useContent() hook.
-13. **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, a robust Crypto Utilities Module (SHA-256, RSA-2048 signing/verification), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
-14. **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation (development/production modes), structured error handling, and a global exception handler.
+13. **PEPPOL Settings UI:** Self-service PEPPOL configuration dashboard for businesses. Features include: provider selection (Tradeshift, Basware, Mock), credential management with masked API keys, participant ID configuration, connection testing, and real-time status tracking. Fully integrated with Business Dashboard navigation. Backend API endpoints for GET/PUT /settings/peppol and POST /settings/peppol/test enable complete PEPPOL setup without code changes.
+14. **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, a robust Crypto Utilities Module (SHA-256, RSA-2048 signing/verification), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
+15. **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation (development/production modes), structured error handling, and a global exception handler.
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistence and availability.
