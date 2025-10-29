@@ -21,6 +21,8 @@ import BulkImport from './pages/BulkImport';
 import FTAAuditFiles from './pages/FTAAuditFiles';
 import PEPPOLSettings from './pages/PEPPOLSettings';
 import ContentManager from './pages/ContentManager';
+import Pricing from './pages/Pricing';
+import BillingSettings from './pages/BillingSettings';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -62,6 +64,7 @@ function App() {
         <ContentProvider>
           <Routes>
           <Route path="/" element={<Homepage />} />
+          <Route path="/pricing" element={<Pricing />} />
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -158,6 +161,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <MFASettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/billing"
+            element={
+              <ProtectedRoute>
+                <BillingSettings />
               </ProtectedRoute>
             }
           />
