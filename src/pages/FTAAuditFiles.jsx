@@ -3,6 +3,8 @@ import { FileText, Download, Calendar, AlertCircle, CheckCircle2, Clock, XCircle
 import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -140,16 +142,22 @@ export default function FTAAuditFiles() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">FTA Audit Files</h1>
-            <p className="text-gray-600 mt-1">
-              Generate UAE Federal Tax Authority compliant audit files (FAF format)
-            </p>
-          </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-6xl mx-auto px-6 py-8">
+          <BackToDashboard />
+          
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">FTA Audit Files</h1>
+                <p className="text-gray-600 mt-1">
+                  Generate UAE Federal Tax Authority compliant audit files (FAF format)
+                </p>
+              </div>
         </div>
 
         {/* Alerts */}
@@ -380,6 +388,8 @@ export default function FTAAuditFiles() {
             </div>
           </CardContent>
         </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

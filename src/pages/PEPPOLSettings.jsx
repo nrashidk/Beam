@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Network, Key, Globe, Info } from 'lucide-react';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -148,31 +150,15 @@ export default function PEPPOLSettings() {
   const selectedProvider = providers.find(p => p.id === settings.peppol_provider);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={() => navigate('/dashboard')}
-              variant="ghost"
-              size="sm"
-              className="gap-2"
-            >
-              <ArrowLeft size={16} />
-              Back to Dashboard
-            </Button>
-            <div className="text-xl font-bold">PEPPOL Settings</div>
-          </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-5xl mx-auto px-6 py-8">
+          <BackToDashboard />
           
-          <Badge variant={settings.peppol_enabled ? "success" : "outline"}>
-            {settings.peppol_enabled ? 'Enabled' : 'Disabled'}
-          </Badge>
-        </div>
-      </nav>
-
-      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
-        {/* Info Banner */}
+          <div className="space-y-6">
+            {/* Info Banner */}
         <Card className="border-blue-200 bg-blue-50">
           <CardContent className="pt-6">
             <div className="flex gap-4">
@@ -431,6 +417,8 @@ export default function PEPPOLSettings() {
           >
             {saving ? 'Saving...' : 'Save Settings'}
           </Button>
+        </div>
+          </div>
         </div>
       </div>
     </div>

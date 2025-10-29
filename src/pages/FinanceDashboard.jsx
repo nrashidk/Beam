@@ -7,6 +7,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { LineChart, Line, BarChart, Bar, PieChart as RePieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
@@ -92,43 +94,29 @@ export default function FinanceDashboard() {
   const { summary, revenueByMonth, cashFlow, expenseBreakdown, recentInvoices, topCustomers } = financialData;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
-              <TrendingUp className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                InvoLinks
-              </span>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <BackToDashboard />
+          
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Finance Dashboard</h1>
+              <p className="text-gray-600 mt-2">Comprehensive view of your business financial health</p>
             </div>
-            <div className="flex items-center gap-4">
-              <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-                <option value="90days">Last 90 Days</option>
-                <option value="year">This Year</option>
-              </select>
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
-                Back to Dashboard
-              </button>
-            </div>
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="7days">Last 7 Days</option>
+              <option value="30days">Last 30 Days</option>
+              <option value="90days">Last 90 Days</option>
+              <option value="year">This Year</option>
+            </select>
           </div>
-        </div>
-      </nav>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Finance Dashboard</h1>
-          <p className="text-gray-600 mt-2">Comprehensive view of your business financial health</p>
-        </div>
 
         {/* Key Metrics */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -371,6 +359,7 @@ export default function FinanceDashboard() {
               ))}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

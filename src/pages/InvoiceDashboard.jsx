@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { FileText, Plus, Eye, Send, X, CheckCircle, Clock, XCircle } from 'lucide-react';
 import InvoiceDeliveryActions from '../components/InvoiceDeliveryActions';
+import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -52,11 +54,14 @@ export default function InvoiceDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+      <Sidebar />
+      
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <BackToDashboard />
+          
+          <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
               <p className="text-gray-600 mt-1">Create and manage UAE-compliant e-invoices</p>
@@ -86,11 +91,8 @@ export default function InvoiceDashboard() {
               </button>
             ))}
           </div>
-        </div>
-      </div>
 
-      {/* Invoice List */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Invoice List */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -171,6 +173,7 @@ export default function InvoiceDashboard() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   );
