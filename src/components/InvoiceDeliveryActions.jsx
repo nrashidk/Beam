@@ -117,7 +117,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
     <>
       <div className="flex items-center gap-2">
         <button
-          onClick={showQRCode}
+          onClick={(e) => { e.stopPropagation(); showQRCode(); }}
           className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
           title="Show QR Code"
         >
@@ -125,7 +125,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
           QR Code
         </button>
         <button
-          onClick={() => setShowEmailModal(true)}
+          onClick={(e) => { e.stopPropagation(); setShowEmailModal(true); }}
           className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
           title="Email Invoice"
         >
@@ -133,7 +133,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
           Email
         </button>
         <button
-          onClick={() => setShowSMSModal(true)}
+          onClick={(e) => { e.stopPropagation(); setShowSMSModal(true); }}
           className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           title="Send via SMS"
         >
@@ -141,7 +141,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
           SMS
         </button>
         <button
-          onClick={() => setShowWhatsAppModal(true)}
+          onClick={(e) => { e.stopPropagation(); setShowWhatsAppModal(true); }}
           className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
           title="Send via WhatsApp"
         >
