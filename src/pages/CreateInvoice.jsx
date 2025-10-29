@@ -73,15 +73,22 @@ export default function CreateInvoice() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Form submitted, starting invoice creation...');
+    console.log('Form data:', formData);
     setLoading(true);
 
     try {
+      console.log('Sending POST request to /invoices...');
       const response = await apiClient.post('/invoices', formData);
+      console.log('Invoice created successfully:', response.data);
       alert(`Invoice ${response.data.invoice_number} created successfully!`);
       navigate(`/invoices/${response.data.id}`);
     } catch (error) {
-      console.error('Failed to create invoice:', error);
-      alert(error.response?.data?.detail || 'Failed to create invoice');
+      console.error('Failed to create invoice - Full error:', error);
+      console.error('Error response:', error.response);
+      console.error('Error message:', error.message);
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to create invoice';
+      alert(`Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
