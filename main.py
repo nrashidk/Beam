@@ -147,6 +147,11 @@ class MatchingStatus(str, enum.Enum):
     FULL_MATCH = "FULL_MATCH"  # All fields match
     VARIANCE_DETECTED = "VARIANCE_DETECTED"  # Within tolerance but variance exists
 
+class AuditFileStatus(str, enum.Enum):
+    GENERATING = "GENERATING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
 # ==================== DATABASE MODELS ====================
 class UserDB(Base):
     __tablename__ = "users"
@@ -727,6 +732,42 @@ class InwardInvoiceLineItemDB(Base):
     match_status = Column(String, nullable=True)  # "MATCHED", "VARIANCE", "NO_PO"
     
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class AuditFileDB(Base):
+    """FTA Audit Files (FAF) - UAE Federal Tax Authority Audit File"""
+    __tablename__ = "audit_files"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # File Information
+    file_name = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    format = Column(String, default="CSV")  # CSV or TXT
+    
+    # Audit Period
+    period_start_date = Column(Date, nullable=False)
+    period_end_date = Column(Date, nullable=False)
+    
+    # Generation Details
+    status = Column(SQLEnum(AuditFileStatus), default=AuditFileStatus.GENERATING)
+    generated_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Statistics
+    total_invoices = Column(Integer, default=0)
+    total_customers = Column(Integer, default=0)
+    total_amount = Column(Float, default=0.0)
+    total_vat = Column(Float, default=0.0)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="audit_files")
 
 # Create tables
 Base.metadata.create_all(engine)
