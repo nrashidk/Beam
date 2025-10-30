@@ -60,3 +60,12 @@ invoices_xml/
 # OS
 .DS_Store
 Thumbs.db
+
+# Signing Keys & Certificates (NEVER COMMIT!)
+private_key.pem
+certificate.pem
+certificate.csr
+certificate_info.txt
+*.key
+*.crt
+*.csr
