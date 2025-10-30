@@ -45,6 +45,15 @@ from utils.bulk_import import BulkImportValidator
 import pandas as pd
 from io import BytesIO
 
+# VAT Utilities (Phase 1)
+from utils.vat_utils import (
+    is_valid_trn, 
+    format_trn, 
+    classify_invoice_type,
+    is_valid_tax_code,
+    UAE_TAX_CODES
+)
+
 # Stripe payment processing
 import stripe
 
@@ -187,6 +196,10 @@ class CompanyDB(Base):
     country = Column(String, default="AE")
     status = Column(SQLEnum(CompanyStatus), default=CompanyStatus.PENDING_REVIEW)
     trn = Column(String, nullable=True)
+    
+    # VAT Registration (Opt-In Model - Phase 1)
+    vat_enabled = Column(Boolean, default=False)  # Toggle for VAT registration
+    vat_registration_date = Column(Date, nullable=True)  # When business became VAT-registered
     
     # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
     mfa_enabled = Column(Boolean, default=False)
@@ -392,6 +405,10 @@ class InvoiceDB(Base):
     customer_country = Column(String, default="AE")
     customer_peppol_id = Column(String, nullable=True)
     
+    # VAT Compliance (Phase 1)
+    tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP
+    invoice_classification = Column(String, default='standard')  # 'full', 'simplified', 'standard'
+    
     # Monetary Totals (PINT-AE mandatory)
     subtotal_amount = Column(Float, default=0.0)  # Line extension total
     tax_amount = Column(Float, default=0.0)  # Total VAT
@@ -469,6 +486,7 @@ class InvoiceLineItemDB(Base):
     tax_category = Column(SQLEnum(TaxCategory), nullable=False)
     tax_percent = Column(Float, default=0.0)  # 5% for standard rate in UAE
     tax_amount = Column(Float, default=0.0)
+    tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP (Phase 1)
     
     # Total
     line_total_amount = Column(Float, nullable=False)  # Including tax
@@ -942,6 +960,10 @@ class ExpenseDB(Base):
     reference_number = Column(String, nullable=True)
     supplier_name = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    
+    # VAT Compliance (Phase 1)
+    tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP
+    vendor_id = Column(String, nullable=True)  # Link to vendor (will add vendors table in Phase 2)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -3505,6 +3527,13 @@ def create_invoice(
     invoice.tax_amount = round(total_tax, 2)
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
+    
+    # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
+    from decimal import Decimal
+    invoice.invoice_classification = classify_invoice_type(
+        total_amount=Decimal(str(invoice.total_amount)),
+        vat_enabled=company.vat_enabled or False
+    )
     
     # Increment trial invoice count if in trial
     if company.trial_status == "ACTIVE":
@@ -6866,6 +6895,87 @@ def test_peppol_connection(
             "success": False,
             "error": str(e),
             "message": "PEPPOL connection test failed"
+        }
+
+# ==================== VAT SETTINGS (PHASE 1) ====================
+
+@app.get("/settings/vat", tags=["Settings"])
+def get_vat_settings(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get VAT registration configuration for the company"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    return {
+        "vat_enabled": company.vat_enabled or False,
+        "tax_registration_number": company.trn if company.vat_enabled else None,
+        "vat_registration_date": company.vat_registration_date.isoformat() if company.vat_registration_date else None,
+        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None
+    }
+
+@app.put("/settings/vat", tags=["Settings"])
+def update_vat_settings(
+    settings: dict,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update VAT registration configuration for the company"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Get VAT enabled status from request
+    vat_enabled = settings.get('vat_enabled', False)
+    
+    # If enabling VAT, validate TRN
+    if vat_enabled:
+        trn = settings.get('tax_registration_number', '').strip()
+        
+        if not trn:
+            raise HTTPException(400, "Tax Registration Number (TRN) is required when enabling VAT")
+        
+        if not is_valid_trn(trn):
+            raise HTTPException(
+                400,
+                "Invalid TRN format. Must be exactly 15 digits (e.g., 123456789012345)"
+            )
+        
+        # Update company with VAT details
+        company.vat_enabled = True
+        company.trn = trn
+        
+        # Set registration date if provided, otherwise use today
+        if settings.get('vat_registration_date'):
+            from datetime import datetime as dt
+            company.vat_registration_date = dt.fromisoformat(settings['vat_registration_date']).date()
+        elif not company.vat_registration_date:
+            company.vat_registration_date = date.today()
+        
+        db.commit()
+        db.refresh(company)
+        
+        return {
+            "success": True,
+            "message": "VAT registration enabled successfully",
+            "vat_enabled": True,
+            "tax_registration_number": company.trn,
+            "formatted_trn": format_trn(company.trn),
+            "vat_registration_date": company.vat_registration_date.isoformat() if company.vat_registration_date else None
+        }
+    else:
+        # Disabling VAT - just set vat_enabled to False, keep TRN for records
+        company.vat_enabled = False
+        
+        db.commit()
+        db.refresh(company)
+        
+        return {
+            "success": True,
+            "message": "VAT registration disabled",
+            "vat_enabled": False
         }
 
 # ==================== BILLING & SUBSCRIPTIONS ====================

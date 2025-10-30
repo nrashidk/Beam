@@ -20,6 +20,7 @@ import POList from './pages/POList';
 import BulkImport from './pages/BulkImport';
 import FTAAuditFiles from './pages/FTAAuditFiles';
 import PEPPOLSettings from './pages/PEPPOLSettings';
+import VATSettings from './pages/VATSettings';
 import ContentManager from './pages/ContentManager';
 import Pricing from './pages/Pricing';
 import BillingSettings from './pages/BillingSettings';
@@ -149,6 +150,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <PEPPOLSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/vat"
+            element={
+              <ProtectedRoute>
+                <VATSettings />
               </ProtectedRoute>
             }
           />
