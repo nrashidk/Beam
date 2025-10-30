@@ -9,21 +9,22 @@ export default function Footer() {
   const [footerContent, setFooterContent] = useState({
     company_name: 'InvoLinks',
     company_description: 'Simple, Compliant Digital Invoicing for UAE',
-    address: '',
+    address: 'Dubai, United Arab Emirates',
     email: 'support@involinks.ae',
-    phone: '',
-    copyright_text: '© 2025 InvoLinks. All rights reserved.',
-    social_links: {},
-    quick_links: [
-      { label: 'Home', url: '/' },
-      { label: 'Pricing', url: '/pricing' },
-      { label: 'Sign In', url: '/login' }
-    ],
-    legal_links: [
-      { label: 'Privacy Policy', url: '/privacy' },
-      { label: 'Terms of Service', url: '/terms' }
-    ]
+    phone: '+971 4 123 4567',
+    copyright: '© 2025 InvoLinks. All rights reserved.'
   });
+
+  const quickLinks = [
+    { label: 'Home', url: '/' },
+    { label: 'Pricing', url: '/pricing' },
+    { label: 'Sign In', url: '/login' }
+  ];
+
+  const legalLinks = [
+    { label: 'Privacy Policy', url: '/privacy' },
+    { label: 'Terms of Service', url: '/terms' }
+  ];
 
   useEffect(() => {
     fetchFooterContent();
@@ -72,7 +73,7 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-semibold mb-4">Quick Links</h3>
             <ul className="space-y-2">
-              {footerContent.quick_links?.map((link, index) => (
+              {quickLinks.map((link, index) => (
                 <li key={index}>
                   <button
                     onClick={() => navigate(link.url)}
@@ -89,7 +90,7 @@ export default function Footer() {
           <div>
             <h3 className="text-white font-semibold mb-4">Legal</h3>
             <ul className="space-y-2">
-              {footerContent.legal_links?.map((link, index) => (
+              {legalLinks.map((link, index) => (
                 <li key={index}>
                   <button
                     onClick={() => navigate(link.url)}
@@ -105,7 +106,7 @@ export default function Footer() {
 
         {/* Copyright */}
         <div className="pt-8 border-t border-gray-800 text-center">
-          <p className="text-sm text-gray-500">{footerContent.copyright_text}</p>
+          <p className="text-sm text-gray-500">{footerContent.copyright}</p>
         </div>
       </div>
     </footer>
