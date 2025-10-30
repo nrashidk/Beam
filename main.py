@@ -1737,11 +1737,31 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(company)
         
+        # Automatically send verification email
+        verification_token = f"verify_{uuid4().hex}"
+        company.verification_token = verification_token
+        company.verification_sent_at = datetime.utcnow()
+        db.commit()
+        
+        # Get platform URL for verification link
+        platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
+        verification_url = f"{platform_url}/?verify={verification_token}"
+        
+        # Send verification email via AWS SES
+        email_result = email_service.send_verification_email(
+            to_email=company.email,
+            company_name=company.legal_name or company.email,
+            verification_url=verification_url
+        )
+        
+        print(f"📧 Verification email sent to {company.email}: {email_result.get('note', 'Success')}")
+        
         return {
             "success": True,
             "company_id": company_id,
-            "message": "Registration successful! Awaiting admin approval.",
-            "status": company.status
+            "message": "Registration successful! Please check your email to verify your account.",
+            "status": company.status,
+            "email_sent": email_result.get("success", False)
         }
     except Exception as e:
         db.rollback()
