@@ -4439,6 +4439,297 @@ def get_daily_reconciliation_report(
         ]
     }
 
+# ==================== ANALYTICS ENDPOINTS ====================
+
+@app.get("/analytics/revenue", tags=["Analytics"])
+def get_revenue_analytics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period: str = "month",  # month, quarter, year
+    months: int = 12
+):
+    """
+    Get revenue analytics with trends and growth rates
+    
+    Role Access: All authenticated users
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, extract
+    from dateutil.relativedelta import relativedelta
+    
+    # Calculate date range
+    end_date = datetime.utcnow()
+    start_date = end_date - relativedelta(months=months)
+    
+    # Get paid invoices within date range
+    invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status == 'PAID',
+        InvoiceDB.payment_date >= start_date,
+        InvoiceDB.payment_date <= end_date
+    ).all()
+    
+    # Group by month
+    monthly_revenue = {}
+    for inv in invoices:
+        if inv.payment_date:
+            month_key = inv.payment_date.strftime('%Y-%m')
+            if month_key not in monthly_revenue:
+                monthly_revenue[month_key] = {'revenue': 0.0, 'count': 0}
+            monthly_revenue[month_key]['revenue'] += inv.paid_amount or 0.0
+            monthly_revenue[month_key]['count'] += 1
+    
+    # Calculate growth rate
+    revenue_trend = []
+    prev_revenue = None
+    for i in range(months):
+        date = end_date - relativedelta(months=months - i - 1)
+        month_key = date.strftime('%Y-%m')
+        revenue = monthly_revenue.get(month_key, {'revenue': 0.0, 'count': 0})['revenue']
+        count = monthly_revenue.get(month_key, {'revenue': 0.0, 'count': 0})['count']
+        
+        growth_rate = 0.0
+        if prev_revenue and prev_revenue > 0:
+            growth_rate = ((revenue - prev_revenue) / prev_revenue) * 100
+        
+        revenue_trend.append({
+            'month': month_key,
+            'revenue': revenue,
+            'invoice_count': count,
+            'growth_rate': growth_rate
+        })
+        prev_revenue = revenue if revenue > 0 else prev_revenue
+    
+    # Calculate totals
+    total_revenue = sum(inv.paid_amount or 0.0 for inv in invoices)
+    avg_monthly = total_revenue / months if months > 0 else 0
+    
+    return {
+        'period': period,
+        'months_analyzed': months,
+        'total_revenue': total_revenue,
+        'average_monthly_revenue': avg_monthly,
+        'revenue_trend': revenue_trend
+    }
+
+@app.get("/analytics/customers", tags=["Analytics"])
+def get_customer_analytics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 10
+):
+    """
+    Get customer analytics including top customers and payment patterns
+    
+    Role Access: All authenticated users
+    """
+    from sqlalchemy import func
+    
+    # Get all paid invoices
+    invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status == 'PAID'
+    ).all()
+    
+    # Aggregate by customer
+    customer_data = {}
+    for inv in invoices:
+        customer = inv.customer_name
+        if customer not in customer_data:
+            customer_data[customer] = {
+                'customer_name': customer,
+                'customer_email': inv.customer_email,
+                'total_revenue': 0.0,
+                'invoice_count': 0,
+                'average_invoice_value': 0.0,
+                'last_payment_date': None
+            }
+        customer_data[customer]['total_revenue'] += inv.paid_amount or 0.0
+        customer_data[customer]['invoice_count'] += 1
+        if inv.payment_date:
+            if not customer_data[customer]['last_payment_date'] or inv.payment_date > customer_data[customer]['last_payment_date']:
+                customer_data[customer]['last_payment_date'] = inv.payment_date
+    
+    # Calculate averages and sort
+    top_customers = []
+    for customer, data in customer_data.items():
+        data['average_invoice_value'] = data['total_revenue'] / data['invoice_count'] if data['invoice_count'] > 0 else 0
+        top_customers.append(data)
+    
+    top_customers.sort(key=lambda x: x['total_revenue'], reverse=True)
+    
+    # Calculate summary stats
+    total_customers = len(customer_data)
+    total_revenue = sum(d['total_revenue'] for d in customer_data.values())
+    avg_customer_value = total_revenue / total_customers if total_customers > 0 else 0
+    
+    return {
+        'total_customers': total_customers,
+        'total_revenue': total_revenue,
+        'average_customer_lifetime_value': avg_customer_value,
+        'top_customers': [
+            {
+                **cust,
+                'last_payment_date': cust['last_payment_date'].isoformat() if cust['last_payment_date'] else None
+            }
+            for cust in top_customers[:limit]
+        ]
+    }
+
+@app.get("/analytics/profitability", tags=["Analytics"])
+def get_profitability_metrics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    months: int = 12
+):
+    """
+    Get profitability metrics including gross profit, net profit, and margins
+    
+    Role Access: All authenticated users
+    """
+    from datetime import datetime, timedelta
+    from dateutil.relativedelta import relativedelta
+    
+    # Calculate date range
+    end_date = datetime.utcnow()
+    start_date = end_date - relativedelta(months=months)
+    
+    # Get revenue (paid invoices)
+    revenue_invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status == 'PAID',
+        InvoiceDB.payment_date >= start_date,
+        InvoiceDB.payment_date <= end_date
+    ).all()
+    
+    total_revenue = sum(inv.paid_amount or 0.0 for inv in revenue_invoices)
+    
+    # Get expenses
+    expenses = db.query(ExpenseDB).filter(
+        ExpenseDB.company_id == current_user.company_id,
+        ExpenseDB.expense_date >= start_date,
+        ExpenseDB.expense_date <= end_date
+    ).all()
+    
+    total_expenses = sum(exp.amount for exp in expenses)
+    
+    # Calculate profitability
+    gross_profit = total_revenue - total_expenses
+    gross_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
+    
+    # Monthly breakdown
+    monthly_profit = []
+    for i in range(months):
+        date = end_date - relativedelta(months=months - i - 1)
+        month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
+        
+        month_revenue = sum(
+            inv.paid_amount or 0.0 
+            for inv in revenue_invoices 
+            if inv.payment_date and month_start <= inv.payment_date <= month_end
+        )
+        
+        month_expenses = sum(
+            exp.amount 
+            for exp in expenses 
+            if month_start.date() <= exp.expense_date <= month_end.date()
+        )
+        
+        month_profit = month_revenue - month_expenses
+        month_margin = (month_profit / month_revenue * 100) if month_revenue > 0 else 0
+        
+        monthly_profit.append({
+            'month': date.strftime('%Y-%m'),
+            'revenue': month_revenue,
+            'expenses': month_expenses,
+            'profit': month_profit,
+            'margin': month_margin
+        })
+    
+    return {
+        'period_months': months,
+        'total_revenue': total_revenue,
+        'total_expenses': total_expenses,
+        'gross_profit': gross_profit,
+        'gross_margin': gross_margin,
+        'monthly_breakdown': monthly_profit
+    }
+
+@app.get("/analytics/cash-flow", tags=["Analytics"])
+def get_cash_flow_analytics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    months: int = 6
+):
+    """
+    Get cash flow analysis with inflows and outflows
+    
+    Role Access: All authenticated users
+    """
+    from datetime import datetime, timedelta
+    from dateutil.relativedelta import relativedelta
+    
+    # Calculate date range
+    end_date = datetime.utcnow()
+    start_date = end_date - relativedelta(months=months)
+    
+    # Get inflows (paid invoices)
+    inflows = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status == 'PAID',
+        InvoiceDB.payment_date >= start_date,
+        InvoiceDB.payment_date <= end_date
+    ).all()
+    
+    # Get outflows (expenses)
+    outflows = db.query(ExpenseDB).filter(
+        ExpenseDB.company_id == current_user.company_id,
+        ExpenseDB.expense_date >= start_date,
+        ExpenseDB.expense_date <= end_date
+    ).all()
+    
+    # Monthly breakdown
+    monthly_cash_flow = []
+    for i in range(months):
+        date = end_date - relativedelta(months=months - i - 1)
+        month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
+        
+        month_inflows = sum(
+            inv.paid_amount or 0.0 
+            for inv in inflows 
+            if inv.payment_date and month_start <= inv.payment_date <= month_end
+        )
+        
+        month_outflows = sum(
+            exp.amount 
+            for exp in outflows 
+            if month_start.date() <= exp.expense_date <= month_end.date()
+        )
+        
+        net_cash_flow = month_inflows - month_outflows
+        
+        monthly_cash_flow.append({
+            'month': date.strftime('%Y-%m'),
+            'inflows': month_inflows,
+            'outflows': month_outflows,
+            'net_cash_flow': net_cash_flow
+        })
+    
+    # Calculate totals
+    total_inflows = sum(m['inflows'] for m in monthly_cash_flow)
+    total_outflows = sum(m['outflows'] for m in monthly_cash_flow)
+    net_position = total_inflows - total_outflows
+    
+    return {
+        'period_months': months,
+        'total_inflows': total_inflows,
+        'total_outflows': total_outflows,
+        'net_cash_position': net_position,
+        'monthly_cash_flow': monthly_cash_flow
+    }
+
 @app.post("/invoices/{invoice_id}/issue", tags=["Invoices"])
 def issue_invoice(
     invoice_id: str,
