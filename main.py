@@ -86,6 +86,7 @@ Base = declarative_base()
 class Role(str, enum.Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     COMPANY_ADMIN = "COMPANY_ADMIN"
+    BUSINESS_ADMIN = "BUSINESS_ADMIN"  # Phase 2: Business Super Admin role
     FINANCE_USER = "FINANCE_USER"
 
 class CompanyStatus(str, enum.Enum):
@@ -279,7 +280,9 @@ class SubscriptionPlanDB(Base):
     price_monthly = Column(Float, default=0.0)
     price_yearly = Column(Float, default=0.0)
     max_invoices_per_month = Column(Integer, nullable=True)
-    max_users = Column(Integer, default=1)
+    max_users = Column(Integer, default=1)  # Total users allowed
+    max_business_admins = Column(Integer, default=0)  # Phase 2: Max Business Admins per tier
+    max_finance_users = Column(Integer, default=1)  # Phase 2: Max Finance Users per tier
     max_pos_devices = Column(Integer, default=0)
     allow_api_access = Column(Boolean, default=True)
     allow_branding = Column(Boolean, default=False)
@@ -375,6 +378,22 @@ class ContentBlockDB(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     updated_by = Column(String, nullable=True)  # Admin email who made the change
 
+class FeaturedBusinessDB(Base):
+    """Featured businesses for homepage moving bar - Phase 2"""
+    __tablename__ = "featured_businesses"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    display_name = Column(String, nullable=True)  # Override company name if needed
+    logo_url = Column(String, nullable=True)  # Company logo path
+    is_active = Column(Boolean, default=True)  # Show/hide from moving bar
+    display_order = Column(Integer, default=0)  # Sort order in moving bar
+    added_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)  # SuperAdmin who added it
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="featured_entries")
+
 class InvoiceDB(Base):
     __tablename__ = "invoices"
     id = Column(String, primary_key=True)
@@ -453,6 +472,12 @@ class InvoiceDB(Base):
     sent_at = Column(DateTime, nullable=True)
     viewed_at = Column(DateTime, nullable=True)
     paid_at = Column(DateTime, nullable=True)
+    
+    # User Tracking (Phase 2)
+    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)  # Who created the invoice
+    payment_verified_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)  # Who verified payment
+    payment_verified_at = Column(DateTime, nullable=True)  # When payment was verified
+    payment_method = Column(String, nullable=True)  # Phase 2: Cash, POS, Bank Transfer, etc.
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -965,6 +990,9 @@ class ExpenseDB(Base):
     tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP
     vendor_id = Column(String, nullable=True)  # Link to vendor (will add vendors table in Phase 2)
     
+    # User Tracking (Phase 2)
+    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)  # Who recorded the expense
+    
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1150,6 +1178,8 @@ def seed_plans(db: Session):
             price_yearly=0.0,
             max_invoices_per_month=100,
             max_users=1,
+            max_business_admins=0,  # Phase 2: Owner only
+            max_finance_users=0,  # Phase 2: No team members
             max_pos_devices=0,
             allow_api_access=True,
             allow_branding=False,
@@ -1163,7 +1193,9 @@ def seed_plans(db: Session):
             price_monthly=99.0,
             price_yearly=990.0,
             max_invoices_per_month=100,
-            max_users=2,
+            max_users=3,  # Phase 2: 1 owner + 2 team members
+            max_business_admins=0,  # Phase 2: No business admins
+            max_finance_users=2,  # Phase 2: Up to 2 finance users
             max_pos_devices=1,
             allow_api_access=True,
             allow_branding=False
@@ -1175,7 +1207,9 @@ def seed_plans(db: Session):
             price_monthly=299.0,
             price_yearly=2990.0,
             max_invoices_per_month=500,
-            max_users=5,
+            max_users=5,  # Phase 2: 1 owner + 4 team members
+            max_business_admins=2,  # Phase 2: Up to 2 business admins
+            max_finance_users=2,  # Phase 2: Up to 2 finance users
             max_pos_devices=3,
             allow_api_access=True,
             allow_branding=True,
@@ -1188,7 +1222,9 @@ def seed_plans(db: Session):
             price_monthly=999.0,
             price_yearly=9990.0,
             max_invoices_per_month=None,
-            max_users=50,
+            max_users=50,  # Phase 2: 1 owner + 49 team members
+            max_business_admins=10,  # Phase 2: Up to 10 business admins
+            max_finance_users=39,  # Phase 2: Up to 39 finance users
             max_pos_devices=10,
             allow_api_access=True,
             allow_branding=True,
@@ -3204,6 +3240,310 @@ def get_public_content(db: Session = Depends(get_db)):
             updated_at=b.updated_at,
             updated_by=b.updated_by
         ) for b in blocks
+    ]
+
+# ==================== PHASE 2: SUPERADMIN TIER MANAGEMENT & PLATFORM STATS ====================
+
+class SubscriptionPlanOut(BaseModel):
+    id: str
+    name: str
+    description: Optional[str]
+    price_monthly: float
+    price_yearly: float
+    max_invoices_per_month: Optional[int]
+    max_users: int
+    max_business_admins: int
+    max_finance_users: int
+    max_pos_devices: int
+    allow_api_access: bool
+    allow_branding: bool
+    allow_multi_currency: bool
+    priority_support: bool
+    active: bool
+
+class SubscriptionPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price_monthly: Optional[float] = None
+    price_yearly: Optional[float] = None
+    max_invoices_per_month: Optional[int] = None
+    max_users: Optional[int] = None
+    max_business_admins: Optional[int] = None
+    max_finance_users: Optional[int] = None
+    max_pos_devices: Optional[int] = None
+    allow_api_access: Optional[bool] = None
+    allow_branding: Optional[bool] = None
+    allow_multi_currency: Optional[bool] = None
+    priority_support: Optional[bool] = None
+    active: Optional[bool] = None
+
+class PlatformStatsOut(BaseModel):
+    total_companies: int
+    active_companies: int
+    pending_companies: int
+    total_invoices: int
+    total_revenue_aed: float
+    active_subscriptions: int
+    free_tier_users: int
+    paid_tier_users: int
+
+class FeaturedBusinessOut(BaseModel):
+    id: str
+    company_id: str
+    company_name: str
+    display_name: Optional[str]
+    logo_url: Optional[str]
+    is_active: bool
+    display_order: int
+    created_at: str
+
+class FeaturedBusinessCreate(BaseModel):
+    company_id: str
+    display_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    display_order: int = 0
+
+@app.get("/admin/subscription-plans", response_model=List[SubscriptionPlanOut], tags=["Admin", "Tier Management"])
+def get_all_subscription_plans(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all subscription plans (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can manage subscription plans")
+    
+    plans = db.query(SubscriptionPlanDB).order_by(SubscriptionPlanDB.price_monthly).all()
+    
+    return [
+        SubscriptionPlanOut(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            price_monthly=p.price_monthly,
+            price_yearly=p.price_yearly,
+            max_invoices_per_month=p.max_invoices_per_month,
+            max_users=p.max_users,
+            max_business_admins=p.max_business_admins,
+            max_finance_users=p.max_finance_users,
+            max_pos_devices=p.max_pos_devices,
+            allow_api_access=p.allow_api_access,
+            allow_branding=p.allow_branding,
+            allow_multi_currency=p.allow_multi_currency,
+            priority_support=p.priority_support,
+            active=p.active
+        ) for p in plans
+    ]
+
+@app.put("/admin/subscription-plans/{plan_id}", response_model=SubscriptionPlanOut, tags=["Admin", "Tier Management"])
+def update_subscription_plan(
+    plan_id: str,
+    payload: SubscriptionPlanUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update subscription plan tier limits and features (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can modify subscription plans")
+    
+    plan = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.id == plan_id).first()
+    if not plan:
+        raise HTTPException(404, f"Subscription plan {plan_id} not found")
+    
+    # Update fields if provided
+    if payload.name is not None:
+        plan.name = payload.name
+    if payload.description is not None:
+        plan.description = payload.description
+    if payload.price_monthly is not None:
+        plan.price_monthly = payload.price_monthly
+    if payload.price_yearly is not None:
+        plan.price_yearly = payload.price_yearly
+    if payload.max_invoices_per_month is not None:
+        plan.max_invoices_per_month = payload.max_invoices_per_month
+    if payload.max_users is not None:
+        plan.max_users = payload.max_users
+    if payload.max_business_admins is not None:
+        plan.max_business_admins = payload.max_business_admins
+    if payload.max_finance_users is not None:
+        plan.max_finance_users = payload.max_finance_users
+    if payload.max_pos_devices is not None:
+        plan.max_pos_devices = payload.max_pos_devices
+    if payload.allow_api_access is not None:
+        plan.allow_api_access = payload.allow_api_access
+    if payload.allow_branding is not None:
+        plan.allow_branding = payload.allow_branding
+    if payload.allow_multi_currency is not None:
+        plan.allow_multi_currency = payload.allow_multi_currency
+    if payload.priority_support is not None:
+        plan.priority_support = payload.priority_support
+    if payload.active is not None:
+        plan.active = payload.active
+    
+    db.commit()
+    db.refresh(plan)
+    
+    return SubscriptionPlanOut(
+        id=plan.id,
+        name=plan.name,
+        description=plan.description,
+        price_monthly=plan.price_monthly,
+        price_yearly=plan.price_yearly,
+        max_invoices_per_month=plan.max_invoices_per_month,
+        max_users=plan.max_users,
+        max_business_admins=plan.max_business_admins,
+        max_finance_users=plan.max_finance_users,
+        max_pos_devices=plan.max_pos_devices,
+        allow_api_access=plan.allow_api_access,
+        allow_branding=plan.allow_branding,
+        allow_multi_currency=plan.allow_multi_currency,
+        priority_support=plan.priority_support,
+        active=plan.active
+    )
+
+@app.get("/admin/platform-stats", response_model=PlatformStatsOut, tags=["Admin", "Platform Stats"])
+def get_platform_statistics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get aggregated platform statistics (Super Admin only) - Privacy-focused: Only aggregated data, no individual business details"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can access platform statistics")
+    
+    # Total companies
+    total_companies = db.query(CompanyDB).count()
+    active_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    pending_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
+    
+    # Total invoices across all businesses
+    total_invoices = db.query(InvoiceDB).count()
+    
+    # Total revenue (sum of all invoice amounts)
+    total_revenue = db.query(func.sum(InvoiceDB.total_amount)).scalar() or 0.0
+    
+    # Active subscriptions
+    active_subscriptions = db.query(SubscriptionDB).filter(
+        SubscriptionDB.status == "ACTIVE"
+    ).count()
+    
+    # Free vs paid tier users
+    free_tier = db.query(SubscriptionDB).join(SubscriptionPlanDB).filter(
+        SubscriptionPlanDB.price_monthly == 0.0,
+        SubscriptionDB.status == "ACTIVE"
+    ).count()
+    
+    paid_tier = db.query(SubscriptionDB).join(SubscriptionPlanDB).filter(
+        SubscriptionPlanDB.price_monthly > 0.0,
+        SubscriptionDB.status == "ACTIVE"
+    ).count()
+    
+    return PlatformStatsOut(
+        total_companies=total_companies,
+        active_companies=active_companies,
+        pending_companies=pending_companies,
+        total_invoices=total_invoices,
+        total_revenue_aed=total_revenue,
+        active_subscriptions=active_subscriptions,
+        free_tier_users=free_tier,
+        paid_tier_users=paid_tier
+    )
+
+@app.get("/admin/featured-businesses", response_model=List[FeaturedBusinessOut], tags=["Admin", "Featured Businesses"])
+def get_featured_businesses(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get all featured businesses for homepage moving bar (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can manage featured businesses")
+    
+    featured = db.query(FeaturedBusinessDB).join(CompanyDB).order_by(FeaturedBusinessDB.display_order).all()
+    
+    return [
+        FeaturedBusinessOut(
+            id=f.id,
+            company_id=f.company_id,
+            company_name=f.company.legal_name,
+            display_name=f.display_name,
+            logo_url=f.logo_url,
+            is_active=f.is_active,
+            display_order=f.display_order,
+            created_at=f.created_at.isoformat()
+        ) for f in featured
+    ]
+
+@app.post("/admin/featured-businesses", tags=["Admin", "Featured Businesses"])
+def add_featured_business(
+    payload: FeaturedBusinessCreate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Add a company to the featured businesses list (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can add featured businesses")
+    
+    # Verify company exists
+    company = db.query(CompanyDB).filter(CompanyDB.id == payload.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Check if already featured
+    existing = db.query(FeaturedBusinessDB).filter(FeaturedBusinessDB.company_id == payload.company_id).first()
+    if existing:
+        raise HTTPException(400, "Company is already featured")
+    
+    new_featured = FeaturedBusinessDB(
+        id=f"fb_{uuid4().hex[:12]}",
+        company_id=payload.company_id,
+        display_name=payload.display_name,
+        logo_url=payload.logo_url,
+        is_active=True,
+        display_order=payload.display_order,
+        added_by_user_id=current_user.id
+    )
+    
+    db.add(new_featured)
+    db.commit()
+    db.refresh(new_featured)
+    
+    return {"message": "Business added to featured list", "id": new_featured.id}
+
+@app.delete("/admin/featured-businesses/{featured_id}", tags=["Admin", "Featured Businesses"])
+def remove_featured_business(
+    featured_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Remove a company from the featured businesses list (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can remove featured businesses")
+    
+    featured = db.query(FeaturedBusinessDB).filter(FeaturedBusinessDB.id == featured_id).first()
+    if not featured:
+        raise HTTPException(404, "Featured business not found")
+    
+    db.delete(featured)
+    db.commit()
+    
+    return {"message": "Business removed from featured list"}
+
+@app.get("/public/featured-businesses", response_model=List[FeaturedBusinessOut], tags=["Public"])
+def get_public_featured_businesses(db: Session = Depends(get_db)):
+    """Get active featured businesses for homepage (public, no auth required)"""
+    featured = db.query(FeaturedBusinessDB).join(CompanyDB).filter(
+        FeaturedBusinessDB.is_active == True
+    ).order_by(FeaturedBusinessDB.display_order).all()
+    
+    return [
+        FeaturedBusinessOut(
+            id=f.id,
+            company_id=f.company_id,
+            company_name=f.company.legal_name,
+            display_name=f.display_name or f.company.legal_name,
+            logo_url=f.logo_url,
+            is_active=f.is_active,
+            display_order=f.display_order,
+            created_at=f.created_at.isoformat()
+        ) for f in featured
     ]
 
 # ==================== USER MANAGEMENT ENDPOINTS ====================
