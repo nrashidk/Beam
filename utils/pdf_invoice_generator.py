@@ -178,13 +178,13 @@ class PDFInvoiceGenerator:
         invoice_type_code = str(invoice_data.get('invoice_type', '380'))
         
         if vat_enabled and invoice_classification:
-            # VAT-registered business: Show classification
+            # VAT-registered business: Show TAX invoice classification (FTA compliant)
             if invoice_classification == 'full':
                 invoice_type = 'FULL TAX INVOICE'
             elif invoice_classification == 'simplified':
                 invoice_type = 'SIMPLIFIED TAX INVOICE'
             else:
-                # Fallback to standard types
+                # Fallback to VAT-compliant types (only for registered businesses)
                 invoice_type_map = {
                     '380': 'TAX INVOICE',
                     '381': 'CREDIT NOTE',
@@ -192,13 +192,14 @@ class PDFInvoiceGenerator:
                 }
                 invoice_type = invoice_type_map.get(invoice_type_code, 'TAX INVOICE')
         else:
-            # Non-VAT business: Standard invoice types
+            # Non-VAT business: CANNOT use "TAX" label (UAE FTA law)
+            # Only VAT-registered businesses can issue "Tax Invoice" documents
             invoice_type_map = {
-                '380': 'TAX INVOICE',
-                '381': 'CREDIT NOTE',
-                '480': 'COMMERCIAL INVOICE'
+                '380': 'INVOICE',                # Standard invoice (no VAT)
+                '381': 'CREDIT NOTE',            # Credit notes allowed
+                '480': 'COMMERCIAL INVOICE'      # Commercial invoice allowed
             }
-            invoice_type = invoice_type_map.get(invoice_type_code, 'TAX INVOICE')
+            invoice_type = invoice_type_map.get(invoice_type_code, 'INVOICE')
         
         invoice_info.append(Paragraph(
             invoice_type,
