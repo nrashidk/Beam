@@ -39,6 +39,7 @@ class EmailService:
                     aws_access_key_id=self.aws_access_key,
                     aws_secret_access_key=self.aws_secret_key
                 )
+                print(f"✅ AWS SES configured successfully (Region: {self.aws_region}, Sender: {self.sender_email})")
             except Exception as e:
                 print(f"⚠️  AWS SES client initialization error: {e}")
                 self.is_configured = False
