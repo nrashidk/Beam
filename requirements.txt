@@ -16,3 +16,5 @@ twilio
 pandas
 openpyxl
 stripe
+Pillow
+reportlab
