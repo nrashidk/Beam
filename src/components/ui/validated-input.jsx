@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Input } from './input';
 import { 
   validatePhone, 
@@ -91,10 +92,11 @@ export function EmailInput({ value, onChange, required = false, className = '', 
 }
 
 /**
- * Password Input with built-in validation
+ * Password Input with built-in validation and visibility toggle
  */
 export function PasswordInput({ value, onChange, required = false, className = '', placeholder = 'Enter strong password', ...props }) {
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     const newValue = e.target.value;
@@ -109,20 +111,38 @@ export function PasswordInput({ value, onChange, required = false, className = '
     onChange(e);
   };
 
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
   return (
     <div>
-      <Input
-        type="password"
-        required={required}
-        placeholder={placeholder}
-        minLength={8}
-        pattern={VALIDATION_PATTERNS.password}
-        title={VALIDATION_TITLES.password}
-        value={value}
-        onChange={handleChange}
-        className={className}
-        {...props}
-      />
+      <div className="relative">
+        <Input
+          type={showPassword ? 'text' : 'password'}
+          required={required}
+          placeholder={placeholder}
+          minLength={8}
+          pattern={VALIDATION_PATTERNS.password}
+          title={VALIDATION_TITLES.password}
+          value={value}
+          onChange={handleChange}
+          className={className}
+          {...props}
+        />
+        <button
+          type="button"
+          onClick={togglePasswordVisibility}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          aria-label={showPassword ? 'Hide password' : 'Show password'}
+        >
+          {showPassword ? (
+            <EyeOff className="h-5 w-5" />
+          ) : (
+            <Eye className="h-5 w-5" />
+          )}
+        </button>
+      </div>
       {error && (
         <small className="text-xs text-red-500">{error}</small>
       )}

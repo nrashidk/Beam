@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Network, Key, Globe, Info } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Network, Key, Globe, Info, Eye, EyeOff } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -28,6 +28,7 @@ export default function PEPPOLSettings() {
     peppol_last_tested_at: null
   });
   const [apiKeyChanged, setApiKeyChanged] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const providers = [
     {
@@ -310,16 +311,30 @@ export default function PEPPOLSettings() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       API Key / Credentials
                     </label>
-                    <input
-                      type="password"
-                      placeholder={settings.peppol_api_key?.startsWith('***') ? "Currently configured (hidden)" : "Enter your API key"}
-                      value={apiKeyChanged ? settings.peppol_api_key : ''}
-                      onChange={(e) => {
-                        setSettings({...settings, peppol_api_key: e.target.value});
-                        setApiKeyChanged(true);
-                      }}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showApiKey ? "text" : "password"}
+                        placeholder={settings.peppol_api_key?.startsWith('***') ? "Currently configured (hidden)" : "Enter your API key"}
+                        value={apiKeyChanged ? settings.peppol_api_key : ''}
+                        onChange={(e) => {
+                          setSettings({...settings, peppol_api_key: e.target.value});
+                          setApiKeyChanged(true);
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded"
+                        aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+                      >
+                        {showApiKey ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
+                      </button>
+                    </div>
                     <p className="text-sm text-gray-500 mt-1">
                       {settings.peppol_api_key?.startsWith('***') && !apiKeyChanged
                         ? 'Leave empty to keep current API key, or enter new key to update'
