@@ -224,23 +224,19 @@ export default function Homepage() {
           </div>
         </div>
 
-        {/* Statistics Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Statistics Section - Real Aggregated Platform Data */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-            <div className="text-4xl font-bold text-gray-900 mb-2">1Bn+</div>
-            <p className="text-sm text-gray-700">e-Invoices generated annually on InvoLinks platform</p>
+            <div className="text-4xl font-bold text-indigo-600 mb-2">
+              {publicStats.totalCompanies > 0 ? publicStats.totalCompanies.toLocaleString() : '—'}
+            </div>
+            <p className="text-sm text-gray-700">Active businesses using InvoLinks</p>
           </div>
           <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-            <div className="text-4xl font-bold text-gray-900 mb-2">99.8%</div>
-            <p className="text-sm text-gray-700">Success rate in e-invoice generation</p>
-          </div>
-          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-            <div className="text-4xl font-bold text-gray-900 mb-2">$5Bn+</div>
-            <p className="text-sm text-gray-700">Worth Invoices processed</p>
-          </div>
-          <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
-            <div className="text-4xl font-bold text-gray-900 mb-2">10%+</div>
-            <p className="text-sm text-gray-700">Market share in GCC countries</p>
+            <div className="text-4xl font-bold text-indigo-600 mb-2">
+              {publicStats.totalInvoices > 0 ? publicStats.totalInvoices.toLocaleString() : '—'}
+            </div>
+            <p className="text-sm text-gray-700">e-Invoices generated on InvoLinks platform</p>
           </div>
         </div>
 

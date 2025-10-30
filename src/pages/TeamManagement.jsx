@@ -25,9 +25,11 @@ export default function TeamManagement() {
   });
   const [inviteResult, setInviteResult] = useState(null);
   const [error, setError] = useState(null);
+  const [tierLimits, setTierLimits] = useState(null);
 
   useEffect(() => {
     fetchTeamMembers();
+    fetchTierLimits();
   }, []);
 
   const fetchTeamMembers = async () => {
@@ -43,10 +45,31 @@ export default function TeamManagement() {
     }
   };
 
+  const fetchTierLimits = async () => {
+    try {
+      const response = await api.get('/subscription/current');
+      setTierLimits(response.data.plan);
+    } catch (error) {
+      console.error('Failed to fetch tier limits:', error);
+    }
+  };
+
   const handleInvite = async (e) => {
     e.preventDefault();
     setError(null);
     setInviteResult(null);
+
+    // Validate tier limits before submission
+    if (!canInviteRole(inviteForm.role)) {
+      setError(
+        `Tier limit reached! Your ${tierLimits?.name || 'current'} plan allows ${
+          inviteForm.role === 'BUSINESS_ADMIN' 
+            ? `${tierLimits?.max_business_admins || 0} Business Admins` 
+            : `${tierLimits?.max_finance_users || 0} Finance Users`
+        }. Please upgrade your plan to invite more team members.`
+      );
+      return;
+    }
 
     try {
       const response = await api.post('/users/invite', inviteForm);
@@ -77,11 +100,44 @@ export default function TeamManagement() {
   const getRoleBadge = (role) => {
     const roleMap = {
       'SUPER_ADMIN': { label: 'Super Admin', className: 'bg-purple-600' },
-      'COMPANY_ADMIN': { label: 'Admin', className: 'bg-blue-600' },
+      'COMPANY_ADMIN': { label: 'Company Admin', className: 'bg-blue-600' },
+      'BUSINESS_ADMIN': { label: 'Business Admin', className: 'bg-indigo-600' },
       'FINANCE_USER': { label: 'Finance User', className: 'bg-green-600' }
     };
     const config = roleMap[role] || { label: role, className: 'bg-gray-600' };
     return <Badge className={config.className}>{config.label}</Badge>;
+  };
+
+  const getCurrentRoleCounts = () => {
+    const businessAdmins = teamMembers.filter(m => m.role === 'BUSINESS_ADMIN').length;
+    const financeUsers = teamMembers.filter(m => m.role === 'FINANCE_USER').length;
+    return { businessAdmins, financeUsers };
+  };
+
+  const canInviteRole = (role) => {
+    if (!tierLimits) return true;
+    const counts = getCurrentRoleCounts();
+    
+    if (role === 'BUSINESS_ADMIN') {
+      return counts.businessAdmins < tierLimits.max_business_admins;
+    }
+    if (role === 'FINANCE_USER') {
+      return counts.financeUsers < tierLimits.max_finance_users;
+    }
+    return true;
+  };
+
+  const getRoleLimit = (role) => {
+    if (!tierLimits) return null;
+    const counts = getCurrentRoleCounts();
+    
+    if (role === 'BUSINESS_ADMIN') {
+      return `${counts.businessAdmins} / ${tierLimits.max_business_admins}`;
+    }
+    if (role === 'FINANCE_USER') {
+      return `${counts.financeUsers} / ${tierLimits.max_finance_users}`;
+    }
+    return null;
   };
 
   return (
@@ -165,28 +221,64 @@ export default function TeamManagement() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role
+                    Role {tierLimits && <span className="text-xs text-gray-500 font-normal">(Current Tier: {tierLimits.name})</span>}
                   </label>
                   <Select value={inviteForm.role} onValueChange={(value) => setInviteForm({ ...inviteForm, role: value })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="FINANCE_USER">Finance User</SelectItem>
-                      <SelectItem value="COMPANY_ADMIN">Admin</SelectItem>
+                      <SelectItem value="FINANCE_USER" disabled={!canInviteRole('FINANCE_USER')}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>Finance User</span>
+                          {tierLimits && (
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {getRoleLimit('FINANCE_USER')}
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="BUSINESS_ADMIN" disabled={!canInviteRole('BUSINESS_ADMIN')}>
+                        <div className="flex items-center justify-between w-full">
+                          <span>Business Admin</span>
+                          {tierLimits && (
+                            <Badge variant="outline" className="ml-2 text-xs">
+                              {getRoleLimit('BUSINESS_ADMIN')}
+                            </Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="COMPANY_ADMIN">Company Admin (Owner-level)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Finance User: Can create and manage invoices. Admin: Full access to all features.
-                  </p>
+                  <div className="text-xs text-gray-500 mt-2 space-y-1">
+                    <p><strong>Finance User:</strong> Can create invoices, manage expenses, view financial data</p>
+                    <p><strong>Business Admin:</strong> Can manage invoices, expenses, inventory, suppliers, and team members</p>
+                    <p><strong>Company Admin:</strong> Full access including billing, branding, and settings</p>
+                    {tierLimits && (
+                      <p className="text-blue-600 mt-2">
+                        <strong>Your Plan:</strong> {tierLimits.name} - {tierLimits.max_business_admins} Business Admins, {tierLimits.max_finance_users} Finance Users
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
-                  <Button type="submit">Send Invitation</Button>
+                  <Button 
+                    type="submit" 
+                    disabled={!canInviteRole(inviteForm.role)}
+                  >
+                    Send Invitation
+                  </Button>
                   <Button type="button" variant="outline" onClick={() => setShowInviteForm(false)}>
                     Cancel
                   </Button>
                 </div>
+                {!canInviteRole(inviteForm.role) && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg text-sm">
+                    <strong>Tier limit reached!</strong> Upgrade your plan to invite more {inviteForm.role === 'BUSINESS_ADMIN' ? 'Business Admins' : 'Finance Users'}.
+                  </div>
+                )}
               </form>
             )}
 
