@@ -11,7 +11,8 @@ import {
   Shield,
   CreditCard,
   TrendingUp,
-  BarChart3
+  BarChart3,
+  Percent
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -31,6 +32,7 @@ export default function Sidebar() {
     { path: '/ap/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
     { path: '/settings/security', icon: Shield, label: 'Security' },
     { path: '/settings/team', icon: Users, label: 'Team' },
+    { path: '/settings/vat', icon: Percent, label: 'VAT Settings' },
   ];
 
   const isActive = (path) => location.pathname === path;
