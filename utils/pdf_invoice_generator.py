@@ -162,7 +162,9 @@ class PDFInvoiceGenerator:
                 self.styles['NormalText']
             ))
         
-        if invoice_data.get('supplier_trn'):
+        # Conditional TRN display (only for VAT-registered businesses)
+        vat_enabled = invoice_data.get('vat_enabled', False)
+        if vat_enabled and invoice_data.get('supplier_trn'):
             company_info.append(Paragraph(
                 f"<b>TRN:</b> {invoice_data['supplier_trn']}",
                 self.styles['NormalText']
@@ -170,15 +172,33 @@ class PDFInvoiceGenerator:
         
         # Right column: Invoice details
         invoice_info = []
-        invoice_type_map = {
-            '380': 'TAX INVOICE',
-            '381': 'CREDIT NOTE',
-            '480': 'COMMERCIAL INVOICE'
-        }
-        invoice_type = invoice_type_map.get(
-            str(invoice_data.get('invoice_type', '380')),
-            'TAX INVOICE'
-        )
+        
+        # UAE VAT-specific invoice classification
+        invoice_classification = invoice_data.get('invoice_classification', '')
+        invoice_type_code = str(invoice_data.get('invoice_type', '380'))
+        
+        if vat_enabled and invoice_classification:
+            # VAT-registered business: Show classification
+            if invoice_classification == 'full':
+                invoice_type = 'FULL TAX INVOICE'
+            elif invoice_classification == 'simplified':
+                invoice_type = 'SIMPLIFIED TAX INVOICE'
+            else:
+                # Fallback to standard types
+                invoice_type_map = {
+                    '380': 'TAX INVOICE',
+                    '381': 'CREDIT NOTE',
+                    '480': 'COMMERCIAL INVOICE'
+                }
+                invoice_type = invoice_type_map.get(invoice_type_code, 'TAX INVOICE')
+        else:
+            # Non-VAT business: Standard invoice types
+            invoice_type_map = {
+                '380': 'TAX INVOICE',
+                '381': 'CREDIT NOTE',
+                '480': 'COMMERCIAL INVOICE'
+            }
+            invoice_type = invoice_type_map.get(invoice_type_code, 'TAX INVOICE')
         
         invoice_info.append(Paragraph(
             invoice_type,
