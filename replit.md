@@ -31,7 +31,7 @@ Detailed explanations preferred.
 - **FTA Audit File Generation:** Production-ready UAE Federal Tax Authority (FAF) compliant audit file generation in CSV/TXT format, including sales/purchase invoice data, VAT categorization, and compliance statistics.
 - **Payment Processing:** Supports Cash, Card, POS, Bank transfer, Digital wallets, with payment intents and card surcharge configuration.
 - **Branding:** Custom logos, configurable colors/fonts, header/footer text with drag-and-drop upload and live preview.
-- **Multi-User Team Management:** Unlimited team members, role-based access (Owner, Admin, Finance User), and invitation system.
+- **Multi-User Team Management:** Role-based team management with invitation system and tier-based user limits.
 - **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes for secure user access.
 - **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
 - **Content Management System (CMS):** Database-backed content management allowing SuperAdmins to edit all website text without code changes, with a dedicated UI and dynamic content loading.
@@ -52,6 +52,17 @@ Detailed explanations preferred.
     - PDF Invoice Generator: Conditional TRN display, invoice classification headers (FULL TAX INVOICE vs SIMPLIFIED TAX INVOICE), safe fallbacks for non-VAT businesses
     - Design Philosophy: Complete zero-impact add-on architecture - all VAT features are hidden by default, only visible when business opts into VAT registration via Settings toggle. Non-VAT businesses experience identical behavior to pre-VAT build.
     - Status: Phase 1 (A+B) complete and production-ready, architect-reviewed and approved
+- **Enhanced RBAC System (Phase 2 Complete - Oct 30, 2025):** Production-ready role-based access control with three-tier user hierarchy and flexible SuperAdmin management. Features include:
+    - Role Hierarchy: COMPANY_ADMIN (owner with billing access), BUSINESS_ADMIN (super admin without billing), FINANCE_USER (limited staff access for invoices/expenses)
+    - Tier-Based User Limits: max_business_admins and max_finance_users per subscription plan, enforced in frontend and backend
+    - User Tracking: created_by_user_id fields on invoices and expenses, payment verification tracking (payment_verified_by_user_id, payment_verified_at)
+    - Team Management UI: Role selector with real-time tier limit display, automatic validation preventing over-limit invites, clear upgrade prompts
+    - SuperAdmin Tier Management: Dedicated UI for editing all tier limits (max_business_admins, max_finance_users, max_invoices, etc.) without code changes
+    - Platform Statistics Dashboard: Privacy-focused aggregated metrics showing total companies, active subscriptions, total invoices, platform revenue (NO individual business data access)
+    - Featured Businesses Management: SuperAdmin panel to select businesses for homepage moving bar, with display order control
+    - Homepage Integration: Real-time platform counters displaying actual aggregated data, featured businesses carousel
+    - Security: Explicit tier limit validation in invitation flow preventing bypass, SuperAdmin-only endpoints with proper authentication
+    - Status: Phase 2 complete and production-ready, architect-reviewed and approved with critical security fix for tier limit bypass
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistence and availability.
