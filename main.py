@@ -3990,6 +3990,122 @@ def send_invoice(
         "sent_at": invoice.sent_at.isoformat()
     }
 
+@app.get("/invoices/{invoice_id}/pdf", tags=["Invoices"])
+def download_invoice_pdf(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Download invoice as PDF
+    
+    Generates a professional, UAE FTA-compliant PDF invoice with:
+    - Company branding and logo
+    - Complete invoice details and line items
+    - VAT breakdown
+    - QR code for public viewing
+    - Digital signature indicator
+    """
+    from fastapi.responses import StreamingResponse
+    from utils.pdf_invoice_generator import generate_invoice_pdf
+    
+    # Get invoice
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    # Get line items
+    line_items = db.query(InvoiceLineItemDB).filter(
+        InvoiceLineItemDB.invoice_id == invoice.id
+    ).order_by(InvoiceLineItemDB.line_number).all()
+    
+    # Prepare invoice data for PDF
+    invoice_data = {
+        'invoice_number': invoice.invoice_number,
+        'invoice_type': invoice.invoice_type.value,
+        'status': invoice.status.value,
+        'issue_date': invoice.issue_date.isoformat() if invoice.issue_date else '',
+        'due_date': invoice.due_date.isoformat() if invoice.due_date else None,
+        'currency_code': invoice.currency_code,
+        
+        # Supplier
+        'supplier_trn': invoice.supplier_trn,
+        'supplier_name': invoice.supplier_name,
+        'supplier_address': invoice.supplier_address,
+        'supplier_city': invoice.supplier_city,
+        'supplier_country': invoice.supplier_country,
+        
+        # Customer
+        'customer_trn': invoice.customer_trn,
+        'customer_name': invoice.customer_name,
+        'customer_address': invoice.customer_address,
+        'customer_city': invoice.customer_city,
+        'customer_country': invoice.customer_country,
+        
+        # Amounts
+        'subtotal_amount': invoice.subtotal_amount,
+        'tax_amount': invoice.tax_amount,
+        'total_amount': invoice.total_amount,
+        'amount_due': invoice.amount_due,
+        
+        # Additional info
+        'payment_terms': invoice.payment_terms,
+        'notes': invoice.invoice_notes,
+        
+        # Compliance
+        'signature_b64': invoice.signature_b64,
+        'signing_cert_serial': invoice.signing_cert_serial,
+        'signing_timestamp': invoice.signing_timestamp.isoformat() if invoice.signing_timestamp else None
+    }
+    
+    # Prepare line items
+    line_items_data = []
+    for line in line_items:
+        line_items_data.append({
+            'line_number': line.line_number,
+            'item_name': line.item_name,
+            'item_description': line.item_description,
+            'quantity': line.quantity,
+            'unit_price': line.unit_price,
+            'tax_percent': line.tax_percent,
+            'line_total_amount': line.line_total_amount,
+            'currency_code': invoice.currency_code
+        })
+    
+    # Generate public URL for QR code
+    platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
+    public_url = f"{platform_url}/invoices/view/{invoice.share_token}" if invoice.share_token else None
+    
+    # Generate PDF
+    try:
+        pdf_bytes = generate_invoice_pdf(
+            invoice_data=invoice_data,
+            line_items=line_items_data,
+            public_url=public_url
+        )
+        
+        # Return PDF as download
+        filename = f"{invoice.invoice_number.replace('/', '_')}.pdf"
+        
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": "application/pdf"
+            }
+        )
+    
+    except Exception as e:
+        print(f"❌ PDF generation error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(500, f"PDF generation failed: {str(e)}")
+
 @app.post("/invoices/{invoice_id}/cancel", tags=["Invoices"])
 def cancel_invoice(
     invoice_id: str,
