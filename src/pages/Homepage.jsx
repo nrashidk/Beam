@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { PhoneInput, EmailInput, PasswordInput } from '../components/ui/validated-input';
+import Footer from '../components/Footer';
 import api from '../lib/api';
 
 export default function Homepage() {
@@ -350,6 +351,7 @@ export default function Homepage() {
           </CardContent>
         </Card>
       </main>
+      <Footer />
     </div>
   );
 }
