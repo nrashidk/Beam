@@ -29,6 +29,8 @@ import BillingSettings from './pages/BillingSettings';
 import FinanceDashboard from './pages/FinanceDashboard';
 import SuppliersManagement from './pages/SuppliersManagement';
 import PublicInvoiceView from './pages/PublicInvoiceView';
+import PaymentVerification from './pages/PaymentVerification';
+import DailyReconciliation from './pages/DailyReconciliation';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -200,6 +202,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <FinanceDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payment-verification"
+            element={
+              <ProtectedRoute>
+                <PaymentVerification />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reconciliation"
+            element={
+              <ProtectedRoute>
+                <DailyReconciliation />
               </ProtectedRoute>
             }
           />

@@ -12,7 +12,9 @@ import {
   CreditCard,
   TrendingUp,
   BarChart3,
-  Percent
+  Percent,
+  CheckCircle,
+  FileSpreadsheet
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -28,8 +30,10 @@ export default function Sidebar() {
     { path: '/finance', icon: BarChart3, label: 'Finance' },
     { path: '/audit-files', icon: FileCheck, label: 'FTA Audit' },
     { path: '/invoices', icon: FileText, label: 'Invoices' },
+    { path: '/payment-verification', icon: CheckCircle, label: 'Payment Verification' },
     { path: '/settings/peppol', icon: Network, label: 'PEPPOL' },
     { path: '/ap/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
+    { path: '/reconciliation', icon: FileSpreadsheet, label: 'Reconciliation' },
     { path: '/settings/security', icon: Shield, label: 'Security' },
     { path: '/settings/team', icon: Users, label: 'Team' },
     { path: '/settings/vat', icon: Percent, label: 'VAT Settings' },
