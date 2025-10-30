@@ -43,13 +43,15 @@ Detailed explanations preferred.
 - **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, Crypto Utilities Module (SHA-256, RSA-2048), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
 - **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation, structured error handling, and a global exception handler.
 - **Production Signing Keys System:** Complete cryptographic key management for UAE FTA compliance, including RSA-2048 key pair and X.509 certificate generation, CSR support, and secure storage via Replit Secrets.
-- **VAT Compliance System (Phase 1A - Oct 30, 2025):** Comprehensive UAE VAT opt-in infrastructure with automatic invoice classification, TRN tracking, and tax code management. Features include:
+- **VAT Compliance System (Phase 1 Complete - Oct 30, 2025):** Production-ready UAE VAT opt-in infrastructure with automatic invoice classification, TRN tracking, and tax code management. Features include:
     - VAT Utilities Module (utils/vat_utils.py): 5 UAE tax codes (SR-Standard Rate 5%, ZR-Zero Rated 0%, ES-Exempt, RC-Reverse Charge, OP-Out of Scope), TRN validation (15-digit format), automatic invoice classification (Full >=AED 10k, Simplified <AED 10k)
     - Database Extensions: 7 new columns (companies.vat_enabled, vat_registration_date; invoices.tax_code, invoice_classification; invoice_line_items.tax_code; expenses.tax_code, vendor_id)
     - Backend API: GET/PUT /settings/vat endpoints with authentication, TRN validation, and automatic invoice classification on creation
-    - Frontend: VAT Settings page (opt-in toggle, TRN input with validation, registration date picker) with Percent icon navigation
-    - Design Philosophy: Zero-impact add-on architecture - all VAT features are hidden by default, only visible when business opts into VAT registration via Settings toggle
-    - Status: Phase 1A complete (infrastructure), Phase 1B pending (invoice/PDF integration)
+    - Frontend VAT Settings: Opt-in toggle, TRN input with validation, registration date picker, accessible via Percent icon in sidebar
+    - CreateInvoice Integration: Conditional UAE VAT tax code selector for each line item (only visible when VAT enabled), info banner for VAT-registered businesses, intelligent payload cleaning (strips tax_code when VAT disabled for zero impact)
+    - PDF Invoice Generator: Conditional TRN display, invoice classification headers (FULL TAX INVOICE vs SIMPLIFIED TAX INVOICE), safe fallbacks for non-VAT businesses
+    - Design Philosophy: Complete zero-impact add-on architecture - all VAT features are hidden by default, only visible when business opts into VAT registration via Settings toggle. Non-VAT businesses experience identical behavior to pre-VAT build.
+    - Status: Phase 1 (A+B) complete and production-ready, architect-reviewed and approved
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistence and availability.
