@@ -910,6 +910,35 @@ class BillingInvoiceDB(Base):
     # Relationships
     company = relationship("CompanyDB", backref="billing_invoices")
 
+class ExpenseDB(Base):
+    """Simple expense tracking - rent, utilities, salaries, materials, etc."""
+    __tablename__ = "expenses"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Expense details
+    expense_date = Column(Date, nullable=False, index=True)
+    category = Column(String, nullable=False)  # RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
+    description = Column(Text, nullable=True)
+    
+    # Financial
+    amount = Column(Float, nullable=False)
+    vat_amount = Column(Float, default=0.0)  # Input VAT paid to supplier
+    total_amount = Column(Float, nullable=False)  # amount + vat_amount
+    currency_code = Column(String, default="AED")
+    
+    # Reference
+    reference_number = Column(String, nullable=True)
+    supplier_name = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="expenses")
+
 # Create tables
 Base.metadata.create_all(engine)
 
@@ -4378,6 +4407,298 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
             ) for tb in invoice.tax_breakdowns
         ]
     )
+
+# ==================== EXPENSE TRACKING (SIMPLE FINANCIAL MANAGEMENT) ====================
+
+@app.post("/expenses", tags=["Expenses"])
+def create_expense(
+    expense_date: str,
+    category: str,
+    amount: float,
+    vat_amount: float = 0.0,
+    description: str = None,
+    supplier_name: str = None,
+    reference_number: str = None,
+    notes: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a simple expense record
+    
+    Categories: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
+    
+    Example for spa:
+    - Rent: AED 4,000
+    - Utilities: AED 1,500 (includes VAT 71.43)
+    - Salaries: AED 15,000 (no VAT)
+    - Raw Materials: AED 4,000 (includes VAT 190.48)
+    """
+    from dateutil import parser
+    from uuid import uuid4
+    
+    # Validate category
+    valid_categories = ["RENT", "UTILITIES", "SALARIES", "RAW_MATERIALS", "OTHER"]
+    if category.upper() not in valid_categories:
+        raise HTTPException(400, f"Invalid category. Must be one of: {', '.join(valid_categories)}")
+    
+    # Parse date
+    try:
+        expense_date_obj = parser.parse(expense_date).date()
+    except:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD or ISO format")
+    
+    # Calculate total
+    total_amount = amount + vat_amount
+    
+    # Create expense
+    expense_id = f"exp_{uuid4().hex[:12]}"
+    
+    expense = ExpenseDB(
+        id=expense_id,
+        company_id=current_user.company_id,
+        expense_date=expense_date_obj,
+        category=category.upper(),
+        description=description,
+        amount=amount,
+        vat_amount=vat_amount,
+        total_amount=total_amount,
+        supplier_name=supplier_name,
+        reference_number=reference_number,
+        notes=notes
+    )
+    
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+    
+    return {
+        "id": expense.id,
+        "expense_date": expense.expense_date.isoformat(),
+        "category": expense.category,
+        "description": expense.description,
+        "amount": expense.amount,
+        "vat_amount": expense.vat_amount,
+        "total_amount": expense.total_amount,
+        "supplier_name": expense.supplier_name,
+        "reference_number": expense.reference_number,
+        "created_at": expense.created_at.isoformat()
+    }
+
+@app.get("/expenses", tags=["Expenses"])
+def list_expenses(
+    month: str = None,  # "2025-10" for October 2025
+    category: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    List all expenses with optional filters
+    
+    Filters:
+    - month: "2025-10" for October 2025
+    - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
+    """
+    query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
+    
+    # Filter by month
+    if month:
+        try:
+            year, month_num = map(int, month.split('-'))
+            from datetime import date
+            start_date = date(year, month_num, 1)
+            # Calculate end date (last day of month)
+            if month_num == 12:
+                end_date = date(year + 1, 1, 1)
+            else:
+                end_date = date(year, month_num + 1, 1)
+            
+            query = query.filter(
+                ExpenseDB.expense_date >= start_date,
+                ExpenseDB.expense_date < end_date
+            )
+        except:
+            raise HTTPException(400, "Invalid month format. Use YYYY-MM")
+    
+    # Filter by category
+    if category:
+        query = query.filter(ExpenseDB.category == category.upper())
+    
+    # Order by date descending
+    expenses = query.order_by(ExpenseDB.expense_date.desc()).all()
+    
+    return {
+        "expenses": [
+            {
+                "id": exp.id,
+                "expense_date": exp.expense_date.isoformat(),
+                "category": exp.category,
+                "description": exp.description,
+                "amount": exp.amount,
+                "vat_amount": exp.vat_amount,
+                "total_amount": exp.total_amount,
+                "supplier_name": exp.supplier_name,
+                "reference_number": exp.reference_number,
+                "notes": exp.notes,
+                "created_at": exp.created_at.isoformat()
+            } for exp in expenses
+        ],
+        "total_count": len(expenses)
+    }
+
+@app.get("/expenses/summary", tags=["Expenses"])
+def get_financial_summary(
+    month: str = None,  # "2025-10" for October 2025
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Get financial summary: Net Income and Net VAT
+    
+    Calculation:
+    - Revenue (from invoices issued and paid)
+    - Total Expenses (from expense records)
+    - Net Income = Revenue - Expenses
+    
+    - Output VAT (from sales invoices)
+    - Input VAT (from expense VAT)
+    - Net VAT Payable = Output VAT - Input VAT
+    
+    Example for Spa (October):
+    - Revenue: AED 35,000 (from services and products)
+    - Expenses: AED 24,500 (rent + utilities + salaries + materials)
+    - Net Income: AED 10,500
+    
+    - Output VAT: AED 6,000 (VAT collected from customers)
+    - Input VAT: AED 3,000 (VAT paid to suppliers)
+    - Net VAT: AED 3,000 (to pay to FTA)
+    """
+    from datetime import date
+    
+    # Parse month filter
+    if month:
+        try:
+            year, month_num = map(int, month.split('-'))
+            start_date = date(year, month_num, 1)
+            if month_num == 12:
+                end_date = date(year + 1, 1, 1)
+            else:
+                end_date = date(year, month_num + 1, 1)
+        except:
+            raise HTTPException(400, "Invalid month format. Use YYYY-MM")
+    else:
+        # Default to current month
+        from datetime import datetime
+        now = datetime.now()
+        start_date = date(now.year, now.month, 1)
+        if now.month == 12:
+            end_date = date(now.year + 1, 1, 1)
+        else:
+            end_date = date(now.year, now.month + 1, 1)
+    
+    # ========== REVENUE (from issued invoices) ==========
+    revenue_query = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status.in_([InvoiceStatus.ISSUED, InvoiceStatus.SENT, InvoiceStatus.PAID]),
+        InvoiceDB.issue_date >= start_date,
+        InvoiceDB.issue_date < end_date
+    )
+    
+    total_revenue = 0.0
+    output_vat = 0.0
+    invoice_count = 0
+    
+    for invoice in revenue_query.all():
+        total_revenue += invoice.subtotal_amount or 0.0
+        output_vat += invoice.tax_amount or 0.0
+        invoice_count += 1
+    
+    # ========== EXPENSES (from expense records) ==========
+    expense_query = db.query(ExpenseDB).filter(
+        ExpenseDB.company_id == current_user.company_id,
+        ExpenseDB.expense_date >= start_date,
+        ExpenseDB.expense_date < end_date
+    )
+    
+    total_expenses = 0.0
+    input_vat = 0.0
+    expense_count = 0
+    expense_breakdown = {}
+    
+    for expense in expense_query.all():
+        total_expenses += expense.amount or 0.0
+        input_vat += expense.vat_amount or 0.0
+        expense_count += 1
+        
+        # Category breakdown
+        cat = expense.category
+        if cat not in expense_breakdown:
+            expense_breakdown[cat] = {"amount": 0.0, "vat": 0.0, "count": 0}
+        expense_breakdown[cat]["amount"] += expense.amount
+        expense_breakdown[cat]["vat"] += expense.vat_amount
+        expense_breakdown[cat]["count"] += 1
+    
+    # ========== CALCULATIONS ==========
+    net_income = total_revenue - total_expenses
+    net_vat_payable = output_vat - input_vat
+    
+    return {
+        "period": {
+            "start_date": start_date.isoformat(),
+            "end_date": (end_date - timedelta(days=1)).isoformat(),
+            "month": f"{start_date.year}-{start_date.month:02d}"
+        },
+        "revenue": {
+            "total": round(total_revenue, 2),
+            "invoice_count": invoice_count,
+            "vat_collected": round(output_vat, 2)
+        },
+        "expenses": {
+            "total": round(total_expenses, 2),
+            "expense_count": expense_count,
+            "vat_paid": round(input_vat, 2),
+            "breakdown": {
+                cat: {
+                    "amount": round(data["amount"], 2),
+                    "vat": round(data["vat"], 2),
+                    "count": data["count"]
+                } for cat, data in expense_breakdown.items()
+            }
+        },
+        "summary": {
+            "net_income": round(net_income, 2),
+            "net_vat_payable": round(net_vat_payable, 2),
+            "gross_revenue": round(total_revenue + output_vat, 2),
+            "total_costs": round(total_expenses + input_vat, 2),
+            "profit_margin_percent": round((net_income / total_revenue * 100), 2) if total_revenue > 0 else 0
+        },
+        "vat_details": {
+            "output_vat": round(output_vat, 2),
+            "input_vat": round(input_vat, 2),
+            "net_vat": round(net_vat_payable, 2),
+            "vat_status": "PAYABLE" if net_vat_payable > 0 else "REFUND" if net_vat_payable < 0 else "NEUTRAL"
+        }
+    }
+
+@app.delete("/expenses/{expense_id}", tags=["Expenses"])
+def delete_expense(
+    expense_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Delete an expense record"""
+    expense = db.query(ExpenseDB).filter(
+        ExpenseDB.id == expense_id,
+        ExpenseDB.company_id == current_user.company_id
+    ).first()
+    
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+    
+    db.delete(expense)
+    db.commit()
+    
+    return {"message": "Expense deleted successfully", "expense_id": expense_id}
 
 # ==================== CORNER 4: AP MANAGEMENT (INWARD INVOICES) ====================
 
