@@ -4214,6 +4214,231 @@ def get_invoice(
         ]
     )
 
+# ==================== PAYMENT VERIFICATION ENDPOINTS ====================
+
+class PaymentVerificationRequest(BaseModel):
+    payment_method: str  # Cash, Card, POS, Bank Transfer, etc.
+    payment_reference: Optional[str] = None
+    payment_notes: Optional[str] = None
+    payment_date: Optional[str] = None  # ISO date string
+
+@app.post("/invoices/{invoice_id}/verify-payment", tags=["Invoices"])
+def verify_invoice_payment(
+    invoice_id: str,
+    payment: PaymentVerificationRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Verify and record payment for an invoice (offline payments: Cash, POS, Bank Transfer)
+    
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    # Check role-based permissions
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to verify payments")
+    
+    # Get invoice
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id
+    ).first()
+    
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    
+    if invoice.payment_status == 'PAID':
+        raise HTTPException(400, "Invoice is already marked as paid")
+    
+    # Parse payment date
+    from datetime import datetime
+    if payment.payment_date:
+        try:
+            payment_dt = datetime.fromisoformat(payment.payment_date.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(400, "Invalid payment_date format. Use ISO format (YYYY-MM-DD)")
+    else:
+        payment_dt = datetime.utcnow()
+    
+    # Update invoice payment details
+    invoice.payment_status = 'PAID'
+    invoice.payment_method = payment.payment_method
+    invoice.payment_reference = payment.payment_reference
+    invoice.payment_date = payment_dt
+    invoice.paid_amount = invoice.total_amount  # Full payment
+    invoice.amount_due = 0.0
+    invoice.paid_by_user_id = current_user.id
+    invoice.paid_at = datetime.utcnow()
+    invoice.payment_verified_by_user_id = current_user.id
+    invoice.payment_verified_at = datetime.utcnow()
+    
+    # Add payment notes to invoice notes if provided
+    if payment.payment_notes:
+        if invoice.invoice_notes:
+            invoice.invoice_notes += f"\n\nPayment Notes: {payment.payment_notes}"
+        else:
+            invoice.invoice_notes = f"Payment Notes: {payment.payment_notes}"
+    
+    db.commit()
+    db.refresh(invoice)
+    
+    return {
+        "success": True,
+        "invoice_id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "payment_status": invoice.payment_status,
+        "payment_method": invoice.payment_method,
+        "payment_date": invoice.payment_date.isoformat() if invoice.payment_date else None,
+        "paid_amount": invoice.paid_amount,
+        "verified_by": current_user.email,
+        "verified_at": invoice.payment_verified_at.isoformat()
+    }
+
+@app.get("/invoices/pending-payment", tags=["Invoices"])
+def get_pending_payment_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 100
+):
+    """
+    Get list of invoices awaiting payment verification
+    
+    Returns invoices with status ISSUED and payment_status UNPAID or SCHEDULED
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    # Check role-based permissions
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to view pending payments")
+    
+    invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status == InvoiceStatus.ISSUED,
+        InvoiceDB.payment_status.in_(['UNPAID', 'SCHEDULED'])
+    ).order_by(InvoiceDB.due_date.asc()).limit(limit).all()
+    
+    return [{
+        "id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "customer_name": inv.customer_name,
+        "customer_email": inv.customer_email,
+        "issue_date": inv.issue_date.isoformat(),
+        "due_date": inv.due_date.isoformat() if inv.due_date else None,
+        "total_amount": inv.total_amount,
+        "amount_due": inv.amount_due,
+        "currency_code": inv.currency_code,
+        "payment_status": inv.payment_status,
+        "payment_terms": inv.payment_terms,
+        "days_overdue": (datetime.utcnow().date() - inv.due_date).days if inv.due_date and datetime.utcnow().date() > inv.due_date else 0
+    } for inv in invoices]
+
+@app.get("/reports/daily-reconciliation", tags=["Reports"])
+def get_daily_reconciliation_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """
+    Generate daily reconciliation report showing payments by method
+    
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    
+    # Check role-based permissions
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to view reconciliation reports")
+    
+    # Parse date range
+    if start_date:
+        try:
+            start_dt = datetime.fromisoformat(start_date).date()
+        except ValueError:
+            raise HTTPException(400, "Invalid start_date format. Use YYYY-MM-DD")
+    else:
+        start_dt = datetime.utcnow().date()  # Today by default
+    
+    if end_date:
+        try:
+            end_dt = datetime.fromisoformat(end_date).date()
+        except ValueError:
+            raise HTTPException(400, "Invalid end_date format. Use YYYY-MM-DD")
+    else:
+        end_dt = start_dt  # Same day by default
+    
+    # Query paid invoices within date range
+    paid_invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status == 'PAID',
+        func.date(InvoiceDB.payment_date) >= start_dt,
+        func.date(InvoiceDB.payment_date) <= end_dt
+    ).all()
+    
+    # Group by payment method
+    payment_breakdown = {}
+    total_collected = 0.0
+    
+    for inv in paid_invoices:
+        method = inv.payment_method or 'Unknown'
+        if method not in payment_breakdown:
+            payment_breakdown[method] = {
+                'count': 0,
+                'total_amount': 0.0,
+                'invoices': []
+            }
+        payment_breakdown[method]['count'] += 1
+        payment_breakdown[method]['total_amount'] += inv.paid_amount or 0.0
+        payment_breakdown[method]['invoices'].append({
+            'invoice_number': inv.invoice_number,
+            'customer_name': inv.customer_name,
+            'amount': inv.paid_amount,
+            'payment_reference': inv.payment_reference,
+            'payment_date': inv.payment_date.isoformat() if inv.payment_date else None
+        })
+        total_collected += inv.paid_amount or 0.0
+    
+    # Get outstanding invoices (overdue)
+    outstanding_invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.payment_status.in_(['UNPAID', 'SCHEDULED']),
+        InvoiceDB.due_date < datetime.utcnow()
+    ).all()
+    
+    outstanding_total = sum(inv.amount_due or 0.0 for inv in outstanding_invoices)
+    
+    return {
+        "report_period": {
+            "start_date": start_dt.isoformat(),
+            "end_date": end_dt.isoformat()
+        },
+        "summary": {
+            "total_collected": total_collected,
+            "total_transactions": len(paid_invoices),
+            "outstanding_amount": outstanding_total,
+            "outstanding_count": len(outstanding_invoices)
+        },
+        "payment_breakdown": [
+            {
+                "payment_method": method,
+                "count": data['count'],
+                "total_amount": data['total_amount'],
+                "invoices": data['invoices']
+            }
+            for method, data in payment_breakdown.items()
+        ],
+        "outstanding_invoices": [
+            {
+                "invoice_number": inv.invoice_number,
+                "customer_name": inv.customer_name,
+                "amount_due": inv.amount_due,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "days_overdue": (datetime.utcnow().date() - inv.due_date).days if inv.due_date else 0
+            }
+            for inv in outstanding_invoices[:10]  # Limit to 10 most overdue
+        ]
+    }
+
 @app.post("/invoices/{invoice_id}/issue", tags=["Invoices"])
 def issue_invoice(
     invoice_id: str,
