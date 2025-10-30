@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { EmailInput } from '../components/ui/validated-input';
 import { ArrowLeft } from 'lucide-react';
 import api from '../lib/api';
+import Footer from '../components/Footer';
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
@@ -30,7 +31,20 @@ export default function ForgotPassword() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen flex flex-col">
+        <nav className="backdrop-blur-md bg-white/80 border-b border-gray-200 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-2 text-xl font-bold cursor-pointer" onClick={() => navigate('/')}>
+              <span className="text-2xl">🔗</span>
+              <span>InvoLinks</span>
+            </div>
+            <Button variant="ghost" onClick={() => navigate('/')}>
+              Home
+            </Button>
+          </div>
+        </nav>
+        
+        <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="text-center">Check Your Email</CardTitle>
@@ -48,6 +62,10 @@ export default function ForgotPassword() {
               <p className="text-sm text-gray-500">
                 Please check your inbox and follow the instructions to reset your password.
               </p>
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-left space-y-1">
+                <p className="font-medium text-blue-900">Email sent from: noreply@involinks.ae</p>
+                <p className="text-blue-700">Can't find it? Check your spam/junk folder</p>
+              </div>
             </div>
             <Button
               variant="outline"
@@ -58,12 +76,28 @@ export default function ForgotPassword() {
             </Button>
           </CardContent>
         </Card>
+        </div>
+        
+        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col">
+      <nav className="backdrop-blur-md bg-white/80 border-b border-gray-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-xl font-bold cursor-pointer" onClick={() => navigate('/')}>
+            <span className="text-2xl">🔗</span>
+            <span>InvoLinks</span>
+          </div>
+          <Button variant="ghost" onClick={() => navigate('/')}>
+            Home
+          </Button>
+        </div>
+      </nav>
+      
+      <div className="flex-1 flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <button
@@ -109,6 +143,9 @@ export default function ForgotPassword() {
           </form>
         </CardContent>
       </Card>
+      </div>
+      
+      <Footer />
     </div>
   );
 }
