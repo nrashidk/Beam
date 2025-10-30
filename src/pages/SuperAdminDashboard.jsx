@@ -172,8 +172,8 @@ export default function SuperAdminDashboard() {
       <nav className="bg-white/70 backdrop-blur-md border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xl font-bold cursor-pointer" onClick={() => navigate('/')}>
-            <span className="text-2xl">⚡</span>
-            <span>Beam Admin</span>
+            <span className="text-2xl">🔗</span>
+            <span>InvoLinks Admin</span>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={() => navigate('/admin/tiers')}>
