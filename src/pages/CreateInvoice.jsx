@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { EmailInput, TRNInput } from '../components/ui/validated-input';
-import { ArrowLeft, Plus, Trash2, Save, FileText } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Save, FileText, AlertCircle } from 'lucide-react';
 import Toast from '../components/ui/Toast';
 
 export default function CreateInvoice() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [vatEnabled, setVatEnabled] = useState(false);
+  const [loadingVatSettings, setLoadingVatSettings] = useState(true);
   const [formData, setFormData] = useState({
     invoice_type: '380',
     issue_date: new Date().toISOString().split('T')[0],
@@ -23,16 +25,33 @@ export default function CreateInvoice() {
     invoice_notes: '',
     reference_number: '',
     line_items: [
-      { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0 }
+      { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
     ]
   });
+
+  // Fetch VAT settings on component mount
+  useEffect(() => {
+    const fetchVatSettings = async () => {
+      try {
+        const response = await apiClient.get('/settings/vat');
+        setVatEnabled(response.data.vat_enabled || false);
+      } catch (error) {
+        console.error('Failed to fetch VAT settings:', error);
+        setVatEnabled(false);
+      } finally {
+        setLoadingVatSettings(false);
+      }
+    };
+
+    fetchVatSettings();
+  }, []);
 
   const addLineItem = () => {
     setFormData({
       ...formData,
       line_items: [
         ...formData.line_items,
-        { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0 }
+        { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
       ]
     });
   };
@@ -76,12 +95,26 @@ export default function CreateInvoice() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     console.log('Form submitted, starting invoice creation...');
-    console.log('Form data:', formData);
     setLoading(true);
 
     try {
+      // Clean payload: Remove tax_code from line items when VAT is disabled
+      // This ensures zero impact for non-VAT businesses
+      const cleanedFormData = {
+        ...formData,
+        line_items: formData.line_items.map(item => {
+          if (!vatEnabled) {
+            // Strip tax_code for non-VAT businesses
+            const { tax_code, ...itemWithoutTaxCode } = item;
+            return itemWithoutTaxCode;
+          }
+          return item;
+        })
+      };
+
       console.log('Sending POST request to /invoices...');
-      const response = await apiClient.post('/invoices', formData);
+      console.log('Cleaned form data:', cleanedFormData);
+      const response = await apiClient.post('/invoices', cleanedFormData);
       console.log('Invoice created successfully:', response.data);
       setToast({
         message: `Invoice ${response.data.invoice_number} created successfully!`,
@@ -250,6 +283,21 @@ export default function CreateInvoice() {
                 </button>
               </div>
 
+              {/* VAT Info Banner */}
+              {vatEnabled && (
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-indigo-900">VAT-Registered Business</p>
+                      <p className="text-sm text-indigo-700 mt-1">
+                        You must select a UAE VAT tax code for each line item. This ensures FTA compliance and accurate tax reporting.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {formData.line_items.map((item, index) => (
                 <div key={index} className="bg-gray-50 rounded-lg p-4 mb-4">
                   <div className="flex items-center justify-between mb-3">
@@ -317,6 +365,26 @@ export default function CreateInvoice() {
                       <option value="E">Exempt</option>
                       <option value="O">Out of Scope</option>
                     </select>
+
+                    {vatEnabled && (
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-indigo-700 mb-1">
+                          UAE VAT Tax Code *
+                        </label>
+                        <select
+                          value={item.tax_code || 'SR'}
+                          onChange={(e) => updateLineItem(index, 'tax_code', e.target.value)}
+                          className="w-full px-3 py-2 border border-indigo-300 rounded-lg bg-indigo-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          required={vatEnabled}
+                        >
+                          <option value="SR">SR - Standard Rate (5%)</option>
+                          <option value="ZR">ZR - Zero Rated (0%)</option>
+                          <option value="ES">ES - Exempt</option>
+                          <option value="RC">RC - Reverse Charge</option>
+                          <option value="OP">OP - Out of Scope</option>
+                        </select>
+                      </div>
+                    )}
 
                     <div className="text-right">
                       <span className="text-sm text-gray-600">Line Total: </span>
