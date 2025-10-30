@@ -1,97 +1,53 @@
 # InvoLinks - Digital Invoicing for UAE
 
 ## Overview
-InvoLinks is a full-stack digital invoicing platform for UAE businesses. Its purpose is to provide automated, VAT-compliant e-invoicing, subscription management, and payment processing, digitalizing operations, enhancing efficiency, ensuring tax compliance, and providing transparent financial operations.
+InvoLinks is a full-stack digital invoicing platform for UAE businesses, designed to provide automated, VAT-compliant e-invoicing, subscription management, and payment processing. Its core purpose is to digitalize operations, enhance efficiency, ensure tax compliance, and provide transparent financial operations for UAE businesses.
 
-**Key Capabilities:**
-- Modern React UI with dual dashboards (Super Admin and Business Admin).
-- Streamlined company onboarding and flexible subscription management.
-- Automated UAE e-Invoicing with UBL/PINT-AE compliance and Schematron validation.
-- Multiple payment methods and customizable company branding.
-- Digital signatures, hash chains, multi-factor authentication, and PEPPOL integration for compliance and security.
-- Comprehensive Accounts Payable (AP) Management supporting the UAE 5-Corner model with purchase orders, goods receipts, and 3-way matching.
+Key capabilities include modern React UI with dual dashboards, streamlined company onboarding, automated UAE e-Invoicing with UBL/PINT-AE compliance, multiple payment methods, customizable branding, digital signatures, hash chains, multi-factor authentication, and comprehensive Accounts Payable (AP) Management supporting the UAE 5-Corner model.
 
 ## User Preferences
 Detailed explanations preferred.
 
 ## System Architecture
 
-**Technology Stack:**
-- **Frontend:** React 19.2 (Vite 7.1), React Router 7.9, Tailwind CSS 3.4, Axios, Recharts, Radix UI, date-fns.
-- **Backend:** FastAPI 2.0 (Python async), PostgreSQL, SQLAlchemy 2.0.36 ORM, JWT authentication (bcrypt), CORS.
-
 **UI/UX Decisions:**
-- Groww/Toss-inspired design: clean, minimal, modern fintech style.
-- Bold hero sections, card-based feature highlights, glassmorphism navbar.
-- Rounded corners, enhanced shadows, hover states, mobile-responsive design.
+- Groww/Toss-inspired design: clean, minimal, modern fintech style with bold hero sections, card-based feature highlights, and glassmorphism navbar.
+- Rounded corners, enhanced shadows, hover states, and mobile-responsive design.
 - Inter font family for professional typography.
-- Reusable validation system: Centralized validation utilities (src/utils/validation.js) and validated input components (PhoneInput, EmailInput, PasswordInput, TRNInput) provide consistent UAE-specific validation across all forms with hidden-by-default error hints that only appear on invalid input.
+- Reusable validation system with centralized utilities and validated input components for UAE-specific validation.
 
-**Core Features & Technical Implementations:**
-1.  **Registration & Subscription:** Simplified signup, email verification, token-based workflow, automatic Free tier assignment, and flexible free plan configuration.
-2.  **Company Management:** TRN validation, automatic VAT state transitions, Peppol endpoint ID support, and custom branding profiles.
-3.  **Billing & Subscription System:** Complete monetization infrastructure with Stripe integration. Features include:
-    - **Free Trial:** 100 invoices OR 30 days (whichever comes first) with automatic expiry and enforcement
-    - **Subscription Tiers:** Basic (AED 99/mo), Pro (AED 299/mo), Enterprise (AED 799/mo) with multi-cycle billing (1/3/6 months) and volume discounts (5-15%)
-    - **Payment Methods:** Stripe-powered card management with add/delete/default selection functionality
-    - **Trial Tracking:** Real-time trial status with invoice count and days remaining, automatic trial-to-subscription conversion
-    - **PEPPOL Usage Fees:** Pay-per-invoice pricing (AED 0.50-2.00 depending on tier) for centralized PEPPOL transmission
-    - **Database Schema:** Dedicated tables for payment_methods, subscriptions, peppol_usage, and billing_invoices with Stripe customer ID tracking
-    - **Frontend UI:** Modern Pricing page with tier comparison and Billing Settings dashboard with subscription management, payment methods, and trial progress indicators
-    - **Backend API:** Comprehensive REST endpoints for trial status, payment methods (add/list/delete), subscription creation, and billing history
-    - **Enforcement:** Invoice creation endpoint blocks expired trials and requires active subscription, with automatic trial counter increment
-4.  **Invoice Generation & Management:** Full UAE e-Invoicing Compliance (UBL 2.1 / PINT-AE XML generation, Tax Invoice, Credit Note, Commercial types). Includes automatic validation, SHA-256 hash calculation, digital signatures, hash chain linking, CRUD operations, public sharing links, trial enforcement, and automatic PEPPOL usage fee recording (AED 2.00/1.00/0.50 per invoice based on subscription tier).
-5.  **AWS SES Email Integration:** Production-ready email service powered by Amazon Simple Email Service (AWS SES). Features include:
-    - **Automatic Email Sending:** Registration verification, MFA codes, invoice notifications, and admin approvals sent automatically via AWS SES
-    - **Professional HTML Templates:** Beautiful, branded email templates with responsive design and call-to-action buttons
-    - **Multi-Region Support:** Configured for Middle East (UAE) region (me-central-1) for optimal deliverability
-    - **Graceful Fallback:** Console simulation mode when credentials not configured for development testing
-    - **Email Types:** Verification emails, MFA OTP codes, invoice delivery notifications, approval/rejection notifications
-    - **Status:** ✅ Fully configured and tested (October 30, 2025) - Production-ready for verified email addresses
-    - **Next Step:** Request AWS SES production access to remove sandbox restrictions and send to any email address
-6.  **Invoice Delivery System:** Comprehensive multi-channel invoice delivery for customers without systems:
-    - **QR Code Generation:** Generate scannable QR codes containing public invoice links for in-person transactions
-    - **Email Delivery:** Send invoices via AWS SES with PDF attachment support and professional templates
-    - **SMS Delivery:** Send invoice links via SMS for quick mobile delivery
-    - **WhatsApp Delivery:** Send formatted business messages via WhatsApp with invoice links
-    - **Public Invoice View:** Beautiful, responsive customer-facing invoice page accessible via share token (no authentication required) with Download PDF functionality
-    - **Frontend UI:** InvoiceDeliveryActions component with modal-based workflows for QR/Email/SMS/WhatsApp delivery
-    - **Backend API:** REST endpoints for QR generation (/invoices/{id}/qr), email (/invoices/{id}/email), SMS (/invoices/{id}/sms), and WhatsApp (/invoices/{id}/whatsapp)
-    - **Integration:** AWS SES for email delivery, Twilio (SMS), and WhatsApp Business API integration ready
-7.  **Excel/CSV Bulk Import:** Complete data import system for invoices and vendors with template downloads (CSV/Excel), strict UAE compliance validation (15-digit numeric TRN, YYYY-MM-DD dates), row-level error reporting, trial enforcement, and dual-format support (pandas + openpyxl). Includes frontend UI with tabs, drag-and-drop upload, and comprehensive error feedback.
-8.  **Accounts Payable (AP) Management:** Comprehensive AP suite supporting the UAE 5-Corner model with:
-    - **AP Inbox:** Receive and manage inward invoices from suppliers (Corner 4)
-    - **Suppliers Management:** Complete supplier database with TRN tracking, spend analytics, payment terms, and category organization
-    - **Purchase Orders & Goods Receipts:** Full PO lifecycle with 3-way matching and approval workflows
-    - **Database Schema:** Tables for `purchase_orders`, `goods_receipts`, `inward_invoices` with relationship tracking
-    - **Frontend UI:** Dedicated pages for AP Inbox (/ap/inbox), Purchase Orders (/ap/purchase-orders), and Suppliers (/ap/suppliers)
-9.  **FTA Audit File Generation:** Production-ready UAE Federal Tax Authority compliant audit file system. Generates FTA Audit File (FAF) format in CSV/TXT with complete sales/purchase invoice data, VAT categorization (SR, ZR, EX, OOS), customer/supplier TRN tracking, and compliance statistics. Features comprehensive validation (mandatory fields, date ranges, company registration periods), automated file generation with status tracking (GENERATING, COMPLETED, FAILED), secure download functionality, and complete integration with Business Dashboard. Supports date range selection with safeguards (no future dates, max 5-year periods, post-registration only) and separate validation logic for sales vs purchase invoices.
-10.  **Payment Processing:** Supports Cash, Card, POS, Bank transfer, Digital wallets, with payment intents pattern and card surcharge configuration.
-11.  **Branding:** Custom logos, configurable colors/fonts, header/footer text with drag-and-drop upload, live preview, and asset management.
-12. **Multi-User Team Management:** Unlimited team members, role-based access (Owner, Admin, Finance User), and invitation system.
-13. **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes for secure user access, compliant with Ministerial Decision No. 64/2025.
-14. **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
-15. **Content Management System (CMS):** Database-backed content management allowing SuperAdmins to edit all website text without code changes. Features include: content_blocks table with key/value pairs, dedicated SuperAdmin Content Manager UI with inline editing, ContentContext React hook for global content access, automatic content seeding on startup, and real-time updates. All homepage hero text and feature box content is now dynamically loaded from the database via the useContent() hook.
-16. **PEPPOL Settings UI:** Self-service PEPPOL configuration dashboard for businesses. Features include: provider selection (Tradeshift, Basware, Mock), credential management with masked API keys, participant ID configuration, connection testing, and real-time status tracking. Fully integrated with Business Dashboard navigation. Backend API endpoints for GET/PUT /settings/peppol and POST /settings/peppol/test enable complete PEPPOL setup without code changes.
-17. **Finance Dashboard:** Comprehensive financial analytics and health monitoring page (/finance) with:
-    - **Key Metrics:** Total revenue, expenses, net profit, and profit margin with trend indicators
-    - **Revenue vs Expenses:** Monthly bar chart showing revenue and expense trends
-    - **Cash Flow:** Weekly line chart tracking inflows and outflows
-    - **Expense Breakdown:** Pie chart showing expense categorization (salaries, operations, marketing, supplies)
-    - **AR/AP Tracking:** Real-time accounts receivable and payable balances with invoice counts
-    - **Recent Transactions:** Live feed of recent invoices (sent/received) with status indicators
-    - **Top Customers:** Ranked customer list by revenue with visual progress bars
-    - **Mock Data Structure:** Ready for backend API integration with consistent data shapes
-18. **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, a robust Crypto Utilities Module (SHA-256, RSA-2048 signing/verification), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
-19. **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation (development/production modes), structured error handling, and a global exception handler.
+**Technical Implementations:**
+- **Technology Stack:**
+    - Frontend: React 19.2 (Vite 7.1), React Router 7.9, Tailwind CSS 3.4, Axios, Recharts, Radix UI, date-fns.
+    - Backend: FastAPI 2.0 (Python async), PostgreSQL, SQLAlchemy 2.0.36 ORM, JWT authentication (bcrypt), CORS.
+- **Registration & Subscription:** Simplified signup, email verification, token-based workflow, automatic Free tier assignment, and flexible free plan configuration.
+- **Company Management:** TRN validation, automatic VAT state transitions, Peppol endpoint ID support, and custom branding profiles.
+- **Billing & Subscription System:** Complete monetization infrastructure with Stripe integration supporting free trials, tiered subscriptions (Basic, Pro, Enterprise), multi-cycle billing, volume discounts, and various payment methods. Includes real-time trial tracking and automatic conversion.
+- **Invoice Generation & Management:** Full UAE e-Invoicing Compliance (UBL 2.1 / PINT-AE XML generation, various invoice types). Features include automatic validation, SHA-256 hash calculation, digital signatures, hash chain linking, CRUD operations, public sharing links, trial enforcement, and automatic PEPPOL usage fee recording.
+- **Email Integration:** Production-ready email service powered by AWS SES for automatic sending of verification, MFA, invoice notifications, and admin approvals using professional HTML templates.
+- **Invoice Delivery System:** Multi-channel delivery via QR code generation, Email, SMS (Twilio), and WhatsApp, with a public invoice view accessible via share token.
+- **Excel/CSV Bulk Import:** Data import system for invoices and vendors with template downloads, strict UAE compliance validation, row-level error reporting, and dual-format support (pandas + openpyxl).
+- **Accounts Payable (AP) Management:** Comprehensive AP suite supporting the UAE 5-Corner model, including an AP Inbox, Supplier Management, and Purchase Order/Goods Receipt workflows with 3-way matching.
+- **FTA Audit File Generation:** Production-ready UAE Federal Tax Authority (FAF) compliant audit file generation in CSV/TXT format, including sales/purchase invoice data, VAT categorization, and compliance statistics.
+- **Payment Processing:** Supports Cash, Card, POS, Bank transfer, Digital wallets, with payment intents and card surcharge configuration.
+- **Branding:** Custom logos, configurable colors/fonts, header/footer text with drag-and-drop upload and live preview.
+- **Multi-User Team Management:** Unlimited team members, role-based access (Owner, Admin, Finance User), and invitation system.
+- **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes for secure user access.
+- **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
+- **Content Management System (CMS):** Database-backed content management allowing SuperAdmins to edit all website text without code changes, with a dedicated UI and dynamic content loading.
+- **PEPPOL Settings UI:** Self-service PEPPOL configuration dashboard for businesses, including provider selection, credential management, participant ID configuration, and connection testing.
+- **Finance Dashboard:** Comprehensive financial analytics with key metrics, revenue vs. expenses tracking, cash flow, expense breakdown, AR/AP tracking, recent transactions, and top customers.
+- **Critical Compliance Features:** Digital signatures, hash chains, PEPPOL integration, Crypto Utilities Module (SHA-256, RSA-2048), UBL 2.1 XML Generator, and an extensible PEPPOL Provider Adapter.
+- **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation, structured error handling, and a global exception handler.
+- **Production Signing Keys System:** Complete cryptographic key management for UAE FTA compliance, including RSA-2048 key pair and X.509 certificate generation, CSR support, and secure storage via Replit Secrets.
 
 **System Design Choices:**
 - **Deployment:** Configured for Reserved VM (Always-On) for persistence and availability.
-- **Database Schema:** Comprehensive for core entities (companies, subscriptions, users, invoices, payments, assets, branding), AP Management (purchase orders, goods receipts, inward invoices), CMS (content_blocks), and FTA Audit Files (audit_files with status tracking) including fields for free plan tracking, VAT, security, approval workflows, and dynamic content management.
-- **Configuration:** Environment variables for critical settings like `DATABASE_URL`, signing keys, and `PRODUCTION_MODE`.
+- **Database Schema:** Comprehensive for core entities, AP Management, CMS, and FTA Audit Files, including fields for free plan tracking, VAT, security, approval workflows, and dynamic content management.
+- **Configuration:** Environment variables for critical settings like `DATABASE_URL` and signing keys.
 - **VAT Settings:** Standard 5% UAE VAT rate.
 - **Security:** SQLAlchemy ORM for SQL injection protection, file upload validation, environment variable-based credentials.
-- **PEPPOL Business Model:** InvoLinks uses a centralized PEPPOL model where the platform manages a single master ASP account (Tradeshift/Basware) and charges businesses pay-as-you-go usage fees (AED 0.50-2.00 per invoice depending on subscription tier) for PEPPOL transmission and FTA submission. This eliminates the need for each business to set up individual ASP accounts.
+- **PEPPOL Business Model:** Centralized PEPPOL model where InvoLinks manages a master ASP account and charges businesses pay-as-you-go usage fees for transmission.
 
 ## External Dependencies
 
@@ -104,12 +60,10 @@ Detailed explanations preferred.
 -   **bcrypt:** Password hashing.
 -   **PINT/PINT-AE specification:** UAE e-invoicing compliance standard.
 -   **Schematron:** Invoice validation (global and UAE-specific rules).
--   **Genericode files:** Compliance-related data (`eas.gc`, `ISO4217.gc`, `UNCL*.gc`, etc.) from `/mnt/data/`.
--   **Schematron XSLT files:** Validation rules (`PINT-UBL-validation-preprocessed.xslt`, `PINT-jurisdiction-aligned-rules.xslt`) from `/mnt/data/`.
 -   **pyotp:** TOTP generation for MFA.
 -   **qrcode + pillow:** QR code generation for TOTP enrollment.
--   **twilio:** SMS delivery for SMS-based 2FA (requires manual credentials).
+-   **Twilio:** SMS delivery.
 -   **pandas:** CSV/Excel data parsing for bulk imports.
 -   **openpyxl:** Excel file (.xlsx) reading and writing for bulk imports.
--   **stripe:** Payment processing, subscription management, and card tokenization (test mode for development).
--   **boto3 (AWS SES):** Email delivery service for all platform emails (verification, MFA, invoices, admin notifications). Configured for Middle East (UAE) region (me-central-1). Status: ✅ Production-ready (sandbox mode - requires production access request for unrestricted sending).
+-   **Stripe:** Payment processing, subscription management, and card tokenization.
+-   **boto3 (AWS SES):** Email delivery service, configured for Middle East (UAE) region (me-central-1).
