@@ -910,6 +910,17 @@ class BillingInvoiceDB(Base):
     # Relationships
     company = relationship("CompanyDB", backref="billing_invoices")
 
+class ExpenseCategoryDB(Base):
+    """Custom expense categories - user-defined"""
+    __tablename__ = "expense_categories"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    is_default = Column(Boolean, default=False)  # System-provided categories
+    created_at = Column(DateTime, default=datetime.utcnow)
+    company = relationship("CompanyDB", backref="expense_categories")
+
 class ExpenseDB(Base):
     """Simple expense tracking - rent, utilities, salaries, materials, etc."""
     __tablename__ = "expenses"
@@ -918,7 +929,7 @@ class ExpenseDB(Base):
     
     # Expense details
     expense_date = Column(Date, nullable=False, index=True)
-    category = Column(String, nullable=False)  # RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
+    category = Column(String, nullable=False)  # Now user-defined categories
     description = Column(Text, nullable=True)
     
     # Financial
@@ -938,6 +949,59 @@ class ExpenseDB(Base):
     
     # Relationships
     company = relationship("CompanyDB", backref="expenses")
+
+class InventoryItemDB(Base):
+    """Simple inventory tracking"""
+    __tablename__ = "inventory_items"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    
+    # Item details
+    item_name = Column(String, nullable=False)
+    item_code = Column(String, nullable=True, index=True)  # SKU
+    description = Column(Text, nullable=True)
+    unit = Column(String, default="unit")  # unit, bottle, kit, box, etc.
+    
+    # Stock
+    current_stock = Column(Float, default=0.0)
+    min_stock_level = Column(Float, default=0.0)  # Reorder threshold
+    
+    # Pricing (optional)
+    unit_cost = Column(Float, nullable=True)  # Cost per unit
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="inventory_items")
+
+class InventoryTransactionDB(Base):
+    """Track inventory movements (purchases, sales, adjustments)"""
+    __tablename__ = "inventory_transactions"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    inventory_item_id = Column(String, ForeignKey("inventory_items.id"), nullable=False, index=True)
+    
+    # Transaction details
+    transaction_type = Column(String, nullable=False)  # PURCHASE, SALE, ADJUSTMENT, SERVICE_USAGE
+    quantity = Column(Float, nullable=False)  # Positive for additions, negative for reductions
+    transaction_date = Column(Date, nullable=False)
+    
+    # References
+    reference_type = Column(String, nullable=True)  # INVOICE, EXPENSE, MANUAL
+    reference_id = Column(String, nullable=True)  # Invoice ID or expense ID
+    notes = Column(Text, nullable=True)
+    
+    # Stock after transaction
+    stock_after = Column(Float, nullable=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    company = relationship("CompanyDB", backref="inventory_transactions")
+    inventory_item = relationship("InventoryItemDB", backref="transactions")
 
 # Create tables
 Base.metadata.create_all(engine)
@@ -4410,6 +4474,137 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
 
 # ==================== EXPENSE TRACKING (SIMPLE FINANCIAL MANAGEMENT) ====================
 
+@app.post("/expense-categories", tags=["Expense Categories"])
+def create_expense_category(
+    name: str,
+    description: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Create a custom expense category"""
+    from uuid import uuid4
+    
+    # Check if category already exists
+    existing = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.company_id == current_user.company_id,
+        ExpenseCategoryDB.name == name
+    ).first()
+    
+    if existing:
+        raise HTTPException(400, f"Category '{name}' already exists")
+    
+    category_id = f"expcat_{uuid4().hex[:12]}"
+    
+    category = ExpenseCategoryDB(
+        id=category_id,
+        company_id=current_user.company_id,
+        name=name,
+        description=description,
+        is_default=False
+    )
+    
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    
+    return {
+        "id": category.id,
+        "name": category.name,
+        "description": category.description,
+        "is_default": category.is_default,
+        "created_at": category.created_at.isoformat()
+    }
+
+@app.get("/expense-categories", tags=["Expense Categories"])
+def list_expense_categories(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    List all expense categories (default + custom)
+    
+    Returns system defaults + user-created categories
+    """
+    categories = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.company_id == current_user.company_id
+    ).order_by(ExpenseCategoryDB.name).all()
+    
+    # If no categories, seed defaults
+    if not categories:
+        from uuid import uuid4
+        default_categories = [
+            {"name": "Rent", "description": "Office or warehouse rent"},
+            {"name": "Utilities", "description": "Electricity, water, internet"},
+            {"name": "Salaries", "description": "Employee wages and benefits"},
+            {"name": "Raw Materials", "description": "Business supplies and inventory"},
+            {"name": "Marketing", "description": "Advertising and promotions"},
+            {"name": "Equipment", "description": "Machinery and tools"},
+            {"name": "Maintenance", "description": "Repairs and upkeep"},
+            {"name": "Other", "description": "Miscellaneous expenses"}
+        ]
+        
+        for cat_data in default_categories:
+            cat_id = f"expcat_{uuid4().hex[:12]}"
+            category = ExpenseCategoryDB(
+                id=cat_id,
+                company_id=current_user.company_id,
+                name=cat_data["name"],
+                description=cat_data["description"],
+                is_default=True
+            )
+            db.add(category)
+        
+        db.commit()
+        
+        # Re-fetch categories
+        categories = db.query(ExpenseCategoryDB).filter(
+            ExpenseCategoryDB.company_id == current_user.company_id
+        ).order_by(ExpenseCategoryDB.name).all()
+    
+    return {
+        "categories": [
+            {
+                "id": cat.id,
+                "name": cat.name,
+                "description": cat.description,
+                "is_default": cat.is_default,
+                "created_at": cat.created_at.isoformat()
+            } for cat in categories
+        ]
+    }
+
+@app.delete("/expense-categories/{category_id}", tags=["Expense Categories"])
+def delete_expense_category(
+    category_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Delete a custom expense category (cannot delete defaults)"""
+    category = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.id == category_id,
+        ExpenseCategoryDB.company_id == current_user.company_id
+    ).first()
+    
+    if not category:
+        raise HTTPException(404, "Category not found")
+    
+    if category.is_default:
+        raise HTTPException(400, "Cannot delete default categories")
+    
+    # Check if any expenses use this category
+    expense_count = db.query(ExpenseDB).filter(
+        ExpenseDB.company_id == current_user.company_id,
+        ExpenseDB.category == category.name
+    ).count()
+    
+    if expense_count > 0:
+        raise HTTPException(400, f"Cannot delete category with {expense_count} expense(s). Reassign them first.")
+    
+    db.delete(category)
+    db.commit()
+    
+    return {"message": "Category deleted successfully", "category_id": category_id}
+
 @app.post("/expenses", tags=["Expenses"])
 def create_expense(
     expense_date: str,
@@ -4437,11 +4632,7 @@ def create_expense(
     from dateutil import parser
     from uuid import uuid4
     
-    # Validate category
-    valid_categories = ["RENT", "UTILITIES", "SALARIES", "RAW_MATERIALS", "OTHER"]
-    if category.upper() not in valid_categories:
-        raise HTTPException(400, f"Invalid category. Must be one of: {', '.join(valid_categories)}")
-    
+    # Category is now free-form text (user can use any category name)
     # Parse date
     try:
         expense_date_obj = parser.parse(expense_date).date()
@@ -4699,6 +4890,191 @@ def delete_expense(
     db.commit()
     
     return {"message": "Expense deleted successfully", "expense_id": expense_id}
+
+# ==================== SIMPLE INVENTORY TRACKING ====================
+
+@app.post("/inventory", tags=["Inventory"])
+def create_inventory_item(
+    item_name: str,
+    current_stock: float = 0,
+    unit: str = "unit",
+    item_code: str = None,
+    description: str = None,
+    min_stock_level: float = 0,
+    unit_cost: float = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Create inventory item (e.g., Shampoo Bottles, Mani Kits)"""
+    from uuid import uuid4
+    
+    item_id = f"inv_{uuid4().hex[:12]}"
+    
+    item = InventoryItemDB(
+        id=item_id,
+        company_id=current_user.company_id,
+        item_name=item_name,
+        item_code=item_code,
+        description=description,
+        unit=unit,
+        current_stock=current_stock,
+        min_stock_level=min_stock_level,
+        unit_cost=unit_cost
+    )
+    
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    
+    return {
+        "id": item.id,
+        "item_name": item.item_name,
+        "item_code": item.item_code,
+        "current_stock": item.current_stock,
+        "unit": item.unit,
+        "min_stock_level": item.min_stock_level,
+        "low_stock": item.current_stock <= item.min_stock_level,
+        "created_at": item.created_at.isoformat()
+    }
+
+@app.get("/inventory", tags=["Inventory"])
+def list_inventory(
+    low_stock_only: bool = False,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """List all inventory items with stock levels"""
+    query = db.query(InventoryItemDB).filter(
+        InventoryItemDB.company_id == current_user.company_id
+    )
+    
+    items = query.order_by(InventoryItemDB.item_name).all()
+    
+    result = []
+    for item in items:
+        is_low = item.current_stock <= item.min_stock_level
+        
+        if low_stock_only and not is_low:
+            continue
+        
+        result.append({
+            "id": item.id,
+            "item_name": item.item_name,
+            "item_code": item.item_code,
+            "description": item.description,
+            "current_stock": item.current_stock,
+            "unit": item.unit,
+            "min_stock_level": item.min_stock_level,
+            "low_stock": is_low,
+            "unit_cost": item.unit_cost,
+            "stock_value": (item.current_stock * item.unit_cost) if item.unit_cost else None
+        })
+    
+    return {"inventory": result, "total_items": len(result)}
+
+@app.post("/inventory/{item_id}/adjust", tags=["Inventory"])
+def adjust_inventory(
+    item_id: str,
+    quantity: float,
+    transaction_type: str,
+    notes: str = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """
+    Adjust inventory stock
+    
+    transaction_type: PURCHASE, SALE, ADJUSTMENT, SERVICE_USAGE
+    quantity: positive for additions, negative for reductions
+    
+    Examples:
+    - Purchased 50 shampoo bottles: quantity=50, type=PURCHASE
+    - Sold 5 shampoo bottles: quantity=-5, type=SALE
+    - Used 200 mani kits for services: quantity=-200, type=SERVICE_USAGE
+    """
+    from uuid import uuid4
+    from datetime import date
+    
+    item = db.query(InventoryItemDB).filter(
+        InventoryItemDB.id == item_id,
+        InventoryItemDB.company_id == current_user.company_id
+    ).first()
+    
+    if not item:
+        raise HTTPException(404, "Inventory item not found")
+    
+    # Update stock
+    new_stock = item.current_stock + quantity
+    
+    if new_stock < 0:
+        raise HTTPException(400, f"Insufficient stock. Current: {item.current_stock}, Requested: {abs(quantity)}")
+    
+    # Record transaction
+    trans_id = f"invtx_{uuid4().hex[:12]}"
+    transaction = InventoryTransactionDB(
+        id=trans_id,
+        company_id=current_user.company_id,
+        inventory_item_id=item.id,
+        transaction_type=transaction_type,
+        quantity=quantity,
+        transaction_date=date.today(),
+        notes=notes,
+        stock_after=new_stock,
+        reference_type="MANUAL"
+    )
+    
+    db.add(transaction)
+    
+    # Update item stock
+    item.current_stock = new_stock
+    
+    db.commit()
+    db.refresh(item)
+    
+    return {
+        "message": "Stock adjusted successfully",
+        "item_name": item.item_name,
+        "previous_stock": item.current_stock - quantity,
+        "adjustment": quantity,
+        "new_stock": item.current_stock,
+        "low_stock": item.current_stock <= item.min_stock_level
+    }
+
+@app.get("/inventory/{item_id}/history", tags=["Inventory"])
+def get_inventory_history(
+    item_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get transaction history for an inventory item"""
+    item = db.query(InventoryItemDB).filter(
+        InventoryItemDB.id == item_id,
+        InventoryItemDB.company_id == current_user.company_id
+    ).first()
+    
+    if not item:
+        raise HTTPException(404, "Inventory item not found")
+    
+    transactions = db.query(InventoryTransactionDB).filter(
+        InventoryTransactionDB.inventory_item_id == item_id
+    ).order_by(InventoryTransactionDB.transaction_date.desc()).limit(50).all()
+    
+    return {
+        "item_name": item.item_name,
+        "current_stock": item.current_stock,
+        "history": [
+            {
+                "id": tx.id,
+                "transaction_type": tx.transaction_type,
+                "quantity": tx.quantity,
+                "transaction_date": tx.transaction_date.isoformat(),
+                "stock_after": tx.stock_after,
+                "notes": tx.notes,
+                "reference_type": tx.reference_type,
+                "reference_id": tx.reference_id
+            } for tx in transactions
+        ]
+    }
 
 # ==================== CORNER 4: AP MANAGEMENT (INWARD INVOICES) ====================
 
