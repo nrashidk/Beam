@@ -37,6 +37,9 @@ from utils.exceptions import (
 # MFA (Multi-Factor Authentication)
 from utils.mfa_utils import MFAManager, EmailOTPManager
 
+# Email Service (AWS SES)
+from utils.email_service import email_service
+
 # Bulk Import utilities
 from utils.bulk_import import BulkImportValidator
 import pandas as pd
@@ -2031,33 +2034,22 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
     company.verification_sent_at = datetime.utcnow()
     db.commit()
     
-    verification_url = f"http://your-app-url.com/?verify={verification_token}"
+    # Get platform URL for verification link
+    platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
+    verification_url = f"{platform_url}/?verify={verification_token}"
     
-    print(f"""
-╔══════════════════════════════════════════════════════════════════╗
-║                    EMAIL WOULD BE SENT                           ║
-╠══════════════════════════════════════════════════════════════════╣
-║  To: {company.email:<58} ║
-║  Subject: Verify Your Email - InvoLinks E-Invoicing              ║
-║                                                                  ║
-║  Hi {company.legal_name or 'there'},                                          ║
-║                                                                  ║
-║  Thank you for registering! Please verify your email by          ║
-║  clicking the link below:                                        ║
-║                                                                  ║
-║  {verification_url[:62]:<62} ║
-║                                                                  ║
-║  This link will expire in 24 hours.                            ║
-║                                                                  ║
-║  Best regards,                                                   ║
-║  InvoLinks E-Invoicing Team                                      ║
-╚══════════════════════════════════════════════════════════════════╝
-    """)
+    # Send verification email via AWS SES
+    result = email_service.send_verification_email(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        verification_url=verification_url
+    )
     
     return {
         "message": "Verification email sent",
         "email": company.email,
-        "note": "Check server logs for email content (email sending not configured yet)"
+        "email_status": "sent" if result.get("success") else "simulated",
+        "note": result.get("note", "Email sent successfully")
     }
 
 @app.post("/register/verify/{token}", tags=["Registration"])
@@ -2530,33 +2522,18 @@ def send_email_otp(
     # Generate and store OTP
     otp = EmailOTPManager.generate_and_store(user_email)
     
-    # Simulate sending email (in production, use actual email service)
-    print("\n" + "="*70)
-    print("╔" + "="*68 + "╗")
-    print("║" + " "*25 + "MFA EMAIL OTP" + " "*30 + "║")
-    print("╠" + "="*68 + "╣")
-    print(f"║  To: {user_email:<60} ║")
-    print(f"║  Subject: Your InvoLinks Verification Code{' '*27} ║")
-    print("║" + " "*68 + "║")
-    print(f"║  Hi {(user.full_name or 'User'):<61} ║")
-    print("║" + " "*68 + "║")
-    print("║  Your verification code is:                                  ║")
-    print("║" + " "*68 + "║")
-    print(f"║         {otp}{' '*58} ║")
-    print("║" + " "*68 + "║")
-    print("║  This code will expire in 10 minutes.                        ║")
-    print("║" + " "*68 + "║")
-    print("║  If you didn't request this code, please ignore this email.  ║")
-    print("║" + " "*68 + "║")
-    print("║  Best regards,                                                ║")
-    print("║  InvoLinks Security Team                                      ║")
-    print("╚" + "="*68 + "╝")
-    print("="*70 + "\n")
+    # Send MFA OTP email via AWS SES
+    result = email_service.send_mfa_otp_email(
+        to_email=user_email,
+        user_name=user.full_name or "User",
+        otp_code=otp
+    )
     
     return {
         "success": True,
         "message": "Verification code sent to your email",
-        "expires_in_minutes": 10
+        "expires_in_minutes": 10,
+        "email_status": "sent" if result.get("success") else "simulated"
     }
 
 @app.post("/auth/forgot-password", tags=["Auth"])
@@ -2834,17 +2811,12 @@ def approve_company(
     
     db.commit()
     
-    # Simulate email notification
-    print("\n" + "="*70)
-    print("✅ COMPANY APPROVED - EMAIL NOTIFICATION")
-    print("="*70)
-    print(f"To: {company.email}")
-    print(f"Subject: Your InvoLinks Account Has Been Approved!")
-    print(f"\nDear {company.legal_name},")
-    print(f"\nCongratulations! Your account has been approved.")
-    print(f"You can now log in and start using InvoLinks E-Invoicing.")
-    print(f"\nYour Free plan: {plan_description}")
-    print("="*70 + "\n")
+    # Send approval email via AWS SES
+    email_result = email_service.send_approval_notification(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        status="APPROVED"
+    )
     
     return {
         "success": True,
@@ -2852,7 +2824,8 @@ def approve_company(
         "status": company.status.value,
         "free_plan_type": company.free_plan_type,
         "free_plan_config": plan_description,
-        "message": "Company approved successfully"
+        "message": "Company approved successfully",
+        "email_sent": email_result.get("success", False)
     }
 
 class RejectCompanyRequest(BaseModel):
@@ -2882,25 +2855,20 @@ def reject_company(
     company.status = CompanyStatus.REJECTED
     db.commit()
     
-    # Simulate email notification
-    print("\n" + "="*70)
-    print("❌ COMPANY REJECTED - EMAIL NOTIFICATION")
-    print("="*70)
-    print(f"To: {company.email}")
-    print(f"Subject: InvoLinks Account Registration Update")
-    print(f"\nDear {company.legal_name},")
-    print(f"\nThank you for your interest in InvoLinks E-Invoicing.")
-    print(f"Unfortunately, we cannot approve your registration at this time.")
-    if notes:
-        print(f"\nReason: {notes}")
-    print(f"\nPlease contact support if you have any questions.")
-    print("="*70 + "\n")
+    # Send rejection email via AWS SES
+    email_result = email_service.send_approval_notification(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        status="REJECTED",
+        admin_message=notes
+    )
     
     return {
         "success": True,
         "company_id": company_id,
         "status": company.status.value,
-        "message": "Company rejected"
+        "message": "Company rejected",
+        "email_sent": email_result.get("success", False)
     }
 
 @app.get("/admin/stats", tags=["Admin"])
@@ -4103,28 +4071,29 @@ async def email_invoice(
     
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
     
-    # In production, this would:
-    # 1. Use SendGrid/Resend integration to send email
-    # 2. Attach generated PDF
-    # 3. Include professional HTML template
-    # 4. Track email opens/clicks
+    # Get company details for Reply-To
+    company = db.get(CompanyDB, current_user.company_id)
+    company_email = company.email if company else "support@involinks.ae"
     
-    # For now, simulate email sending
-    email_content = {
-        "to": email_to,
-        "subject": f"Invoice {invoice.invoice_number} from {invoice.supplier_name}",
-        "body": f"Please find your invoice attached. You can also view it online at: {share_url}",
-        "share_link": share_url,
-        "invoice_number": invoice.invoice_number,
-        "amount": f"AED {invoice.total_amount:,.2f}"
-    }
+    # Send invoice email via AWS SES
+    email_result = email_service.send_invoice_email(
+        to_email=email_to,
+        customer_name=invoice.customer_name or "Customer",
+        invoice_number=invoice.invoice_number,
+        invoice_url=share_url,
+        company_name=invoice.supplier_name,
+        company_email=company_email,
+        amount=invoice.total_amount,
+        currency="AED"
+    )
     
     return {
         "message": "Invoice email sent successfully",
         "sent_to": email_to,
         "invoice_id": invoice.id,
-        "email_status": "sent",
-        "email_content": email_content
+        "email_status": "sent" if email_result.get("success") else "simulated",
+        "share_url": share_url,
+        "note": email_result.get("note", "Email delivered")
     }
 
 @app.post("/invoices/{invoice_id}/sms", tags=["Invoices"])
