@@ -31,6 +31,7 @@ import SuppliersManagement from './pages/SuppliersManagement';
 import PublicInvoiceView from './pages/PublicInvoiceView';
 import PaymentVerification from './pages/PaymentVerification';
 import DailyReconciliation from './pages/DailyReconciliation';
+import AdvancedAnalytics from './pages/AdvancedAnalytics';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -202,6 +203,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <FinanceDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AdvancedAnalytics />
               </ProtectedRoute>
             }
           />

@@ -14,7 +14,8 @@ import {
   BarChart3,
   Percent,
   CheckCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  LineChart
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -23,6 +24,7 @@ export default function Sidebar() {
 
   // Navigation items in alphabetical order
   const navItems = [
+    { path: '/analytics', icon: LineChart, label: 'Advanced Analytics' },
     { path: '/ap/inbox', icon: Inbox, label: 'AP Inbox' },
     { path: '/billing', icon: CreditCard, label: 'Billing' },
     { path: '/settings/branding', icon: Palette, label: 'Branding' },
