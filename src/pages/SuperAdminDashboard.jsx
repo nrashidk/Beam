@@ -5,10 +5,18 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Badge } from '../components/ui/badge';
-import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, LogOut } from 'lucide-react';
+import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, LogOut, User, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 function Stat({ label, value, delta, positive, onClick }) {
   const content = (
@@ -151,16 +159,34 @@ export default function SuperAdminDashboard() {
             <span>Beam Admin</span>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin/approvals')}>
-              Approvals
-            </Button>
             <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
               Content Manager
             </Button>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2">
-              <LogOut size={16} />
-              Logout
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <User size={16} />
+                  Account
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/settings')}>
+                  <Settings size={16} className="mr-2" />
+                  Account Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/security')}>
+                  <Settings size={16} className="mr-2" />
+                  Security Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} className="text-red-600">
+                  <LogOut size={16} className="mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </nav>

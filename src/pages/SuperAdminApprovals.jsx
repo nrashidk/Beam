@@ -6,8 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft } from 'lucide-react';
+import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft, User, Settings } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 
 function DateRangePicker({ range, onChange }) {
   function shiftDays(days) {
@@ -64,7 +72,15 @@ export default function SuperAdminDashboard() {
         adminAPI.getStats()
       ]);
       setCompanies(companiesResponse.data);
-      setStats(statsResponse.data);
+      
+      const rawStats = statsResponse.data;
+      setStats({
+        total_companies: rawStats.total_companies || 0,
+        pending_approval: rawStats.registrations?.pending || 0,
+        active: rawStats.companies?.active || 0,
+        rejected: rawStats.registrations?.rejected || 0,
+        total_invoices: rawStats.invoices?.monthToDate || 0
+      });
     } catch (error) {
       console.error('Failed to fetch data', error);
     } finally {
@@ -107,12 +123,33 @@ export default function SuperAdminDashboard() {
           <div className="flex items-center gap-4">
             <div className="text-sm">
               <Badge variant="info">{user?.role}</Badge>
-              <span className="ml-2 text-gray-600">{user?.user_id}</span>
+              <span className="ml-2 text-gray-600">{user?.email}</span>
             </div>
-            <Button variant="outline" size="sm" onClick={logout} className="gap-2">
-              <LogOut size={16} />
-              Logout
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <User size={16} />
+                  Account
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/settings')}>
+                  <Settings size={16} className="mr-2" />
+                  Account Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/security')}>
+                  <Settings size={16} className="mr-2" />
+                  Security Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} className="text-red-600">
+                  <LogOut size={16} className="mr-2" />
+                  Logout
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </nav>
