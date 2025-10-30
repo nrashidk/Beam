@@ -1358,6 +1358,56 @@ def seed_content(db: Session):
             section="feature_boxes",
             updated_by="system"
         ),
+        
+        # Footer Content
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_company_name",
+            value="InvoLinks",
+            description="Footer company name",
+            section="footer",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_company_description",
+            value="Simple, Compliant Digital Invoicing for UAE",
+            description="Footer company description",
+            section="footer",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_address",
+            value="Dubai, United Arab Emirates",
+            description="Footer company address",
+            section="footer",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_email",
+            value="support@involinks.ae",
+            description="Footer contact email",
+            section="footer",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_phone",
+            value="+971 4 123 4567",
+            description="Footer contact phone",
+            section="footer",
+            updated_by="system"
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_copyright",
+            value="© 2025 InvoLinks. All rights reserved.",
+            description="Footer copyright text",
+            section="footer",
+            updated_by="system"
+        ),
     ]
     
     for block in content_blocks:
@@ -3241,6 +3291,20 @@ def get_public_content(db: Session = Depends(get_db)):
             updated_by=b.updated_by
         ) for b in blocks
     ]
+
+@app.get("/content/footer", tags=["Content"])
+def get_footer_content(db: Session = Depends(get_db)):
+    """Get footer content blocks formatted as a single object (no auth required)"""
+    blocks = db.query(ContentBlockDB).filter(ContentBlockDB.section == "footer").all()
+    
+    # Convert blocks to a dictionary
+    footer_data = {}
+    for block in blocks:
+        # Remove "footer_" prefix from keys
+        key = block.key.replace("footer_", "")
+        footer_data[key] = block.value
+    
+    return footer_data
 
 # ==================== PHASE 2: SUPERADMIN TIER MANAGEMENT & PLATFORM STATS ====================
 
