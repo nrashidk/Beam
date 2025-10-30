@@ -96,6 +96,8 @@ export default function SuperAdminDashboard() {
   }));
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
+  const [platformStats, setPlatformStats] = useState(null);
+  const [platformLoading, setPlatformLoading] = useState(true);
 
   const [q, setQ] = useState('');
   const [plan, setPlan] = useState('all');
@@ -131,6 +133,21 @@ export default function SuperAdminDashboard() {
     fetchStats();
   }, [fromISO, toISO]);
 
+  useEffect(() => {
+    async function fetchPlatformStats() {
+      try {
+        setPlatformLoading(true);
+        const response = await api.get('/admin/platform-stats');
+        setPlatformStats(response.data);
+      } catch (error) {
+        console.error('Failed to fetch platform stats:', error);
+      } finally {
+        setPlatformLoading(false);
+      }
+    }
+    fetchPlatformStats();
+  }, []);
+
   const mtdDelta = useMemo(() => {
     if (!stats) return { pct: '', positive: true };
     const { monthToDate, lastMonth } = stats.invoices;
@@ -159,6 +176,12 @@ export default function SuperAdminDashboard() {
             <span>Beam Admin</span>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin/tiers')}>
+              Tier Management
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate('/admin/featured')}>
+              Featured Businesses
+            </Button>
             <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
               Content Manager
             </Button>
@@ -208,6 +231,48 @@ export default function SuperAdminDashboard() {
             </Button>
           </div>
         </div>
+
+        <Section title="Platform Statistics (Privacy-Focused)" action={
+          <Badge variant="secondary" className="text-xs">Aggregated Data Only</Badge>
+        }>
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
+            <Stat 
+              label="Total Companies" 
+              value={platformLoading ? '—' : platformStats?.total_companies?.toLocaleString() ?? '—'} 
+            />
+            <Stat 
+              label="Active Companies" 
+              value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
+            />
+            <Stat 
+              label="Pending Approvals" 
+              value={platformLoading ? '—' : platformStats?.pending_companies?.toLocaleString() ?? '—'} 
+              onClick={() => navigate('/admin/approvals')}
+            />
+            <Stat 
+              label="Total Invoices" 
+              value={platformLoading ? '—' : platformStats?.total_invoices?.toLocaleString() ?? '—'} 
+            />
+          </div>
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4 mt-3">
+            <Stat 
+              label="Platform Revenue (AED)" 
+              value={platformLoading ? '—' : `${(platformStats?.total_revenue_aed || 0).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+            />
+            <Stat 
+              label="Active Subscriptions" 
+              value={platformLoading ? '—' : platformStats?.active_subscriptions?.toLocaleString() ?? '—'} 
+            />
+            <Stat 
+              label="Free Tier Users" 
+              value={platformLoading ? '—' : platformStats?.free_tier_users?.toLocaleString() ?? '—'} 
+            />
+            <Stat 
+              label="Paid Tier Users" 
+              value={platformLoading ? '—' : platformStats?.paid_tier_users?.toLocaleString() ?? '—'} 
+            />
+          </div>
+        </Section>
 
         <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
           <Stat 

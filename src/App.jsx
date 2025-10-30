@@ -8,6 +8,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import SuperAdminApprovals from './pages/SuperAdminApprovals';
+import TierManagement from './pages/TierManagement';
+import FeaturedBusinesses from './pages/FeaturedBusinesses';
 import BusinessDashboard from './pages/BusinessDashboard';
 import InvoiceDashboard from './pages/InvoiceDashboard';
 import CreateInvoice from './pages/CreateInvoice';
@@ -222,6 +224,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <ContentManager />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/tiers"
+            element={
+              <ProtectedRoute>
+                <TierManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/featured"
+            element={
+              <ProtectedRoute>
+                <FeaturedBusinesses />
               </ProtectedRoute>
             }
           />
