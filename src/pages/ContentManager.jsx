@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { ArrowLeft, Check, X, Edit2, FileText, Layout, Header, Footer as FooterIcon, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, X, Edit2, FileText, Layout, Type, LayoutGrid, Sparkles } from 'lucide-react';
 import AdminLayout from '../components/AdminLayout';
 
 export default function ContentManager() {
@@ -251,14 +251,14 @@ export default function ContentManager() {
                 value="header"
                 className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
               >
-                <Header size={16} className="mr-2" />
+                <Type size={16} className="mr-2" />
                 Header ({contentBySection.header.length})
               </TabsTrigger>
               <TabsTrigger 
                 value="footer"
                 className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
               >
-                <FooterIcon size={16} className="mr-2" />
+                <LayoutGrid size={16} className="mr-2" />
                 Footer ({contentBySection.footer.length})
               </TabsTrigger>
             </TabsList>
@@ -306,7 +306,7 @@ export default function ContentManager() {
               <Card className="border-none shadow-lg">
                 <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
                   <CardTitle className="flex items-center gap-2">
-                    <Header size={20} />
+                    <Type size={20} />
                     Website Header
                   </CardTitle>
                 </CardHeader>
@@ -325,7 +325,7 @@ export default function ContentManager() {
               <Card className="border-none shadow-lg">
                 <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
                   <CardTitle className="flex items-center gap-2">
-                    <FooterIcon size={20} />
+                    <LayoutGrid size={20} />
                     Website Footer
                   </CardTitle>
                 </CardHeader>
