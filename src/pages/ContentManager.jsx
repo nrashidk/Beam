@@ -4,8 +4,8 @@ import api from '../lib/api';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { ArrowLeft, Save, Search, Edit2, Check, X } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { ArrowLeft, Check, X, Edit2, FileText, Layout, Header, Footer as FooterIcon, Sparkles } from 'lucide-react';
 import AdminLayout from '../components/AdminLayout';
 
 export default function ContentManager() {
@@ -14,8 +14,6 @@ export default function ContentManager() {
   const [loading, setLoading] = useState(true);
   const [editingKey, setEditingKey] = useState(null);
   const [editValue, setEditValue] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sectionFilter, setSectionFilter] = useState('all');
   const [saving, setSaving] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
 
@@ -54,7 +52,7 @@ export default function ContentManager() {
       
       setEditingKey(null);
       setEditValue('');
-      setSuccessMessage(`Updated: ${key}`);
+      setSuccessMessage(`✓ Saved: ${key.replace(/_/g, ' ')}`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       console.error('❌ Failed to save:', error);
@@ -76,32 +74,120 @@ export default function ContentManager() {
     setEditValue('');
   }
 
-  const sections = ['all', ...new Set(content.map(b => b.section).filter(Boolean))];
-  
-  const filteredContent = content.filter(block => {
-    const matchesSearch = !searchQuery || 
-      block.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      block.value.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (block.description && block.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesSection = sectionFilter === 'all' || block.section === sectionFilter;
-    
-    return matchesSearch && matchesSection;
-  });
+  // Group content by section
+  const contentBySection = {
+    homepage: content.filter(b => b.section === 'homepage'),
+    feature_boxes: content.filter(b => b.section === 'feature_boxes'),
+    header: content.filter(b => b.section === 'header'),
+    footer: content.filter(b => b.section === 'footer'),
+  };
 
-  // Group by section
-  const groupedContent = filteredContent.reduce((acc, block) => {
-    const section = block.section || 'uncategorized';
-    if (!acc[section]) acc[section] = [];
-    acc[section].push(block);
-    return acc;
-  }, {});
+  function renderContentBlock(block) {
+    const isEditing = editingKey === block.key;
+    
+    return (
+      <div key={block.id} className="group bg-white border border-gray-200 rounded-xl p-5 hover:border-indigo-300 hover:shadow-md transition-all duration-200">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            {/* Key and Description */}
+            <div className="mb-3">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-semibold text-gray-900 capitalize">
+                  {block.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                </h3>
+                {block.updated_by && (
+                  <span className="text-xs text-gray-400 font-mono">
+                    by {block.updated_by.split('@')[0]}
+                  </span>
+                )}
+              </div>
+              {block.description && (
+                <p className="text-xs text-gray-500">{block.description}</p>
+              )}
+            </div>
+
+            {/* Value Editor */}
+            {isEditing ? (
+              <div className="space-y-3">
+                <textarea
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className="w-full border border-indigo-300 rounded-lg p-3 text-sm min-h-[100px] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-sans resize-y"
+                  autoFocus
+                  placeholder="Enter content..."
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleSave(block.key)}
+                    disabled={saving === block.key || editValue === block.value}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                  >
+                    {saving === block.key ? (
+                      <span className="flex items-center gap-1">
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Saving...
+                      </span>
+                    ) : (
+                      <>
+                        <Check size={14} className="mr-1" />
+                        Save Changes
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={cancelEdit}
+                    disabled={saving === block.key}
+                  >
+                    <X size={14} className="mr-1" />
+                    Cancel
+                  </Button>
+                  <span className="text-xs text-gray-400 ml-2">
+                    {editValue.length} characters
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200">
+                <p className="text-sm text-gray-900 whitespace-pre-wrap leading-relaxed">
+                  {block.value || <span className="text-gray-400 italic">Empty</span>}
+                </p>
+              </div>
+            )}
+
+            {/* Metadata */}
+            <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
+              <span>Last updated: {new Date(block.updated_at).toLocaleString()}</span>
+              <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{block.key}</span>
+            </div>
+          </div>
+
+          {/* Edit Button */}
+          {!isEditing && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => startEdit(block)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <Edit2 size={16} className="text-indigo-600" />
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
       <AdminLayout>
-        <div className="bg-gray-50 p-6 flex items-center justify-center min-h-96">
-          <p className="text-gray-600">Loading content...</p>
+        <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-8 flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading content...</p>
+          </div>
         </div>
       </AdminLayout>
     );
@@ -109,151 +195,161 @@ export default function ContentManager() {
 
   return (
     <AdminLayout>
-      <div className="bg-gray-50 max-w-6xl mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => navigate('/superadmin-dashboard')}>
-              <ArrowLeft size={16} className="mr-2" />
-              Back to Dashboard
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Content Manager</h1>
-              <p className="text-sm text-gray-600">Edit all website text content</p>
+      <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 min-h-screen">
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
+          {/* Header */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => navigate('/superadmin-dashboard')}
+                  className="hover:bg-indigo-50 hover:border-indigo-300"
+                >
+                  <ArrowLeft size={16} className="mr-2" />
+                  Back to Dashboard
+                </Button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="text-indigo-600" size={24} />
+                    <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                      Content Manager
+                    </h1>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">Manage all website content in one place</p>
+                </div>
+              </div>
+              
+              {successMessage && (
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 text-green-700 px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2 shadow-sm animate-in slide-in-from-right">
+                  <Check size={16} className="text-green-600" />
+                  {successMessage}
+                </div>
+              )}
             </div>
           </div>
-          {successMessage && (
-            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-              <Check size={16} />
-              {successMessage}
-            </div>
-          )}
+
+          {/* Tabs */}
+          <Tabs defaultValue="homepage" className="space-y-6">
+            <TabsList className="bg-white border border-gray-200 p-1 rounded-xl shadow-sm">
+              <TabsTrigger 
+                value="homepage" 
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+              >
+                <FileText size={16} className="mr-2" />
+                Homepage ({contentBySection.homepage.length})
+              </TabsTrigger>
+              <TabsTrigger 
+                value="feature_boxes"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+              >
+                <Layout size={16} className="mr-2" />
+                Feature Boxes ({contentBySection.feature_boxes.length})
+              </TabsTrigger>
+              <TabsTrigger 
+                value="header"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+              >
+                <Header size={16} className="mr-2" />
+                Header ({contentBySection.header.length})
+              </TabsTrigger>
+              <TabsTrigger 
+                value="footer"
+                className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+              >
+                <FooterIcon size={16} className="mr-2" />
+                Footer ({contentBySection.footer.length})
+              </TabsTrigger>
+            </TabsList>
+
+            {/* Homepage Tab */}
+            <TabsContent value="homepage" className="space-y-4">
+              <Card className="border-none shadow-lg">
+                <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText size={20} />
+                    Homepage Content
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4 bg-white">
+                  {contentBySection.homepage.length > 0 ? (
+                    contentBySection.homepage.map(renderContentBlock)
+                  ) : (
+                    <p className="text-center text-gray-400 py-8">No homepage content found</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Feature Boxes Tab */}
+            <TabsContent value="feature_boxes" className="space-y-4">
+              <Card className="border-none shadow-lg">
+                <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
+                  <CardTitle className="flex items-center gap-2">
+                    <Layout size={20} />
+                    Feature Boxes
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4 bg-white">
+                  {contentBySection.feature_boxes.length > 0 ? (
+                    contentBySection.feature_boxes.map(renderContentBlock)
+                  ) : (
+                    <p className="text-center text-gray-400 py-8">No feature box content found</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Header Tab */}
+            <TabsContent value="header" className="space-y-4">
+              <Card className="border-none shadow-lg">
+                <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
+                  <CardTitle className="flex items-center gap-2">
+                    <Header size={20} />
+                    Website Header
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4 bg-white">
+                  {contentBySection.header.length > 0 ? (
+                    contentBySection.header.map(renderContentBlock)
+                  ) : (
+                    <p className="text-center text-gray-400 py-8">No header content found</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Footer Tab */}
+            <TabsContent value="footer" className="space-y-4">
+              <Card className="border-none shadow-lg">
+                <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-t-xl">
+                  <CardTitle className="flex items-center gap-2">
+                    <FooterIcon size={20} />
+                    Website Footer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4 bg-white">
+                  {contentBySection.footer.length > 0 ? (
+                    contentBySection.footer.map(renderContentBlock)
+                  ) : (
+                    <p className="text-center text-gray-400 py-8">No footer content found</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+
+          {/* Info Card */}
+          <Card className="border-indigo-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+            <CardContent className="p-4">
+              <p className="text-sm text-indigo-900">
+                <strong>💡 Tip:</strong> After saving changes, you may need to refresh your browser 
+                (Ctrl+Shift+R or Cmd+Shift+R) to see the updates on the live website.
+              </p>
+            </CardContent>
+          </Card>
         </div>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <Input
-                  placeholder="Search by key, value, or description..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Select value={sectionFilter} onValueChange={setSectionFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Filter by section" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sections.map(section => (
-                    <SelectItem key={section} value={section}>
-                      {section === 'all' ? 'All Sections' : section}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="text-sm text-gray-600">
-                {filteredContent.length} blocks
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Content Blocks by Section */}
-        {Object.entries(groupedContent).sort().map(([section, blocks]) => (
-          <Card key={section}>
-            <CardHeader>
-              <CardTitle className="text-lg capitalize">{section.replace(/_/g, ' ')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {blocks.map(block => (
-                <div key={block.id} className="border border-gray-200 rounded-lg p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-sm text-blue-600">{block.key}</span>
-                        {block.updated_by && (
-                          <span className="text-xs text-gray-500">
-                            by {block.updated_by}
-                          </span>
-                        )}
-                      </div>
-                      {block.description && (
-                        <p className="text-xs text-gray-600 mb-2">{block.description}</p>
-                      )}
-                      
-                      {editingKey === block.key ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full border border-gray-300 rounded-md p-2 text-sm min-h-[80px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            autoFocus
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleSave(block.key)}
-                              disabled={saving === block.key || editValue === block.value}
-                            >
-                              {saving === block.key ? (
-                                'Saving...'
-                              ) : (
-                                <>
-                                  <Check size={14} className="mr-1" />
-                                  Save
-                                </>
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={cancelEdit}
-                              disabled={saving === block.key}
-                            >
-                              <X size={14} className="mr-1" />
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-gray-50 rounded-md p-3 text-sm">
-                          <p className="whitespace-pre-wrap">{block.value}</p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {editingKey !== block.key && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => startEdit(block)}
-                        className="ml-4"
-                      >
-                        <Edit2 size={14} />
-                      </Button>
-                    )}
-                  </div>
-                  
-                  <div className="text-xs text-gray-500">
-                    Last updated: {new Date(block.updated_at).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
-
-        {filteredContent.length === 0 && (
-          <Card>
-            <CardContent className="p-8 text-center text-gray-600">
-              No content blocks found matching your filters.
-            </CardContent>
-          </Card>
-        )}
       </div>
     </AdminLayout>
   );
