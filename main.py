@@ -629,7 +629,7 @@ class GoodsReceiptDB(Base):
     received_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
     
     # Supplier
-    supplier_trn = Column(String, nullable=False)
+    supplier_trn = Column(String, nullable=True)  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_delivery_note = Column(String, nullable=True)  # Supplier's delivery note number
     
@@ -3861,8 +3861,9 @@ def create_invoice(
     if not company:
         raise HTTPException(404, "Company not found")
     
-    if not company.trn:
-        raise HTTPException(400, "Company TRN is required to issue invoices")
+    # Only require TRN when VAT is enabled
+    if company.vat_enabled and not company.trn:
+        raise HTTPException(400, "Company TRN is required to issue VAT invoices. Please enable VAT in settings first.")
     
     # Check trial limits (100 invoices OR 30 days, whichever comes first)
     if company.trial_status == "ACTIVE" and company.trial_start_date:
