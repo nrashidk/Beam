@@ -56,7 +56,7 @@ export const authAPI = {
   },
 
   register: (data) => {
-    return apiClient.post('/register', data);
+    return apiClient.post('/register/quick', data);
   },
 
   forgotPassword: (email) => {
