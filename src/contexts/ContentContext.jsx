@@ -13,7 +13,7 @@ export function ContentProvider({ children }) {
 
   async function loadContent() {
     try {
-      const response = await apiClient.get('/content/public');
+      const response = await apiClient.get('/api/content/public');
       const contentMap = {};
       response.data.forEach(block => {
         contentMap[block.key] = block.value;

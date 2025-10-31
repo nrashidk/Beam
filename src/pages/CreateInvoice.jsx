@@ -41,7 +41,7 @@ export default function CreateInvoice() {
   useEffect(() => {
     const fetchVatSettings = async () => {
       try {
-        const response = await apiClient.get('/settings/vat');
+        const response = await apiClient.get('/api/settings/vat');
         const vatStatus = response.data.vat_enabled || false;
         setVatEnabled(vatStatus);
         
@@ -128,7 +128,7 @@ export default function CreateInvoice() {
         })
       };
 
-      const response = await apiClient.post('/invoices', cleanedFormData);
+      const response = await apiClient.post('/api/invoices', cleanedFormData);
       setToast({
         message: `Invoice ${response.data.invoice_number} created successfully!`,
         type: 'success',
