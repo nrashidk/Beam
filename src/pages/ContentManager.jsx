@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { ArrowLeft, Save, Search, Edit2, Check, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import AdminLayout from '../components/AdminLayout';
 
 export default function ContentManager() {
   const navigate = useNavigate();
@@ -96,8 +97,9 @@ export default function ContentManager() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <AdminLayout>
+      <div className="bg-gray-50">
+        <div className="max-w-6xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -243,6 +245,6 @@ export default function ContentManager() {
           </Card>
         )}
       </div>
-    </div>
+    </AdminLayout>
   );
 }

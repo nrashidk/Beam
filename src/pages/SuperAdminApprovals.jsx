@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft, User, Settings } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import AdminLayout from '../components/AdminLayout';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -118,49 +119,44 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-xl font-bold">
-            <span className="text-2xl">🔗</span>
-            <span>InvoLinks Admin</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-sm">
-              <Badge variant="info">{user?.role}</Badge>
-              <span className="ml-2 text-gray-600">{user?.email}</span>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <User size={16} />
-                  Account
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
-                  <Settings size={16} className="mr-2" />
-                  Account Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/security')}>
-                  <Settings size={16} className="mr-2" />
-                  Security Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="text-red-600">
-                  <LogOut size={16} className="mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </nav>
+  const navigationButtons = (
+    <>
+      <div className="text-sm">
+        <Badge variant="info">{user?.role}</Badge>
+        <span className="ml-2 text-gray-600">{user?.email}</span>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <User size={16} />
+            Account
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => navigate('/settings')}>
+            <Settings size={16} className="mr-2" />
+            Account Settings
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/security')}>
+            <Settings size={16} className="mr-2" />
+            Security Settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={logout} className="text-red-600">
+            <LogOut size={16} className="mr-2" />
+            Logout
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+  return (
+    <AdminLayout navigation={navigationButtons}>
+      <div className="bg-gray-50">
+        <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="gap-2">
@@ -469,7 +465,8 @@ export default function SuperAdminDashboard() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+        </div>
+      </div>
+    </AdminLayout>
   );
 }

@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Plus, Trash2, RefreshCcw, Search, Edit } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import AdminLayout from '../components/AdminLayout';
 
 export default function FeaturedBusinesses() {
   const { isSuperAdmin } = useAuth();
@@ -123,15 +124,18 @@ export default function FeaturedBusinesses() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading...</div>
-      </div>
+      <AdminLayout>
+        <div className="bg-gray-50 flex items-center justify-center min-h-96">
+          <div className="text-lg text-gray-600">Loading...</div>
+        </div>
+      </AdminLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+    <AdminLayout>
+      <div className="bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
@@ -406,6 +410,6 @@ export default function FeaturedBusinesses() {
           </div>
         )}
       </div>
-    </div>
+    </AdminLayout>
   );
 }

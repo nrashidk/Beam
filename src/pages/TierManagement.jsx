@@ -7,6 +7,7 @@ import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Save, RefreshCcw, Edit2, Check, X } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import AdminLayout from '../components/AdminLayout';
 
 export default function TierManagement() {
   const { isSuperAdmin } = useAuth();
@@ -91,8 +92,9 @@ export default function TierManagement() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+    <AdminLayout>
+      <div className="bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button
@@ -346,6 +348,6 @@ export default function TierManagement() {
           })}
         </div>
       </div>
-    </div>
+    </AdminLayout>
   );
 }
