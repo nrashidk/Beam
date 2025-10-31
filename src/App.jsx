@@ -33,6 +33,7 @@ import PaymentVerification from './pages/PaymentVerification';
 import DailyReconciliation from './pages/DailyReconciliation';
 import AdvancedAnalytics from './pages/AdvancedAnalytics';
 import CompanyManagement from './pages/CompanyManagement';
+import CompanySettings from './pages/CompanySettings';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -188,6 +189,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <MFASettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/company"
+            element={
+              <ProtectedRoute>
+                <CompanySettings />
               </ProtectedRoute>
             }
           />
