@@ -32,6 +32,7 @@ import PublicInvoiceView from './pages/PublicInvoiceView';
 import PaymentVerification from './pages/PaymentVerification';
 import DailyReconciliation from './pages/DailyReconciliation';
 import AdvancedAnalytics from './pages/AdvancedAnalytics';
+import CompanyManagement from './pages/CompanyManagement';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth();
@@ -243,6 +244,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <SuperAdminApprovals />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/companies/:status"
+            element={
+              <ProtectedRoute>
+                <CompanyManagement />
               </ProtectedRoute>
             }
           />

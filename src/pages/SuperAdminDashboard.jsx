@@ -377,34 +377,22 @@ export default function SuperAdminDashboard() {
           <Stat 
             label="Approved registrations" 
             value={loading ? '—' : stats?.registrations.approved ?? '—'}
-            onClick={() => {
-              setStatus('active');
-              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            onClick={() => navigate('/admin/companies/approved')}
           />
           <Stat 
             label="Rejected registrations" 
             value={loading ? '—' : stats?.registrations.rejected ?? '—'}
-            onClick={() => {
-              setStatus('all');
-              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            onClick={() => navigate('/admin/companies/rejected')}
           />
           <Stat 
             label="Active companies" 
             value={loading ? '—' : stats?.companies.active ?? '—'}
-            onClick={() => {
-              setStatus('active');
-              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            onClick={() => navigate('/admin/companies/active')}
           />
           <Stat 
             label="Inactive companies" 
             value={loading ? '—' : stats?.companies.inactive ?? '—'}
-            onClick={() => {
-              setStatus('inactive');
-              setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            onClick={() => navigate('/admin/companies/inactive')}
           />
           <Stat label="Invoices month-to-date" value={loading ? '—' : stats?.invoices.monthToDate.toLocaleString() ?? '—'} delta={mtdDelta.pct} positive={mtdDelta.positive} />
         </div>
