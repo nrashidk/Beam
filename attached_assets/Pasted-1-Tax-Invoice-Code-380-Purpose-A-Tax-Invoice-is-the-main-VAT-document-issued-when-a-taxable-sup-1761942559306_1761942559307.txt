@@ -1,0 +1,95 @@
+1. Tax Invoice (Code 380)
+
+Purpose:
+A Tax Invoice is the main VAT document issued when a taxable supply of goods or services takes place.
+
+Used when:
+You sell goods or services subject to VAT — at either 5% or 0% rates.
+
+Contents (as per UAE VAT Law):
+
+The words “Tax Invoice”
+
+Supplier’s name, address, and TRN (Tax Registration Number)
+
+Recipient’s name, address, and TRN (if registered)
+
+Unique invoice number
+
+Date of issue and date of supply (if different)
+
+Description of goods or services
+
+Quantity, unit price, total before tax
+
+Applicable VAT rate and amount
+
+Total amount including VAT
+
+Currency (usually AED)
+
+Purpose in accounting:
+It’s the official document that allows the buyer to recover input VAT.
+Without a valid tax invoice, input VAT cannot be claimed.
+
+💳 2. Credit Note (Code 381)
+
+Purpose:
+A Credit Note is issued when a supplier reduces the value of a previously issued tax invoice — for example, if:
+
+Goods are returned,
+
+A discount is granted after invoicing, or
+
+There was an invoicing error (e.g., overcharging).
+
+Used when:
+You need to adjust or cancel part/all of a Tax Invoice.
+
+Contents (UAE VAT rules):
+
+The words “Tax Credit Note”
+
+Reference to the original Tax Invoice
+
+Supplier and recipient details with TRNs
+
+Reason for issuing the credit note
+
+Amount being reduced
+
+VAT adjustment details
+
+Purpose in accounting:
+It reduces VAT previously accounted for on the supplier’s side and reduces input VAT for the customer.
+
+🌍 3. Commercial Invoice (Code 480)
+
+Purpose:
+A Commercial Invoice is not a VAT document — it’s used primarily for export and customs purposes.
+
+Used when:
+
+Exporting goods outside the UAE (especially to non-GCC VAT territories)
+
+For customs clearance and international trade documentation
+
+Sometimes used for non-VAT supplies (like outside-scope or exempt supplies)
+
+Contents:
+
+Exporter and importer details
+
+Description of goods
+
+Quantity, unit price, and total value
+
+Country of origin, HS codes, Incoterms, etc.
+
+Shipping details (weight, transport mode, etc.)
+
+VAT is usually not included
+
+Purpose in accounting:
+It’s a commercial document, not a tax document. It cannot be used to recover VAT.
+It helps with customs declaration and international payment processes.
