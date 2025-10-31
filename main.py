@@ -271,6 +271,8 @@ class CompanyDB(Base):
     peppol_last_tested_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    approved_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
 
 class SubscriptionPlanDB(Base):
     __tablename__ = "subscription_plans"
@@ -2970,7 +2972,7 @@ def get_all_companies(
         except ValueError:
             pass
     
-    companies = query.all()
+    companies = query.order_by(CompanyDB.created_at.desc()).all()
     
     return [{
         "id": c.id,
@@ -2979,8 +2981,11 @@ def get_all_companies(
         "business_type": c.business_type,
         "phone": c.phone,
         "status": c.status.value,
-        "created_at": c.created_at.isoformat(),
-        "subscription_plan": c.subscription_plan_id
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "approved_at": c.approved_at.isoformat() if c.approved_at else None,
+        "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
+        "subscription_plan": c.subscription_plan_id,
+        "invoices_generated": c.invoices_generated or 0
     } for c in companies]
 
 class CompanyApprovalConfig(BaseModel):
@@ -3012,6 +3017,7 @@ def approve_company(
     
     # Update company status to ACTIVE
     company.status = CompanyStatus.ACTIVE
+    company.approved_at = datetime.utcnow()
     
     # Configure free plan settings
     company.free_plan_type = config.free_plan_type
@@ -3074,6 +3080,7 @@ def reject_company(
     
     # Update company status to REJECTED
     company.status = CompanyStatus.REJECTED
+    company.rejected_at = datetime.utcnow()
     db.commit()
     
     # Send rejection email via AWS SES
