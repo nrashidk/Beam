@@ -31,6 +31,7 @@ Detailed explanations preferred.
 - **Multi-Factor Authentication (MFA):** Implementation of TOTP, Email OTP, and Backup Codes.
 - **SuperAdmin Analytics Dashboard:** Comprehensive revenue metrics, company explorer, registration analytics, and invoice statistics.
 - **Content Management System (CMS):** Database-backed content management for SuperAdmins to edit website text without code changes.
+- **Featured Businesses Management:** Full CRUD interface for SuperAdmins to manage featured businesses on homepage, with auto-incrementing display order, edit modal for reordering/updating, and toggle active status.
 - **PEPPOL Settings UI:** Self-service PEPPOL configuration dashboard.
 - **Finance Dashboard:** Comprehensive financial analytics with key metrics, revenue vs. expenses tracking, cash flow, and AR/AP tracking.
 - **Simple Expense Tracking:** Straightforward expense management with custom user-defined categories and automatic net income/VAT calculations.
