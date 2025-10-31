@@ -114,3 +114,8 @@ externalPort = 3002
 deploymentTarget = "vm"
 run = ["bash", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000 & npx vite preview --host 0.0.0.0 --port 5000"]
 build = ["npm", "run", "build"]
+
+[userenv]
+
+[userenv.shared]
+VITE_API_URL = "https://7c5411bd-6499-4453-a216-f9907dbb3529-00-79cj4vh86hun.pike.replit.dev"
