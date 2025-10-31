@@ -110,6 +110,7 @@ export default function SuperAdminDashboard() {
   const [saving, setSaving] = useState(false);
   const [addExtraInvoices, setAddExtraInvoices] = useState(0);
   const [addExtraMonths, setAddExtraMonths] = useState(0);
+  const [freePlanType, setFreePlanType] = useState('INVOICE_COUNT'); // INVOICE_COUNT or DURATION
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -137,6 +138,7 @@ export default function SuperAdminDashboard() {
           free_plan_duration_months: fullCompany.free_plan_duration_months || 0,
           vat_enabled: fullCompany.vat_enabled || false
         });
+        setFreePlanType(fullCompany.free_plan_type || 'INVOICE_COUNT');
         setAddExtraInvoices(0);
         setAddExtraMonths(0);
         setShowEditModal(true);
@@ -165,7 +167,8 @@ export default function SuperAdminDashboard() {
       await api.put(`/admin/companies/${editingCompany.id}`, {
         invoices_generated: invoicesGenerated,
         free_plan_invoice_limit: newInvoiceLimit,
-        free_plan_duration_months: newMonthsLimit
+        free_plan_duration_months: newMonthsLimit,
+        free_plan_type: freePlanType
       });
       
       // Reload stats
@@ -533,9 +536,46 @@ export default function SuperAdminDashboard() {
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
                 
-                {/* Invoice Usage & Limits */}
-                <div className="border rounded-lg p-4">
-                  <h3 className="text-sm font-semibold mb-3 text-indigo-700">Invoice Usage</h3>
+                {/* Free Plan Type Selector */}
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border-2 border-indigo-200">
+                  <label className="block text-sm font-semibold mb-3 text-indigo-900">Free Plan Type</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setFreePlanType('INVOICE_COUNT')}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        freePlanType === 'INVOICE_COUNT'
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold">📊 Invoice Count</div>
+                      <div className="text-xs mt-1 opacity-90">Limit by number of invoices</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFreePlanType('DURATION')}
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        freePlanType === 'DURATION'
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-lg'
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400'
+                      }`}
+                    >
+                      <div className="text-sm font-semibold">📅 Duration</div>
+                      <div className="text-xs mt-1 opacity-90">Limit by time period</div>
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-3">
+                    {freePlanType === 'INVOICE_COUNT' 
+                      ? '💡 Invoice Count: Company can generate a set number of invoices (no time limit)'
+                      : '💡 Duration: Company can generate unlimited invoices within a time period'}
+                  </p>
+                </div>
+
+                {/* Conditional Sections Based on Free Plan Type */}
+                {freePlanType === 'INVOICE_COUNT' && (
+                  <div className="border rounded-lg p-4">
+                    <h3 className="text-sm font-semibold mb-3 text-indigo-700">Invoice Usage</h3>
                   
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="bg-blue-50 rounded p-3">
@@ -577,11 +617,13 @@ export default function SuperAdminDashboard() {
                       Add extra invoices to increase the limit. New limit will be: {(parseInt(editingCompany.free_plan_invoice_limit) || 0) + (parseInt(addExtraInvoices) || 0)}
                     </p>
                   </div>
-                </div>
+                  </div>
+                )}
 
                 {/* Duration/Months Usage & Limits */}
-                <div className="border rounded-lg p-4">
-                  <h3 className="text-sm font-semibold mb-3 text-purple-700">Free Plan Duration</h3>
+                {freePlanType === 'DURATION' && (
+                  <div className="border rounded-lg p-4">
+                    <h3 className="text-sm font-semibold mb-3 text-purple-700">Free Plan Duration</h3>
                   
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="bg-orange-50 rounded p-3">
@@ -625,7 +667,8 @@ export default function SuperAdminDashboard() {
                       Add extra months to extend the duration. New duration will be: {(parseInt(editingCompany.free_plan_duration_months) || 0) + (parseInt(addExtraMonths) || 0)} months
                     </p>
                   </div>
-                </div>
+                  </div>
+                )}
 
                 <div className="flex gap-2 pt-4 border-t">
                   <Button

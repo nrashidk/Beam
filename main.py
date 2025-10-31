@@ -3136,6 +3136,7 @@ class CompanyUpdateRequest(BaseModel):
     invoices_generated: Optional[int] = None
     free_plan_invoice_limit: Optional[int] = None
     free_plan_duration_months: Optional[int] = None
+    free_plan_type: Optional[str] = None  # INVOICE_COUNT or DURATION
     vat_enabled: Optional[bool] = None
     subscription_plan_id: Optional[str] = None
     status: Optional[str] = None  # active, inactive, suspended
@@ -3162,6 +3163,8 @@ def update_company(
         company.free_plan_invoice_limit = payload.free_plan_invoice_limit
     if payload.free_plan_duration_months is not None:
         company.free_plan_duration_months = payload.free_plan_duration_months
+    if payload.free_plan_type is not None:
+        company.free_plan_type = payload.free_plan_type
     if payload.vat_enabled is not None:
         company.vat_enabled = payload.vat_enabled
     if payload.subscription_plan_id is not None:
