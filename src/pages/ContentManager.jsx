@@ -204,7 +204,7 @@ export default function ContentManager() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => navigate('/superadmin-dashboard')}
+                  onClick={() => navigate('/admin')}
                   className="hover:bg-indigo-50 hover:border-indigo-300"
                 >
                   <ArrowLeft size={16} className="mr-2" />
