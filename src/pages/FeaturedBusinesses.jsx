@@ -39,10 +39,10 @@ export default function FeaturedBusinesses() {
       setLoading(true);
       const [featuredRes, companiesRes] = await Promise.all([
         api.get('/admin/featured-businesses'),
-        api.get('/admin/stats?from=2024-01-01&to=2025-12-31')
+        api.get('/admin/companies?status=ACTIVE')
       ]);
       setFeatured(featuredRes.data);
-      setAllCompanies(companiesRes.data?.companies?.all || []);
+      setAllCompanies(companiesRes.data || []);
     } catch (error) {
       console.error('Failed to fetch data:', error);
       alert('Failed to load featured businesses');
@@ -115,7 +115,7 @@ export default function FeaturedBusinesses() {
   }
 
   const filteredCompanies = allCompanies.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+    c.legal_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const availableCompanies = allCompanies.filter(c => 
@@ -252,7 +252,7 @@ export default function FeaturedBusinesses() {
                     <option value="">-- Select a company --</option>
                     {availableCompanies.map(c => (
                       <option key={c.id} value={c.id}>
-                        {c.name}
+                        {c.legal_name}
                       </option>
                     ))}
                   </select>
