@@ -343,7 +343,7 @@ export default function SuperAdminDashboard() {
               label="Active Subscriptions" 
               value={platformLoading ? '—' : platformStats?.active_subscriptions?.toLocaleString() ?? '—'} 
               onClick={() => {
-                setStatus('ACTIVE');
+                setStatus('active');
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
@@ -376,7 +376,7 @@ export default function SuperAdminDashboard() {
             label="Approved registrations" 
             value={loading ? '—' : stats?.registrations.approved ?? '—'}
             onClick={() => {
-              setStatus('ACTIVE');
+              setStatus('active');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -384,7 +384,7 @@ export default function SuperAdminDashboard() {
             label="Rejected registrations" 
             value={loading ? '—' : stats?.registrations.rejected ?? '—'}
             onClick={() => {
-              setStatus('REJECTED');
+              setStatus('all');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -392,7 +392,7 @@ export default function SuperAdminDashboard() {
             label="Active companies" 
             value={loading ? '—' : stats?.companies.active ?? '—'}
             onClick={() => {
-              setStatus('ACTIVE');
+              setStatus('active');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -400,7 +400,7 @@ export default function SuperAdminDashboard() {
             label="Inactive companies" 
             value={loading ? '—' : stats?.companies.inactive ?? '—'}
             onClick={() => {
-              setStatus('SUSPENDED');
+              setStatus('inactive');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
