@@ -104,6 +104,10 @@ export default function SuperAdminDashboard() {
   const [plan, setPlan] = useState('all');
   const [status, setStatus] = useState('all');
   const [minInvoices, setMinInvoices] = useState('');
+  
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -114,6 +118,55 @@ export default function SuperAdminDashboard() {
     a.download = `companies-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleEditCompany(company) {
+    // Fetch full company details
+    try {
+      const response = await api.get(`/admin/companies?status=${company.status}`);
+      const fullCompany = response.data.find(c => c.id === company.id);
+      if (fullCompany) {
+        setEditingCompany({
+          id: fullCompany.id,
+          legal_name: fullCompany.legal_name,
+          invoices_generated: fullCompany.invoices_generated || 0,
+          free_plan_invoice_limit: fullCompany.free_plan_invoice_limit || 0,
+          free_plan_duration_months: fullCompany.free_plan_duration_months || 0,
+          vat_enabled: fullCompany.vat_enabled || false
+        });
+        setShowEditModal(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch company details:', error);
+      alert('Failed to load company details');
+    }
+  }
+
+  async function saveCompanyChanges() {
+    if (!editingCompany) return;
+    
+    try {
+      setSaving(true);
+      await api.put(`/admin/companies/${editingCompany.id}`, {
+        invoices_generated: parseInt(editingCompany.invoices_generated),
+        free_plan_invoice_limit: parseInt(editingCompany.free_plan_invoice_limit),
+        free_plan_duration_months: parseInt(editingCompany.free_plan_duration_months),
+        vat_enabled: editingCompany.vat_enabled
+      });
+      
+      // Reload stats
+      const response = await api.get(`/admin/stats?from=${fromISO}&to=${toISO}`);
+      setStats(response.data);
+      
+      setShowEditModal(false);
+      setEditingCompany(null);
+      alert('Company updated successfully!');
+    } catch (error) {
+      console.error('Failed to update company:', error);
+      alert('Failed to update company: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setSaving(false);
+    }
   }
 
   const fromISO = useMemo(() => range.from.toISOString(), [range.from]);
@@ -404,8 +457,10 @@ export default function SuperAdminDashboard() {
                 <SelectTrigger className="w-[120px] h-9 text-sm whitespace-nowrap"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="ACTIVE">Active</SelectItem>
+                  <SelectItem value="PENDING_REVIEW">Pending</SelectItem>
+                  <SelectItem value="REJECTED">Rejected</SelectItem>
+                  <SelectItem value="SUSPENDED">Suspended</SelectItem>
                 </SelectContent>
               </Select>
               <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[120px] h-9 text-sm" />
@@ -422,6 +477,7 @@ export default function SuperAdminDashboard() {
                   <th className="px-4 py-3 font-medium">ARPU</th>
                   <th className="px-4 py-3 font-medium">Invoices (MTD)</th>
                   <th className="px-4 py-3 font-medium">VAT</th>
+                  <th className="px-4 py-3 font-medium">Manage</th>
                 </tr>
               </thead>
               <tbody>
@@ -435,6 +491,16 @@ export default function SuperAdminDashboard() {
                     <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td>
                     <td className="px-4 py-3">{c.invoicesThisMonth.toLocaleString()}</td>
                     <td className="px-4 py-3">{c.vatCompliant ? <Badge className="bg-emerald-600">Compliant</Badge> : <Badge variant="secondary">Review</Badge>}</td>
+                    <td className="px-4 py-3">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => handleEditCompany(c)}
+                        className="text-indigo-600 hover:text-indigo-700"
+                      >
+                        Edit
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -443,32 +509,84 @@ export default function SuperAdminDashboard() {
           <p className="text-xs text-muted-foreground mt-2">Showing {filteredCompanies.length} of {stats?.companies.all.length || 0} companies</p>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => navigate('/admin/approvals')}>Review Pending</Button>
-              <Button variant="outline" onClick={() => navigate('/admin/companies')}>Manage Companies</Button>
-              <Button variant="outline" onClick={() => exportCompaniesCsv(stats?.companies.all || [])}>Export All Data</Button>
-              <Button variant="outline" onClick={() => navigate('/plans')}>Manage Plans</Button>
-            </CardContent>
-          </Card>
+        {/* Edit Company Modal */}
+        {showEditModal && editingCompany && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-lg rounded-2xl">
+              <CardHeader>
+                <CardTitle>Edit Company: {editingCompany.legal_name}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Invoices Generated (Total)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editingCompany.invoices_generated}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, invoices_generated: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Total number of invoices created by this company</p>
+                </div>
 
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base">System Info</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="list-disc pl-5 text-sm space-y-2 text-muted-foreground">
-                <li>Revenue calculated based on active subscription plans</li>
-                <li>Invoice counts updated in real-time</li>
-                <li>Export feature includes all company data with VAT compliance status</li>
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+                <div>
+                  <label className="block text-sm font-medium mb-2">Free Plan Invoice Limit</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editingCompany.free_plan_invoice_limit}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_invoice_limit: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Maximum free invoices allowed</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Free Plan Duration (Months)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={editingCompany.free_plan_duration_months}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_duration_months: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Free plan duration in months</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="vat-enabled"
+                    checked={editingCompany.vat_enabled}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, vat_enabled: e.target.checked })}
+                    className="rounded"
+                  />
+                  <label htmlFor="vat-enabled" className="text-sm font-medium">
+                    VAT Enabled
+                  </label>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={saveCompanyChanges}
+                    disabled={saving}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingCompany(null);
+                    }}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
       </div>
     </AdminLayout>
   );

@@ -3132,6 +3132,52 @@ def reject_company(
         "email_sent": email_result.get("success", False)
     }
 
+class CompanyUpdateRequest(BaseModel):
+    invoices_generated: Optional[int] = None
+    free_plan_invoice_limit: Optional[int] = None
+    free_plan_duration_months: Optional[int] = None
+    vat_enabled: Optional[bool] = None
+    subscription_plan_id: Optional[str] = None
+
+@app.put("/admin/companies/{company_id}", tags=["Admin"])
+def update_company(
+    company_id: str,
+    payload: CompanyUpdateRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update company details (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+    
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Update fields if provided
+    if payload.invoices_generated is not None:
+        company.invoices_generated = payload.invoices_generated
+    if payload.free_plan_invoice_limit is not None:
+        company.free_plan_invoice_limit = payload.free_plan_invoice_limit
+    if payload.free_plan_duration_months is not None:
+        company.free_plan_duration_months = payload.free_plan_duration_months
+    if payload.vat_enabled is not None:
+        company.vat_enabled = payload.vat_enabled
+    if payload.subscription_plan_id is not None:
+        company.subscription_plan_id = payload.subscription_plan_id
+    
+    db.commit()
+    db.refresh(company)
+    
+    return {
+        "success": True,
+        "company_id": company_id,
+        "message": "Company updated successfully",
+        "invoices_generated": company.invoices_generated,
+        "free_plan_invoice_limit": company.free_plan_invoice_limit,
+        "free_plan_duration_months": company.free_plan_duration_months
+    }
+
 @app.get("/admin/stats", tags=["Admin"])
 def get_admin_stats(
     from_date: Optional[str] = None,
