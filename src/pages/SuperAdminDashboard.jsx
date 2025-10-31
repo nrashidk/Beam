@@ -302,7 +302,7 @@ export default function SuperAdminDashboard() {
               label="Active Companies" 
               value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
               onClick={() => {
-                setStatus('ACTIVE');
+                setStatus('active');
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
@@ -463,10 +463,9 @@ export default function SuperAdminDashboard() {
                 <SelectTrigger className="w-[120px] h-9 text-sm whitespace-nowrap"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
-                  <SelectItem value="ACTIVE">Active</SelectItem>
-                  <SelectItem value="PENDING_REVIEW">Pending</SelectItem>
-                  <SelectItem value="REJECTED">Rejected</SelectItem>
-                  <SelectItem value="SUSPENDED">Suspended</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="suspended">Suspended</SelectItem>
                 </SelectContent>
               </Select>
               <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[120px] h-9 text-sm" />
