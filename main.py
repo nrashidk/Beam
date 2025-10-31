@@ -3138,6 +3138,7 @@ class CompanyUpdateRequest(BaseModel):
     free_plan_duration_months: Optional[int] = None
     vat_enabled: Optional[bool] = None
     subscription_plan_id: Optional[str] = None
+    status: Optional[str] = None  # active, inactive, suspended
 
 @app.put("/admin/companies/{company_id}", tags=["Admin"])
 def update_company(
@@ -3165,6 +3166,15 @@ def update_company(
         company.vat_enabled = payload.vat_enabled
     if payload.subscription_plan_id is not None:
         company.subscription_plan_id = payload.subscription_plan_id
+    if payload.status is not None:
+        # Map string status to enum
+        status_map = {
+            'active': CompanyStatus.ACTIVE,
+            'inactive': CompanyStatus.INACTIVE,
+            'suspended': CompanyStatus.SUSPENDED
+        }
+        if payload.status.lower() in status_map:
+            company.status = status_map[payload.status.lower()]
     
     db.commit()
     db.refresh(company)

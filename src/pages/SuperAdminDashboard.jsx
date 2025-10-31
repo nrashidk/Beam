@@ -108,6 +108,8 @@ export default function SuperAdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [addExtraInvoices, setAddExtraInvoices] = useState(0);
+  const [addExtraMonths, setAddExtraMonths] = useState(0);
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -129,11 +131,14 @@ export default function SuperAdminDashboard() {
         setEditingCompany({
           id: fullCompany.id,
           legal_name: fullCompany.legal_name,
+          status: fullCompany.status,
           invoices_generated: fullCompany.invoices_generated || 0,
           free_plan_invoice_limit: fullCompany.free_plan_invoice_limit || 0,
           free_plan_duration_months: fullCompany.free_plan_duration_months || 0,
           vat_enabled: fullCompany.vat_enabled || false
         });
+        setAddExtraInvoices(0);
+        setAddExtraMonths(0);
         setShowEditModal(true);
       }
     } catch (error) {
@@ -150,14 +155,19 @@ export default function SuperAdminDashboard() {
       
       // Parse numeric fields with fallback to 0
       const invoicesGenerated = parseInt(editingCompany.invoices_generated) || 0;
-      const freePlanLimit = parseInt(editingCompany.free_plan_invoice_limit) || 0;
-      const freePlanMonths = parseInt(editingCompany.free_plan_duration_months) || 0;
+      const extraInvoices = parseInt(addExtraInvoices) || 0;
+      const extraMonths = parseInt(addExtraMonths) || 0;
+      
+      // Calculate new limits by adding extras to current limits
+      const newInvoiceLimit = (parseInt(editingCompany.free_plan_invoice_limit) || 0) + extraInvoices;
+      const newMonthsLimit = (parseInt(editingCompany.free_plan_duration_months) || 0) + extraMonths;
       
       await api.put(`/admin/companies/${editingCompany.id}`, {
         invoices_generated: invoicesGenerated,
-        free_plan_invoice_limit: freePlanLimit,
-        free_plan_duration_months: freePlanMonths,
-        vat_enabled: editingCompany.vat_enabled
+        free_plan_invoice_limit: newInvoiceLimit,
+        free_plan_duration_months: newMonthsLimit,
+        vat_enabled: editingCompany.vat_enabled,
+        status: editingCompany.status
       });
       
       // Reload stats
@@ -517,70 +527,158 @@ export default function SuperAdminDashboard() {
         {/* Edit Company Modal */}
         {showEditModal && editingCompany && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <Card className="w-full max-w-lg rounded-2xl">
-              <CardHeader>
-                <CardTitle>Edit Company: {editingCompany.legal_name}</CardTitle>
+            <Card className="w-full max-w-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
+              <CardHeader className="border-b">
+                <CardTitle>Manage Company: {editingCompany.legal_name}</CardTitle>
+                <p className="text-sm text-gray-500 mt-1">View usage, adjust limits, and change status</p>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Invoices Generated (Total)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={editingCompany.invoices_generated}
-                    onChange={(e) => setEditingCompany({ ...editingCompany, invoices_generated: e.target.value })}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Total number of invoices created by this company</p>
+              <CardContent className="space-y-6 pt-6">
+                
+                {/* Company Status */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <label className="block text-sm font-medium mb-2">Company Status</label>
+                  <Select 
+                    value={editingCompany.status} 
+                    onValueChange={(value) => setEditingCompany({ ...editingCompany, status: value })}
+                  >
+                    <SelectTrigger className="w-full bg-white">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-2">Change company status to activate, deactivate, or suspend</p>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2">Free Plan Invoice Limit</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={editingCompany.free_plan_invoice_limit}
-                    onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_invoice_limit: e.target.value })}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Maximum free invoices allowed</p>
+                {/* Invoice Usage & Limits */}
+                <div className="border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-3 text-indigo-700">Invoice Usage</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="bg-blue-50 rounded p-3">
+                      <p className="text-xs text-gray-600 mb-1">Consumed</p>
+                      <p className="text-2xl font-bold text-blue-700">{editingCompany.invoices_generated || 0}</p>
+                      <p className="text-xs text-gray-500">invoices used</p>
+                    </div>
+                    <div className="bg-green-50 rounded p-3">
+                      <p className="text-xs text-gray-600 mb-1">Available</p>
+                      <p className="text-2xl font-bold text-green-700">
+                        {(parseInt(editingCompany.free_plan_invoice_limit) || 0) + (parseInt(addExtraInvoices) || 0)}
+                      </p>
+                      <p className="text-xs text-gray-500">total limit</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium">Current Invoice Limit</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editingCompany.free_plan_invoice_limit}
+                      onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_invoice_limit: e.target.value })}
+                      className="bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2 mt-3">
+                    <label className="block text-sm font-medium text-indigo-600">Add Extra Invoices</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={addExtraInvoices}
+                      onChange={(e) => setAddExtraInvoices(e.target.value)}
+                      placeholder="0"
+                      className="bg-indigo-50 border-indigo-300"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Add extra invoices to increase the limit. New limit will be: {(parseInt(editingCompany.free_plan_invoice_limit) || 0) + (parseInt(addExtraInvoices) || 0)}
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2">Free Plan Duration (Months)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={editingCompany.free_plan_duration_months}
-                    onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_duration_months: e.target.value })}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Free plan duration in months</p>
+                {/* Duration/Months Usage & Limits */}
+                <div className="border rounded-lg p-4">
+                  <h3 className="text-sm font-semibold mb-3 text-purple-700">Free Plan Duration</h3>
+                  
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="bg-orange-50 rounded p-3">
+                      <p className="text-xs text-gray-600 mb-1">Current Duration</p>
+                      <p className="text-2xl font-bold text-orange-700">
+                        {(parseInt(editingCompany.free_plan_duration_months) || 0) + (parseInt(addExtraMonths) || 0)}
+                      </p>
+                      <p className="text-xs text-gray-500">months total</p>
+                    </div>
+                    <div className="bg-purple-50 rounded p-3">
+                      <p className="text-xs text-gray-600 mb-1">Status</p>
+                      <p className="text-sm font-semibold text-purple-700">
+                        {editingCompany.free_plan_duration_months > 0 ? 'Duration-based' : 'Not set'}
+                      </p>
+                      <p className="text-xs text-gray-500">plan type</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium">Current Duration (Months)</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={editingCompany.free_plan_duration_months}
+                      onChange={(e) => setEditingCompany({ ...editingCompany, free_plan_duration_months: e.target.value })}
+                      className="bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-2 mt-3">
+                    <label className="block text-sm font-medium text-purple-600">Add Extra Months</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={addExtraMonths}
+                      onChange={(e) => setAddExtraMonths(e.target.value)}
+                      placeholder="0"
+                      className="bg-purple-50 border-purple-300"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Add extra months to extend the duration. New duration will be: {(parseInt(editingCompany.free_plan_duration_months) || 0) + (parseInt(addExtraMonths) || 0)} months
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="vat-enabled"
-                    checked={editingCompany.vat_enabled}
-                    onChange={(e) => setEditingCompany({ ...editingCompany, vat_enabled: e.target.checked })}
-                    className="rounded"
-                  />
-                  <label htmlFor="vat-enabled" className="text-sm font-medium">
-                    VAT Enabled
-                  </label>
+                {/* VAT Settings */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="vat-enabled"
+                      checked={editingCompany.vat_enabled}
+                      onChange={(e) => setEditingCompany({ ...editingCompany, vat_enabled: e.target.checked })}
+                      className="rounded"
+                    />
+                    <label htmlFor="vat-enabled" className="text-sm font-medium">
+                      VAT Enabled
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Enable VAT compliance features for this company</p>
                 </div>
 
-                <div className="flex gap-2 pt-4">
+                <div className="flex gap-2 pt-4 border-t">
                   <Button
                     onClick={saveCompanyChanges}
                     disabled={saving}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                   >
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saving ? 'Saving...' : 'Save All Changes'}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => {
                       setShowEditModal(false);
                       setEditingCompany(null);
+                      setAddExtraInvoices(0);
+                      setAddExtraMonths(0);
                     }}
                     disabled={saving}
                   >
