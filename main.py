@@ -3,10 +3,17 @@ UAE e-Invoicing Platform with Registration Wizard
 ==================================================
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
-import os, enum, hashlib, secrets, json
+import os, enum, hashlib, secrets, json, logging
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
@@ -1857,21 +1864,21 @@ def startup_event():
         validation_result = validate_environment_keys(fail_on_missing=production_mode)
         
         if production_mode:
-            print("🔒 PRODUCTION MODE: All cryptographic validations passed")
+            logger.info("🔒 PRODUCTION MODE: All cryptographic validations passed")
         else:
-            print("🔧 DEVELOPMENT MODE: Running with permissive validation")
+            logger.info("🔧 DEVELOPMENT MODE: Running with permissive validation")
             if validation_result.get("warnings"):
                 for warning in validation_result["warnings"]:
-                    print(f"⚠️ Startup Warning: {warning}")
-                print("⚠️ Set PRODUCTION_MODE=true to enforce strict validation")
-    
+                    logger.warning(f"Startup Warning: {warning}")
+                logger.warning("Set PRODUCTION_MODE=true to enforce strict validation")
+
     except ConfigurationError as e:
-        print(f"❌ Startup Error: {e.message}")
+        logger.error(f"Startup Error: {e.message}")
         if production_mode:
-            print("❌ PRODUCTION MODE: Cannot start without valid signing keys")
+            logger.critical("PRODUCTION MODE: Cannot start without valid signing keys")
             raise  # Fail hard in production mode
         else:
-            print("⚠️ Continuing with mock keys - NOT PRODUCTION READY")
+            logger.warning("Continuing with mock keys - NOT PRODUCTION READY")
     
     # Seed database plans and content
     db = SessionLocal()
@@ -1898,9 +1905,9 @@ def startup_event():
         )
         db.add(super_admin)
         db.commit()
-        print(f"✅ Super Admin created: {super_admin_email}")
+        logger.info(f"Super Admin created: {super_admin_email}")
     else:
-        print(f"✅ Super Admin already exists: {existing_super_admin.email}")
+        logger.info(f"Super Admin already exists: {existing_super_admin.email}")
     
     db.close()
     
@@ -7330,10 +7337,18 @@ async def upload_company_logo(
         if plan and not plan.allow_branding:
             raise HTTPException(403, "Your subscription plan does not allow branding. Please upgrade to use this feature.")
     
-    # Validate file
-    if not logo.content_type in ["image/png", "image/svg+xml"]:
+    # Validate file type and extension
+    allowed_types = ["image/png", "image/svg+xml"]
+    allowed_extensions = [".png", ".svg"]
+
+    if not logo.content_type in allowed_types:
         raise HTTPException(400, "Only PNG and SVG files are allowed")
-    
+
+    # Additional validation: check file extension
+    file_ext = os.path.splitext(logo.filename)[1].lower() if logo.filename else ""
+    if file_ext not in allowed_extensions:
+        raise HTTPException(400, f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed")
+
     # Read file content
     content = await logo.read()
     file_size = len(content)
@@ -7415,10 +7430,18 @@ async def upload_company_stamp(
         if plan and not plan.allow_branding:
             raise HTTPException(403, "Your subscription plan does not allow branding. Please upgrade to use this feature.")
     
-    # Validate file
-    if not stamp.content_type in ["image/png", "image/svg+xml"]:
+    # Validate file type and extension
+    allowed_types = ["image/png", "image/svg+xml"]
+    allowed_extensions = [".png", ".svg"]
+
+    if not stamp.content_type in allowed_types:
         raise HTTPException(400, "Only PNG and SVG files are allowed")
-    
+
+    # Additional validation: check file extension
+    file_ext = os.path.splitext(stamp.filename)[1].lower() if stamp.filename else ""
+    if file_ext not in allowed_extensions:
+        raise HTTPException(400, f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed")
+
     # Read file content
     content = await stamp.read()
     file_size = len(content)
@@ -8117,12 +8140,13 @@ def update_vat_settings(
         company.vat_enabled = True
         company.trn = trn
         
-        # Set registration date if provided, otherwise use today
+        # Set registration date if provided, otherwise use today (UTC)
         if settings.get('vat_registration_date'):
             from datetime import datetime as dt
             company.vat_registration_date = dt.fromisoformat(settings['vat_registration_date']).date()
         elif not company.vat_registration_date:
-            company.vat_registration_date = date.today()
+            # Use UTC datetime to ensure consistency across timezones
+            company.vat_registration_date = datetime.utcnow().date()
         
         db.commit()
         db.refresh(company)

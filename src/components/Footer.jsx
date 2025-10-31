@@ -37,7 +37,7 @@ export default function Footer() {
         setFooterContent(prev => ({ ...prev, ...response.data }));
       }
     } catch (error) {
-      console.log('Using default footer content');
+      // Using default footer content
     }
   };
 

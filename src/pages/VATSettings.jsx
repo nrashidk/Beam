@@ -68,33 +68,32 @@ export default function VATSettings() {
       
       if (settings.vat_enabled) {
         if (!settings.tax_registration_number) {
-          alert('Please enter your Tax Registration Number (TRN)');
+          setError('Please enter your Tax Registration Number (TRN)');
           setSaving(false);
           return;
         }
-        
+
         if (settings.tax_registration_number.length !== 15) {
-          alert('TRN must be exactly 15 digits');
+          setError('TRN must be exactly 15 digits');
           setSaving(false);
           return;
         }
-        
+
         payload.tax_registration_number = settings.tax_registration_number;
-        
+
         if (settings.vat_registration_date) {
           payload.vat_registration_date = settings.vat_registration_date;
         }
       }
-      
+
       const response = await axios.put(`${API_URL}/settings/vat`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      alert(response.data.message || 'VAT settings saved successfully!');
+
+      setSuccess(response.data.message || 'VAT settings saved successfully!');
       fetchSettings();
     } catch (error) {
-      console.error('Failed to save settings:', error);
-      alert(error.response?.data?.detail || 'Failed to save settings');
+      setError(error.response?.data?.detail || 'Failed to save settings');
     } finally {
       setSaving(false);
     }
