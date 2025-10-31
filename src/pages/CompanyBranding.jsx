@@ -37,9 +37,7 @@ export default function CompanyBranding() {
         setStampPreview(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${user.company_id}/branding/stamp?t=${Date.now()}`);
       }
     } catch (error) {
-      if (error.response?.status !== 404) {
-        console.error('Failed to load branding:', error);
-      }
+      // Failed to load branding (404 is expected when no branding exists yet)
     } finally {
       setLoading(false);
     }
@@ -361,13 +359,13 @@ export default function CompanyBranding() {
             <div className="border-2 border-gray-200 rounded-xl p-8">
               <div className="flex items-center justify-between mb-8">
                 {logoPreview && (
-                  <img 
-                    src={logoPreview} 
-                    alt="Company Logo" 
+                  <img
+                    src={logoPreview}
+                    alt="Company Logo"
                     className="h-12 object-contain"
                     onError={(e) => {
-                      console.error('Logo failed to load:', logoPreview);
-                      e.target.style.display = 'none';
+                      e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="40"%3E%3Crect width="100" height="40" fill="%23e5e7eb"/%3E%3Ctext x="50%25" y="50%25" fill="%236b7280" text-anchor="middle" dy=".3em" font-size="12"%3ELogo%3C/text%3E%3C/svg%3E';
+                      e.target.onerror = null;
                     }}
                   />
                 )}
@@ -382,13 +380,13 @@ export default function CompanyBranding() {
                 {stampPreview && (
                   <div className="flex justify-end">
                     <div className="text-center">
-                      <img 
-                        src={stampPreview} 
-                        alt="Company Stamp" 
+                      <img
+                        src={stampPreview}
+                        alt="Company Stamp"
                         className="h-20 mx-auto mb-2 object-contain"
                         onError={(e) => {
-                          console.error('Stamp failed to load:', stampPreview);
-                          e.target.style.display = 'none';
+                          e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Ccircle cx="40" cy="40" r="35" fill="none" stroke="%23e5e7eb" stroke-width="2"/%3E%3Ctext x="50%25" y="50%25" fill="%236b7280" text-anchor="middle" dy=".3em" font-size="10"%3EStamp%3C/text%3E%3C/svg%3E';
+                          e.target.onerror = null;
                         }}
                       />
                       <p className="text-xs">Authorized Signature</p>

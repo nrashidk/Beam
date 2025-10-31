@@ -27,37 +27,27 @@ export default function ContentManager() {
       const response = await api.get('/admin/content');
       setContent(response.data);
     } catch (error) {
-      console.error('Failed to load content:', error);
+      // Failed to load content - error is displayed to user via empty state
     } finally {
       setLoading(false);
     }
   }
 
   async function handleSave(key) {
-    console.log('🔵 Save button clicked for key:', key);
-    console.log('🔵 Attempting to save value:', editValue);
-    
     try {
       setSaving(key);
-      console.log('🔵 Sending PUT request to /admin/content/' + key);
-      
       const response = await api.put(`/admin/content/${key}`, { value: editValue });
-      
-      console.log('✅ Save successful! Response:', response.data);
-      
+
       // Update local state
-      setContent(content.map(block => 
+      setContent(content.map(block =>
         block.key === key ? { ...block, value: editValue, updated_at: new Date().toISOString() } : block
       ));
-      
+
       setEditingKey(null);
       setEditValue('');
       setSuccessMessage(`✓ Saved: ${key.replace(/_/g, ' ')}`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
-      console.error('❌ Failed to save:', error);
-      console.error('❌ Error response:', error.response?.data);
-      console.error('❌ Error status:', error.response?.status);
       alert(`Failed to save changes: ${error.response?.data?.detail || error.message}`);
     } finally {
       setSaving(null);

@@ -25,7 +25,15 @@ export default function CreateInvoice() {
     invoice_notes: '',
     reference_number: '',
     line_items: [
-      { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
+      {
+        item_name: '',
+        item_description: '',
+        quantity: 1,
+        unit_price: 0,
+        tax_category: 'S',
+        tax_percent: 5.0,
+        tax_code: 'SR' // Default tax code for VAT-enabled businesses
+      }
     ]
   });
 
@@ -43,7 +51,7 @@ export default function CreateInvoice() {
           invoice_type: vatStatus ? '380' : '480' // Tax Invoice for VAT, Commercial Invoice for non-VAT
         }));
       } catch (error) {
-        console.error('Failed to fetch VAT settings:', error);
+        // Failed to fetch VAT settings, default to non-VAT mode
         setVatEnabled(false);
         // Default to Commercial Invoice (480) for non-VAT
         setFormData(prev => ({ ...prev, invoice_type: '480' }));
@@ -103,7 +111,6 @@ export default function CreateInvoice() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submitted, starting invoice creation...');
     setLoading(true);
 
     try {
@@ -121,10 +128,7 @@ export default function CreateInvoice() {
         })
       };
 
-      console.log('Sending POST request to /invoices...');
-      console.log('Cleaned form data:', cleanedFormData);
       const response = await apiClient.post('/invoices', cleanedFormData);
-      console.log('Invoice created successfully:', response.data);
       setToast({
         message: `Invoice ${response.data.invoice_number} created successfully!`,
         type: 'success',
@@ -134,9 +138,6 @@ export default function CreateInvoice() {
         }
       });
     } catch (error) {
-      console.error('Failed to create invoice - Full error:', error);
-      console.error('Error response:', error.response);
-      console.error('Error message:', error.message);
       const errorMessage = error.response?.data?.detail || error.message || 'Failed to create invoice';
       setToast({
         message: `Error: ${errorMessage}`,

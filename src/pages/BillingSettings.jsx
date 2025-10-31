@@ -53,10 +53,10 @@ export default function BillingSettings() {
         });
         setSubscription(subRes.data);
       } catch (err) {
-        console.log('No active subscription');
+        // No active subscription found
       }
     } catch (error) {
-      console.error('Failed to fetch billing data:', error);
+      // Failed to fetch billing data
     } finally {
       setLoading(false);
     }
