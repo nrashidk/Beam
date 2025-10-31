@@ -393,10 +393,10 @@ export default function SuperAdminDashboard() {
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-                <Input className="pl-8 w-[150px] h-9 text-sm" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
+                <Input className="pl-8 w-[120px] h-9 text-sm" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
               <Select value={plan} onValueChange={setPlan}>
-                <SelectTrigger className="w-[150px] h-9 text-sm"><SelectValue placeholder="Plan" /></SelectTrigger>
+                <SelectTrigger className="w-[120px] h-9 text-sm whitespace-nowrap"><SelectValue placeholder="Plan" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
                   <SelectItem value="Enterprise">Enterprise</SelectItem>
@@ -406,14 +406,14 @@ export default function SuperAdminDashboard() {
                 </SelectContent>
               </Select>
               <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger className="w-[150px] h-9 text-sm"><SelectValue placeholder="Status" /></SelectTrigger>
+                <SelectTrigger className="w-[120px] h-9 text-sm whitespace-nowrap"><SelectValue placeholder="Status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
                 </SelectContent>
               </Select>
-              <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[150px] h-9 text-sm" />
+              <Input type="number" min={0} placeholder="Min inv." value={minInvoices} onChange={(e) => setMinInvoices(e.target.value)} className="w-[120px] h-9 text-sm" />
               <Button variant="outline" size="sm" onClick={() => exportCompaniesCsv(filteredCompanies)}>Export</Button>
             </div>
           </div>

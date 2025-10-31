@@ -52,7 +52,7 @@ export default function SuperAdminDashboard() {
     search: '' 
   });
   const [companies, setCompanies] = useState([]);
-  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, active: 0, rejected: 0, total_invoices: 0 });
+  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, approved: 0, rejected: 0, active: 0, inactive: 0 });
   const [loading, setLoading] = useState(true);
   const [approvalModal, setApprovalModal] = useState(null);
   const [freePlanConfig, setFreePlanConfig] = useState({
@@ -82,9 +82,10 @@ export default function SuperAdminDashboard() {
       setStats({
         total_companies: rawStats.total_companies || 0,
         pending_approval: rawStats.registrations?.pending || 0,
-        active: rawStats.companies?.active || 0,
+        approved: rawStats.registrations?.approved || 0,
         rejected: rawStats.registrations?.rejected || 0,
-        total_invoices: rawStats.invoices?.monthToDate || 0
+        active: rawStats.companies?.active || 0,
+        inactive: rawStats.companies?.inactive || 0
       });
     } catch (error) {
       console.error('Failed to fetch data', error);
@@ -177,24 +178,13 @@ export default function SuperAdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card 
             className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'all' })}
-          >
-            <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Total Companies</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{stats.total_companies}</div>
-            </CardContent>
-          </Card>
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
             onClick={() => setFilters({ ...filters, status: 'pending' })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Pending Approval</CardTitle>
+              <CardTitle className="text-sm text-gray-600">Pending registrations</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-yellow-600">{stats.pending_approval}</div>
+              <div className="text-3xl font-bold">{stats.pending_approval}</div>
             </CardContent>
           </Card>
           <Card 
@@ -202,10 +192,10 @@ export default function SuperAdminDashboard() {
             onClick={() => setFilters({ ...filters, status: 'active' })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Active</CardTitle>
+              <CardTitle className="text-sm text-gray-600">Approved registrations</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-600">{stats.active}</div>
+              <div className="text-3xl font-bold">{stats.approved}</div>
             </CardContent>
           </Card>
           <Card 
@@ -213,10 +203,21 @@ export default function SuperAdminDashboard() {
             onClick={() => setFilters({ ...filters, status: 'rejected' })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Rejected</CardTitle>
+              <CardTitle className="text-sm text-gray-600">Rejected registrations</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-red-600">{stats.rejected}</div>
+              <div className="text-3xl font-bold">{stats.rejected}</div>
+            </CardContent>
+          </Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'active' })}
+          >
+            <CardHeader>
+              <CardTitle className="text-sm text-gray-600">Active companies</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{stats.active}</div>
             </CardContent>
           </Card>
           <Card 
@@ -224,10 +225,10 @@ export default function SuperAdminDashboard() {
             onClick={() => setFilters({ ...filters, status: 'all' })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Total Invoices</CardTitle>
+              <CardTitle className="text-sm text-gray-600">Inactive companies</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-600">{stats.total_invoices}</div>
+              <div className="text-3xl font-bold">{stats.inactive}</div>
             </CardContent>
           </Card>
         </div>
