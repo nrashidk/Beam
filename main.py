@@ -1919,6 +1919,14 @@ class QuickRegisterCreate(BaseModel):
 @app.post("/register/quick", tags=["Registration"])
 def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
     """Quick registration - submit all data in one request"""
+    # Check if email belongs to a SUPER_ADMIN (protect from accidental override)
+    existing_super_admin = db.query(UserDB).filter(
+        UserDB.email == payload.email,
+        UserDB.role == Role.SUPER_ADMIN
+    ).first()
+    if existing_super_admin:
+        raise HTTPException(403, "This email is reserved for system administration")
+    
     # Check if email already exists
     existing = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
     if existing:
@@ -7477,6 +7485,38 @@ def health_check(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(500, f"Health check failed: {str(e)}")
+
+@app.post("/admin/restore-superadmin", tags=["Admin"])
+def restore_superadmin(db: Session = Depends(get_db)):
+    """Emergency endpoint to restore SUPER_ADMIN role if accidentally overwritten"""
+    super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "nrashidk@gmail.com")
+    super_admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "AbuDhabi@123")
+    
+    # Find the user with super admin email
+    user = db.query(UserDB).filter(UserDB.email == super_admin_email).first()
+    
+    if not user:
+        # Create if doesn't exist
+        user = UserDB(
+            id=f"user_{uuid4().hex[:8]}",
+            email=super_admin_email,
+            password_hash=get_password_hash(super_admin_password),
+            role=Role.SUPER_ADMIN,
+            company_id=None,
+            is_owner=False,
+            full_name="Super Admin"
+        )
+        db.add(user)
+        db.commit()
+        return {"success": True, "message": "Super Admin created", "email": super_admin_email}
+    else:
+        # Restore role and password
+        user.role = Role.SUPER_ADMIN
+        user.password_hash = get_password_hash(super_admin_password)
+        user.company_id = None
+        user.is_owner = False
+        db.commit()
+        return {"success": True, "message": "Super Admin role restored", "email": super_admin_email}
 
 # ==================== FTA AUDIT FILE (FAF) ENDPOINTS ====================
 
