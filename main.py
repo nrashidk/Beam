@@ -2936,6 +2936,72 @@ def get_company(company_id: str, db: Session = Depends(get_db)):
         "created_at": company.created_at.isoformat() if company.created_at else None
     }
 
+class CompanyProfileUpdateRequest(BaseModel):
+    legal_name: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    emirate: Optional[str] = None
+    postal_code: Optional[str] = None
+
+@app.put("/company/profile", tags=["Companies"])
+def update_company_profile(
+    payload: CompanyProfileUpdateRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update company profile (Company Admin only)"""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only company admins can update company profile")
+    
+    if not current_user.company_id:
+        raise HTTPException(400, "User is not associated with a company")
+    
+    company = db.get(CompanyDB, current_user.company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Update fields if provided
+    if payload.legal_name is not None:
+        company.legal_name = payload.legal_name
+    if payload.phone is not None:
+        company.phone = payload.phone
+    if payload.website is not None:
+        company.website = payload.website
+    if payload.address_line1 is not None:
+        company.address_line1 = payload.address_line1
+    if payload.address_line2 is not None:
+        company.address_line2 = payload.address_line2
+    if payload.city is not None:
+        company.city = payload.city
+    if payload.emirate is not None:
+        company.emirate = payload.emirate
+    if payload.postal_code is not None:
+        company.postal_code = payload.postal_code
+    
+    company.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(company)
+    
+    return {
+        "success": True,
+        "message": "Company profile updated successfully",
+        "company": {
+            "id": company.id,
+            "legal_name": company.legal_name,
+            "email": company.email,
+            "phone": company.phone,
+            "website": company.website,
+            "address_line1": company.address_line1,
+            "address_line2": company.address_line2,
+            "city": company.city,
+            "emirate": company.emirate,
+            "postal_code": company.postal_code
+        }
+    }
+
 @app.get("/companies/{company_id}/subscription", tags=["Companies"])
 def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
     """Get company's current subscription"""
