@@ -361,7 +361,15 @@ export default function CompanyBranding() {
             <div className="border-2 border-gray-200 rounded-xl p-8">
               <div className="flex items-center justify-between mb-8">
                 {logoPreview && (
-                  <img src={logoPreview} alt="Logo" className="h-12 object-contain" />
+                  <img 
+                    src={logoPreview} 
+                    alt="Company Logo" 
+                    className="h-12 object-contain"
+                    onError={(e) => {
+                      console.error('Logo failed to load:', logoPreview);
+                      e.target.style.display = 'none';
+                    }}
+                  />
                 )}
                 <div className="text-right">
                   <div className="text-2xl font-bold text-gray-900">INV-2024-001</div>
@@ -374,7 +382,15 @@ export default function CompanyBranding() {
                 {stampPreview && (
                   <div className="flex justify-end">
                     <div className="text-center">
-                      <img src={stampPreview} alt="Stamp" className="h-20 mx-auto mb-2 object-contain" />
+                      <img 
+                        src={stampPreview} 
+                        alt="Company Stamp" 
+                        className="h-20 mx-auto mb-2 object-contain"
+                        onError={(e) => {
+                          console.error('Stamp failed to load:', stampPreview);
+                          e.target.style.display = 'none';
+                        }}
+                      />
                       <p className="text-xs">Authorized Signature</p>
                     </div>
                   </div>
