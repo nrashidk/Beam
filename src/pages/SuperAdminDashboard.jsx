@@ -617,7 +617,7 @@ export default function SuperAdminDashboard() {
                       Add extra invoices to increase the limit. New limit will be: {(parseInt(editingCompany.free_plan_invoice_limit) || 0) + (parseInt(addExtraInvoices) || 0)}
                     </p>
                   </div>
-                  </div>
+                </div>
                 )}
 
                 {/* Duration/Months Usage & Limits */}
@@ -667,7 +667,7 @@ export default function SuperAdminDashboard() {
                       Add extra months to extend the duration. New duration will be: {(parseInt(editingCompany.free_plan_duration_months) || 0) + (parseInt(addExtraMonths) || 0)} months
                     </p>
                   </div>
-                  </div>
+                </div>
                 )}
 
                 <div className="flex gap-2 pt-4 border-t">
