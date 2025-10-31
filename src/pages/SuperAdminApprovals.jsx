@@ -7,7 +7,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft, User, Settings } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,8 +67,13 @@ export default function SuperAdminDashboard() {
 
   const fetchData = async () => {
     try {
+      const statusParam = filters.status === 'all' ? null : 
+        filters.status === 'pending' ? 'PENDING_REVIEW' : 
+        filters.status === 'active' ? 'ACTIVE' : 
+        filters.status === 'rejected' ? 'REJECTED' : null;
+      
       const [companiesResponse, statsResponse] = await Promise.all([
-        adminAPI.getPendingCompanies(),
+        adminAPI.getAllCompanies(statusParam),
         adminAPI.getStats()
       ]);
       setCompanies(companiesResponse.data);
@@ -289,53 +294,106 @@ export default function SuperAdminDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Pending Company Approvals</CardTitle>
+            <CardTitle>
+              {filters.status === 'all' && 'All Companies'}
+              {filters.status === 'pending' && 'Pending Company Approvals'}
+              {filters.status === 'active' && 'Active Companies'}
+              {filters.status === 'rejected' && 'Rejected Companies'}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="text-center py-8 text-gray-500">Loading...</div>
             ) : companies.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No pending companies</div>
+              <div className="text-center py-8 text-gray-500">
+                No {filters.status === 'all' ? '' : filters.status} companies found
+              </div>
             ) : (
               <div className="space-y-4">
-                {companies.map((company) => (
-                  <div key={company.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-semibold text-lg">{company.legal_name || 'Unnamed Company'}</h3>
-                        <p className="text-sm text-gray-600">{company.email}</p>
-                        <p className="text-sm text-gray-500">
-                          {company.business_type} • {company.phone}
-                        </p>
-                        <div className="mt-2 flex gap-2">
-                          <Badge variant="warning">{company.status}</Badge>
-                          <Badge variant="secondary">
-                            {company.invoices_generated || 0} invoices
-                          </Badge>
+                {companies.map((company) => {
+                  const getDateInfo = () => {
+                    if (company.status === 'PENDING_REVIEW') {
+                      return {
+                        label: 'Registered',
+                        date: company.created_at
+                      };
+                    } else if (company.status === 'ACTIVE') {
+                      return {
+                        label: 'Approved',
+                        date: company.approved_at || company.created_at
+                      };
+                    } else if (company.status === 'REJECTED') {
+                      return {
+                        label: 'Rejected',
+                        date: company.rejected_at || company.created_at
+                      };
+                    } else if (company.status === 'SUSPENDED') {
+                      return {
+                        label: 'Registered',
+                        date: company.created_at
+                      };
+                    }
+                    return {
+                      label: 'Created',
+                      date: company.created_at
+                    };
+                  };
+                  
+                  const dateInfo = getDateInfo();
+                  const relativeDate = dateInfo.date ? formatDistanceToNow(new Date(dateInfo.date), { addSuffix: true }) : 'N/A';
+                  
+                  return (
+                    <div key={company.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-lg">{company.legal_name || 'Unnamed Company'}</h3>
+                          <p className="text-sm text-gray-600">{company.email}</p>
+                          <p className="text-sm text-gray-500">
+                            {company.business_type} • {company.phone}
+                          </p>
+                          <div className="mt-2 flex gap-2 items-center flex-wrap">
+                            <Badge 
+                              variant={
+                                company.status === 'ACTIVE' ? 'success' : 
+                                company.status === 'PENDING_REVIEW' ? 'warning' :
+                                company.status === 'REJECTED' ? 'destructive' : 'secondary'
+                              }
+                            >
+                              {company.status}
+                            </Badge>
+                            <Badge variant="secondary">
+                              {company.invoices_generated || 0} invoices
+                            </Badge>
+                            <span className="text-xs text-gray-500">
+                              {dateInfo.label} {relativeDate}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button 
-                          size="sm" 
-                          onClick={() => setApprovalModal(company)}
-                          className="gap-2"
-                        >
-                          <CheckCircle size={16} />
-                          Approve
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          onClick={() => handleReject(company.id)}
-                          className="gap-2"
-                        >
-                          <XCircle size={16} />
-                          Reject
-                        </Button>
+                        {company.status === 'PENDING_REVIEW' && (
+                          <div className="flex gap-2 ml-4">
+                            <Button 
+                              size="sm" 
+                              onClick={() => setApprovalModal(company)}
+                              className="gap-2"
+                            >
+                              <CheckCircle size={16} />
+                              Approve
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              onClick={() => handleReject(company.id)}
+                              className="gap-2"
+                            >
+                              <XCircle size={16} />
+                              Reject
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>

@@ -16,7 +16,8 @@ Detailed explanations preferred.
 **Technical Implementations:**
 - **Technology Stack:** Frontend: React 19.2 (Vite 7.1), React Router 7.9, Tailwind CSS 3.4, Axios, Recharts, Radix UI, date-fns. Backend: FastAPI 2.0 (Python async), PostgreSQL, SQLAlchemy 2.0.36 ORM, JWT authentication (bcrypt), CORS.
 - **Registration & Subscription:** Simplified signup, email verification, token-based workflow, automatic Free tier assignment, and flexible free plan configuration.
-- **Company Management:** TRN validation, automatic VAT state transitions, Peppol endpoint ID support, and custom branding profiles.
+- **Company Management:** TRN validation, automatic VAT state transitions, Peppol endpoint ID support, custom branding profiles, and comprehensive company approval workflow with status tracking (approved_at, rejected_at timestamps).
+- **SuperAdmin Company Management:** Full-featured company database browser with status filtering (All, Pending, Active, Rejected), relative date displays (registration date for pending, approval date for active, rejection date for rejected), and interactive status cards for quick filtering.
 - **Billing & Subscription System:** Complete monetization infrastructure with Stripe integration supporting free trials, tiered subscriptions, multi-cycle billing, volume discounts, and various payment methods.
 - **Invoice Generation & Management:** Full UAE e-Invoicing Compliance (UBL 2.1 / PINT-AE XML generation). Features include automatic validation, SHA-256 hash calculation, digital signatures, hash chain linking, and CRUD operations.
 - **Email Integration:** Production-ready email service for verification, MFA, invoice notifications, and admin approvals using HTML templates.
