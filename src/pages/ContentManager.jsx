@@ -36,9 +36,16 @@ export default function ContentManager() {
   }
 
   async function handleSave(key) {
+    console.log('🔵 Save button clicked for key:', key);
+    console.log('🔵 Attempting to save value:', editValue);
+    
     try {
       setSaving(key);
-      await api.put(`/admin/content/${key}`, { value: editValue });
+      console.log('🔵 Sending PUT request to /admin/content/' + key);
+      
+      const response = await api.put(`/admin/content/${key}`, { value: editValue });
+      
+      console.log('✅ Save successful! Response:', response.data);
       
       // Update local state
       setContent(content.map(block => 
@@ -50,8 +57,10 @@ export default function ContentManager() {
       setSuccessMessage(`Updated: ${key}`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
-      console.error('Failed to save:', error);
-      alert('Failed to save changes');
+      console.error('❌ Failed to save:', error);
+      console.error('❌ Error response:', error.response?.data);
+      console.error('❌ Error status:', error.response?.status);
+      alert(`Failed to save changes: ${error.response?.data?.detail || error.message}`);
     } finally {
       setSaving(null);
     }
