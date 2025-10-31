@@ -165,9 +165,7 @@ export default function SuperAdminDashboard() {
       await api.put(`/admin/companies/${editingCompany.id}`, {
         invoices_generated: invoicesGenerated,
         free_plan_invoice_limit: newInvoiceLimit,
-        free_plan_duration_months: newMonthsLimit,
-        vat_enabled: editingCompany.vat_enabled,
-        status: editingCompany.status
+        free_plan_duration_months: newMonthsLimit
       });
       
       // Reload stats
@@ -531,29 +529,10 @@ export default function SuperAdminDashboard() {
             <Card className="w-full max-w-2xl rounded-2xl max-h-[90vh] overflow-y-auto">
               <CardHeader className="border-b">
                 <CardTitle>Manage Company: {editingCompany.legal_name}</CardTitle>
-                <p className="text-sm text-gray-500 mt-1">View usage, adjust limits, and change status</p>
+                <p className="text-sm text-gray-500 mt-1">View usage and adjust free plan limits</p>
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
                 
-                {/* Company Status */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <label className="block text-sm font-medium mb-2">Company Status</label>
-                  <Select 
-                    value={editingCompany.status} 
-                    onValueChange={(value) => setEditingCompany({ ...editingCompany, status: value })}
-                  >
-                    <SelectTrigger className="w-full bg-white">
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                      <SelectItem value="suspended">Suspended</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500 mt-2">Change company status to activate, deactivate, or suspend</p>
-                </div>
-
                 {/* Invoice Usage & Limits */}
                 <div className="border rounded-lg p-4">
                   <h3 className="text-sm font-semibold mb-3 text-indigo-700">Invoice Usage</h3>
@@ -646,23 +625,6 @@ export default function SuperAdminDashboard() {
                       Add extra months to extend the duration. New duration will be: {(parseInt(editingCompany.free_plan_duration_months) || 0) + (parseInt(addExtraMonths) || 0)} months
                     </p>
                   </div>
-                </div>
-
-                {/* VAT Settings */}
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="vat-enabled"
-                      checked={editingCompany.vat_enabled}
-                      onChange={(e) => setEditingCompany({ ...editingCompany, vat_enabled: e.target.checked })}
-                      className="rounded"
-                    />
-                    <label htmlFor="vat-enabled" className="text-sm font-medium">
-                      VAT Enabled
-                    </label>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">Enable VAT compliance features for this company</p>
                 </div>
 
                 <div className="flex gap-2 pt-4 border-t">
