@@ -134,8 +134,7 @@ export default function FeaturedBusinesses() {
 
   return (
     <AdminLayout>
-      <div className="bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="bg-gray-50 max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button

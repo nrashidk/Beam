@@ -90,16 +90,17 @@ export default function ContentManager() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <p className="text-gray-600">Loading content...</p>
-      </div>
+      <AdminLayout>
+        <div className="bg-gray-50 p-6 flex items-center justify-center min-h-96">
+          <p className="text-gray-600">Loading content...</p>
+        </div>
+      </AdminLayout>
     );
   }
 
   return (
     <AdminLayout>
-      <div className="bg-gray-50">
-        <div className="max-w-6xl mx-auto p-6 space-y-6">
+      <div className="bg-gray-50 max-w-6xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">

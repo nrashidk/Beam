@@ -209,8 +209,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <AdminLayout navigation={navigationButtons}>
-      <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-        <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+      <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Super Admin Overview</h1>

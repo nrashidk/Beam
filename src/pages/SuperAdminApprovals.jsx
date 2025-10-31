@@ -155,8 +155,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <AdminLayout navigation={navigationButtons}>
-      <div className="bg-gray-50">
-        <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+      <div className="bg-gray-50 max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="gap-2">
@@ -465,7 +464,6 @@ export default function SuperAdminDashboard() {
             </div>
           </div>
         )}
-        </div>
       </div>
     </AdminLayout>
   );
