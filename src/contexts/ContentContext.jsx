@@ -1,9 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../lib/api';
 
 const ContentContext = createContext();
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export function ContentProvider({ children }) {
   const [content, setContent] = useState({});
@@ -15,7 +13,7 @@ export function ContentProvider({ children }) {
 
   async function loadContent() {
     try {
-      const response = await axios.get(`${API_BASE}/content/public`);
+      const response = await api.get('/content/public');
       const contentMap = {};
       response.data.forEach(block => {
         contentMap[block.key] = block.value;

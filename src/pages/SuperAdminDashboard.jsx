@@ -147,10 +147,16 @@ export default function SuperAdminDashboard() {
     
     try {
       setSaving(true);
+      
+      // Parse numeric fields with fallback to 0
+      const invoicesGenerated = parseInt(editingCompany.invoices_generated) || 0;
+      const freePlanLimit = parseInt(editingCompany.free_plan_invoice_limit) || 0;
+      const freePlanMonths = parseInt(editingCompany.free_plan_duration_months) || 0;
+      
       await api.put(`/admin/companies/${editingCompany.id}`, {
-        invoices_generated: parseInt(editingCompany.invoices_generated),
-        free_plan_invoice_limit: parseInt(editingCompany.free_plan_invoice_limit),
-        free_plan_duration_months: parseInt(editingCompany.free_plan_duration_months),
+        invoices_generated: invoicesGenerated,
+        free_plan_invoice_limit: freePlanLimit,
+        free_plan_duration_months: freePlanMonths,
         vat_enabled: editingCompany.vat_enabled
       });
       
