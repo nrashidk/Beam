@@ -9,6 +9,7 @@ import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Sea
 import { format } from 'date-fns';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import AdminLayout from '../components/AdminLayout';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -167,54 +168,49 @@ export default function SuperAdminDashboard() {
     });
   }, [stats, q, plan, status, minInvoices]);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
-      <nav className="bg-white/70 backdrop-blur-md border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xl font-bold cursor-pointer" onClick={() => navigate('/')}>
-            <span className="text-2xl">🔗</span>
-            <span>InvoLinks Admin</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin/tiers')}>
-              Tier Management
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin/featured')}>
-              Featured Businesses
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
-              Content Manager
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <User size={16} />
-                  Account
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/settings')}>
-                  <Settings size={16} className="mr-2" />
-                  Account Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/security')}>
-                  <Settings size={16} className="mr-2" />
-                  Security Settings
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="text-red-600">
-                  <LogOut size={16} className="mr-2" />
-                  Logout
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </nav>
+  const navigationButtons = (
+    <>
+      <Button variant="outline" size="sm" onClick={() => navigate('/admin/tiers')}>
+        Tier Management
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => navigate('/admin/featured')}>
+        Featured Businesses
+      </Button>
+      <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
+        Content Manager
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="gap-2">
+            <User size={16} />
+            Account
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => navigate('/settings')}>
+            <Settings size={16} className="mr-2" />
+            Account Settings
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => navigate('/security')}>
+            <Settings size={16} className="mr-2" />
+            Security Settings
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={logout} className="text-red-600">
+            <LogOut size={16} className="mr-2" />
+            Logout
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
 
-      <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+  return (
+    <AdminLayout navigation={navigationButtons}>
+      <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+        <div className="p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Super Admin Overview</h1>
@@ -475,6 +471,6 @@ export default function SuperAdminDashboard() {
           </Card>
         </div>
       </div>
-    </div>
+    </AdminLayout>
   );
 }
