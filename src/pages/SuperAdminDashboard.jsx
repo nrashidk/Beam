@@ -230,7 +230,8 @@ export default function SuperAdminDashboard() {
     const ql = q.trim().toLowerCase();
     return list.filter((c) => {
       if (plan !== 'all' && c.plan !== plan) return false;
-      if (status !== 'all' && c.status !== status) return false;
+      // Convert backend uppercase status to lowercase for comparison
+      if (status !== 'all' && c.status?.toLowerCase() !== status) return false;
       if (minInvoices && c.invoicesThisMonth < Number(minInvoices)) return false;
       if (ql && !`${c.name}`.toLowerCase().includes(ql)) return false;
       return true;
