@@ -3489,18 +3489,14 @@ def get_platform_statistics(
         SubscriptionDB.status == "ACTIVE"
     ).count()
     
-    # Free vs paid tier users
-    free_tier = db.query(SubscriptionDB).join(
-        SubscriptionPlanDB, SubscriptionDB.plan_id == SubscriptionPlanDB.id
-    ).filter(
-        SubscriptionPlanDB.price_monthly == 0.0,
+    # Free vs paid tier users (based on monthly_price in subscriptions table)
+    free_tier = db.query(SubscriptionDB).filter(
+        SubscriptionDB.monthly_price == 0.0,
         SubscriptionDB.status == "ACTIVE"
     ).count()
     
-    paid_tier = db.query(SubscriptionDB).join(
-        SubscriptionPlanDB, SubscriptionDB.plan_id == SubscriptionPlanDB.id
-    ).filter(
-        SubscriptionPlanDB.price_monthly > 0.0,
+    paid_tier = db.query(SubscriptionDB).filter(
+        SubscriptionDB.monthly_price > 0.0,
         SubscriptionDB.status == "ACTIVE"
     ).count()
     
