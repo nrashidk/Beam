@@ -1877,6 +1877,31 @@ def startup_event():
     db = SessionLocal()
     seed_plans(db)
     seed_content(db)
+    
+    # Create super admin if it doesn't exist
+    super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "nrashidk@gmail.com")
+    super_admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "AbuDhabi@123")
+    
+    existing_super_admin = db.query(UserDB).filter(
+        UserDB.role == Role.SUPER_ADMIN
+    ).first()
+    
+    if not existing_super_admin:
+        super_admin = UserDB(
+            id=f"user_{uuid4().hex[:8]}",
+            email=super_admin_email,
+            password_hash=get_password_hash(super_admin_password),
+            role=Role.SUPER_ADMIN,
+            company_id=None,
+            is_owner=False,
+            full_name="Super Admin"
+        )
+        db.add(super_admin)
+        db.commit()
+        print(f"✅ Super Admin created: {super_admin_email}")
+    else:
+        print(f"✅ Super Admin already exists: {existing_super_admin.email}")
+    
     db.close()
     
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
