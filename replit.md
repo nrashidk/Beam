@@ -12,6 +12,7 @@ Detailed explanations preferred.
 - Groww/Toss-inspired design: clean, minimal, modern fintech style with bold hero sections, card-based feature highlights, and glassmorphism navbar.
 - Rounded corners, enhanced shadows, hover states, mobile-responsive design, and Inter font family.
 - Reusable validation system with centralized utilities for UAE-specific validation.
+- Persistent branding system: AdminLayout component provides consistent InvoLinks header (logo + name) and footer across all admin pages (SuperAdmin, Business Admin, Team User), maintaining brand identity during all states including loading and navigation.
 
 **Technical Implementations:**
 - **Technology Stack:** Frontend: React 19.2 (Vite 7.1), React Router 7.9, Tailwind CSS 3.4, Axios, Recharts, Radix UI, date-fns. Backend: FastAPI 2.0 (Python async), PostgreSQL, SQLAlchemy 2.0.36 ORM, JWT authentication (bcrypt), CORS.
