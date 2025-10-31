@@ -170,7 +170,10 @@ export default function SuperAdminDashboard() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'all' })}
+          >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Total Companies</CardTitle>
             </CardHeader>
@@ -178,7 +181,10 @@ export default function SuperAdminDashboard() {
               <div className="text-3xl font-bold">{stats.total_companies}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'pending' })}
+          >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Pending Approval</CardTitle>
             </CardHeader>
@@ -186,7 +192,10 @@ export default function SuperAdminDashboard() {
               <div className="text-3xl font-bold text-yellow-600">{stats.pending_approval}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'active' })}
+          >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Active</CardTitle>
             </CardHeader>
@@ -194,7 +203,10 @@ export default function SuperAdminDashboard() {
               <div className="text-3xl font-bold text-green-600">{stats.active}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'rejected' })}
+          >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Rejected</CardTitle>
             </CardHeader>
@@ -202,7 +214,10 @@ export default function SuperAdminDashboard() {
               <div className="text-3xl font-bold text-red-600">{stats.rejected}</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card 
+            className="cursor-pointer hover:opacity-80 transition-opacity" 
+            onClick={() => setFilters({ ...filters, status: 'all' })}
+          >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Total Invoices</CardTitle>
             </CardHeader>
