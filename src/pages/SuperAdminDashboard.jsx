@@ -239,10 +239,18 @@ export default function SuperAdminDashboard() {
             <Stat 
               label="Total Companies" 
               value={platformLoading ? '—' : platformStats?.total_companies?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setStatus('all');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
             <Stat 
               label="Active Companies" 
               value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setStatus('ACTIVE');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
             <Stat 
               label="Pending Approvals" 
@@ -252,24 +260,44 @@ export default function SuperAdminDashboard() {
             <Stat 
               label="Total Invoices" 
               value={platformLoading ? '—' : platformStats?.total_invoices?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setStatus('all');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
           </div>
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4 mt-3">
             <Stat 
               label="Platform Revenue (AED)" 
               value={platformLoading ? '—' : `${(platformStats?.total_revenue_aed || 0).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+              onClick={() => {
+                setStatus('all');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
             <Stat 
               label="Active Subscriptions" 
               value={platformLoading ? '—' : platformStats?.active_subscriptions?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setStatus('ACTIVE');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
             <Stat 
               label="Free Tier Users" 
               value={platformLoading ? '—' : platformStats?.free_tier_users?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setPlan('Free');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
             <Stat 
               label="Paid Tier Users" 
               value={platformLoading ? '—' : platformStats?.paid_tier_users?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setPlan('Enterprise');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
             />
           </div>
         </Section>
@@ -284,7 +312,7 @@ export default function SuperAdminDashboard() {
             label="Approved registrations" 
             value={loading ? '—' : stats?.registrations.approved ?? '—'}
             onClick={() => {
-              setStatusFilter('ACTIVE');
+              setStatus('ACTIVE');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -292,7 +320,7 @@ export default function SuperAdminDashboard() {
             label="Rejected registrations" 
             value={loading ? '—' : stats?.registrations.rejected ?? '—'}
             onClick={() => {
-              setStatusFilter('REJECTED');
+              setStatus('REJECTED');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -300,7 +328,7 @@ export default function SuperAdminDashboard() {
             label="Active companies" 
             value={loading ? '—' : stats?.companies.active ?? '—'}
             onClick={() => {
-              setStatusFilter('ACTIVE');
+              setStatus('ACTIVE');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
@@ -308,7 +336,7 @@ export default function SuperAdminDashboard() {
             label="Inactive companies" 
             value={loading ? '—' : stats?.companies.inactive ?? '—'}
             onClick={() => {
-              setStatusFilter('SUSPENDED');
+              setStatus('SUSPENDED');
               setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
