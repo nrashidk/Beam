@@ -34,10 +34,19 @@ export default function CreateInvoice() {
     const fetchVatSettings = async () => {
       try {
         const response = await apiClient.get('/settings/vat');
-        setVatEnabled(response.data.vat_enabled || false);
+        const vatStatus = response.data.vat_enabled || false;
+        setVatEnabled(vatStatus);
+        
+        // Set default invoice type based on VAT status
+        setFormData(prev => ({
+          ...prev,
+          invoice_type: vatStatus ? '380' : '480' // Tax Invoice for VAT, Commercial Invoice for non-VAT
+        }));
       } catch (error) {
         console.error('Failed to fetch VAT settings:', error);
         setVatEnabled(false);
+        // Default to Commercial Invoice (480) for non-VAT
+        setFormData(prev => ({ ...prev, invoice_type: '480' }));
       } finally {
         setLoadingVatSettings(false);
       }
@@ -163,6 +172,26 @@ export default function CreateInvoice() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-8">
+            {/* VAT Status Information */}
+            {!vatEnabled && (
+              <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-800">
+                      <strong>Non-VAT-Registered Company:</strong> You can only issue <strong>Commercial Invoices (480)</strong> and standard <strong>Credit Notes (81)</strong>.
+                      To issue <strong>Tax Invoices (380)</strong> or <strong>Tax Credit Notes (381)</strong>, please enable VAT in <a href="/settings/vat" className="underline hover:text-blue-900">VAT Settings</a> and upload your TRN certificate.
+                    </p>
+                    <p className="text-xs text-blue-700 mt-2">
+                      ℹ️ As a non-VAT registered business, you cannot charge VAT or issue VAT-compliant tax invoices until you obtain a Tax Registration Number (TRN) from the UAE Federal Tax Authority.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Invoice Details */}
             <div>
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Invoice Details</h2>
@@ -174,10 +203,24 @@ export default function CreateInvoice() {
                     onChange={(e) => setFormData({ ...formData, invoice_type: e.target.value })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
-                    <option value="380">Tax Invoice (380)</option>
-                    <option value="381">Credit Note (381)</option>
-                    <option value="480">Commercial Invoice (480)</option>
+                    {vatEnabled ? (
+                      <>
+                        <option value="380">Tax Invoice (380) - VAT Taxable Supply</option>
+                        <option value="381">Tax Credit Note (381) - VAT Adjustment</option>
+                        <option value="480">Commercial Invoice (480) - Export/Non-VAT</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="480">Commercial Invoice (480) - Standard Invoice</option>
+                        <option value="81">Credit Note (81) - Returns/Adjustments</option>
+                      </>
+                    )}
                   </select>
+                  {!vatEnabled && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Tax invoices (380) not available - VAT registration required
+                    </p>
+                  )}
                 </div>
 
                 <div>
