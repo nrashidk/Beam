@@ -241,7 +241,7 @@ export default function Homepage() {
           </div>
         </div>
 
-        <Card className="max-w-6xl mx-auto">
+        <Card id="signup" className="max-w-6xl mx-auto">
           <CardContent className="p-8 space-y-6">
             {success ? (
               <div className="text-center space-y-4 max-w-md mx-auto">

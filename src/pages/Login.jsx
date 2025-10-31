@@ -116,7 +116,7 @@ export default function Login() {
               <button
                 type="button"
                 className="text-blue-600 hover:underline"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/#signup')}
               >
                 Sign up for free
               </button>
