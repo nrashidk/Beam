@@ -42,6 +42,7 @@ Detailed explanations preferred.
 - **Tier 1 Production Hardening:** Custom exception module, enhanced crypto utilities with certificate validation, environment validation, structured error handling, and a global exception handler.
 - **Production Signing Keys System:** Cryptographic key management for UAE FTA compliance, including RSA-2048 key pair and X.509 certificate generation.
 - **VAT Compliance System:** Production-ready UAE VAT opt-in infrastructure with automatic invoice classification, TRN tracking, and tax code management.
+- **TRN Optionality for Non-VAT Parties:** Complete implementation allowing transactions with non-VAT-registered suppliers and customers. TRN fields are optional in all invoice, purchase order, and goods receipt forms and database models. Invoice creation only requires TRN when company.vat_enabled is true. Supplier matching logic falls back to name-based matching when TRNs are unavailable, ensuring AP reconciliation works for both VAT and non-VAT scenarios. (Implemented October 2025)
 - **Enhanced RBAC System:** Production-ready role-based access control with three-tier user hierarchy and flexible SuperAdmin management, including tier-based user limits and user tracking.
 - **Payment Verification & Reconciliation:** Production-ready offline payment tracking system with complete audit trail and daily reconciliation reports.
 - **Advanced Analytics & Insights:** Production-ready comprehensive business intelligence dashboard providing revenue trends, customer insights, profitability analysis, and cash flow visualization.
