@@ -410,7 +410,7 @@ class InvoiceDB(Base):
     currency_code = Column(String, default="AED")
     
     # Supplier (Issuer) - Company issuing the invoice
-    supplier_trn = Column(String, nullable=False)  # 15-digit TRN
+    supplier_trn = Column(String, nullable=True)  # Optional when VAT not enabled
     supplier_name = Column(String, nullable=False)
     supplier_address = Column(Text, nullable=True)
     supplier_city = Column(String, nullable=True)
@@ -546,7 +546,7 @@ class PurchaseOrderDB(Base):
     status = Column(SQLEnum(PurchaseOrderStatus), default=PurchaseOrderStatus.DRAFT)
     
     # Supplier Information
-    supplier_trn = Column(String, nullable=False)
+    supplier_trn = Column(String, nullable=True)  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_contact_email = Column(String, nullable=True)
     supplier_address = Column(Text, nullable=True)
@@ -695,14 +695,14 @@ class InwardInvoiceDB(Base):
     received_at = Column(DateTime, default=datetime.utcnow)
     
     # Supplier (Invoice Issuer)
-    supplier_trn = Column(String, nullable=False)
+    supplier_trn = Column(String, nullable=True)  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_address = Column(Text, nullable=True)
     supplier_peppol_id = Column(String, nullable=True)
     supplier_company_id = Column(String, ForeignKey("companies.id"), nullable=True)  # If supplier uses InvoLinks
     
     # Customer (Our company - the buyer)
-    customer_trn = Column(String, nullable=False)
+    customer_trn = Column(String, nullable=True)  # Optional for non-VAT-registered customers
     customer_name = Column(String, nullable=False)
     
     # Financial
@@ -1621,7 +1621,7 @@ class PurchaseOrderLineItemCreate(BaseModel):
 
 class PurchaseOrderCreate(BaseModel):
     po_number: str
-    supplier_trn: str
+    supplier_trn: Optional[str] = None  # Optional for non-VAT-registered suppliers
     supplier_name: str
     supplier_contact_email: Optional[str] = None
     supplier_address: Optional[str] = None
@@ -1653,7 +1653,7 @@ class PurchaseOrderOut(BaseModel):
     company_id: str
     po_number: str
     status: PurchaseOrderStatus
-    supplier_trn: str
+    supplier_trn: Optional[str]  # Optional for non-VAT-registered suppliers
     supplier_name: str
     supplier_contact_email: Optional[str]
     supplier_address: Optional[str]
@@ -6597,11 +6597,20 @@ def match_inward_invoice_to_po(
         raise HTTPException(404, "Purchase order not found")
     
     # Verify supplier matches
-    if invoice.supplier_trn != po.supplier_trn:
-        raise HTTPException(
-            400,
-            f"Supplier mismatch: Invoice supplier TRN ({invoice.supplier_trn}) does not match PO supplier TRN ({po.supplier_trn})"
-        )
+    # If both have TRN, match by TRN. Otherwise, match by supplier name
+    if invoice.supplier_trn and po.supplier_trn:
+        if invoice.supplier_trn != po.supplier_trn:
+            raise HTTPException(
+                400,
+                f"Supplier mismatch: Invoice supplier TRN ({invoice.supplier_trn}) does not match PO supplier TRN ({po.supplier_trn})"
+            )
+    else:
+        # Match by supplier name when TRN is not available for non-VAT suppliers
+        if invoice.supplier_name.strip().lower() != po.supplier_name.strip().lower():
+            raise HTTPException(
+                400,
+                f"Supplier mismatch: Invoice supplier ({invoice.supplier_name}) does not match PO supplier ({po.supplier_name})"
+            )
     
     # Calculate variance
     amount_variance = invoice.total_amount - po.expected_total
