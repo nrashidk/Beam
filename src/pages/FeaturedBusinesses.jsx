@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Plus, Trash2, RefreshCcw, Search } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, RefreshCcw, Search, Edit } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -16,13 +16,14 @@ export default function FeaturedBusinesses() {
   const [allCompanies, setAllCompanies] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newFeatured, setNewFeatured] = useState({
     company_id: '',
     display_name: '',
-    logo_url: '',
-    display_order: 0
+    logo_url: ''
   });
+  const [editingFeatured, setEditingFeatured] = useState(null);
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -63,8 +64,7 @@ export default function FeaturedBusinesses() {
       setNewFeatured({
         company_id: '',
         display_name: '',
-        logo_url: '',
-        display_order: 0
+        logo_url: ''
       });
     } catch (error) {
       console.error('Failed to add featured business:', error);
@@ -72,6 +72,33 @@ export default function FeaturedBusinesses() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleUpdateFeatured() {
+    if (!editingFeatured) return;
+
+    try {
+      setSaving(true);
+      await api.put(`/admin/featured-businesses/${editingFeatured.id}`, {
+        display_name: editingFeatured.display_name,
+        logo_url: editingFeatured.logo_url,
+        is_active: editingFeatured.is_active,
+        display_order: editingFeatured.display_order
+      });
+      await fetchData();
+      setShowEditModal(false);
+      setEditingFeatured(null);
+    } catch (error) {
+      console.error('Failed to update featured business:', error);
+      alert(error.response?.data?.detail || 'Failed to update featured business');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openEditModal(featured) {
+    setEditingFeatured({...featured});
+    setShowEditModal(true);
   }
 
   async function handleRemoveFeatured(featuredId) {
@@ -184,6 +211,14 @@ export default function FeaturedBusinesses() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => openEditModal(f)}
+                        className="rounded-full"
+                      >
+                        <Edit size={16} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => handleRemoveFeatured(f.id)}
                         className="rounded-full text-red-600 hover:text-red-700"
                       >
@@ -243,20 +278,8 @@ export default function FeaturedBusinesses() {
                     onChange={(e) => setNewFeatured({ ...newFeatured, logo_url: e.target.value })}
                     placeholder="https://example.com/logo.png"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Display Order
-                  </label>
-                  <Input
-                    type="number"
-                    value={newFeatured.display_order}
-                    onChange={(e) => setNewFeatured({ ...newFeatured, display_order: parseInt(e.target.value) || 0 })}
-                    placeholder="0"
-                  />
                   <p className="text-xs text-gray-500 mt-1">
-                    Lower numbers appear first
+                    Display order will be automatically assigned
                   </p>
                 </div>
 
@@ -275,9 +298,103 @@ export default function FeaturedBusinesses() {
                       setNewFeatured({
                         company_id: '',
                         display_name: '',
-                        logo_url: '',
-                        display_order: 0
+                        logo_url: ''
                       });
+                    }}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {showEditModal && editingFeatured && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-lg rounded-2xl">
+              <CardHeader>
+                <CardTitle>Edit Featured Business</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Company
+                  </label>
+                  <Input
+                    value={editingFeatured.company_name}
+                    disabled
+                    className="bg-gray-100"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Company cannot be changed
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Display Name (Optional)
+                  </label>
+                  <Input
+                    value={editingFeatured.display_name || ''}
+                    onChange={(e) => setEditingFeatured({ ...editingFeatured, display_name: e.target.value })}
+                    placeholder="Leave empty to use company name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Logo URL (Optional)
+                  </label>
+                  <Input
+                    value={editingFeatured.logo_url || ''}
+                    onChange={(e) => setEditingFeatured({ ...editingFeatured, logo_url: e.target.value })}
+                    placeholder="https://example.com/logo.png"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Display Order
+                  </label>
+                  <Input
+                    type="number"
+                    value={editingFeatured.display_order}
+                    onChange={(e) => setEditingFeatured({ ...editingFeatured, display_order: parseInt(e.target.value) || 0 })}
+                    placeholder="0"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Lower numbers appear first
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={editingFeatured.is_active}
+                    onChange={(e) => setEditingFeatured({ ...editingFeatured, is_active: e.target.checked })}
+                    className="w-4 h-4 rounded"
+                  />
+                  <label htmlFor="is_active" className="text-sm font-medium">
+                    Active (show on homepage)
+                  </label>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    onClick={handleUpdateFeatured}
+                    disabled={saving}
+                    className="flex-1"
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingFeatured(null);
                     }}
                     disabled={saving}
                   >

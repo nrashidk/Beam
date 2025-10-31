@@ -3405,7 +3405,13 @@ class FeaturedBusinessCreate(BaseModel):
     company_id: str
     display_name: Optional[str] = None
     logo_url: Optional[str] = None
-    display_order: int = 0
+    display_order: Optional[int] = None
+
+class FeaturedBusinessUpdate(BaseModel):
+    display_name: Optional[str] = None
+    logo_url: Optional[str] = None
+    is_active: Optional[bool] = None
+    display_order: Optional[int] = None
 
 @app.get("/admin/subscription-plans", response_model=List[SubscriptionPlanOut], tags=["Admin", "Tier Management"])
 def get_all_subscription_plans(
@@ -3595,13 +3601,20 @@ def add_featured_business(
     if existing:
         raise HTTPException(400, "Company is already featured")
     
+    # Auto-calculate next display_order if not provided
+    if payload.display_order is None:
+        max_order = db.query(func.max(FeaturedBusinessDB.display_order)).scalar()
+        display_order = 0 if max_order is None else max_order + 1
+    else:
+        display_order = payload.display_order
+    
     new_featured = FeaturedBusinessDB(
         id=f"fb_{uuid4().hex[:12]}",
         company_id=payload.company_id,
         display_name=payload.display_name,
         logo_url=payload.logo_url,
         is_active=True,
-        display_order=payload.display_order,
+        display_order=display_order,
         added_by_user_id=current_user.id
     )
     
@@ -3610,6 +3623,36 @@ def add_featured_business(
     db.refresh(new_featured)
     
     return {"message": "Business added to featured list", "id": new_featured.id}
+
+@app.put("/admin/featured-businesses/{featured_id}", tags=["Admin", "Featured Businesses"])
+def update_featured_business(
+    featured_id: str,
+    payload: FeaturedBusinessUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Update a featured business (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can update featured businesses")
+    
+    featured = db.query(FeaturedBusinessDB).filter(FeaturedBusinessDB.id == featured_id).first()
+    if not featured:
+        raise HTTPException(404, "Featured business not found")
+    
+    # Update only provided fields
+    if payload.display_name is not None:
+        featured.display_name = payload.display_name
+    if payload.logo_url is not None:
+        featured.logo_url = payload.logo_url
+    if payload.is_active is not None:
+        featured.is_active = payload.is_active
+    if payload.display_order is not None:
+        featured.display_order = payload.display_order
+    
+    db.commit()
+    db.refresh(featured)
+    
+    return {"message": "Featured business updated successfully"}
 
 @app.delete("/admin/featured-businesses/{featured_id}", tags=["Admin", "Featured Businesses"])
 def remove_featured_business(
