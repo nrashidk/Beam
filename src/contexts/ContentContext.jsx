@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import api from '../lib/api';
+import { apiClient } from '../lib/api';
 
 const ContentContext = createContext();
 
@@ -13,7 +13,7 @@ export function ContentProvider({ children }) {
 
   async function loadContent() {
     try {
-      const response = await api.get('/content/public');
+      const response = await apiClient.get('/content/public');
       const contentMap = {};
       response.data.forEach(block => {
         contentMap[block.key] = block.value;
