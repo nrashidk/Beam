@@ -109,7 +109,7 @@ export default function POFormModal({ isOpen, onClose, onSubmit, initialData = n
     const newErrors = {};
 
     if (!formData.po_number.trim()) newErrors.po_number = 'PO number is required';
-    if (!formData.supplier_trn.trim()) newErrors.supplier_trn = 'Supplier TRN is required';
+    // Supplier TRN is optional - not all suppliers are VAT-registered
     if (!formData.supplier_name.trim()) newErrors.supplier_name = 'Supplier name is required';
     if (!formData.order_date) newErrors.order_date = 'Order date is required';
 
@@ -159,7 +159,7 @@ export default function POFormModal({ isOpen, onClose, onSubmit, initialData = n
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supplier TRN <span className="text-red-500">*</span>
+                  Supplier TRN <span className="text-gray-400 text-xs">(Optional)</span>
                 </label>
                 <Input
                   type="text"

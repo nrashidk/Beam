@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { apiClient } from '../lib/api';
 import { ArrowLeft, Upload, X, CheckCircle, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function CompanyBranding() {
   const { user } = useAuth();

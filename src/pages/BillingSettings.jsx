@@ -9,6 +9,7 @@ import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import StripeCardForm from '../components/StripeCardForm';
 import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 

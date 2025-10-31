@@ -238,7 +238,9 @@ export default function CreateInvoice() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer TRN (15 digits)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer TRN <span className="text-gray-400 text-xs">(Optional - 15 digits)</span>
+                  </label>
                   <TRNInput
                     value={formData.customer_trn}
                     onChange={(e) => setFormData({ ...formData, customer_trn: e.target.value })}

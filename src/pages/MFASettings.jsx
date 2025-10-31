@@ -7,6 +7,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import MFAEnrollmentWizard from '../components/MFAEnrollmentWizard';
 import Sidebar from '../components/Sidebar';
+import BackToDashboard from '../components/BackToDashboard';
 
 export default function MFASettings() {
   const navigate = useNavigate();
