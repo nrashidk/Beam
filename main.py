@@ -3246,7 +3246,6 @@ def update_company(
         # Map string status to enum
         status_map = {
             'active': CompanyStatus.ACTIVE,
-            'inactive': CompanyStatus.INACTIVE,
             'suspended': CompanyStatus.SUSPENDED
         }
         if payload.status.lower() in status_map:
