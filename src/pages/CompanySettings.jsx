@@ -189,11 +189,11 @@ export default function CompanySettings() {
                       Website
                     </label>
                     <Input
-                      type="url"
+                      type="text"
                       name="website"
                       value={formData.website}
                       onChange={handleChange}
-                      placeholder="https://example.com"
+                      placeholder="www.example.com or example.com"
                       className="w-full"
                     />
                   </div>
