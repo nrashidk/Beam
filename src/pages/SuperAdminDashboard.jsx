@@ -111,6 +111,7 @@ export default function SuperAdminDashboard() {
   const [addExtraInvoices, setAddExtraInvoices] = useState(0);
   const [addExtraMonths, setAddExtraMonths] = useState(0);
   const [freePlanType, setFreePlanType] = useState('INVOICE_COUNT'); // INVOICE_COUNT or DURATION
+  const [isSuspended, setIsSuspended] = useState(false);
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -139,6 +140,7 @@ export default function SuperAdminDashboard() {
           vat_enabled: fullCompany.vat_enabled || false
         });
         setFreePlanType(fullCompany.free_plan_type || 'INVOICE_COUNT');
+        setIsSuspended(fullCompany.status?.toLowerCase() === 'suspended');
         setAddExtraInvoices(0);
         setAddExtraMonths(0);
         setShowEditModal(true);
@@ -164,11 +166,15 @@ export default function SuperAdminDashboard() {
       const newInvoiceLimit = (parseInt(editingCompany.free_plan_invoice_limit) || 0) + extraInvoices;
       const newMonthsLimit = (parseInt(editingCompany.free_plan_duration_months) || 0) + extraMonths;
       
+      // Determine status based on suspend checkbox
+      const status = isSuspended ? 'suspended' : 'active';
+      
       await api.put(`/admin/companies/${editingCompany.id}`, {
         invoices_generated: invoicesGenerated,
         free_plan_invoice_limit: newInvoiceLimit,
         free_plan_duration_months: newMonthsLimit,
-        free_plan_type: freePlanType
+        free_plan_type: freePlanType,
+        status: status
       });
       
       // Reload stats
@@ -524,6 +530,34 @@ export default function SuperAdminDashboard() {
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
                 
+                {/* Suspend Company Section */}
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg p-4 border-2 border-amber-200">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="suspend-checkbox"
+                      checked={isSuspended}
+                      onChange={(e) => setIsSuspended(e.target.checked)}
+                      className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500 cursor-pointer"
+                    />
+                    <label htmlFor="suspend-checkbox" className="flex-1 cursor-pointer">
+                      <div className="text-sm font-semibold text-orange-900">Suspend Company</div>
+                      <div className="text-xs text-orange-700 mt-0.5">
+                        {isSuspended 
+                          ? '⚠️ Company is suspended and cannot access services' 
+                          : '✓ Company is active and can access services'}
+                      </div>
+                    </label>
+                    <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      isSuspended 
+                        ? 'bg-orange-600 text-white' 
+                        : 'bg-emerald-600 text-white'
+                    }`}>
+                      {isSuspended ? 'Suspended' : 'Active'}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Free Plan Type Selector */}
                 <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border-2 border-indigo-200">
                   <label className="block text-sm font-semibold mb-3 text-indigo-900">Free Plan Type</label>
@@ -673,6 +707,7 @@ export default function SuperAdminDashboard() {
                       setEditingCompany(null);
                       setAddExtraInvoices(0);
                       setAddExtraMonths(0);
+                      setIsSuspended(false);
                     }}
                     disabled={saving}
                   >
