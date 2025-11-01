@@ -31,6 +31,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/company': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/register': {
         target: 'http://localhost:8000',
         changeOrigin: true,
@@ -95,6 +99,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/companies': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/company': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
