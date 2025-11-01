@@ -11,7 +11,7 @@ COMPLIANCE NOTES:
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring, ElementTree
-from xml.dom import minidom
+from defusedxml import minidom
 
 
 class UBLXMLGenerator:

@@ -18,3 +18,5 @@ openpyxl
 stripe
 Pillow
 reportlab
+defusedxml
+defusedxml
