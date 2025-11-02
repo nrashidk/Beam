@@ -334,9 +334,11 @@ export default function Homepage() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? 'Creating Account...' : 'Create Account →'}
-                  </Button>
+                  <div className="flex justify-center pt-2">
+                    <Button type="submit" className="px-8" disabled={loading}>
+                      {loading ? 'Creating Account...' : 'Create Account →'}
+                    </Button>
+                  </div>
                 </form>
 
                 <p className="text-center text-sm text-gray-600">
