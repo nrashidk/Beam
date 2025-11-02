@@ -2964,36 +2964,41 @@ def update_company_profile(
     """Update company profile (Company Admin only)"""
     if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
         raise HTTPException(403, "Only company admins can update company profile")
-    
+
     if not current_user.company_id:
         raise HTTPException(400, "User is not associated with a company")
-    
+
     company = db.get(CompanyDB, current_user.company_id)
     if not company:
         raise HTTPException(404, "Company not found")
-    
-    # Update fields if provided
-    if payload.legal_name is not None:
-        company.legal_name = payload.legal_name
-    if payload.phone is not None:
-        company.phone = payload.phone
-    if payload.website is not None:
-        company.website = payload.website
-    if payload.address_line1 is not None:
-        company.address_line1 = payload.address_line1
-    if payload.address_line2 is not None:
-        company.address_line2 = payload.address_line2
-    if payload.city is not None:
-        company.city = payload.city
-    if payload.emirate is not None:
-        company.emirate = payload.emirate
-    if payload.postal_code is not None:
-        company.postal_code = payload.postal_code
-    
-    company.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(company)
-    
+
+    try:
+        # Update fields if provided
+        if payload.legal_name is not None:
+            company.legal_name = payload.legal_name
+        if payload.phone is not None:
+            company.phone = payload.phone
+        if payload.website is not None:
+            company.website = payload.website
+        if payload.address_line1 is not None:
+            company.address_line1 = payload.address_line1
+        if payload.address_line2 is not None:
+            company.address_line2 = payload.address_line2
+        if payload.city is not None:
+            company.city = payload.city
+        if payload.emirate is not None:
+            company.emirate = payload.emirate
+        if payload.postal_code is not None:
+            company.postal_code = payload.postal_code
+
+        company.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(company)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating company profile: {str(e)}")
+        raise HTTPException(500, f"Failed to update company profile: {str(e)}")
+
     return {
         "success": True,
         "message": "Company profile updated successfully",
