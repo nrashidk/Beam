@@ -32,6 +32,7 @@ export default function Homepage() {
   const [formData, setFormData] = useState({
     email: '',
     company_name: '',
+    business_type: 'LLC',
     phone: '',
     website: '',
     password: '',
@@ -82,7 +83,7 @@ export default function Homepage() {
       const response = await api.post('/register/quick', {
         email: formData.email,
         company_name: formData.company_name,
-        business_type: 'LLC',
+        business_type: formData.business_type,
         phone: formData.phone,
         website: formData.website,
         password: formData.password,
@@ -98,7 +99,8 @@ export default function Homepage() {
         setSuccess(true);
         setFormData({ 
           email: '', 
-          company_name: '', 
+          company_name: '',
+          business_type: 'LLC',
           phone: '', 
           website: '',
           password: '', 
@@ -343,6 +345,26 @@ export default function Homepage() {
                           value={formData.email}
                           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Business Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          value={formData.business_type}
+                          onChange={(e) => setFormData({ ...formData, business_type: e.target.value })}
+                        >
+                          <option value="LLC">LLC (Limited Liability Company)</option>
+                          <option value="Sole Proprietorship">Sole Proprietorship</option>
+                          <option value="Partnership">Partnership</option>
+                          <option value="Free Zone">Free Zone Company</option>
+                          <option value="Branch">Branch of Foreign Company</option>
+                          <option value="Public Company">Public Company</option>
+                          <option value="Private Company">Private Company</option>
+                        </select>
                       </div>
 
                       <div>
