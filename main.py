@@ -1510,7 +1510,7 @@ class InvoiceLineItemCreate(BaseModel):
     unit_price: float
     tax_category: TaxCategory
     tax_percent: float = 5.0  # UAE standard VAT rate
-    tax_code: Optional[str] = "SR"  # UAE tax code (SR, ZR, ES, RC, OP) - Optional for non-VAT
+    tax_code: Optional[str] = None  # UAE tax code (SR, ZR, ES, RC, OP) - Required for VAT-registered businesses
 
 class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType
