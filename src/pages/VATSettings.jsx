@@ -28,13 +28,17 @@ export default function VATSettings() {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   
   const [settings, setSettings] = useState({
     vat_enabled: false,
     tax_registration_number: '',
     vat_registration_date: '',
-    formatted_trn: null
+    formatted_trn: null,
+    vat_certificate_uploaded: false
   });
+  const [uploadingCertificate, setUploadingCertificate] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -49,7 +53,8 @@ export default function VATSettings() {
         vat_enabled: response.data.vat_enabled || false,
         tax_registration_number: response.data.tax_registration_number || '',
         vat_registration_date: response.data.vat_registration_date || '',
-        formatted_trn: response.data.formatted_trn
+        formatted_trn: response.data.formatted_trn,
+        vat_certificate_uploaded: response.data.vat_certificate_uploaded || false
       });
     } catch (error) {
       console.error('Failed to fetch VAT settings:', error);
@@ -60,12 +65,14 @@ export default function VATSettings() {
 
   const handleSave = async () => {
     setSaving(true);
-    
+    setError('');
+    setSuccess('');
+
     try {
       const payload = {
         vat_enabled: settings.vat_enabled
       };
-      
+
       if (settings.vat_enabled) {
         if (!settings.tax_registration_number) {
           setError('Please enter your Tax Registration Number (TRN)');
@@ -91,11 +98,56 @@ export default function VATSettings() {
       });
 
       setSuccess(response.data.message || 'VAT settings saved successfully!');
+      setTimeout(() => setSuccess(''), 3000);
       fetchSettings();
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCertificateUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File too large. Maximum size is 5MB');
+      return;
+    }
+
+    // Validate file type
+    const validTypes = ['application/pdf', 'image/png', 'image/jpeg'];
+    if (!validTypes.includes(file.type)) {
+      setError('Invalid file type. Only PDF, PNG, and JPG files are allowed');
+      return;
+    }
+
+    setUploadingCertificate(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      await axios.post(`${API_URL}/settings/vat/upload-certificate`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      setSuccess('VAT certificate uploaded successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+      fetchSettings();
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to upload certificate');
+    } finally {
+      setUploadingCertificate(false);
+      // Reset file input
+      event.target.value = '';
     }
   };
 
@@ -116,6 +168,22 @@ export default function VATSettings() {
           <BackToDashboard />
           
           <div className="space-y-6">
+            {error && (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="pt-6">
+                  <p className="text-sm text-red-800">{error}</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {success && (
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="pt-6">
+                  <p className="text-sm text-green-800">{success}</p>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="border-blue-200 bg-blue-50">
               <CardContent className="pt-6">
                 <div className="flex gap-4">
@@ -200,6 +268,36 @@ export default function VATSettings() {
                       />
                       <p className="mt-2 text-sm text-gray-600">
                         The date your business became VAT-registered with the FTA
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        VAT Certificate (Optional)
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <label className="cursor-pointer">
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            onChange={handleCertificateUpload}
+                            disabled={uploadingCertificate}
+                            className="hidden"
+                          />
+                          <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2">
+                            <FileText size={16} />
+                            {uploadingCertificate ? 'Uploading...' : 'Upload Certificate'}
+                          </div>
+                        </label>
+                        {settings.vat_certificate_uploaded && (
+                          <span className="text-sm text-green-700 font-medium flex items-center gap-1">
+                            <CheckCircle size={16} />
+                            Certificate uploaded
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm text-gray-600">
+                        Upload your VAT registration certificate (PDF, PNG, or JPG - max 5MB)
                       </p>
                     </div>
 

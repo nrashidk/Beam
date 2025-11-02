@@ -232,6 +232,7 @@ class CompanyDB(Base):
     # VAT Registration (Opt-In Model - Phase 1)
     vat_enabled = Column(Boolean, default=False)  # Toggle for VAT registration
     vat_registration_date = Column(Date, nullable=True)  # When business became VAT-registered
+    vat_certificate_path = Column(String, nullable=True)  # Path to uploaded VAT certificate file
     
     # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
     mfa_enabled = Column(Boolean, default=False)
@@ -256,6 +257,7 @@ class CompanyDB(Base):
     city = Column(String, nullable=True)
     emirate = Column(String, nullable=True)
     po_box = Column(String, nullable=True)
+    postal_code = Column(String, nullable=True)
 
     # Authorized person
     authorized_person_name = Column(String, nullable=True)
@@ -302,6 +304,7 @@ class CompanyDB(Base):
     peppol_last_tested_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
 
@@ -8258,7 +8261,8 @@ def get_vat_settings(
         "vat_enabled": company.vat_enabled or False,
         "tax_registration_number": company.trn if company.vat_enabled else None,
         "vat_registration_date": company.vat_registration_date.isoformat() if company.vat_registration_date else None,
-        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None
+        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None,
+        "vat_certificate_uploaded": bool(company.vat_certificate_path and os.path.exists(company.vat_certificate_path))
     }
 
 @app.put("/settings/vat", tags=["Settings"])
@@ -8323,6 +8327,58 @@ def update_vat_settings(
             "message": "VAT registration disabled",
             "vat_enabled": False
         }
+
+@app.post("/settings/vat/upload-certificate", tags=["Settings"])
+async def upload_vat_certificate(
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Upload VAT certificate (PDF, PNG, JPG - max 5MB)"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    # Validate file type
+    allowed_types = ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg']
+    if file.content_type not in allowed_types:
+        raise HTTPException(400, "Invalid file type. Only PDF, PNG, and JPG files are allowed")
+
+    # Validate file size (5MB max)
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File too large. Maximum size is 5MB")
+
+    # Create vat_certificates directory
+    vat_cert_dir = os.path.join(ARTIFACT_ROOT, "vat_certificates")
+    os.makedirs(vat_cert_dir, exist_ok=True)
+
+    # Generate unique filename
+    file_ext = os.path.splitext(file.filename)[1]
+    filename = f"{company.id}_vat_certificate_{uuid4().hex[:8]}{file_ext}"
+    file_path = os.path.join(vat_cert_dir, filename)
+
+    # Delete old certificate if exists
+    if company.vat_certificate_path and os.path.exists(company.vat_certificate_path):
+        try:
+            os.remove(company.vat_certificate_path)
+        except Exception as e:
+            print(f"Warning: Could not delete old certificate: {e}")
+
+    # Save file
+    with open(file_path, 'wb') as f:
+        f.write(contents)
+
+    # Update company record
+    company.vat_certificate_path = file_path
+    db.commit()
+    db.refresh(company)
+
+    return {
+        "success": True,
+        "message": "VAT certificate uploaded successfully",
+        "filename": filename
+    }
 
 # ==================== BILLING & SUBSCRIPTIONS ====================
 
