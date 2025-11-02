@@ -1509,6 +1509,7 @@ class InvoiceLineItemCreate(BaseModel):
     unit_price: float
     tax_category: TaxCategory
     tax_percent: float = 5.0  # UAE standard VAT rate
+    tax_code: Optional[str] = 'SR'  # UAE tax code: SR, ZR, ES, RC, OP
 
 class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType
@@ -1551,6 +1552,7 @@ class InvoiceLineItemOut(BaseModel):
     tax_percent: float
     tax_amount: float
     line_total_amount: float
+    tax_code: Optional[str] = 'SR'  # UAE tax code
 
 class InvoiceTaxBreakdownOut(BaseModel):
     id: str
@@ -4116,7 +4118,8 @@ def create_invoice(
             tax_category=line_item.tax_category,
             tax_percent=line_item.tax_percent,
             tax_amount=totals["tax_amount"],
-            line_total_amount=totals["line_total_amount"]
+            line_total_amount=totals["line_total_amount"],
+            tax_code=line_item.tax_code
         )
         db.add(line_db)
         
@@ -4205,7 +4208,8 @@ def create_invoice(
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
                 tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount
+                line_total_amount=li.line_total_amount,
+                tax_code=li.tax_code
             ) for li in invoice.line_items
         ],
         tax_breakdowns=[
@@ -4480,7 +4484,8 @@ def get_invoice(
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
                 tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount
+                line_total_amount=li.line_total_amount,
+                tax_code=li.tax_code
             ) for li in invoice.line_items
         ],
         tax_breakdowns=[
@@ -5623,7 +5628,8 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
                 tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount
+                line_total_amount=li.line_total_amount,
+                tax_code=li.tax_code
             ) for li in invoice.line_items
         ],
         tax_breakdowns=[
