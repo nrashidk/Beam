@@ -1921,7 +1921,14 @@ class QuickRegisterCreate(BaseModel):
     company_name: str
     business_type: Optional[str] = None
     phone: Optional[str] = None
+    website: Optional[str] = None
     password: str
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
+    city: Optional[str] = None
+    emirate: Optional[str] = None
+    po_box: Optional[str] = None
+    trn: Optional[str] = None
 
 @app.post("/register/quick", tags=["Registration"])
 def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
@@ -1942,14 +1949,21 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
     company_id = f"co_{uuid4().hex[:8]}"
     
     try:
-        # Create company
+        # Create company with all registration data
         company = CompanyDB(
             id=company_id,
             legal_name=payload.company_name,
             email=payload.email,
             business_type=payload.business_type,
             phone=payload.phone,
+            website=payload.website,
             password_hash=get_password_hash(payload.password),
+            address_line1=payload.address_line1,
+            address_line2=payload.address_line2,
+            city=payload.city,
+            emirate=payload.emirate,
+            po_box=payload.po_box,
+            trn=payload.trn,
             status=CompanyStatus.PENDING_REVIEW,
             country="AE",
             email_verified=False
