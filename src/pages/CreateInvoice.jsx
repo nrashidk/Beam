@@ -37,7 +37,7 @@ export default function CreateInvoice() {
     ]
   });
 
-  // Fetch VAT settings on component mount
+  // Fetch VAT settings on component mount and when window gains focus
   useEffect(() => {
     const fetchVatSettings = async () => {
       try {
@@ -61,6 +61,17 @@ export default function CreateInvoice() {
     };
 
     fetchVatSettings();
+
+    // Re-fetch VAT settings when window gains focus (e.g., after enabling VAT)
+    const handleFocus = () => {
+      fetchVatSettings();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const addLineItem = () => {
