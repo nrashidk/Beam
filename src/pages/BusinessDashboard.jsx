@@ -5,9 +5,10 @@ import { companiesAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck, Network } from 'lucide-react';
+import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck, Network, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import Sidebar from '../components/Sidebar';
+import CompanyInfoEditDialog from '../components/CompanyInfoEditDialog';
 
 export default function BusinessDashboard() {
   const { logout, user } = useAuth();
@@ -16,6 +17,7 @@ export default function BusinessDashboard() {
   const [subscription, setSubscription] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -142,8 +144,17 @@ export default function BusinessDashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Company Information</CardTitle>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsEditDialogOpen(true)}
+                className="gap-2"
+              >
+                <Pencil size={16} />
+                Edit
+              </Button>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -163,6 +174,28 @@ export default function BusinessDashboard() {
               <div>
                 <div className="text-sm text-gray-600">Phone</div>
                 <div className="font-medium">{company?.phone || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Website</div>
+                <div className="font-medium">{company?.website || 'N/A'}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">Address</div>
+                <div className="font-medium">
+                  {company?.address_line1 || company?.address_line2 || company?.city || company?.emirate ? (
+                    <>
+                      {company.address_line1 && <div>{company.address_line1}</div>}
+                      {company.address_line2 && <div>{company.address_line2}</div>}
+                      {(company.city || company.emirate || company.po_box) && (
+                        <div>
+                          {[company.city, company.emirate, company.po_box].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    'N/A'
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -202,6 +235,13 @@ export default function BusinessDashboard() {
           </Card>
           </div>
         </div>
+
+        <CompanyInfoEditDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          company={company}
+          onSave={fetchDashboardData}
+        />
       </div>
     </div>
   );

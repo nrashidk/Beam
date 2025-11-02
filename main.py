@@ -2939,6 +2939,12 @@ def get_company(company_id: str, db: Session = Depends(get_db)):
         "trn": company.trn,
         "business_type": company.business_type,
         "phone": company.phone,
+        "website": company.website,
+        "address_line1": company.address_line1,
+        "address_line2": company.address_line2,
+        "city": company.city,
+        "emirate": company.emirate,
+        "po_box": company.po_box,
         "email_verified": company.email_verified,
         "created_at": company.created_at.isoformat() if company.created_at else None
     }
@@ -2951,7 +2957,7 @@ class CompanyProfileUpdateRequest(BaseModel):
     address_line2: Optional[str] = None
     city: Optional[str] = None
     emirate: Optional[str] = None
-    postal_code: Optional[str] = None
+    po_box: Optional[str] = None
 
 @app.put("/company/profile", tags=["Companies"])
 def update_company_profile(
@@ -2985,8 +2991,8 @@ def update_company_profile(
         company.city = payload.city
     if payload.emirate is not None:
         company.emirate = payload.emirate
-    if payload.postal_code is not None:
-        company.postal_code = payload.postal_code
+    if payload.po_box is not None:
+        company.po_box = payload.po_box
     
     company.updated_at = datetime.utcnow()
     db.commit()
