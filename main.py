@@ -2974,6 +2974,7 @@ class CompanyProfileUpdateRequest(BaseModel):
     city: Optional[str] = None
     emirate: Optional[str] = None
     po_box: Optional[str] = None
+    postal_code: Optional[str] = None
 
 @app.put("/company/profile", tags=["Companies"])
 def update_company_profile(
@@ -3009,6 +3010,8 @@ def update_company_profile(
         company.emirate = payload.emirate
     if payload.po_box is not None:
         company.po_box = payload.po_box
+    if payload.postal_code is not None:
+        company.postal_code = payload.postal_code
     
     company.updated_at = datetime.utcnow()
     db.commit()
@@ -3027,7 +3030,8 @@ def update_company_profile(
             "address_line2": company.address_line2,
             "city": company.city,
             "emirate": company.emirate,
-            "po_box": company.po_box
+            "po_box": company.po_box,
+            "postal_code": company.postal_code
         }
     }
 
