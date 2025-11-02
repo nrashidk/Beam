@@ -28,7 +28,7 @@ export default function BusinessDashboard() {
 
     try {
       const [companyRes, subRes, invoicesRes] = await Promise.all([
-        companiesAPI.getCompany(user.company_id),
+        companiesAPI.getCompanyById(user.company_id),
         companiesAPI.getSubscription(user.company_id),
         companiesAPI.getInvoices(user.company_id),
       ]);

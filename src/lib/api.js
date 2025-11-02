@@ -229,6 +229,14 @@ export const companiesAPI = {
     return apiClient.put(`/companies/${id}`, data);
   },
 
+  getSubscription: (id) => {
+    return apiClient.get(`/companies/${id}/subscription`);
+  },
+
+  getInvoices: (id) => {
+    return apiClient.get('/invoices');
+  },
+
   getBranding: (id) => {
     return apiClient.get(`/companies/${id}/branding`);
   },
