@@ -18,3 +18,8 @@ openpyxl
 stripe
 Pillow
 reportlab
+
+# Security enhancements
+slowapi>=0.1.9
+python-dotenv>=1.0.0
+email-validator>=2.0.0

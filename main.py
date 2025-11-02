@@ -17,10 +17,16 @@ logger = logging.getLogger(__name__)
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# Security enhancements
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+import re
 
 # SQLAlchemy
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func
@@ -65,15 +71,33 @@ from utils.vat_utils import (
 import stripe
 
 # ==================== CONFIG ====================
+# Environment detection
+ENV = os.getenv("ENV", "development")
+PRODUCTION_MODE = os.getenv('PRODUCTION_MODE', 'false').lower() == 'true'
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
 os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
-# JWT settings
+# Security Configuration
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5000,http://localhost:3000,http://127.0.0.1:5000,http://127.0.0.1:3000").split(",")
+
+# JWT settings with enhanced security
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
+if PRODUCTION_MODE and SECRET_KEY == "involinks-secret-key-change-in-production":
+    logger.critical("PRODUCTION ERROR: JWT_SECRET_KEY environment variable must be set to a secure random value")
+    raise ConfigurationError("JWT_SECRET_KEY must be set in production mode")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+
+# Security logger for audit trail
+security_logger = logging.getLogger("security")
+security_handler = logging.FileHandler("security_audit.log")
+security_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+security_logger.addHandler(security_handler)
+security_logger.setLevel(logging.INFO)
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -1099,6 +1123,38 @@ def get_password_hash(password: str) -> str:
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode('utf-8')
 
+def validate_password_strength(password: str) -> dict:
+    """
+    Validate password strength according to security best practices.
+    Returns dict with 'valid' boolean and 'errors' list.
+    """
+    errors = []
+
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters long")
+
+    if not re.search(r"[A-Z]", password):
+        errors.append("Password must contain at least one uppercase letter")
+
+    if not re.search(r"[a-z]", password):
+        errors.append("Password must contain at least one lowercase letter")
+
+    if not re.search(r"\d", password):
+        errors.append("Password must contain at least one number")
+
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        errors.append("Password must contain at least one special character")
+
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors
+    }
+
+def validate_email_format(email: str) -> bool:
+    """Validate email format"""
+    email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    return bool(email_pattern.match(email))
+
 def authenticate_user(email: str, password: str, db: Session):
     """Authenticate user (super admin, company admin, etc) by email and password"""
     user = db.query(UserDB).filter(UserDB.email == email).first()
@@ -1824,13 +1880,58 @@ app = FastAPI(
     description="Multi-tenant UAE e-invoicing platform with registration wizard"
 )
 
+# Initialize rate limiter for security
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS Configuration - Environment-based whitelist
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
 )
+
+# Security Headers Middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses"""
+    response = await call_next(request)
+
+    # Prevent clickjacking
+    response.headers["X-Frame-Options"] = "DENY"
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Enable XSS filter in older browsers
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # Enforce HTTPS in production
+    if PRODUCTION_MODE:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+    # Content Security Policy - Adjust based on your needs
+    # This is a restrictive policy - modify if you need to load external resources
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' https://api.stripe.com; "
+        "frame-src https://js.stripe.com; "
+    )
+
+    # Referrer Policy
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+    # Permissions Policy
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+
+    return response
 
 # Global exception handler for domain exceptions
 @app.exception_handler(InvoLinksException)
@@ -2450,17 +2551,26 @@ class MFALoginResponse(BaseModel):
     role: Optional[str] = None
 
 @app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
-def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """
     Login endpoint - supports MFA (Multi-Factor Authentication)
-    
+
     Flow:
     1. If user has MFA enabled: returns temp_token + mfa_required=True
     2. If user has no MFA: returns access_token directly
+
+    Rate Limited: 5 attempts per minute per IP address
     """
-    
+
     # Try user authentication first (for super admins, company admins, etc)
     user = authenticate_user(payload.email, payload.password, db)
+
+    # Log failed login attempts for security monitoring
+    if not user:
+        security_logger.warning(
+            f"Failed login attempt - Email: {payload.email}, IP: {request.client.host if request.client else 'unknown'}"
+        )
     if user:
         # Check if MFA is enabled
         if user.mfa_enabled:
@@ -2482,11 +2592,16 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         
         # No MFA - return access token directly
         access_token = create_access_token(data={"sub": user.id, "type": "user"})
-        
+
         # Update last login
         user.last_login = datetime.utcnow()
         db.commit()
-        
+
+        # Log successful login for security audit
+        security_logger.info(
+            f"Successful login - User: {user.email}, Role: {user.role.value}, IP: {request.client.host if request.client else 'unknown'}"
+        )
+
         return MFALoginResponse(
             mfa_required=False,
             mfa_method=None,
@@ -2617,14 +2732,17 @@ def verify_mfa_enrollment(
     }
 
 @app.post("/auth/mfa/verify", response_model=MFALoginResponse, tags=["MFA"])
-def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+async def verify_mfa_login(request: Request, payload: MFALoginVerifyRequest, db: Session = Depends(get_db)):
     """
     Verify MFA code during login
-    
+
     Methods supported:
     - totp: 6-digit code from authenticator app
     - email: 6-digit code sent to email
     - backup: 8-digit backup code
+
+    Rate Limited: 5 attempts per minute per IP address
     """
     # Decode temp token
     try:
@@ -2800,8 +2918,13 @@ def send_email_otp(
     }
 
 @app.post("/auth/forgot-password", tags=["Auth"])
-def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)):
-    """Request password reset - sends reset token via email"""
+@limiter.limit("3/hour")
+async def forgot_password(request: Request, payload: PasswordResetRequest, db: Session = Depends(get_db)):
+    """
+    Request password reset - sends reset token via email
+
+    Rate Limited: 3 attempts per hour per IP address to prevent abuse
+    """
     company = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
     
     if not company:
@@ -2841,20 +2964,38 @@ def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)
     return {"message": "If your email is registered, you will receive a password reset link"}
 
 @app.post("/auth/reset-password", tags=["Auth"])
-def reset_password(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
-    """Reset password using token"""
+@limiter.limit("5/hour")
+async def reset_password(request: Request, payload: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """
+    Reset password using token
+
+    Rate Limited: 5 attempts per hour per IP address to prevent brute force
+    """
     company = db.query(CompanyDB).filter(
         CompanyDB.password_reset_token == payload.token
     ).first()
-    
+
     if not company:
         raise HTTPException(400, "Invalid or expired reset token")
-    
+
     if not company.password_reset_expires or company.password_reset_expires < datetime.utcnow():
         raise HTTPException(400, "Reset token has expired")
-    
+
+    # Validate password strength
+    password_validation = validate_password_strength(payload.new_password)
+    if not password_validation["valid"]:
+        raise HTTPException(400, {
+            "message": "Password does not meet security requirements",
+            "errors": password_validation["errors"]
+        })
+
     # Update password
     company.password_hash = get_password_hash(payload.new_password)
+
+    # Log password reset for security audit
+    security_logger.info(
+        f"Password reset successful - Company: {company.email}, IP: {request.client.host if request.client else 'unknown'}"
+    )
     company.password_reset_token = None
     company.password_reset_expires = None
     
