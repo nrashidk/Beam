@@ -1,0 +1,209 @@
+1. What the frontend is doing
+
+On the Company Settings page, when you hit Save, the app does this:
+
+It sends a PUT request to /company/profile
+
+Body looks like:
+
+{
+  "legal_name": "...",
+  "phone": "...",
+  "website": "...",
+  "address_line1": "...",
+  "address_line2": "...",
+  "city": "...",
+  "emirate": "...",
+  "postal_code": "..."
+}
+
+
+It uses your shared Axios client apiClient to send that request. That Axios client automatically attaches the JWT from localStorage as an Authorization: Bearer <token> header. 
+GitHub
+ 
+GitHub
+
+If the request fails, the UI tries to show the server's error message:
+
+setError(error.response?.data?.detail || 'Failed to update company profile')
+
+
+So:
+
+If the backend returns a proper FastAPI error (which always has {"detail": "..."}), you'll see that text.
+
+If the request never reaches the backend (like CORS/network issues), error.response is undefined, so the fallback 'Failed to update company profile' is shown. 
+GitHub
+
+You told me you're seeing the fallback message. That’s an important clue: most likely the browser is blocking the request before it ever hits the API.
+
+Hold that thought 👇
+
+2. What the backend expects
+
+Your backend defines this route:
+
+@app.put("/company/profile")
+def update_company_profile(payload: CompanyProfileUpdateRequest, current_user=Depends(get_current_user_from_header), db=Depends(get_db)):
+    # 1. must be logged in (valid token header)
+    # 2. must have role COMPANY_ADMIN or SUPER_ADMIN
+    # 3. it updates the company fields and commits
+
+
+Some key rules from that code:
+
+You MUST send a valid Authorization: Bearer <token> header so get_current_user_from_header can identify you. Otherwise FastAPI will raise 401 before doing anything.
+
+Your user’s role must be COMPANY_ADMIN or SUPER_ADMIN. If you're, for example, a FINANCE_USER, you get a 403 with the message "Only company admins can update company profile". 
+GitHub
+
+If everything is fine, it updates CompanyDB with the new values (legal_name, phone, website, address_line1, address_line2, city, emirate, postal_code) and commits them. Those exact columns exist on CompanyDB. 
+GitHub
++1
+
+On success it returns:
+
+{
+  "success": true,
+  "message": "Company profile updated successfully",
+  "company": { ...updated fields... }
+}
+
+
+GitHub
+
+So if the request actually hits the API and fails due to permissions, you would see a specific error like:
+
+"Only company admins can update company profile" (403), or
+
+"User is not associated with a company" (400), etc.
+
+GitHub
+
+But you're not seeing that. You're only seeing "Failed to update company profile".
+
+That almost always means the browser blocked the request before the server even got it.
+
+3. Why the browser might be blocking it (this is the main issue)
+
+Your backend enables CORS with an allowed origins list:
+
+ALLOWED_ORIGINS = os.getenv(
+  "ALLOWED_ORIGINS",
+  "http://localhost:5000,http://localhost:3000,http://127.0.0.1:5000,http://127.0.0.1:3000"
+).split(",")
+
+
+GitHub
+
+That means the API will only accept cross-origin requests from those URLs (3000/5000).
+
+But your frontend is a Vite app. By default vite dev runs at http://localhost:5173, not 3000. Your package.json is using plain Vite ("dev": "vite") and there's nothing in what we saw that overrides the port. 
+GitHub
+
+So here's what happens in the browser:
+
+You click Save.
+
+Browser sends a CORS preflight OPTIONS request from http://localhost:5173 to http://localhost:8000/company/profile.
+
+The API doesn't include http://localhost:5173 in Access-Control-Allow-Origin, because it's not in ALLOWED_ORIGINS.
+
+Browser blocks the request for security reasons.
+
+Axios sees "Network Error" with no error.response.
+
+Your React code falls back to 'Failed to update company profile'.
+
+That exactly matches what you're describing.
+
+In other words:
+Your PUT is being killed by CORS, not by FastAPI logic.
+
+4. How to confirm this in your environment
+
+You can double-check in the browser devtools:
+
+Open DevTools → Console.
+If you see something like:
+
+CORS policy: No 'Access-Control-Allow-Origin' header is present...
+then it's 100% this.
+
+Open DevTools → Network tab → click the failed PUT /company/profile request.
+If Status is (canceled) or never shows any response headers from your API, that also means it never made it past CORS.
+
+If instead you see a real HTTP status like 401 or 403 and a JSON body with "detail": "Only company admins can update company profile", then it's a permissions/token issue (see section 5 below). But based on the fallback message you're getting, CORS is more likely.
+
+5. All possible reasons this could fail (ranked most → least likely)
+A. CORS origin mismatch ✅ (most likely)
+
+Frontend is running on http://localhost:5173 (Vite default).
+
+Backend only allows http://localhost:3000, http://localhost:5000, etc. 
+GitHub
+
+Browser blocks the request, UI shows generic "Failed to update company profile".
+
+Fix:
+Update your backend CORS ALLOWED_ORIGINS to include your real frontend origin.
+
+For local dev:
+
+export ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+
+
+(or the equivalent in your .env / deployment config)
+
+Then restart the FastAPI server so that CORSMiddleware picks up the new list.
+
+If you're hosting the frontend somewhere else (e.g. https://my-ui.example.com) you must add that domain instead.
+
+B. You're logged in but with the wrong role
+
+The backend only lets COMPANY_ADMIN and SUPER_ADMIN update the company profile. If you're logged in as some other role (like FINANCE_USER), the API will return 403 with {"detail":"Only company admins can update company profile"}. 
+GitHub
+
+In that case you'd actually see that exact message in the red error box in the UI (because the frontend surfaces error.response.data.detail). 
+GitHub
+
+Since you did not see that specific text, this is probably not your case — but it's good to know.
+
+If it is the case: log in as the original company owner / admin, or promote the user to COMPANY_ADMIN in the DB.
+
+C. Your token is missing / expired
+
+If the Authorization: Bearer <token> header is missing or invalid, FastAPI will reject the request with 401 before touching the update logic. The axios interceptor then clears localStorage and navigates you to /login. 
+GitHub
+
+If you did not get kicked back to login, this is probably not it.
+
+6. TL;DR what you should do right now
+
+Fix CORS:
+
+Add your frontend origin (very likely http://localhost:5173) to ALLOWED_ORIGINS in the backend config.
+
+Restart the backend.
+
+Try saving again.
+
+If it works: you're done ✅
+
+If it fails and now you see a message like Only company admins can update company profile, that means CORS is fixed but your current user doesn’t have the required role. Log in as a COMPANY_ADMIN.
+
+(Optional sanity check) In DevTools → Network, confirm that PUT /company/profile now actually returns 200 with:
+
+{
+  "success": true,
+  "message": "Company profile updated successfully",
+  "company": { ... }
+}
+
+
+That’s what the backend returns on success. 
+GitHub
+
+Bottom line
+
+Your code on both sides matches: the frontend sends the right fields, and the backend accepts those fields. The generic "Failed to update company profile" message you're seeing is almost certainly because the browser is blocking the request due to CORS (frontend origin not whitelisted). Updating ALLOWED_ORIGINS to include the URL where you're actually running Vite should unblock it.
