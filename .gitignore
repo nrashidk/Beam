@@ -56,6 +56,7 @@ invoices_xml/
 
 # Logs
 *.log
+security_audit.log
 
 # OS
 .DS_Store
