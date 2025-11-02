@@ -124,6 +124,50 @@ export default function Homepage() {
           </p>
         </div>
 
+        {/* Who We Are Section */}
+        <div className="bg-gradient-to-br from-indigo-50 to-white rounded-3xl p-12 space-y-6 border border-indigo-100">
+          <div className="text-center space-y-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Who We Are</h2>
+            <div className="w-24 h-1 bg-indigo-600 mx-auto rounded-full"></div>
+          </div>
+
+          <div className="max-w-4xl mx-auto space-y-6 text-gray-700 leading-relaxed">
+            <p className="text-lg">
+              <span className="font-semibold text-indigo-600">InvoLinks</span> is a modern, UAE-based technology company specializing in digital invoicing and financial management solutions. We are dedicated to helping businesses across the United Arab Emirates navigate the complexities of digital transformation in their financial operations.
+            </p>
+
+            <p>
+              Founded with a vision to simplify compliance and streamline financial workflows, InvoLinks has emerged as a trusted partner for businesses seeking to modernize their invoicing and accounts payable processes while maintaining full compliance with UAE Federal Tax Authority (FTA) regulations.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
+              <div className="text-center space-y-3 p-6 bg-white rounded-xl shadow-sm">
+                <div className="text-3xl">🎯</div>
+                <h3 className="font-semibold text-gray-900">Our Mission</h3>
+                <p className="text-sm text-gray-600">
+                  Empower UAE businesses with simple, compliant digital invoicing solutions that eliminate complexity and reduce manual effort.
+                </p>
+              </div>
+
+              <div className="text-center space-y-3 p-6 bg-white rounded-xl shadow-sm">
+                <div className="text-3xl">🚀</div>
+                <h3 className="font-semibold text-gray-900">Our Vision</h3>
+                <p className="text-sm text-gray-600">
+                  Become the leading digital invoicing platform in the UAE and GCC region, setting the standard for innovation and compliance.
+                </p>
+              </div>
+
+              <div className="text-center space-y-3 p-6 bg-white rounded-xl shadow-sm">
+                <div className="text-3xl">💎</div>
+                <h3 className="font-semibold text-gray-900">Our Values</h3>
+                <p className="text-sm text-gray-600">
+                  Simplicity, compliance-first approach, continuous innovation, customer success, transparency, and security.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
@@ -198,6 +242,105 @@ export default function Homepage() {
           </Card>
         </div>
 
+        {/* What We Do Section */}
+        <div className="space-y-8">
+          <div className="text-center space-y-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">What We Do</h2>
+            <div className="w-24 h-1 bg-indigo-600 mx-auto rounded-full"></div>
+            <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+              InvoLinks is a comprehensive, FTA-compliant digital invoicing and accounts payable platform designed specifically for UAE businesses. We provide end-to-end solutions that make compliance simple.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="border-l-4 border-l-indigo-600">
+              <CardContent className="p-8 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Digital E-Invoicing</h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Create fully compliant e-invoices with UBL 2.1 XML generation, automatic VAT calculation, TRN validation, and support for multiple invoice types including Tax Invoice, Credit Note, and Commercial Invoice.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-purple-600">
+              <CardContent className="p-8 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">PEPPOL Network Integration</h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Connect to the global PEPPOL network through accredited providers. Send invoices directly to customer accounting systems with real-time delivery confirmation and automated receipt.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-blue-600">
+              <CardContent className="p-8 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Accounts Payable (AP) Management</h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Complete purchase-to-pay workflow with PO creation, goods receipt notes, automated 3-way matching, variance detection, and comprehensive vendor management with spend analytics.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-l-4 border-l-green-600">
+              <CardContent className="p-8 space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-gray-900 mb-2">Security & Compliance</h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      Enterprise-grade security with RSA-2048 digital signatures, SHA-256 hash chains, multi-factor authentication, immutable audit trails, and full compliance with FTA Phase 2 requirements.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="bg-indigo-600 text-white rounded-2xl p-8 text-center">
+            <h3 className="text-2xl font-bold mb-4">Built Specifically for UAE Businesses</h3>
+            <p className="text-indigo-100 max-w-3xl mx-auto mb-6">
+              Unlike generic international platforms, InvoLinks is purpose-built for the UAE market with FTA Phase 2 compliance, UAE VAT rules, TRN validation, and local support that understands your business needs.
+            </p>
+            <div className="flex flex-wrap justify-center gap-4 text-sm">
+              <Badge className="bg-white text-indigo-600 hover:bg-indigo-50">FTA Phase 2 Ready</Badge>
+              <Badge className="bg-white text-indigo-600 hover:bg-indigo-50">UAE VAT Compliant</Badge>
+              <Badge className="bg-white text-indigo-600 hover:bg-indigo-50">PEPPOL Certified</Badge>
+              <Badge className="bg-white text-indigo-600 hover:bg-indigo-50">Multi-Currency Support</Badge>
+              <Badge className="bg-white text-indigo-600 hover:bg-indigo-50">Local Support Team</Badge>
+            </div>
+          </div>
+        </div>
+
         {/* Trusted by Leading Brands */}
         <div className="space-y-8">
           <h2 className="text-2xl font-semibold text-center text-gray-900">Trusted by Leading Brands</h2>
@@ -238,6 +381,127 @@ export default function Homepage() {
               {publicStats.totalInvoices > 0 ? publicStats.totalInvoices.toLocaleString() : '—'}
             </div>
             <p className="text-sm text-gray-700">e-Invoices generated on InvoLinks platform</p>
+          </div>
+        </div>
+
+        {/* Why Choose InvoLinks Section */}
+        <div className="space-y-8">
+          <div className="text-center space-y-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Why Choose InvoLinks?</h2>
+            <div className="w-24 h-1 bg-indigo-600 mx-auto rounded-full"></div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">100% UAE Compliant</h3>
+                <p className="text-sm text-gray-600">
+                  Purpose-built for UAE businesses with FTA Phase 2 ready compliance, UAE VAT rules, and 15-digit TRN validation built-in from day one.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-green-500 to-teal-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Transparent Pricing</h3>
+                <p className="text-sm text-gray-600">
+                  Start free with 10 invoices/month. No hidden fees, no setup costs, no per-user charges. Scale as you grow with clear, predictable pricing.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Modern Technology</h3>
+                <p className="text-sm text-gray-600">
+                  Built with cutting-edge React and FastAPI for lightning-fast performance, real-time sync, and 99.9% uptime reliability you can count on.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Local Support</h3>
+                <p className="text-sm text-gray-600">
+                  UAE-based support team that understands your business needs, timezone, and regulatory environment. We're here when you need us.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Bank-Grade Security</h3>
+                <p className="text-sm text-gray-600">
+                  RSA-2048 digital signatures, SHA-256 hash chains, multi-factor authentication, and encrypted data storage protect your financial information.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white hover:shadow-xl transition-shadow">
+              <CardContent className="p-8 text-center space-y-4">
+                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-yellow-500 to-amber-600 rounded-2xl flex items-center justify-center">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900">Future-Ready Platform</h3>
+                <p className="text-sm text-gray-600">
+                  Continuous updates, API access, export flexibility, and a transparent roadmap ensure your investment grows with your business needs.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl p-1">
+            <div className="bg-white rounded-xl p-8">
+              <div className="text-center space-y-4">
+                <h3 className="text-2xl font-bold text-gray-900">Ready to Transform Your Invoicing?</h3>
+                <p className="text-gray-600 max-w-2xl mx-auto">
+                  Join hundreds of UAE businesses that trust InvoLinks for compliant, efficient digital invoicing. Start free today—no credit card required.
+                </p>
+                <div className="flex flex-wrap justify-center gap-4 pt-4">
+                  <Button
+                    size="lg"
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                    onClick={() => document.getElementById('signup')?.scrollIntoView({ behavior: 'smooth' })}
+                  >
+                    Start Free Trial
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => navigate('/pricing')}
+                  >
+                    View Pricing
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
