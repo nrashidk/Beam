@@ -70,10 +70,15 @@ export default function CompanyInfoEditDialog({ open, onOpenChange, company, onS
       await apiClient.put('/company/profile', formData);
       setSuccess('Company profile updated successfully!');
       
+      // Call onSave callback immediately to refresh parent data
+      if (onSave) {
+        await onSave();
+      }
+      
+      // Close dialog after a short delay to show success message
       setTimeout(() => {
         setSuccess('');
         onOpenChange(false);
-        if (onSave) onSave();
       }, 1500);
     } catch (error) {
       console.error('Failed to update company profile:', error);

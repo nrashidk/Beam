@@ -208,6 +208,7 @@ class CompanyDB(Base):
     # VAT Registration (Opt-In Model - Phase 1)
     vat_enabled = Column(Boolean, default=False)  # Toggle for VAT registration
     vat_registration_date = Column(Date, nullable=True)  # When business became VAT-registered
+    vat_certificate_path = Column(String, nullable=True)  # Path to uploaded VAT certificate PDF
     
     # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
     mfa_enabled = Column(Boolean, default=False)
@@ -1509,6 +1510,7 @@ class InvoiceLineItemCreate(BaseModel):
     unit_price: float
     tax_category: TaxCategory
     tax_percent: float = 5.0  # UAE standard VAT rate
+    tax_code: Optional[str] = "SR"  # UAE tax code (SR, ZR, ES, RC, OP) - Optional for non-VAT
 
 class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType
@@ -4134,6 +4136,7 @@ def create_invoice(
             line_extension_amount=totals["line_extension_amount"],
             tax_category=line_item.tax_category,
             tax_percent=line_item.tax_percent,
+            tax_code=line_item.tax_code,  # Save UAE tax code
             tax_amount=totals["tax_amount"],
             line_total_amount=totals["line_total_amount"]
         )
@@ -8125,7 +8128,8 @@ def get_vat_settings(
         "vat_enabled": company.vat_enabled or False,
         "tax_registration_number": company.trn if company.vat_enabled else None,
         "vat_registration_date": company.vat_registration_date.isoformat() if company.vat_registration_date else None,
-        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None
+        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None,
+        "vat_certificate_uploaded": company.vat_certificate_path is not None
     }
 
 @app.put("/settings/vat", tags=["Settings"])
@@ -8190,6 +8194,85 @@ def update_vat_settings(
             "message": "VAT registration disabled",
             "vat_enabled": False
         }
+
+@app.post("/settings/vat/certificate", tags=["Settings"])
+async def upload_vat_certificate(
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Upload VAT registration certificate (PDF only)"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Validate file type
+    if file.content_type != "application/pdf":
+        raise HTTPException(400, "Only PDF files are allowed")
+    
+    # Read file contents
+    contents = await file.read()
+    
+    # Validate file size (max 5MB)
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(400, "File size must be less than 5MB")
+    
+    # Delete old certificate if exists
+    if company.vat_certificate_path:
+        old_file_path = os.path.join(ARTIFACT_ROOT, company.vat_certificate_path)
+        if os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+            except Exception as e:
+                print(f"Warning: Failed to delete old certificate: {e}")
+    
+    # Create certificates directory
+    cert_dir = os.path.join("vat_certificates", company.id)
+    full_cert_dir = os.path.join(ARTIFACT_ROOT, cert_dir)
+    os.makedirs(full_cert_dir, exist_ok=True)
+    
+    # Generate unique filename
+    file_name = f"vat_certificate_{uuid4().hex[:8]}.pdf"
+    relative_path = os.path.join(cert_dir, file_name)
+    full_path = os.path.join(ARTIFACT_ROOT, relative_path)
+    
+    # Save file
+    with open(full_path, 'wb') as f:
+        f.write(contents)
+    
+    # Update company record with relative path
+    company.vat_certificate_path = relative_path
+    db.commit()
+    db.refresh(company)
+    
+    return {
+        "success": True,
+        "message": "VAT certificate uploaded successfully"
+    }
+
+@app.get("/settings/vat/certificate", tags=["Settings"])
+def download_vat_certificate(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Download VAT registration certificate"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    if not company.vat_certificate_path:
+        raise HTTPException(404, "No certificate uploaded")
+    
+    file_path = os.path.join(ARTIFACT_ROOT, company.vat_certificate_path)
+    
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "Certificate file not found")
+    
+    return FileResponse(
+        file_path,
+        media_type="application/pdf",
+        filename="vat_certificate.pdf"
+    )
 
 # ==================== BILLING & SUBSCRIPTIONS ====================
 

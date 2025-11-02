@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { ArrowLeft, CheckCircle, Info, FileText } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Info, FileText, Upload } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -28,12 +28,17 @@ export default function VATSettings() {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [certificateFile, setCertificateFile] = useState(null);
+  const [uploadingCert, setUploadingCert] = useState(false);
   
   const [settings, setSettings] = useState({
     vat_enabled: false,
     tax_registration_number: '',
     vat_registration_date: '',
-    formatted_trn: null
+    formatted_trn: null,
+    vat_certificate_uploaded: false
   });
 
   useEffect(() => {
@@ -49,7 +54,8 @@ export default function VATSettings() {
         vat_enabled: response.data.vat_enabled || false,
         tax_registration_number: response.data.tax_registration_number || '',
         vat_registration_date: response.data.vat_registration_date || '',
-        formatted_trn: response.data.formatted_trn
+        formatted_trn: response.data.formatted_trn,
+        vat_certificate_uploaded: response.data.vat_certificate_uploaded || false
       });
     } catch (error) {
       console.error('Failed to fetch VAT settings:', error);
@@ -58,8 +64,51 @@ export default function VATSettings() {
     }
   };
 
+  const handleCertificateUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type (PDF only)
+    if (file.type !== 'application/pdf') {
+      setError('Please upload a PDF file');
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File size must be less than 5MB');
+      return;
+    }
+
+    setUploadingCert(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post(`${API_URL}/settings/vat/certificate`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      setSuccess('VAT certificate uploaded successfully!');
+      await fetchSettings();
+      setCertificateFile(null);
+    } catch (error) {
+      setError(error.response?.data?.detail || 'Failed to upload certificate');
+    } finally {
+      setUploadingCert(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
+    setError('');
+    setSuccess('');
     
     try {
       const payload = {
@@ -91,7 +140,7 @@ export default function VATSettings() {
       });
 
       setSuccess(response.data.message || 'VAT settings saved successfully!');
-      fetchSettings();
+      await fetchSettings();
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to save settings');
     } finally {
@@ -143,6 +192,20 @@ export default function VATSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
+                    <Info className="text-red-600 flex-shrink-0" size={20} />
+                    <p className="text-sm text-red-800">{error}</p>
+                  </div>
+                )}
+
+                {success && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center gap-3">
+                    <CheckCircle className="text-green-600 flex-shrink-0" size={20} />
+                    <p className="text-sm text-green-800">{success}</p>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex-1">
                     <div className="font-semibold text-gray-900">My business is VAT-registered</div>
@@ -155,7 +218,11 @@ export default function VATSettings() {
                       type="checkbox"
                       className="sr-only peer"
                       checked={settings.vat_enabled}
-                      onChange={(e) => setSettings({ ...settings, vat_enabled: e.target.checked })}
+                      onChange={(e) => {
+                        setSettings({ ...settings, vat_enabled: e.target.checked });
+                        setError('');
+                        setSuccess('');
+                      }}
                     />
                     <div className="w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
                   </label>
@@ -175,6 +242,8 @@ export default function VATSettings() {
                         onChange={(e) => {
                           const value = e.target.value.replace(/\D/g, '');
                           setSettings({ ...settings, tax_registration_number: value });
+                          setError('');
+                          setSuccess('');
                         }}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-lg"
                       />
@@ -195,11 +264,48 @@ export default function VATSettings() {
                       <input
                         type="date"
                         value={settings.vat_registration_date}
-                        onChange={(e) => setSettings({ ...settings, vat_registration_date: e.target.value })}
+                        onChange={(e) => {
+                          setSettings({ ...settings, vat_registration_date: e.target.value });
+                          setError('');
+                          setSuccess('');
+                        }}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                       <p className="mt-2 text-sm text-gray-600">
                         The date your business became VAT-registered with the FTA
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        VAT Registration Certificate (Optional)
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors">
+                          <Upload size={20} className="text-gray-500" />
+                          <span className="text-sm text-gray-600">
+                            {certificateFile ? certificateFile.name : 'Choose PDF file (max 5MB)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={handleCertificateUpload}
+                            className="hidden"
+                            disabled={uploadingCert}
+                          />
+                        </label>
+                        {uploadingCert && (
+                          <span className="text-sm text-blue-600">Uploading...</span>
+                        )}
+                      </div>
+                      {settings.vat_certificate_uploaded && (
+                        <p className="mt-2 text-sm text-green-700 font-medium flex items-center gap-2">
+                          <CheckCircle size={16} />
+                          Certificate uploaded
+                        </p>
+                      )}
+                      <p className="mt-2 text-sm text-gray-600">
+                        Upload your FTA VAT registration certificate (PDF format only)
                       </p>
                     </div>
 
@@ -237,29 +343,6 @@ export default function VATSettings() {
                 </div>
               </CardContent>
             </Card>
-
-            {settings.vat_enabled && (
-              <Card className="border-green-200 bg-green-50">
-                <CardContent className="pt-6">
-                  <div className="flex gap-4">
-                    <CheckCircle className="text-green-600 flex-shrink-0" size={24} />
-                    <div>
-                      <h3 className="font-semibold text-green-900 mb-2">VAT Registration Active</h3>
-                      <p className="text-sm text-green-800">
-                        Your business is configured as VAT-registered. All invoices will include your TRN 
-                        and comply with UAE Federal Tax Authority requirements.
-                      </p>
-                      {settings.formatted_trn && (
-                        <div className="mt-3 p-3 bg-white rounded border border-green-200">
-                          <p className="text-xs text-green-700 font-medium mb-1">Your TRN</p>
-                          <p className="text-lg font-mono text-green-900">{settings.formatted_trn}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       </div>
