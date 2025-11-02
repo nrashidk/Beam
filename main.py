@@ -8467,6 +8467,51 @@ async def get_current_subscription(
         created_at=subscription.created_at.isoformat()
     )
 
+@app.get("/subscription/current", tags=["Subscriptions"])
+def get_subscription_plan_info(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get current subscription plan with tier limits"""
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    # Check for active paid subscription
+    subscription = db.query(SubscriptionDB).filter(
+        SubscriptionDB.company_id == current_user.company_id,
+        SubscriptionDB.status == "ACTIVE"
+    ).first()
+    
+    if subscription:
+        # Return paid plan details
+        tier_limits = {
+            "BASIC": {"name": "Basic", "max_business_admins": 2, "max_finance_users": 5},
+            "PRO": {"name": "Pro", "max_business_admins": 5, "max_finance_users": 15},
+            "ENTERPRISE": {"name": "Enterprise", "max_business_admins": 999, "max_finance_users": 999}
+        }
+        plan_info = tier_limits.get(subscription.tier, tier_limits["BASIC"])
+        return {
+            "plan": {
+                "name": plan_info["name"],
+                "tier": subscription.tier,
+                "max_business_admins": plan_info["max_business_admins"],
+                "max_finance_users": plan_info["max_finance_users"]
+            },
+            "status": "ACTIVE"
+        }
+    else:
+        # Return free trial limits
+        return {
+            "plan": {
+                "name": "Free Trial",
+                "tier": "TRIAL",
+                "max_business_admins": 1,
+                "max_finance_users": 3
+            },
+            "status": company.trial_status or "ACTIVE"
+        }
+
 @app.post("/billing/subscribe", tags=["Billing"])
 async def create_subscription(
     tier: str = Form(...),  # BASIC, PRO, ENTERPRISE
