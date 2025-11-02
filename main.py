@@ -3025,7 +3025,7 @@ def update_company_profile(
             "address_line2": company.address_line2,
             "city": company.city,
             "emirate": company.emirate,
-            "postal_code": company.postal_code
+            "po_box": company.po_box
         }
     }
 
