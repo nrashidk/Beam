@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiClient } from '../lib/api';
+import { apiClient, getApiBaseUrl } from '../lib/api';
 import { ArrowLeft, Upload, X, CheckCircle, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
@@ -29,12 +29,13 @@ export default function CompanyBranding() {
       const response = await apiClient.get(`/companies/${user.company_id}/branding`);
       setBranding(response.data);
       
-      // Set preview URLs
+      // Set preview URLs using API base URL helper
+      const apiBase = getApiBaseUrl();
       if (response.data.logo_file_name) {
-        setLogoPreview(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${user.company_id}/branding/logo?t=${Date.now()}`);
+        setLogoPreview(`${apiBase}/companies/${user.company_id}/branding/logo?t=${Date.now()}`);
       }
       if (response.data.stamp_file_name) {
-        setStampPreview(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${user.company_id}/branding/stamp?t=${Date.now()}`);
+        setStampPreview(`${apiBase}/companies/${user.company_id}/branding/stamp?t=${Date.now()}`);
       }
     } catch (error) {
       // Failed to load branding (404 is expected when no branding exists yet)

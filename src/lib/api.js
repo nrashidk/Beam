@@ -4,6 +4,18 @@ import axios from 'axios';
 // Vite proxy will route /auth, /admin, etc. to the backend at localhost:8000
 const API_BASE_URL = '';
 
+// Helper function to get the full API URL for direct resource access (images, files)
+// In dev: returns empty string to use Vite proxy
+// In prod: returns VITE_API_URL if set, otherwise empty string for same-origin
+export const getApiBaseUrl = () => {
+  // In production, use the configured API URL if available
+  if (import.meta.env.PROD && import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  // In development or same-origin production, use empty string (relies on proxy/same-origin)
+  return '';
+};
+
 // Create a base axios instance with default configuration
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
