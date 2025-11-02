@@ -33,7 +33,14 @@ export default function Homepage() {
     email: '',
     company_name: '',
     phone: '',
+    website: '',
     password: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    emirate: '',
+    po_box: '',
+    trn: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -77,12 +84,31 @@ export default function Homepage() {
         company_name: formData.company_name,
         business_type: 'LLC',
         phone: formData.phone,
+        website: formData.website,
         password: formData.password,
+        address_line1: formData.address_line1,
+        address_line2: formData.address_line2,
+        city: formData.city,
+        emirate: formData.emirate,
+        po_box: formData.po_box,
+        trn: formData.trn,
       });
 
       if (response.data.success) {
         setSuccess(true);
-        setFormData({ email: '', company_name: '', phone: '', password: '' });
+        setFormData({ 
+          email: '', 
+          company_name: '', 
+          phone: '', 
+          website: '',
+          password: '', 
+          address_line1: '',
+          address_line2: '',
+          city: '',
+          emirate: '',
+          po_box: '',
+          trn: '',
+        });
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');
@@ -276,46 +302,158 @@ export default function Homepage() {
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl mx-auto">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Legal Name <span className="text-red-500">*</span>
-                      </label>
-                      <Input
-                        type="text"
-                        required
-                        placeholder="Your Company LLC"
-                        minLength={3}
-                        value={formData.company_name}
-                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
-                      />
-                    </div>
+                <form onSubmit={handleSubmit} className="space-y-6 max-w-3xl mx-auto">
+                  {/* Company Information Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Company Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Legal Name <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                          type="text"
+                          required
+                          placeholder="Your Company LLC"
+                          minLength={3}
+                          value={formData.company_name}
+                          onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Phone Number <span className="text-red-500">*</span>
-                      </label>
-                      <PhoneInput
-                        required
-                        name="phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Phone Number <span className="text-red-500">*</span>
+                        </label>
+                        <PhoneInput
+                          required
+                          name="phone"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-sm font-medium mb-1">
-                        Work Email <span className="text-red-500">*</span>
-                      </label>
-                      <EmailInput
-                        required
-                        name="email"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      />
-                    </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Work Email <span className="text-red-500">*</span>
+                        </label>
+                        <EmailInput
+                          required
+                          name="email"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        />
+                      </div>
 
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Website
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder="www.example.com"
+                          value={formData.website}
+                          onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1">
+                          Tax Registration Number (TRN)
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder="15-digit TRN (optional)"
+                          maxLength={15}
+                          value={formData.trn}
+                          onChange={(e) => setFormData({ ...formData, trn: e.target.value })}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Leave blank if not VAT-registered</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Address Information Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Address Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1">
+                          Address Line 1 <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                          type="text"
+                          required
+                          placeholder="Building name, floor, office number"
+                          value={formData.address_line1}
+                          onChange={(e) => setFormData({ ...formData, address_line1: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1">
+                          Address Line 2
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder="Street name, area (optional)"
+                          value={formData.address_line2}
+                          onChange={(e) => setFormData({ ...formData, address_line2: e.target.value })}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          City <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                          type="text"
+                          required
+                          placeholder="Enter city"
+                          value={formData.city}
+                          onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-1">
+                          Emirate <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          value={formData.emirate}
+                          onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
+                        >
+                          <option value="">Select Emirate</option>
+                          <option value="Abu Dhabi">Abu Dhabi</option>
+                          <option value="Dubai">Dubai</option>
+                          <option value="Sharjah">Sharjah</option>
+                          <option value="Ajman">Ajman</option>
+                          <option value="Umm Al Quwain">Umm Al Quwain</option>
+                          <option value="Ras Al Khaimah">Ras Al Khaimah</option>
+                          <option value="Fujairah">Fujairah</option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1">
+                          P.O. Box <span className="text-red-500">*</span>
+                        </label>
+                        <Input
+                          type="text"
+                          required
+                          placeholder="Enter P.O. Box"
+                          value={formData.po_box}
+                          onChange={(e) => setFormData({ ...formData, po_box: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security Section */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Security</h3>
                     <div>
                       <label className="block text-sm font-medium mb-1">
                         Password <span className="text-red-500">*</span>
@@ -329,8 +467,8 @@ export default function Homepage() {
                     </div>
                   </div>
 
-                  <div className="flex justify-center pt-2">
-                    <Button type="submit" className="w-full max-w-xs" disabled={loading}>
+                  <div className="flex justify-center pt-4">
+                    <Button type="submit" className="w-full max-w-md" disabled={loading}>
                       {loading ? 'Creating Account...' : 'Create Account →'}
                     </Button>
                   </div>
