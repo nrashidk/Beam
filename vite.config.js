@@ -74,6 +74,10 @@ export default defineConfig({
       '/content': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+      },
+      '/analytics': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       }
     }
   },
@@ -143,6 +147,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/content': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/analytics': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       }
