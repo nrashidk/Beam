@@ -40,6 +40,9 @@ export default function VATSettings() {
     formatted_trn: null,
     vat_certificate_uploaded: false
   });
+  
+  // Track if VAT is actually active (saved in database)
+  const [isVatActive, setIsVatActive] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -50,13 +53,19 @@ export default function VATSettings() {
       const response = await axios.get(`${API_URL}/settings/vat`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      const vatEnabled = response.data.vat_enabled || false;
+      const hasTrn = !!response.data.tax_registration_number;
+      
       setSettings({
-        vat_enabled: response.data.vat_enabled || false,
+        vat_enabled: vatEnabled,
         tax_registration_number: response.data.tax_registration_number || '',
         vat_registration_date: response.data.vat_registration_date || '',
         formatted_trn: response.data.formatted_trn,
         vat_certificate_uploaded: response.data.vat_certificate_uploaded || false
       });
+      
+      // VAT is truly active only if enabled AND has TRN saved in database
+      setIsVatActive(vatEnabled && hasTrn);
     } catch (error) {
       console.error('Failed to fetch VAT settings:', error);
     } finally {
@@ -139,8 +148,14 @@ export default function VATSettings() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
+      // Show temporary success message
       setSuccess(response.data.message || 'VAT settings saved successfully!');
+      
+      // Refresh settings from database
       await fetchSettings();
+      
+      // Clear temporary success message after 3 seconds
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to save settings');
     } finally {
@@ -219,9 +234,14 @@ export default function VATSettings() {
                       className="sr-only peer"
                       checked={settings.vat_enabled}
                       onChange={(e) => {
-                        setSettings({ ...settings, vat_enabled: e.target.checked });
+                        const enabled = e.target.checked;
+                        setSettings({ ...settings, vat_enabled: enabled });
                         setError('');
                         setSuccess('');
+                        // Clear active state when user toggles off (banner will disappear)
+                        if (!enabled) {
+                          setIsVatActive(false);
+                        }
                       }}
                     />
                     <div className="w-14 h-7 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-blue-600"></div>
@@ -343,6 +363,23 @@ export default function VATSettings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* VAT Registration Active Banner - Only shown after successful save */}
+            {isVatActive && (
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="pt-6">
+                  <div className="flex gap-4">
+                    <CheckCircle className="text-green-600 flex-shrink-0" size={24} />
+                    <div className="space-y-1">
+                      <h3 className="font-semibold text-green-900">VAT Registration Active</h3>
+                      <p className="text-sm text-green-800">
+                        Your business is configured as VAT-registered. All invoices will include your TRN and comply with UAE Federal Tax Authority requirements.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

@@ -8124,11 +8124,13 @@ def get_vat_settings(
     if not company:
         raise HTTPException(404, "Company not found")
     
+    # Always return TRN if it exists, regardless of vat_enabled status
+    # This preserves TRN data if user temporarily disables VAT
     return {
         "vat_enabled": company.vat_enabled or False,
-        "tax_registration_number": company.trn if company.vat_enabled else None,
+        "tax_registration_number": company.trn or '',
         "vat_registration_date": company.vat_registration_date.isoformat() if company.vat_registration_date else None,
-        "formatted_trn": format_trn(company.trn) if company.trn and company.vat_enabled else None,
+        "formatted_trn": format_trn(company.trn) if company.trn else None,
         "vat_certificate_uploaded": company.vat_certificate_path is not None
     }
 
