@@ -1,0 +1,232 @@
+Backend fixes (FastAPI)
+1) Company profile: allow enabling VAT (and require TRN only then)
+
+Make sure your update endpoint lets you toggle vat_enabled and only then requires a TRN.
+
+# app/schemas/company.py
+from pydantic import BaseModel, model_validator
+from typing import Optional
+
+class CompanyProfileUpdateRequest(BaseModel):
+    legal_name: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    vat_enabled: Optional[bool] = None
+    trn: Optional[str] = None
+
+    @model_validator(mode="after")
+    def trn_required_if_vat_enabled(self):
+        # Only enforce TRN if we're enabling VAT *in this request*
+        if self.vat_enabled is True and not (self.trn and self.trn.strip()):
+            raise ValueError("TRN is required when enabling VAT.")
+        return self
+
+# app/routers/company.py (update handler body—core bits)
+if payload.vat_enabled is not None:
+    company.vat_enabled = payload.vat_enabled
+
+# If enabling VAT now, persist TRN
+if payload.vat_enabled is True and payload.trn:
+    company.trn = payload.trn.strip()
+
+# If explicitly disabling VAT, we can keep TRN in DB (harmless), or clear it if you prefer:
+# if payload.vat_enabled is False:
+#     company.trn = None
+
+
+Result: You can save company info when VAT is OFF (no TRN needed). When you turn VAT ON, the same request must include a TRN.
+
+2) Invoice create: support both “COMMERCIAL” (no VAT) and “TAX” (with VAT)
+
+Introduce an invoice_type and gate validations by it.
+
+# app/schemas/invoice.py
+from pydantic import BaseModel
+from typing import Optional, Literal, List
+from datetime import date
+
+class InvoiceItemIn(BaseModel):
+    item_description: str
+    quantity: float
+    unit_price: float
+    tax_percent: Optional[float] = None
+    tax_code: Optional[str] = None
+
+class InvoiceCreate(BaseModel):
+    invoice_type: Literal["COMMERCIAL", "TAX"] = "COMMERCIAL"
+    issue_date: date
+    due_date: Optional[date] = None
+    currency: Optional[str] = "AED"
+    customer_name: str
+    customer_email: Optional[str] = None
+    customer_trn: Optional[str] = None
+    notes: Optional[str] = None
+    items: List[InvoiceItemIn]
+
+# app/routers/invoices.py (create handler—key logic)
+if payload.invoice_type == "TAX":
+    # Must be a VAT-enabled company with TRN
+    if not company.vat_enabled:
+        raise HTTPException(status_code=400, detail="Company VAT is not enabled; cannot issue a TAX invoice.")
+    if not company.trn:
+        raise HTTPException(status_code=400, detail="Company TRN is required to issue a TAX invoice.")
+else:
+    # COMMERCIAL invoice: ignore any tax fields client may send
+    # and never require TRNs
+    pass
+
+subtotal = 0.0
+tax_total = 0.0
+items_db: list[InvoiceItemDB] = []
+
+for it in payload.items:
+    qty = float(it.quantity or 0)
+    price = float(it.unit_price or 0)
+    line_subtotal = qty * price
+
+    if payload.invoice_type == "TAX":
+        tax_pct = float(it.tax_percent or 0)
+        line_tax = (line_subtotal * tax_pct) / 100.0
+    else:
+        tax_pct = 0.0
+        line_tax = 0.0
+
+    subtotal += line_subtotal
+    tax_total += line_tax
+
+    items_db.append(InvoiceItemDB(
+        description=it.item_description,
+        quantity=qty,
+        unit_price=price,
+        tax_percent=tax_pct if payload.invoice_type == "TAX" else 0.0,
+        tax_code=it.tax_code if payload.invoice_type == "TAX" else None,
+        line_subtotal=line_subtotal,
+        line_tax=line_tax,
+    ))
+
+total = subtotal + tax_total
+
+inv = InvoiceDB(
+    # ...
+    invoice_type=payload.invoice_type,             # add this column if not present
+    subtotal=subtotal,
+    tax_total=tax_total if payload.invoice_type == "TAX" else 0.0,
+    total=total if payload.invoice_type == "TAX" else subtotal,
+    vat_enabled_at_issue=company.vat_enabled,      # optional audit column
+    trn=company.trn if payload.invoice_type == "TAX" else None,
+    customer_trn=payload.customer_trn if payload.invoice_type == "TAX" else None,
+)
+
+
+Result:
+
+COMMERCIAL: saves fine when VAT is OFF (no TRN/tax required; any sent tax is ignored).
+
+TAX: only allowed when VAT is ON and company TRN exists; tax math applied.
+
+DB tweaks (if needed)
+
+Add invoice_type enum/text column with values COMMERCIAL/TAX (default COMMERCIAL).
+
+Optionally add vat_enabled_at_issue (bool) to freeze the context at issue time.
+
+Frontend fixes
+3) Read VAT flag and lock the UI accordingly
+// src/features/company/api.ts
+export function fetchMyCompany() {
+  return apiClient.get("/company/me").then(r => r.data);
+}
+
+// src/features/invoices/CreateInvoice.tsx
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchMyCompany } from "@/features/company/api";
+import { createInvoice } from "./api";
+
+const toNum = (v:any) => {
+  const n = parseFloat(v as any);
+  return Number.isFinite(n) ? n : 0;
+};
+
+export default function CreateInvoice() {
+  const qc = useQueryClient();
+  const { data: company } = useQuery({ queryKey: ["company"], queryFn: fetchMyCompany });
+
+  const { mutate: saveInvoice } = useMutation({
+    mutationFn: createInvoice,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
+  });
+
+  const handleSubmit = (values:any) => {
+    const vatEnabled = !!company?.vat_enabled;
+
+    // If VAT is off, force COMMERCIAL & strip tax fields
+    const invoice_type = vatEnabled ? (values.invoice_type || "TAX") : "COMMERCIAL";
+
+    const items = values.items.map((it:any) => ({
+      item_description: it.item_description,
+      quantity: toNum(it.quantity),
+      unit_price: toNum(it.unit_price),
+      tax_percent: vatEnabled && invoice_type === "TAX" ? toNum(it.tax_percent) : 0,
+      tax_code: vatEnabled && invoice_type === "TAX" ? it.tax_code || null : null,
+    }));
+
+    const payload = {
+      invoice_type,
+      issue_date: values.issue_date,      // "YYYY-MM-DD"
+      due_date: values.due_date || null,
+      currency: values.currency || "AED",
+      customer_name: values.customer_name,
+      customer_email: values.customer_email || null,
+      customer_trn: vatEnabled && invoice_type === "TAX" ? (values.customer_trn || null) : null,
+      notes: values.notes || null,
+      items,
+    };
+
+    saveInvoice(payload);
+  };
+
+  // UI behavior:
+  // - If !company?.vat_enabled: hide invoice_type selector and tax inputs, or render them disabled
+  // - If vat_enabled: show invoice_type selector; when "TAX" is chosen, show tax fields
+}
+
+
+Form UX
+
+When VAT is disabled: hide (or disable) “Tax invoice” option and all tax fields. Everything saves as COMMERCIAL.
+
+When VAT is enabled: show an “Invoice type” selector with COMMERCIAL and TAX. Show TRN-related fields when TAX is selected.
+
+Quick self-checks
+
+COMMERCIAL while VAT OFF
+
+Request has invoice_type=COMMERCIAL, tax_percent ignored server-side.
+
+Response 201 with tax_total=0, total=subtotal.
+
+TAX while VAT OFF
+
+Server returns 400 “Company VAT is not enabled; cannot issue a TAX invoice.” (correct).
+
+Enable VAT
+
+PUT /company/profile with { "vat_enabled": true, "trn": "1000-XXXX-XXXX-XXX" } succeeds.
+
+GET /company/me reflects vat_enabled=true & trn set.
+
+TAX while VAT ON
+
+Server accepts, computes tax lines, requires company TRN, optionally customer TRN.
+
+Why you were blocked before
+
+Validation likely enforced TRN/tax even when creating a non-tax invoice or when company VAT was off.
+
+Frontend probably still sent tax_percent/tax_code, causing server-side validation/logic to choke.
+
+No invoice_type to distinguish commercial vs tax paths.
+
+The changes above remove those conflicts: COMMERCIAL ignores tax, TAX enforces VAT+TRN.
+
+If you paste in these snippets and (if needed) add the invoice_type column, both scenarios should work immediately.
