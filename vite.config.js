@@ -2,6 +2,17 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Shared proxy configuration
+const proxyConfig = {
+  target: 'http://localhost:8000',
+  changeOrigin: true,
+}
+
+const apiProxyConfig = {
+  ...proxyConfig,
+  rewrite: (path) => path.replace(/^\/api/, '')
+}
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -14,146 +25,50 @@ export default defineConfig({
     port: 5000,
     allowedHosts: true,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      },
-      '/auth': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/admin': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/companies': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/company': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/register': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/plans': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/billing': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/invoices': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/inward-invoices': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/purchase-orders': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/vendors': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/templates': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/settings': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/content': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/analytics': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      }
+      '/api': apiProxyConfig,
+      '/auth': proxyConfig,
+      '/admin': proxyConfig,
+      '/companies': proxyConfig,
+      '/company': proxyConfig,
+      '/register': proxyConfig,
+      '/plans': proxyConfig,
+      '/billing': proxyConfig,
+      '/invoices': proxyConfig,
+      '/inward-invoices': proxyConfig,
+      '/purchase-orders': proxyConfig,
+      '/vendors': proxyConfig,
+      '/templates': proxyConfig,
+      '/settings': proxyConfig,
+      '/content': proxyConfig,
+      '/analytics': proxyConfig
     }
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    sourcemap: false,
+    chunkSizeWarningLimit: 1000,
   },
   preview: {
     host: '0.0.0.0',
     port: 5000,
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
-      },
-      '/auth': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/admin': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/companies': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/company': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/register': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/plans': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/billing': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/invoices': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/inward-invoices': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/purchase-orders': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/vendors': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/templates': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/settings': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/content': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/analytics': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      }
+      '/api': apiProxyConfig,
+      '/auth': proxyConfig,
+      '/admin': proxyConfig,
+      '/companies': proxyConfig,
+      '/company': proxyConfig,
+      '/register': proxyConfig,
+      '/plans': proxyConfig,
+      '/billing': proxyConfig,
+      '/invoices': proxyConfig,
+      '/inward-invoices': proxyConfig,
+      '/purchase-orders': proxyConfig,
+      '/vendors': proxyConfig,
+      '/templates': proxyConfig,
+      '/settings': proxyConfig,
+      '/content': proxyConfig,
+      '/analytics': proxyConfig
     }
   }
 })

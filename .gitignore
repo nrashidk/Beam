@@ -23,7 +23,12 @@ wheels/
 node_modules/
 dist/
 .vite/
+.cache/
 *.local
+
+# Build outputs
+build/
+*.map
 
 # Virtual environments
 venv/
