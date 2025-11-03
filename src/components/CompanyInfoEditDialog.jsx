@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { apiClient } from '../lib/api';
-import { Save, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { companyAPI } from '../lib/api';
+import { Save, AlertCircle, CheckCircle } from 'lucide-react';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
@@ -17,8 +17,7 @@ const EMIRATES = [
 ];
 
 export default function CompanyInfoEditDialog({ open, onOpenChange, company, onSave }) {
-  const { user } = useAuth();
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({
@@ -47,6 +46,27 @@ export default function CompanyInfoEditDialog({ open, onOpenChange, company, onS
     }
   }, [company]);
 
+  const updateMutation = useMutation({
+    mutationFn: (payload) => companyAPI.updateCompanyProfile(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company'] });
+      setSuccess('Company profile updated successfully!');
+      
+      if (onSave) {
+        onSave();
+      }
+      
+      setTimeout(() => {
+        setSuccess('');
+        onOpenChange(false);
+      }, 1500);
+    },
+    onError: (error) => {
+      console.error('Failed to update company profile:', error);
+      setError(error.response?.data?.detail || 'Failed to update company profile');
+    }
+  });
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -62,30 +82,9 @@ export default function CompanyInfoEditDialog({ open, onOpenChange, company, onS
       return;
     }
 
-    setSaving(true);
     setError('');
     setSuccess('');
-
-    try {
-      await apiClient.put('/company/profile', formData);
-      setSuccess('Company profile updated successfully!');
-      
-      // Call onSave callback immediately to refresh parent data
-      if (onSave) {
-        await onSave();
-      }
-      
-      // Close dialog after a short delay to show success message
-      setTimeout(() => {
-        setSuccess('');
-        onOpenChange(false);
-      }, 1500);
-    } catch (error) {
-      console.error('Failed to update company profile:', error);
-      setError(error.response?.data?.detail || 'Failed to update company profile');
-    } finally {
-      setSaving(false);
-    }
+    updateMutation.mutate(formData);
   };
 
   return (
@@ -243,17 +242,17 @@ export default function CompanyInfoEditDialog({ open, onOpenChange, company, onS
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={saving}
+              disabled={updateMutation.isPending}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={saving}
+              disabled={updateMutation.isPending}
               className="gap-2"
             >
               <Save size={16} />
-              {saving ? 'Saving...' : 'Save Changes'}
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
         </form>

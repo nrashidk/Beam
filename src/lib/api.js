@@ -102,6 +102,7 @@ export const billingAPI = {
 };
 
 export const companyAPI = {
+  getMyCompany: () => apiClient.get('/company/me'),
   getCompanyById: (companyId) => apiClient.get(`/companies/${companyId}`),
   getSubscription: () => apiClient.get('/company/subscription'),
   getInvoices: (companyId) => apiClient.get(`/companies/${companyId}/invoices`),
