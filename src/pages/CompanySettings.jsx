@@ -34,7 +34,7 @@ export default function CompanySettings() {
     address_line2: '',
     city: '',
     emirate: '',
-    postal_code: ''
+    po_box: ''
   });
 
   useEffect(() => {
@@ -57,7 +57,7 @@ export default function CompanySettings() {
         address_line2: company.address_line2 || '',
         city: company.city || '',
         emirate: company.emirate || '',
-        postal_code: company.postal_code || ''
+        po_box: company.po_box || ''
       });
     } catch (error) {
       console.error('Failed to load company data:', error);
@@ -268,14 +268,14 @@ export default function CompanySettings() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Postal Code
+                      P.O. Box
                     </label>
                     <Input
                       type="text"
-                      name="postal_code"
-                      value={formData.postal_code}
+                      name="po_box"
+                      value={formData.po_box}
                       onChange={handleChange}
-                      placeholder="00000"
+                      placeholder="Enter P.O. Box"
                       className="w-full"
                     />
                   </div>
