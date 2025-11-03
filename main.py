@@ -1572,7 +1572,7 @@ class InvoiceOut(BaseModel):
     currency_code: str
     
     # Supplier (auto-filled from company)
-    supplier_trn: str
+    supplier_trn: Optional[str]
     supplier_name: str
     supplier_address: Optional[str]
     supplier_peppol_id: Optional[str]
