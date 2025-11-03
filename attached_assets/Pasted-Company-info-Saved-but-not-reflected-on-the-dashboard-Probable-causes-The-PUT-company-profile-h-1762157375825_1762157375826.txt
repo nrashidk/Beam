@@ -1,0 +1,131 @@
+Company info: “Saved” but not reflected on the dashboard
+Probable causes
+
+The PUT /company/profile handler updates nothing (missing commit/refresh or wrong fields).
+
+The client expects a different response shape than the backend returns.
+
+The dashboard query is never refetched after saving (stale cache / state).
+
+Using the wrong base URL (proxy vs. env var), so you’re saving to a different origin or failing silently.
+
+Backend: make sure update commits and returns the updated model
+# app/routers/company.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime
+from app.deps import get_db, get_current_user_from_header
+from app.models import CompanyDB, UserDB, Role
+from app.schemas import CompanyProfileUpdateRequest, CompanyOut
+
+router = APIRouter(prefix="/company", tags=["Company"])
+
+@router.get("/me", response_model=CompanyOut)
+def get_my_company(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return company
+
+@router.put("/profile", response_model=CompanyOut)
+def update_company_profile(
+    payload: CompanyProfileUpdateRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    if current_user.role not in {Role.COMPANY_ADMIN, Role.SUPER_ADMIN}:
+        raise HTTPException(status_code=403, detail="Only company admins can update company profile")
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    # only update non-null fields from payload
+    for f in payload.model_fields:  # Pydantic v2
+        v = getattr(payload, f)
+        if v is not None:
+            setattr(company, f, v)
+
+    company.updated_at = datetime.utcnow()
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return company
+
+
+Ensure this router is mounted:
+
+# app/main.py
+from fastapi import FastAPI
+from app.routers.company import router as company_router
+app = FastAPI()
+app.include_router(company_router, prefix="/api")  # if you’re namespacing under /api
+
+Frontend: use a mutation and invalidate/refetch the dashboard data
+
+Assuming React Query:
+
+// src/lib/api.ts
+import axios from "axios";
+const apiClient = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "/api",
+});
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+export default apiClient;
+
+// src/features/company/api.ts
+import apiClient from "@/lib/api";
+
+export function fetchMyCompany() {
+  return apiClient.get("/company/me").then(r => r.data);
+}
+export function updateCompanyProfile(data: any) {
+  return apiClient.put("/company/profile", data).then(r => r.data);
+}
+
+// src/features/company/CompanyForm.tsx
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchMyCompany, updateCompanyProfile } from "./api";
+
+export default function CompanyForm() {
+  const qc = useQueryClient();
+  const { data: company } = useQuery({ queryKey: ["company"], queryFn: fetchMyCompany });
+
+  const { mutate: save, isPending } = useMutation({
+    mutationFn: updateCompanyProfile,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["company"] }); // <— refresh dashboard state
+    },
+  });
+
+  // onSubmit collects form values into 'values'
+  const onSubmit = (values: any) => save(values);
+
+  // ... render your form bound to 'company'
+}
+
+// src/features/dashboard/Dashboard.tsx
+import { useQuery } from "@tanstack/react-query";
+import { fetchMyCompany } from "@/features/company/api";
+
+export default function Dashboard() {
+  const { data: company, isLoading } = useQuery({ queryKey: ["company"], queryFn: fetchMyCompany });
+  if (isLoading) return null;
+  return <div>Welcome, {company?.legal_name}</div>;
+}
+
+
+Why this fixes it: the backend actually updates and returns the latest row; the frontend invalidates the cache after save so the dashboard re-pulls the fresh company.
+
+Quick checks
+
+DevTools → Network: ensure PUT /api/company/profile returns 200 with the updated fields.
+
+Make sure your Vite proxy forwards /api to the backend (or set VITE_API_URL).
