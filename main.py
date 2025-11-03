@@ -2965,6 +2965,40 @@ def get_company(company_id: str, db: Session = Depends(get_db)):
         "created_at": company.created_at.isoformat() if company.created_at else None
     }
 
+@app.get("/company/me", tags=["Companies"])
+def get_my_company(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)
+):
+    """Get current user's company details"""
+    if not current_user.company_id:
+        raise HTTPException(400, "User is not associated with a company")
+    
+    company = db.get(CompanyDB, current_user.company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    return {
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "status": company.status,
+        "email": company.email,
+        "trn": company.trn,
+        "vat_enabled": company.vat_enabled,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "website": company.website,
+        "address_line1": company.address_line1,
+        "address_line2": company.address_line2,
+        "city": company.city,
+        "emirate": company.emirate,
+        "po_box": company.po_box,
+        "postal_code": company.postal_code,
+        "email_verified": company.email_verified,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+        "updated_at": company.updated_at.isoformat() if company.updated_at else None
+    }
+
 class CompanyProfileUpdateRequest(BaseModel):
     legal_name: Optional[str] = None
     phone: Optional[str] = None
@@ -3014,21 +3048,26 @@ def update_company_profile(
     db.commit()
     db.refresh(company)
     
+    # Return company object directly (not wrapped) for React Query compatibility
     return {
-        "success": True,
-        "message": "Company profile updated successfully",
-        "company": {
-            "id": company.id,
-            "legal_name": company.legal_name,
-            "email": company.email,
-            "phone": company.phone,
-            "website": company.website,
-            "address_line1": company.address_line1,
-            "address_line2": company.address_line2,
-            "city": company.city,
-            "emirate": company.emirate,
-            "po_box": company.po_box
-        }
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "status": company.status,
+        "email": company.email,
+        "trn": company.trn,
+        "vat_enabled": company.vat_enabled,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "website": company.website,
+        "address_line1": company.address_line1,
+        "address_line2": company.address_line2,
+        "city": company.city,
+        "emirate": company.emirate,
+        "po_box": company.po_box,
+        "postal_code": company.postal_code,
+        "email_verified": company.email_verified,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+        "updated_at": company.updated_at.isoformat() if company.updated_at else None
     }
 
 @app.get("/companies/{company_id}/subscription", tags=["Companies"])
@@ -4014,9 +4053,17 @@ def create_invoice(
     if not company:
         raise HTTPException(404, "Company not found")
     
-    # Only require TRN when VAT is enabled
-    if company.vat_enabled and not company.trn:
-        raise HTTPException(400, "Company TRN is required to issue VAT invoices. Please enable VAT in settings first.")
+    # Only require TRN for TAX invoices (380, 381) when VAT is enabled
+    is_tax_invoice = payload.invoice_type in ['380', '381']
+    
+    if is_tax_invoice:
+        # Tax invoices require VAT to be enabled and TRN to be set
+        if not company.vat_enabled:
+            raise HTTPException(400, "Company VAT must be enabled to issue Tax Invoices (380, 381). Please enable VAT in settings or use Commercial Invoice type (480).")
+        if not company.trn:
+            raise HTTPException(400, "Company TRN is required to issue Tax Invoices. Please add your TRN in VAT settings first.")
+    
+    # Commercial invoices (480, 81) can be created without VAT/TRN
     
     # Check trial limits (100 invoices OR 30 days, whichever comes first)
     if company.trial_status == "ACTIVE" and company.trial_start_date:
