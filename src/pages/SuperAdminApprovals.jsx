@@ -70,8 +70,10 @@ export default function SuperAdminDashboard() {
     try {
       const statusParam = filters.status === 'all' ? null : 
         filters.status === 'pending' ? 'PENDING_REVIEW' : 
+        filters.status === 'approved' ? 'ACTIVE' : 
         filters.status === 'active' ? 'ACTIVE' : 
-        filters.status === 'rejected' ? 'REJECTED' : null;
+        filters.status === 'rejected' ? 'REJECTED' : 
+        filters.status === 'inactive' ? 'SUSPENDED' : null;
       
       const [companiesResponse, statsResponse] = await Promise.all([
         adminAPI.getAllCompanies(statusParam),
@@ -121,10 +123,9 @@ export default function SuperAdminDashboard() {
 
   const navigationButtons = (
     <>
-      <div className="text-sm">
-        <Badge variant="info">{user?.role}</Badge>
-        <span className="ml-2 text-gray-600">{user?.email}</span>
-      </div>
+      {user?.role === 'SUPER_ADMIN' && (
+        <Badge variant="info" className="text-xs px-3 py-1">SUPER ADMIN</Badge>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
@@ -133,7 +134,12 @@ export default function SuperAdminDashboard() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <div className="flex flex-col">
+              <span className="font-semibold">{user?.email}</span>
+              <span className="text-xs text-gray-500">{user?.role}</span>
+            </div>
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => navigate('/settings')}>
             <Settings size={16} className="mr-2" />
@@ -153,6 +159,24 @@ export default function SuperAdminDashboard() {
     </>
   );
 
+  const getPageTitle = () => {
+    if (filters.status === 'pending') return 'Pending Registrations';
+    if (filters.status === 'approved') return 'Approved Registrations';
+    if (filters.status === 'rejected') return 'Rejected Registrations';
+    if (filters.status === 'active') return 'Active Companies';
+    if (filters.status === 'inactive') return 'Inactive Companies';
+    return 'Company Approvals';
+  };
+
+  const getPageSubtitle = () => {
+    if (filters.status === 'pending') return 'Companies awaiting approval';
+    if (filters.status === 'approved') return 'Companies that have been approved for registration';
+    if (filters.status === 'rejected') return 'Companies that have been rejected during review';
+    if (filters.status === 'active') return 'Companies that are currently active';
+    if (filters.status === 'inactive') return 'Companies that are currently inactive';
+    return 'Manage all company registrations';
+  };
+
   return (
     <AdminLayout navigation={navigationButtons}>
       <div className="bg-gray-50 max-w-7xl mx-auto px-6 py-8 space-y-6">
@@ -162,7 +186,10 @@ export default function SuperAdminDashboard() {
               <ArrowLeft size={16} />
               Back to Dashboard
             </Button>
-            <h1 className="text-3xl font-bold">Company Approvals</h1>
+            <div>
+              <h1 className="text-3xl font-bold">{getPageTitle()}</h1>
+              <p className="text-sm text-gray-600">{getPageSubtitle()}</p>
+            </div>
           </div>
           <Button variant="outline" size="sm" onClick={fetchCompanies} className="gap-2">
             <RefreshCcw size={16} />
@@ -184,7 +211,7 @@ export default function SuperAdminDashboard() {
           </Card>
           <Card 
             className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'active' })}
+            onClick={() => setFilters({ ...filters, status: 'approved' })}
           >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Approved registrations</CardTitle>
@@ -217,7 +244,7 @@ export default function SuperAdminDashboard() {
           </Card>
           <Card 
             className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'all' })}
+            onClick={() => setFilters({ ...filters, status: 'inactive' })}
           >
             <CardHeader>
               <CardTitle className="text-sm text-gray-600">Inactive companies</CardTitle>
@@ -267,8 +294,10 @@ export default function SuperAdminDashboard() {
                   >
                     <option value="all">All</option>
                     <option value="pending">Pending Review</option>
+                    <option value="approved">Approved</option>
                     <option value="active">Active</option>
                     <option value="rejected">Rejected</option>
+                    <option value="inactive">Inactive</option>
                   </select>
                 </div>
                 <div>
@@ -291,10 +320,12 @@ export default function SuperAdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {filters.status === 'all' && 'All Companies'}
-              {filters.status === 'pending' && 'Pending Company Approvals'}
-              {filters.status === 'active' && 'Active Companies'}
-              {filters.status === 'rejected' && 'Rejected Companies'}
+              {filters.status === 'all' && `All Companies (${companies.length})`}
+              {filters.status === 'pending' && `${stats.pending_approval} Companies`}
+              {filters.status === 'approved' && `${stats.approved} Companies`}
+              {filters.status === 'active' && `${stats.active} Companies`}
+              {filters.status === 'rejected' && `${stats.rejected} Companies`}
+              {filters.status === 'inactive' && `${stats.inactive} Companies`}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -302,7 +333,7 @@ export default function SuperAdminDashboard() {
               <div className="text-center py-8 text-gray-500">Loading...</div>
             ) : companies.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No {filters.status === 'all' ? '' : filters.status} companies found
+                No companies found
               </div>
             ) : (
               <div className="space-y-4">

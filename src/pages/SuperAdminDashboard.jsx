@@ -89,7 +89,7 @@ function buildCompaniesCsv(rows) {
 }
 
 export default function SuperAdminDashboard() {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [range, setRange] = useState(() => ({
     from: new Date(new Date().setDate(new Date().getDate() - 29)),
@@ -256,6 +256,9 @@ export default function SuperAdminDashboard() {
       <Button variant="outline" size="sm" onClick={() => navigate('/admin/content')}>
         Content Manager
       </Button>
+      {user?.role === 'SUPER_ADMIN' && (
+        <Badge variant="info" className="text-xs px-3 py-1">SUPER ADMIN</Badge>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="gap-2">
@@ -264,7 +267,12 @@ export default function SuperAdminDashboard() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuLabel>
+            <div className="flex flex-col">
+              <span className="font-semibold">{user?.email}</span>
+              <span className="text-xs text-gray-500">{user?.role}</span>
+            </div>
+          </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => navigate('/settings')}>
             <Settings size={16} className="mr-2" />
