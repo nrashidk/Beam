@@ -8973,8 +8973,18 @@ async def root():
 @app.get("/{full_path:path}", tags=["General"])
 async def serve_react_routes(full_path: str):
     """Serve React app for client-side routing"""
-    # Skip API routes
-    if full_path.startswith(("api/", "auth/", "admin/", "companies/", "register/", "plans/", "docs", "redoc", "openapi.json")):
+    # Skip actual API routes (but allow frontend routes like /admin/approvals)
+    if full_path.startswith(("api/", "auth/", "register/", "plans/", "docs", "redoc", "openapi.json")):
+        raise HTTPException(404, "Not found")
+    
+    # Skip backend admin API endpoints specifically
+    backend_admin_routes = ["admin/stats", "admin/companies", "admin/revenue", "admin/analytics"]
+    if any(full_path.startswith(route) for route in backend_admin_routes):
+        raise HTTPException(404, "Not found")
+    
+    # Skip backend company API endpoints specifically  
+    backend_company_routes = ["companies/verify-email", "companies/forgot-password", "companies/reset-password"]
+    if any(full_path.startswith(route) for route in backend_company_routes):
         raise HTTPException(404, "Not found")
     
     if os.path.exists("dist/index.html"):

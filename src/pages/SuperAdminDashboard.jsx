@@ -335,7 +335,7 @@ export default function SuperAdminDashboard() {
             <Stat 
               label="Pending Approvals" 
               value={platformLoading ? '—' : platformStats?.pending_companies?.toLocaleString() ?? '—'} 
-              onClick={() => navigate('/admin/approvals')}
+              onClick={() => navigate('/admin/approvals?status=pending')}
             />
             <Stat 
               label="Total Invoices" 

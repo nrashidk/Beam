@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -42,6 +42,7 @@ function DateRangePicker({ range, onChange }) {
 export default function SuperAdminDashboard() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [range, setRange] = useState({ 
     from: new Date(new Date().setDate(new Date().getDate() - 29)), 
     to: new Date() 
@@ -49,7 +50,7 @@ export default function SuperAdminDashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ 
     region: 'all', 
-    status: 'all', 
+    status: searchParams.get('status') || 'all', 
     search: '' 
   });
   const [companies, setCompanies] = useState([]);
