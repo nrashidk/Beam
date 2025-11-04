@@ -3127,17 +3127,42 @@ def get_all_companies(
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
-    """Get all companies with optional status filter (Super Admin only)"""
+    """Get all companies with optional status filter (Super Admin only)
+    
+    Special status filters:
+    - ACTIVE: Companies with active status and paid subscription (not Free plan)
+    - APPROVED: Companies with active status on Free plan only
+    - PENDING_REVIEW, REJECTED, SUSPENDED: Standard company statuses
+    """
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
+    # Get Free plan for filtering
+    free_plan = db.query(SubscriptionPlanDB).filter_by(name="Free").first()
+    free_plan_id = free_plan.id if free_plan else None
+    
     query = db.query(CompanyDB)
     if status:
-        try:
-            status_enum = CompanyStatus(status)
-            query = query.filter(CompanyDB.status == status_enum)
-        except ValueError:
-            pass
+        if status == "ACTIVE":
+            # Active = ACTIVE status with paid subscription (not Free)
+            query = query.filter(CompanyDB.status == CompanyStatus.ACTIVE)
+            if free_plan_id:
+                query = query.filter(
+                    CompanyDB.subscription_plan_id != free_plan_id,
+                    CompanyDB.subscription_plan_id.isnot(None)
+                )
+        elif status == "APPROVED":
+            # Approved = ACTIVE status with Free plan
+            query = query.filter(CompanyDB.status == CompanyStatus.ACTIVE)
+            if free_plan_id:
+                query = query.filter(CompanyDB.subscription_plan_id == free_plan_id)
+        else:
+            # Standard company status
+            try:
+                status_enum = CompanyStatus(status)
+                query = query.filter(CompanyDB.status == status_enum)
+            except ValueError:
+                pass
     
     companies = query.order_by(CompanyDB.created_at.desc()).all()
     
@@ -3335,11 +3360,37 @@ def get_admin_stats(
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
     
+    # Get the Free plan ID
+    free_plan = db.query(SubscriptionPlanDB).filter_by(name="Free").first()
+    free_plan_id = free_plan.id if free_plan else None
+    
     # Count companies by status
     pending = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
-    approved = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
     rejected = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.REJECTED).count()
-    active_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    
+    # Approved = Active status companies on FREE plan
+    if free_plan_id:
+        approved = db.query(CompanyDB).filter(
+            CompanyDB.status == CompanyStatus.ACTIVE,
+            CompanyDB.subscription_plan_id == free_plan_id
+        ).count()
+    else:
+        approved = 0
+    
+    # Active = Active status companies on PAID plans (not Free)
+    if free_plan_id:
+        active_companies = db.query(CompanyDB).filter(
+            CompanyDB.status == CompanyStatus.ACTIVE,
+            CompanyDB.subscription_plan_id != free_plan_id,
+            CompanyDB.subscription_plan_id.isnot(None)
+        ).count()
+    else:
+        active_companies = db.query(CompanyDB).filter(
+            CompanyDB.status == CompanyStatus.ACTIVE,
+            CompanyDB.subscription_plan_id.isnot(None)
+        ).count()
+    
+    # Inactive = Suspended companies
     inactive_companies = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.SUSPENDED).count()
     
     # Get all companies with details for explorer

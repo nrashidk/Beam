@@ -70,7 +70,7 @@ export default function SuperAdminDashboard() {
     try {
       const statusParam = filters.status === 'all' ? null : 
         filters.status === 'pending' ? 'PENDING_REVIEW' : 
-        filters.status === 'approved' ? 'ACTIVE' : 
+        filters.status === 'approved' ? 'APPROVED' : 
         filters.status === 'active' ? 'ACTIVE' : 
         filters.status === 'rejected' ? 'REJECTED' : 
         filters.status === 'inactive' ? 'SUSPENDED' : null;
