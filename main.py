@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header, Cookie
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
 
 # SQLAlchemy
 from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func
@@ -74,7 +75,7 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1  # 1 minute for testing refresh token
+ACCESS_TOKEN_EXPIRE_MINUTES = 15  # 15 minutes for production use
 REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
@@ -1162,23 +1163,29 @@ def get_current_user_from_header(authorization: str = Header(None), db: Session 
     
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print("[DEBUG] Decoded access token payload:", payload)
         user_id: str = payload.get("sub")
         token_type: str = payload.get("type")
         mfa_challenge: bool = payload.get("mfa_challenge", False)
-        
+
         # Reject temporary MFA challenge tokens on protected endpoints
         if mfa_challenge:
+            print("[DEBUG] Token is MFA challenge token, rejecting.")
             raise HTTPException(401, "MFA verification required. Please complete MFA login flow.")
-        
+
         if user_id is None or token_type != "user":
+            print(f"[DEBUG] Invalid token: user_id={user_id}, token_type={token_type}")
             raise HTTPException(401, "Invalid token")
-        
+
         user = db.get(UserDB, user_id)
         if user is None:
+            print(f"[DEBUG] User not found for user_id={user_id}")
             raise HTTPException(401, "User not found")
-        
+
         return user
-    except JWTError:
+    except JWTError as e:
+        print(f"[DEBUG] JWTError while decoding token: {e}")
+        raise HTTPException(401, "Invalid token")
         raise HTTPException(401, "Invalid token")
 
 # ==================== HELPER FUNCTIONS ====================
@@ -2474,6 +2481,7 @@ class MFALoginResponse(BaseModel):
     mfa_method: Optional[str] = None
     temp_token: Optional[str] = None
     access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
     token_type: Optional[str] = "bearer"
     user_id: Optional[str] = None
     company_id: Optional[str] = None
@@ -2511,15 +2519,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         # No MFA - return access and refresh tokens directly
         access_token = create_access_token(data={"sub": user.id, "type": "user"})
         refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
-        # Set refresh token as httpOnly cookie
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-        )
         # Update last login
         user.last_login = datetime.utcnow()
         db.commit()
@@ -2528,6 +2527,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             mfa_method=None,
             temp_token=None,
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             user_id=user.id,
             company_id=user.company_id,
@@ -2557,19 +2557,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         # No MFA - return access and refresh tokens directly
         access_token = create_access_token(data={"sub": company.id, "type": "company"})
         refresh_token = create_refresh_token(data={"sub": company.id, "type": "company"})
-        response.set_cookie(
-            key="refresh_token",
-            value=refresh_token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-        )
         return MFALoginResponse(
             mfa_required=False,
             mfa_method=None,
             temp_token=None,
             access_token=access_token,
+            refresh_token=refresh_token,
             token_type="bearer",
             company_id=company.id,
             role="COMPANY"
@@ -2577,30 +2570,37 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     # ==================== REFRESH TOKEN ENDPOINT ====================
     from fastapi import Cookie
 
-    class RefreshTokenRequest(BaseModel):
+class RefreshTokenRequest(BaseModel):
         refresh_token: Optional[str] = None
 
-    @app.post("/auth/refresh")
-    def refresh_token_endpoint(response: Response, refresh_token: Optional[str] = Cookie(None)):
-        """Issue new access token using refresh token (from httpOnly cookie)"""
-        if not refresh_token:
-            raise HTTPException(401, "Refresh token missing")
-        try:
-            payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-            if payload.get("type") != "refresh":
-                raise HTTPException(401, "Invalid refresh token type")
-            user_id = payload.get("sub")
-            token_type = payload.get("type")
-            if not user_id:
-                raise HTTPException(401, "Invalid refresh token")
-            # Issue new access token
-            access_token = create_access_token({"sub": user_id, "type": token_type})
-            return {"access_token": access_token, "token_type": "bearer"}
-        except JWTError:
-            raise HTTPException(401, "Invalid or expired refresh token")
-    
-    # Neither user nor company authenticated
-    raise HTTPException(401, "Invalid email or password")
+@app.post("/auth/refresh")
+def refresh_token_endpoint(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """Issue new access token using refresh token (from request body)"""
+    refresh_token = payload.refresh_token
+    if not refresh_token:
+        raise HTTPException(401, "Refresh token missing")
+    try:
+        decoded = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if decoded.get("type") != "refresh":
+            raise HTTPException(401, "Invalid refresh token type")
+        user_id = decoded.get("sub")
+        if not user_id:
+            raise HTTPException(401, "Invalid refresh token")
+        # Determine if this is a user or company token
+        # Try to find user first
+        user = db.query(UserDB).filter(UserDB.id == user_id).first() if 'UserDB' in globals() else None
+        if user:
+            access_token = create_access_token({"sub": user_id, "type": "user"})
+        else:
+            # Try company
+            company = db.query(CompanyDB).filter(CompanyDB.id == user_id).first() if 'CompanyDB' in globals() else None
+            if company:
+                access_token = create_access_token({"sub": user_id, "type": "company"})
+            else:
+                raise HTTPException(401, "Invalid refresh token: subject not found")
+        return {"access_token": access_token, "token_type": "bearer"}
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired refresh token")
 
 @app.post("/auth/logout", tags=["Auth"])
 def logout():

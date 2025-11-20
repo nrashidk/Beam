@@ -21,32 +21,105 @@ apiClient.interceptors.request.use((config) => {
 });
 
 // Add response interceptor to handle 401 errors globally
+
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response && error.response.status === 401) {
-      localStorage.clear();
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response && error.response.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        return new Promise(function(resolve, reject) {
+          failedQueue.push({resolve, reject});
+        })
+        .then(token => {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return apiClient(originalRequest);
+        })
+        .catch(err => {
+          return Promise.reject(err);
+        });
+      }
+      originalRequest._retry = true;
+      isRefreshing = true;
+      try {
+        const data = await refreshAccessToken();
+        if (data && data.access_token) {
+          processQueue(null, data.access_token);
+          originalRequest.headers['Authorization'] = 'Bearer ' + data.access_token;
+          return apiClient(originalRequest);
+        } else {
+          processQueue('Refresh failed', null);
+          localStorage.clear();
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+          return Promise.reject(error);
+        }
+      } catch (err) {
+        processQueue(err, null);
+        localStorage.clear();
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
       }
     }
     return Promise.reject(error);
   }
 );
 
-// Refresh access token using refresh token (httpOnly cookie)
+
+// Refresh access token using refresh token (from localStorage)
 export const refreshAccessToken = async () => {
   try {
-    const response = await apiClient.post('/auth/refresh', {}, { withCredentials: true });
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) return null;
+    const response = await apiClient.post('/auth/refresh', { refresh_token: refreshToken });
+    // Optionally update access_token if new one is returned
+    if (response.data && response.data.access_token) {
+      localStorage.setItem('token', response.data.access_token);
+    }
     return response.data;
   } catch (error) {
     return null;
   }
 };
 
+
 export const authAPI = {
-  login: (email, password) => apiClient.post('/auth/login', { email, password }),
-  logout: () => apiClient.post('/auth/logout'),
+  login: async (email, password) => {
+    const response = await apiClient.post('/auth/login', { email, password });
+    // If refresh_token is present in response, store it
+    if (response.data && response.data.refresh_token) {
+      localStorage.setItem('refresh_token', response.data.refresh_token);
+    }
+    if (response.data && response.data.access_token) {
+      localStorage.setItem('token', response.data.access_token);
+    }
+    return response;
+  },
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    return apiClient.post('/auth/logout');
+  },
   refresh: refreshAccessToken,
   resetPassword: (token, new_password) => apiClient.post('/auth/reset-password', { token, new_password }),
 };

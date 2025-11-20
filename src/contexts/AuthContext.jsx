@@ -53,7 +53,10 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await authAPI.login(email, password);
       const data = response.data;
-      
+      // Store refresh_token if present (already handled in api.js, but double-check)
+      if (data.refresh_token) {
+        localStorage.setItem('refresh_token', data.refresh_token);
+      }
       if (data.mfa_required) {
         setMfaRequired(true);
         setTempToken(data.temp_token);
@@ -65,7 +68,6 @@ export const AuthProvider = ({ children }) => {
           mfaMethod: data.mfa_method 
         };
       }
-      
       const { access_token, user_id, company_id, company_name, role } = data;
       localStorage.setItem('token', access_token);
       const userData = { user_id, company_id, company_name, role };
