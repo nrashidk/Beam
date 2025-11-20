@@ -8,7 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { EmailInput } from '../components/ui/validated-input';
 import { ArrowLeft, UserPlus, Trash2, Shield, User, Mail, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
-import api from '../lib/api';
+import api, { usersAPI } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
@@ -73,7 +73,7 @@ export default function TeamManagement() {
     }
 
     try {
-      const response = await api.post('/users/invite', inviteForm);
+      const response = await usersAPI.inviteUser(inviteForm);
       setInviteResult(response.data);
       setInviteForm({ email: '', full_name: '', role: 'FINANCE_USER' });
       setShowInviteForm(false);
@@ -90,7 +90,7 @@ export default function TeamManagement() {
     }
 
     try {
-      await api.delete(`/users/${userId}`);
+      await usersAPI.removeUser(userId);
       fetchTeamMembers();
     } catch (error) {
       console.error('Failed to remove user:', error);

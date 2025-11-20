@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QrCode, Mail, MessageSquare, Phone, Download, X, Check, Loader } from 'lucide-react';
-import axios from 'axios';
+import { apiClient } from '../lib/api';
 
 export default function InvoiceDeliveryActions({ invoice }) {
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -33,14 +33,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/email?recipient_email=${encodeURIComponent(emailAddress)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      await apiClient.post(`/invoices/${invoice.id}/email?recipient_email=${encodeURIComponent(emailAddress)}`);
       setSuccess('Email sent successfully!');
       setTimeout(() => {
         setShowEmailModal(false);
@@ -64,14 +57,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/sms?phone_number=${encodeURIComponent(phoneNumber)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      await apiClient.post(`/invoices/${invoice.id}/sms?phone_number=${encodeURIComponent(phoneNumber)}`);
       setSuccess('SMS sent successfully!');
       setTimeout(() => {
         setShowSMSModal(false);
@@ -95,14 +81,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/whatsapp?phone_number=${encodeURIComponent(phoneNumber)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
+      await apiClient.post(`/invoices/${invoice.id}/whatsapp?phone_number=${encodeURIComponent(phoneNumber)}`);
       setSuccess('WhatsApp message sent successfully!');
       setTimeout(() => {
         setShowWhatsAppModal(false);

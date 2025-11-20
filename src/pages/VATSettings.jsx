@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
+import { settingsAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, CheckCircle, Info, FileText, Upload } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 
 function BackToDashboard() {
   const navigate = useNavigate();
@@ -25,7 +25,7 @@ function BackToDashboard() {
 
 export default function VATSettings() {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  // No need to get token here; apiClient handles it
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -50,12 +50,9 @@ export default function VATSettings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get(`${API_URL}/settings/vat`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await settingsAPI.getVATSettings?.() || await apiClient.get('/settings/vat');
       const vatEnabled = response.data.vat_enabled || false;
       const hasTrn = !!response.data.tax_registration_number;
-      
       setSettings({
         vat_enabled: vatEnabled,
         tax_registration_number: response.data.tax_registration_number || '',
@@ -63,8 +60,6 @@ export default function VATSettings() {
         formatted_trn: response.data.formatted_trn,
         vat_certificate_uploaded: response.data.vat_certificate_uploaded || false
       });
-      
-      // VAT is truly active only if enabled AND has TRN saved in database
       setIsVatActive(vatEnabled && hasTrn);
     } catch (error) {
       console.error('Failed to fetch VAT settings:', error);
@@ -76,34 +71,21 @@ export default function VATSettings() {
   const handleCertificateUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Validate file type (PDF only)
     if (file.type !== 'application/pdf') {
       setError('Please upload a PDF file');
       return;
     }
-
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('File size must be less than 5MB');
       return;
     }
-
     setUploadingCert(true);
     setError('');
     setSuccess('');
-
     try {
       const formData = new FormData();
       formData.append('file', file);
-
-      const response = await axios.post(`${API_URL}/settings/vat/certificate`, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
+      await settingsAPI.uploadVatCertificate(formData);
       setSuccess('VAT certificate uploaded successfully!');
       await fetchSettings();
       setCertificateFile(null);
@@ -118,43 +100,29 @@ export default function VATSettings() {
     setSaving(true);
     setError('');
     setSuccess('');
-    
     try {
       const payload = {
         vat_enabled: settings.vat_enabled
       };
-      
       if (settings.vat_enabled) {
         if (!settings.tax_registration_number) {
           setError('Please enter your Tax Registration Number (TRN)');
           setSaving(false);
           return;
         }
-
         if (settings.tax_registration_number.length !== 15) {
           setError('TRN must be exactly 15 digits');
           setSaving(false);
           return;
         }
-
         payload.tax_registration_number = settings.tax_registration_number;
-
         if (settings.vat_registration_date) {
           payload.vat_registration_date = settings.vat_registration_date;
         }
       }
-
-      const response = await axios.put(`${API_URL}/settings/vat`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      // Show temporary success message
+      const response = await settingsAPI.updateVATSettings(payload);
       setSuccess(response.data.message || 'VAT settings saved successfully!');
-      
-      // Refresh settings from database
       await fetchSettings();
-      
-      // Clear temporary success message after 3 seconds
       setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to save settings');

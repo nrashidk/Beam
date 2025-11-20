@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import { apiClient } from '../lib/api';
 import {
   LineChart,
   Line,
@@ -46,16 +46,12 @@ const AdvancedAnalytics = () => {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem("token");
-      const headers = { Authorization: `Bearer ${token}` };
-
       const [revenue, customers, profitability, cashFlow] = await Promise.all([
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/revenue?months=${timePeriod}`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/customers?limit=10`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/profitability?months=${timePeriod}`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/cash-flow?months=${timePeriod}`, { headers })
+        apiClient.get(`/analytics/revenue?months=${timePeriod}`),
+        apiClient.get(`/analytics/customers?limit=10`),
+        apiClient.get(`/analytics/profitability?months=${timePeriod}`),
+        apiClient.get(`/analytics/cash-flow?months=${timePeriod}`)
       ]);
-
       setRevenueData(revenue.data);
       setCustomerData(customers.data);
       setProfitabilityData(profitability.data);

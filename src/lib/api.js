@@ -1,3 +1,4 @@
+
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -19,9 +20,35 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// Add response interceptor to handle 401 errors globally
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.clear();
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Refresh access token using refresh token (httpOnly cookie)
+export const refreshAccessToken = async () => {
+  try {
+    const response = await apiClient.post('/auth/refresh', {}, { withCredentials: true });
+    return response.data;
+  } catch (error) {
+    return null;
+  }
+};
+
 export const authAPI = {
   login: (email, password) => apiClient.post('/auth/login', { email, password }),
   logout: () => apiClient.post('/auth/logout'),
+  refresh: refreshAccessToken,
+  resetPassword: (token, new_password) => apiClient.post('/auth/reset-password', { token, new_password }),
 };
 
 export const mfaAPI = {
@@ -153,6 +180,7 @@ export const publicAPI = {
   getFeaturedBusinesses: () => apiClient.get('/content/featured-businesses'),
   getPublicContent: () => apiClient.get('/content/public'),
   getPublicStats: () => apiClient.get('/content/stats'),
+  getPublicInvoice: (shareToken) => apiClient.get(`/invoices/view/${shareToken}`),
 };
 
 export const analyticsAPI = {

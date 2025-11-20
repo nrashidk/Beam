@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { FileText, Download, Calendar, AlertCircle, CheckCircle2, Clock, XCircle } from 'lucide-react';
-import axios from 'axios';
+import { apiClient } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default function FTAAuditFiles() {
   const [periodStart, setPeriodStart] = useState('');
@@ -24,10 +24,7 @@ export default function FTAAuditFiles() {
 
   const fetchAuditFiles = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/audit-files`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await apiClient.get('/audit-files');
       setAuditFiles(response.data.audit_files || []);
     } catch (err) {
       console.error('Failed to fetch audit files:', err);
@@ -48,22 +45,19 @@ export default function FTAAuditFiles() {
     setSuccess('');
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/audit-files/generate`,
+      const response = await apiClient.post(
+        '/audit-files/generate',
         null,
         {
           params: {
             period_start: periodStart,
             period_end: periodEnd,
             format: format
-          },
-          headers: { Authorization: `Bearer ${token}` }
+          }
         }
       );
 
       setSuccess(response.data.message);
-      
       // Show statistics
       const stats = response.data.statistics;
       setSuccess(
@@ -87,13 +81,9 @@ export default function FTAAuditFiles() {
 
   const handleDownload = async (auditFileId, fileName) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(
-        `${API_URL}/audit-files/${auditFileId}/download`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          responseType: 'blob'
-        }
+      const response = await apiClient.get(
+        `/audit-files/${auditFileId}/download`,
+        { responseType: 'blob' }
       );
 
       const url = window.URL.createObjectURL(new Blob([response.data]));

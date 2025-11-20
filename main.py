@@ -70,10 +70,12 @@ ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
 os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
+
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 1  # 1 minute for testing refresh token
+REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -1074,6 +1076,7 @@ def get_db():
         db.close()
 
 # ==================== AUTH HELPERS ====================
+
 def create_access_token(data: dict, expires_delta: timedelta = None):
     """Create JWT access token"""
     to_encode = data.copy()
@@ -1082,6 +1085,17 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def create_refresh_token(data: dict, expires_delta: timedelta = None):
+    """Create JWT refresh token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -2485,7 +2499,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 data={"sub": user.id, "type": "user", "mfa_challenge": True},
                 expires_delta=timedelta(minutes=5)
             )
-            
             return MFALoginResponse(
                 mfa_required=True,
                 mfa_method=user.mfa_method,
@@ -2495,14 +2508,21 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 company_id=user.company_id,
                 role=user.role.value
             )
-        
-        # No MFA - return access token directly
+        # No MFA - return access and refresh tokens directly
         access_token = create_access_token(data={"sub": user.id, "type": "user"})
-        
+        refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
+        # Set refresh token as httpOnly cookie
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+        )
         # Update last login
         user.last_login = datetime.utcnow()
         db.commit()
-        
         return MFALoginResponse(
             mfa_required=False,
             mfa_method=None,
@@ -2519,7 +2539,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     if company:
         if company.status != CompanyStatus.ACTIVE:
             raise HTTPException(403, f"Account not active. Status: {company.status.value}")
-        
         # Check if MFA is enabled for company
         if company.mfa_enabled:
             # Create temporary token (5 minutes expiry) for MFA verification
@@ -2527,7 +2546,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 data={"sub": company.id, "type": "company", "mfa_challenge": True},
                 expires_delta=timedelta(minutes=5)
             )
-            
             return MFALoginResponse(
                 mfa_required=True,
                 mfa_method=company.mfa_method,
@@ -2536,10 +2554,17 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 company_id=company.id,
                 role="COMPANY"
             )
-        
-        # No MFA - return access token directly
+        # No MFA - return access and refresh tokens directly
         access_token = create_access_token(data={"sub": company.id, "type": "company"})
-        
+        refresh_token = create_refresh_token(data={"sub": company.id, "type": "company"})
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+        )
         return MFALoginResponse(
             mfa_required=False,
             mfa_method=None,
@@ -2549,6 +2574,30 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             company_id=company.id,
             role="COMPANY"
         )
+    # ==================== REFRESH TOKEN ENDPOINT ====================
+    from fastapi import Cookie
+
+    class RefreshTokenRequest(BaseModel):
+        refresh_token: Optional[str] = None
+
+    @app.post("/auth/refresh")
+    def refresh_token_endpoint(response: Response, refresh_token: Optional[str] = Cookie(None)):
+        """Issue new access token using refresh token (from httpOnly cookie)"""
+        if not refresh_token:
+            raise HTTPException(401, "Refresh token missing")
+        try:
+            payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+            if payload.get("type") != "refresh":
+                raise HTTPException(401, "Invalid refresh token type")
+            user_id = payload.get("sub")
+            token_type = payload.get("type")
+            if not user_id:
+                raise HTTPException(401, "Invalid refresh token")
+            # Issue new access token
+            access_token = create_access_token({"sub": user_id, "type": token_type})
+            return {"access_token": access_token, "token_type": "bearer"}
+        except JWTError:
+            raise HTTPException(401, "Invalid or expired refresh token")
     
     # Neither user nor company authenticated
     raise HTTPException(401, "Invalid email or password")

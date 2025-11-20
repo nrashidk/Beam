@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
+import { settingsAPI } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -9,11 +9,11 @@ import { ArrowLeft, CheckCircle, XCircle, RefreshCw, Network, Key, Globe, Info, 
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 
 export default function PEPPOLSettings() {
   const navigate = useNavigate();
-  const { token } = useAuth();
+  // No need to get token here; apiClient handles it
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -63,9 +63,8 @@ export default function PEPPOLSettings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await axios.get(`${API_URL}/settings/peppol`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await settingsAPI.getPeppolSettings?.()
+        || await apiClient.get('/settings/peppol');
       setSettings(response.data);
       setApiKeyChanged(false); // Reset flag when loading fresh settings
     } catch (error) {
@@ -88,7 +87,6 @@ export default function PEPPOLSettings() {
   const handleSave = async () => {
     setSaving(true);
     setTestResult(null);
-    
     try {
       // Prepare payload - only include fields we want to update
       const payload = {
@@ -97,22 +95,17 @@ export default function PEPPOLSettings() {
         peppol_participant_id: settings.peppol_participant_id,
         peppol_base_url: settings.peppol_base_url
       };
-      
       // Only include API key if user actually changed it
       if (apiKeyChanged && settings.peppol_api_key) {
         payload.peppol_api_key = settings.peppol_api_key;
       }
       // Otherwise, don't include the field at all to preserve existing key
-      
-      const response = await axios.put(`${API_URL}/settings/peppol`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+      await settingsAPI.updatePeppolSettings(payload);
       alert('PEPPOL settings saved successfully!');
       fetchSettings(); // Refresh to get updated timestamps and reset apiKeyChanged flag
     } catch (error) {
       console.error('Failed to save settings:', error);
-      alert(error.response?.data?.detail || 'Failed to save settings');
+      alert(error.response?.data?.detail || error.message || 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -121,12 +114,8 @@ export default function PEPPOLSettings() {
   const handleTestConnection = async () => {
     setTesting(true);
     setTestResult(null);
-    
     try {
-      const response = await axios.post(`${API_URL}/settings/peppol/test`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+      const response = await settingsAPI.testPeppolConnection();
       setTestResult(response.data);
     } catch (error) {
       console.error('Connection test failed:', error);
