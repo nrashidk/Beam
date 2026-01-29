@@ -4693,7 +4693,7 @@ def verify_invoice_payment(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
     
-    if invoice.payment_status == 'PAID':
+    if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(400, "Invoice is already marked as paid")
     
     # Parse payment date
@@ -4707,14 +4707,10 @@ def verify_invoice_payment(
         payment_dt = datetime.utcnow()
     
     # Update invoice payment details
-    invoice.payment_status = 'PAID'
+    invoice.status = InvoiceStatus.PAID
     invoice.payment_method = payment.payment_method
-    invoice.payment_reference = payment.payment_reference
-    invoice.payment_date = payment_dt
-    invoice.paid_amount = invoice.total_amount  # Full payment
     invoice.amount_due = 0.0
-    invoice.paid_by_user_id = current_user.id
-    invoice.paid_at = datetime.utcnow()
+    invoice.paid_at = payment_dt
     invoice.payment_verified_by_user_id = current_user.id
     invoice.payment_verified_at = datetime.utcnow()
     
@@ -4725,6 +4721,14 @@ def verify_invoice_payment(
         else:
             invoice.invoice_notes = f"Payment Notes: {payment.payment_notes}"
     
+    # Add payment reference to notes if provided
+    if payment.payment_reference:
+        note = f"\n\nPayment Reference: {payment.payment_reference}"
+        if invoice.invoice_notes:
+            invoice.invoice_notes += note
+        else:
+            invoice.invoice_notes = f"Payment Reference: {payment.payment_reference}"
+    
     db.commit()
     db.refresh(invoice)
     
@@ -4732,10 +4736,10 @@ def verify_invoice_payment(
         "success": True,
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
-        "payment_status": invoice.payment_status,
+        "status": invoice.status.value,
         "payment_method": invoice.payment_method,
-        "payment_date": invoice.payment_date.isoformat() if invoice.payment_date else None,
-        "paid_amount": invoice.paid_amount,
+        "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
+        "total_amount": invoice.total_amount,
         "verified_by": current_user.email,
         "verified_at": invoice.payment_verified_at.isoformat()
     }
