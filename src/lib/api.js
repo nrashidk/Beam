@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
@@ -149,6 +148,7 @@ export const apAPI = {
   sendPurchaseOrder: (poId) => apiClient.post(`/purchase-orders/${poId}/send`),
   cancelPurchaseOrder: (poId) => apiClient.post(`/purchase-orders/${poId}/cancel`),
   createPurchaseOrder: (formData) => apiClient.post('/purchase-orders', formData),
+  getPurchaseOrders: (params) => apiClient.get('/purchase-orders', { params }),
 };
 
 export const bulkImportAPI = {
