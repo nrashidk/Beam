@@ -4874,19 +4874,19 @@ def get_revenue_analytics(
     # Get paid invoices within date range
     invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status == 'PAID',
-        InvoiceDB.payment_date >= start_date,
-        InvoiceDB.payment_date <= end_date
+        InvoiceDB.status == InvoiceStatus.PAID,
+        InvoiceDB.paid_at >= start_date,
+        InvoiceDB.paid_at <= end_date
     ).all()
     
     # Group by month
     monthly_revenue = {}
     for inv in invoices:
-        if inv.payment_date:
-            month_key = inv.payment_date.strftime('%Y-%m')
+        if inv.paid_at:
+            month_key = inv.paid_at.strftime('%Y-%m')
             if month_key not in monthly_revenue:
                 monthly_revenue[month_key] = {'revenue': 0.0, 'count': 0}
-            monthly_revenue[month_key]['revenue'] += inv.paid_amount or 0.0
+            monthly_revenue[month_key]['revenue'] += inv.total_amount or 0.0
             monthly_revenue[month_key]['count'] += 1
     
     # Calculate growth rate
@@ -4911,7 +4911,7 @@ def get_revenue_analytics(
         prev_revenue = revenue if revenue > 0 else prev_revenue
     
     # Calculate totals
-    total_revenue = sum(inv.paid_amount or 0.0 for inv in invoices)
+    total_revenue = sum(inv.total_amount or 0.0 for inv in invoices)
     avg_monthly = total_revenue / months if months > 0 else 0
     
     return {
@@ -4938,7 +4938,7 @@ def get_customer_analytics(
     # Get all paid invoices
     invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status == 'PAID'
+        InvoiceDB.status == InvoiceStatus.PAID
     ).all()
     
     # Aggregate by customer
@@ -4954,11 +4954,11 @@ def get_customer_analytics(
                 'average_invoice_value': 0.0,
                 'last_payment_date': None
             }
-        customer_data[customer]['total_revenue'] += inv.paid_amount or 0.0
+        customer_data[customer]['total_revenue'] += inv.total_amount or 0.0
         customer_data[customer]['invoice_count'] += 1
-        if inv.payment_date:
-            if not customer_data[customer]['last_payment_date'] or inv.payment_date > customer_data[customer]['last_payment_date']:
-                customer_data[customer]['last_payment_date'] = inv.payment_date
+        if inv.paid_at:
+            if not customer_data[customer]['last_payment_date'] or inv.paid_at > customer_data[customer]['last_payment_date']:
+                customer_data[customer]['last_payment_date'] = inv.paid_at
     
     # Calculate averages and sort
     top_customers = []
@@ -5007,12 +5007,12 @@ def get_profitability_metrics(
     # Get revenue (paid invoices)
     revenue_invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status == 'PAID',
-        InvoiceDB.payment_date >= start_date,
-        InvoiceDB.payment_date <= end_date
+        InvoiceDB.status == InvoiceStatus.PAID,
+        InvoiceDB.paid_at >= start_date,
+        InvoiceDB.paid_at <= end_date
     ).all()
     
-    total_revenue = sum(inv.paid_amount or 0.0 for inv in revenue_invoices)
+    total_revenue = sum(inv.total_amount or 0.0 for inv in revenue_invoices)
     
     # Get expenses
     expenses = db.query(ExpenseDB).filter(
@@ -5035,9 +5035,9 @@ def get_profitability_metrics(
         month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
         
         month_revenue = sum(
-            inv.paid_amount or 0.0 
+            inv.total_amount or 0.0 
             for inv in revenue_invoices 
-            if inv.payment_date and month_start <= inv.payment_date <= month_end
+            if inv.paid_at and month_start <= inv.paid_at <= month_end
         )
         
         month_expenses = sum(
@@ -5087,9 +5087,9 @@ def get_cash_flow_analytics(
     # Get inflows (paid invoices)
     inflows = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status == 'PAID',
-        InvoiceDB.payment_date >= start_date,
-        InvoiceDB.payment_date <= end_date
+        InvoiceDB.status == InvoiceStatus.PAID,
+        InvoiceDB.paid_at >= start_date,
+        InvoiceDB.paid_at <= end_date
     ).all()
     
     # Get outflows (expenses)
@@ -5107,9 +5107,9 @@ def get_cash_flow_analytics(
         month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
         
         month_inflows = sum(
-            inv.paid_amount or 0.0 
+            inv.total_amount or 0.0 
             for inv in inflows 
-            if inv.payment_date and month_start <= inv.payment_date <= month_end
+            if inv.paid_at and month_start <= inv.paid_at <= month_end
         )
         
         month_outflows = sum(
@@ -8551,7 +8551,7 @@ async def delete_payment_method(
     except Exception as e:
         raise HTTPException(500, f"Failed to delete payment method: {str(e)}")
 
-@app.get("/billing/subscription", tags=["Billing"], response_model=SubscriptionOut)
+@app.get("/billing/subscription", tags=["Billing"])
 async def get_current_subscription(
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
@@ -8563,19 +8563,30 @@ async def get_current_subscription(
     ).first()
     
     if not subscription:
-        raise HTTPException(404, "No active subscription found")
+        return {
+            "id": None,
+            "tier": None,
+            "billing_cycle_months": None,
+            "monthly_price": None,
+            "discount_percent": None,
+            "status": None,
+            "current_period_start": None,
+            "current_period_end": None,
+            "created_at": None,
+            "message": "No active subscription found"
+        }
     
-    return SubscriptionOut(
-        id=subscription.id,
-        tier=subscription.tier,
-        billing_cycle_months=subscription.billing_cycle_months,
-        monthly_price=subscription.monthly_price,
-        discount_percent=subscription.discount_percent,
-        status=subscription.status,
-        current_period_start=subscription.current_period_start.isoformat(),
-        current_period_end=subscription.current_period_end.isoformat(),
-        created_at=subscription.created_at.isoformat()
-    )
+    return {
+        "id": subscription.id,
+        "tier": subscription.tier,
+        "billing_cycle_months": subscription.billing_cycle_months,
+        "monthly_price": subscription.monthly_price,
+        "discount_percent": subscription.discount_percent,
+        "status": subscription.status,
+        "current_period_start": subscription.current_period_start.isoformat(),
+        "current_period_end": subscription.current_period_end.isoformat(),
+        "created_at": subscription.created_at.isoformat()
+    }
 
 @app.get("/subscription/current", tags=["Subscriptions"])
 def get_subscription_plan_info(
