@@ -4001,6 +4001,7 @@ class UserOut(BaseModel):
     last_login: Optional[str]
 
 @app.post("/users/invite", tags=["Users"])
+@app.post("/company/users/invite", tags=["Users"])
 def invite_user(
     payload: UserInvite,
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -4083,6 +4084,7 @@ def get_team_members(
     ]
 
 @app.delete("/users/{user_id}", tags=["Users"])
+@app.delete("/company/users/{user_id}", tags=["Users"])
 def remove_team_member(
     user_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
