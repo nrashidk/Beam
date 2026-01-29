@@ -4554,6 +4554,42 @@ def list_invoices(
         ) for inv in invoices
     ]
 
+@app.get("/invoices/pending-payment", tags=["Invoices"])
+def get_pending_payment_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 100
+):
+    """
+    Get list of invoices awaiting payment
+    
+    Returns invoices that are not yet paid (status != PAID)
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    # Check role-based permissions
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to view pending payments")
+    
+    invoices = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status != InvoiceStatus.PAID
+    ).order_by(InvoiceDB.due_date.asc()).limit(limit).all()
+    
+    return [{
+        "id": inv.id,
+        "invoice_number": inv.invoice_number,
+        "customer_name": inv.customer_name,
+        "customer_email": inv.customer_email,
+        "issue_date": inv.issue_date.isoformat(),
+        "due_date": inv.due_date.isoformat() if inv.due_date else None,
+        "total_amount": inv.total_amount,
+        "amount_due": inv.amount_due,
+        "currency_code": inv.currency_code,
+        "status": inv.status.value,
+        "payment_terms": inv.payment_terms,
+        "days_overdue": (datetime.utcnow().date() - inv.due_date).days if inv.due_date and datetime.utcnow().date() > inv.due_date else 0
+    } for inv in invoices]
+
 @app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def get_invoice(
     invoice_id: str,
@@ -4703,43 +4739,6 @@ def verify_invoice_payment(
         "verified_by": current_user.email,
         "verified_at": invoice.payment_verified_at.isoformat()
     }
-
-@app.get("/invoices/pending-payment", tags=["Invoices"])
-def get_pending_payment_invoices(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    limit: int = 100
-):
-    """
-    Get list of invoices awaiting payment verification
-    
-    Returns invoices with status ISSUED and payment_status UNPAID or SCHEDULED
-    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
-    """
-    # Check role-based permissions
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
-        raise HTTPException(403, "Insufficient permissions to view pending payments")
-    
-    invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.ISSUED,
-        InvoiceDB.payment_status.in_(['UNPAID', 'SCHEDULED'])
-    ).order_by(InvoiceDB.due_date.asc()).limit(limit).all()
-    
-    return [{
-        "id": inv.id,
-        "invoice_number": inv.invoice_number,
-        "customer_name": inv.customer_name,
-        "customer_email": inv.customer_email,
-        "issue_date": inv.issue_date.isoformat(),
-        "due_date": inv.due_date.isoformat() if inv.due_date else None,
-        "total_amount": inv.total_amount,
-        "amount_due": inv.amount_due,
-        "currency_code": inv.currency_code,
-        "payment_status": inv.payment_status,
-        "payment_terms": inv.payment_terms,
-        "days_overdue": (datetime.utcnow().date() - inv.due_date).days if inv.due_date and datetime.utcnow().date() > inv.due_date else 0
-    } for inv in invoices]
 
 @app.get("/reports/daily-reconciliation", tags=["Reports"])
 def get_daily_reconciliation_report(
