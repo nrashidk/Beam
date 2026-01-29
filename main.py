@@ -4836,7 +4836,7 @@ def get_daily_reconciliation_report(
             'invoice_number': inv.invoice_number,
             'customer_name': inv.customer_name,
             'amount': inv.total_amount,
-            'payment_reference': inv.payment_reference,
+            'payment_reference': inv.invoice_notes if getattr(inv, 'invoice_notes', None) else None,
             'payment_date': inv.paid_at.isoformat() if inv.paid_at else None
         })
         total_collected += inv.total_amount or 0.0
