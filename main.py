@@ -8764,6 +8764,8 @@ async def get_trial_status(
 # ==================== BULK IMPORT ====================
 
 @app.get("/templates/invoices", tags=["Bulk Import"])
+@app.get("/bulk/template/invoices", tags=["Bulk Import"])
+@app.get("/api/bulk/template/invoices", tags=["Bulk Import"])
 async def download_invoice_template(format: str = "csv"):
     """Download CSV/Excel template for bulk invoice import"""
     try:
