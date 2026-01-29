@@ -4779,9 +4779,9 @@ def get_daily_reconciliation_report(
     # Query paid invoices within date range
     paid_invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status == 'PAID',
-        func.date(InvoiceDB.payment_date) >= start_dt,
-        func.date(InvoiceDB.payment_date) <= end_dt
+        InvoiceDB.status == InvoiceStatus.PAID,
+        func.date(InvoiceDB.paid_at) >= start_dt,
+        func.date(InvoiceDB.paid_at) <= end_dt
     ).all()
     
     # Group by payment method
@@ -4797,20 +4797,20 @@ def get_daily_reconciliation_report(
                 'invoices': []
             }
         payment_breakdown[method]['count'] += 1
-        payment_breakdown[method]['total_amount'] += inv.paid_amount or 0.0
+        payment_breakdown[method]['total_amount'] += inv.total_amount or 0.0
         payment_breakdown[method]['invoices'].append({
             'invoice_number': inv.invoice_number,
             'customer_name': inv.customer_name,
-            'amount': inv.paid_amount,
+            'amount': inv.total_amount,
             'payment_reference': inv.payment_reference,
-            'payment_date': inv.payment_date.isoformat() if inv.payment_date else None
+            'payment_date': inv.paid_at.isoformat() if inv.paid_at else None
         })
-        total_collected += inv.paid_amount or 0.0
+        total_collected += inv.total_amount or 0.0
     
     # Get outstanding invoices (overdue)
     outstanding_invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.payment_status.in_(['UNPAID', 'SCHEDULED']),
+        InvoiceDB.status != InvoiceStatus.PAID,
         InvoiceDB.due_date < datetime.utcnow()
     ).all()
     
