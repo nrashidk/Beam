@@ -1638,6 +1638,8 @@ class InvoiceListOut(BaseModel):
 
 # ==================== CORNER 4: AP MANAGEMENT MODELS ====================
 
+from pydantic import validator
+
 class PurchaseOrderLineItemCreate(BaseModel):
     line_number: int
     item_name: str
@@ -1648,6 +1650,24 @@ class PurchaseOrderLineItemCreate(BaseModel):
     unit_price: float
     tax_category: TaxCategory = TaxCategory.STANDARD
     tax_percent: float = 5.0
+
+    @validator('item_description', 'item_code', pre=True)
+    def empty_str_to_none(cls, v):
+        if v == "":
+            return None
+        return v
+
+    @validator('tax_category', pre=True)
+    def tax_category_enum_flexible(cls, v):
+        if v == "":
+            return TaxCategory.STANDARD
+        if isinstance(v, TaxCategory):
+            return v
+        if v in ("STANDARD", "S"): return TaxCategory.STANDARD
+        if v in ("ZERO", "Z"): return TaxCategory.ZERO
+        if v in ("EXEMPT", "E"): return TaxCategory.EXEMPT
+        if v in ("OUT_OF_SCOPE", "O"): return TaxCategory.OUT_OF_SCOPE
+        raise ValueError(f"Invalid tax_category: {v}")
 
 class PurchaseOrderCreate(BaseModel):
     po_number: str
@@ -1663,6 +1683,16 @@ class PurchaseOrderCreate(BaseModel):
     reference_number: Optional[str] = None
     notes: Optional[str] = None
     line_items: List[PurchaseOrderLineItemCreate]
+
+    @validator(
+        'supplier_trn', 'supplier_contact_email', 'supplier_address',
+        'supplier_peppol_id', 'expected_delivery_date', 'delivery_address',
+        'reference_number', 'notes', pre=True
+    )
+    def empty_str_to_none(cls, v):
+        if v == "":
+            return None
+        return v
 
 class PurchaseOrderLineItemOut(BaseModel):
     id: str
