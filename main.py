@@ -8820,14 +8820,16 @@ async def download_vendor_template(format: str = "csv"):
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
 @app.post("/invoices/bulk-import", tags=["Bulk Import"])
+@app.post("/bulk/import/invoices", tags=["Bulk Import"])
+@app.post("/api/bulk/import/invoices", tags=["Bulk Import"])
 async def bulk_import_invoices(
     file: UploadFile = File(...),
-    current_user_data: dict = Depends(get_current_user),
+    current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
     """Upload and validate CSV/Excel file for bulk invoice creation"""
     try:
-        company_id = current_user_data.get("company_id")
+        company_id = current_user.company_id
         if not company_id:
             raise HTTPException(403, "Company context required")
         
@@ -8848,7 +8850,7 @@ async def bulk_import_invoices(
                 "errors": errors
             }
         
-        subscription = db.query(SubscriptionDB).filter_by(company_id=company_id, active=True).first()
+        subscription = db.query(SubscriptionDB).filter_by(company_id=company_id, status="ACTIVE").first()
         if not subscription:
             raise HTTPException(403, "No active subscription found")
         
@@ -8920,14 +8922,16 @@ async def bulk_import_invoices(
         raise HTTPException(500, f"Bulk import failed: {str(e)}")
 
 @app.post("/vendors/bulk-import", tags=["Bulk Import"])
+@app.post("/bulk/import/vendors", tags=["Bulk Import"])
+@app.post("/api/bulk/import/vendors", tags=["Bulk Import"])
 async def bulk_import_vendors(
     file: UploadFile = File(...),
-    current_user_data: dict = Depends(get_current_user),
+    current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)
 ):
     """Upload and validate CSV/Excel file for bulk vendor creation (stored as inward invoice metadata)"""
     try:
-        company_id = current_user_data.get("company_id")
+        company_id = current_user.company_id
         if not company_id:
             raise HTTPException(403, "Company context required")
         
