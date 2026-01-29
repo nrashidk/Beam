@@ -149,6 +149,7 @@ export const apAPI = {
   cancelPurchaseOrder: (poId) => apiClient.post(`/purchase-orders/${poId}/cancel`),
   createPurchaseOrder: (formData) => apiClient.post('/purchase-orders', formData),
   getPurchaseOrders: (params) => apiClient.get('/purchase-orders', { params }),
+  deletePurchaseOrder: (poId) => apiClient.delete(`/purchase-orders/${poId}`),
 };
 
 export const bulkImportAPI = {

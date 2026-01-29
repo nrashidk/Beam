@@ -70,15 +70,14 @@ export default function POList() {
     }
   };
 
-  const handleCancel = async (poId) => {
-    if (!window.confirm('Cancel this purchase order? This action cannot be undone.')) return;
-    
+  const handleDelete = async (poId) => {
+    if (!window.confirm('Delete this purchase order? This action cannot be undone.')) return;
     try {
-      await apAPI.cancelPurchaseOrder(poId);
-      alert('Purchase order cancelled');
+      await apAPI.deletePurchaseOrder(poId);
+      alert('Purchase order deleted');
       fetchPurchaseOrders();
     } catch (err) {
-      alert('Failed to cancel PO: ' + (err.response?.data?.detail || err.message));
+      alert('Failed to delete PO: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -328,7 +327,7 @@ export default function POList() {
                             <Send className="w-4 h-4" />
                           </Button>
                           <Button
-                            onClick={() => handleCancel(po.id)}
+                            onClick={() => handleDelete(po.id)}
                             size="sm"
                             variant="outline"
                             className="text-red-600 hover:text-red-700"
@@ -339,7 +338,7 @@ export default function POList() {
                       )}
                       {po.status === 'SENT' && (
                         <Button
-                          onClick={() => handleCancel(po.id)}
+                          onClick={() => handleDelete(po.id)}
                           size="sm"
                           variant="outline"
                           className="text-red-600 hover:text-red-700"
