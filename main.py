@@ -7623,7 +7623,7 @@ async def upload_company_stamp(
         "uploaded_at": branding.stamp_uploaded_at.isoformat()
     }
 
-@app.get("/companies/{company_id}/branding", tags=["Branding"], response_model=CompanyBrandingOut)
+@app.get("/companies/{company_id}/branding", tags=["Branding"])
 def get_company_branding(
     company_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -7639,23 +7639,38 @@ def get_company_branding(
     ).first()
     
     if not branding:
-        raise HTTPException(404, "No branding configured for this company")
+        return {
+            "id": None,
+            "company_id": company_id,
+            "logo_file_name": None,
+            "logo_file_path": None,
+            "logo_uploaded_at": None,
+            "stamp_file_name": None,
+            "stamp_file_path": None,
+            "stamp_uploaded_at": None,
+            "primary_color": None,
+            "secondary_color": None,
+            "font_family": None,
+            "created_at": None,
+            "updated_at": None,
+            "message": "No branding configured for this company"
+        }
     
-    return CompanyBrandingOut(
-        id=branding.id,
-        company_id=branding.company_id,
-        logo_file_name=branding.logo_file_name,
-        logo_file_path=branding.logo_file_path,
-        logo_uploaded_at=branding.logo_uploaded_at.isoformat() if branding.logo_uploaded_at else None,
-        stamp_file_name=branding.stamp_file_name,
-        stamp_file_path=branding.stamp_file_path,
-        stamp_uploaded_at=branding.stamp_uploaded_at.isoformat() if branding.stamp_uploaded_at else None,
-        primary_color=branding.primary_color,
-        secondary_color=branding.secondary_color,
-        font_family=branding.font_family,
-        created_at=branding.created_at.isoformat(),
-        updated_at=branding.updated_at.isoformat()
-    )
+    return {
+        "id": branding.id,
+        "company_id": branding.company_id,
+        "logo_file_name": branding.logo_file_name,
+        "logo_file_path": branding.logo_file_path,
+        "logo_uploaded_at": branding.logo_uploaded_at.isoformat() if branding.logo_uploaded_at else None,
+        "stamp_file_name": branding.stamp_file_name,
+        "stamp_file_path": branding.stamp_file_path,
+        "stamp_uploaded_at": branding.stamp_uploaded_at.isoformat() if branding.stamp_uploaded_at else None,
+        "primary_color": branding.primary_color,
+        "secondary_color": branding.secondary_color,
+        "font_family": branding.font_family,
+        "created_at": branding.created_at.isoformat(),
+        "updated_at": branding.updated_at.isoformat()
+    }
 
 @app.get("/companies/{company_id}/branding/logo", tags=["Branding"])
 def get_company_logo(
