@@ -14,7 +14,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const [emailAddress, setEmailAddress] = useState(invoice.customer_email || '');
   const [phoneNumber, setPhoneNumber] = useState('');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
   const showQRCode = () => {
     setError('');

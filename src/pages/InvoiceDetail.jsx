@@ -185,7 +185,7 @@ export default function InvoiceDetail() {
               <div className="flex items-start gap-4">
                 {/* Company Logo */}
                 <img 
-                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${invoice.company_id}/branding/logo`}
+                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/companies/${invoice.company_id}/branding/logo`}
                   alt="Company Logo"
                   className="h-16 w-16 object-contain bg-white rounded-lg p-2"
                   onError={(e) => { e.target.style.display = 'none'; }}
@@ -369,7 +369,7 @@ export default function InvoiceDetail() {
             <div className="flex justify-end pt-8">
               <div className="text-center">
                 <img 
-                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/companies/${invoice.company_id}/branding/stamp`}
+                  src={`${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/companies/${invoice.company_id}/branding/stamp`}
                   alt="Company Stamp"
                   className="h-24 w-24 object-contain mx-auto mb-2"
                   onError={(e) => { e.target.style.display = 'none'; }}

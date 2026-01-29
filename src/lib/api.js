@@ -1,7 +1,7 @@
 
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const getApiBaseUrl = () => API_URL;
 
@@ -42,16 +42,16 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
     if (error.response && error.response.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        return new Promise(function(resolve, reject) {
-          failedQueue.push({resolve, reject});
+        return new Promise(function (resolve, reject) {
+          failedQueue.push({ resolve, reject });
         })
-        .then(token => {
-          originalRequest.headers['Authorization'] = 'Bearer ' + token;
-          return apiClient(originalRequest);
-        })
-        .catch(err => {
-          return Promise.reject(err);
-        });
+          .then(token => {
+            originalRequest.headers['Authorization'] = 'Bearer ' + token;
+            return apiClient(originalRequest);
+          })
+          .catch(err => {
+            return Promise.reject(err);
+          });
       }
       originalRequest._retry = true;
       isRefreshing = true;
@@ -127,7 +127,7 @@ export const authAPI = {
 export const mfaAPI = {
   enrollTOTP: () => apiClient.post('/auth/mfa/enroll/totp'),
   verifyEnrollment: (code) => apiClient.post('/auth/mfa/enroll/verify', { code }),
-  verifyMFA: (tempToken, code, method) => 
+  verifyMFA: (tempToken, code, method) =>
     apiClient.post('/auth/mfa/verify', { temp_token: tempToken, code, method }),
   sendEmailOTP: (email) => apiClient.post('/auth/mfa/send-otp', { email }),
   getStatus: () => apiClient.get('/auth/mfa/status'),
@@ -152,9 +152,9 @@ export const apAPI = {
 };
 
 export const bulkImportAPI = {
-  downloadInvoiceTemplate: (format) => 
+  downloadInvoiceTemplate: (format) =>
     apiClient.get(`/api/bulk/template/invoices?format=${format}`, { responseType: 'blob' }),
-  downloadVendorTemplate: (format) => 
+  downloadVendorTemplate: (format) =>
     apiClient.get(`/api/bulk/template/vendors?format=${format}`, { responseType: 'blob' }),
   uploadInvoices: (file) => {
     const formData = new FormData();
@@ -179,7 +179,7 @@ export const adminAPI = {
   rejectCompany: (companyId) => apiClient.post(`/admin/companies/${companyId}/reject`),
   getFeaturedBusinesses: () => apiClient.get('/admin/featured-businesses'),
   addFeaturedBusiness: (payload) => apiClient.post('/admin/featured-businesses', payload),
-  updateFeaturedBusiness: (featuredId, payload) => 
+  updateFeaturedBusiness: (featuredId, payload) =>
     apiClient.put(`/admin/featured-businesses/${featuredId}`, payload),
   removeFeaturedBusiness: (featuredId) => apiClient.delete(`/admin/featured-businesses/${featuredId}`),
 };
@@ -187,14 +187,14 @@ export const adminAPI = {
 export const auditFileAPI = {
   getAuditFiles: () => apiClient.get('/analytics/audit-files'),
   generateAuditFile: (params) => apiClient.post('/analytics/audit-files/generate', params),
-  downloadAuditFile: (auditFileId) => 
+  downloadAuditFile: (auditFileId) =>
     apiClient.get(`/analytics/audit-files/${auditFileId}/download`, { responseType: 'blob' }),
 };
 
 export const billingAPI = {
   getPaymentMethods: () => apiClient.get('/billing/payment-methods'),
   addPaymentMethod: (payload) => apiClient.post('/billing/payment-methods', payload),
-  deletePaymentMethod: (paymentMethodId) => 
+  deletePaymentMethod: (paymentMethodId) =>
     apiClient.delete(`/billing/payment-methods/${paymentMethodId}`),
   subscribe: (payload) => apiClient.post('/billing/subscribe', payload),
   getSubscription: () => apiClient.get('/billing/subscription'),
@@ -206,11 +206,11 @@ export const companyAPI = {
   getSubscription: () => apiClient.get('/company/subscription'),
   getInvoices: (companyId) => apiClient.get(`/companies/${companyId}/invoices`),
   updateCompanyProfile: (payload) => apiClient.put('/company/profile', payload),
-  uploadLogo: (formData) => 
+  uploadLogo: (formData) =>
     apiClient.post('/company/upload-logo', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     }),
-  uploadStamp: (formData) => 
+  uploadStamp: (formData) =>
     apiClient.post('/company/upload-stamp', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     }),
@@ -220,11 +220,11 @@ export const companyAPI = {
 
 export const settingsAPI = {
   updateVATSettings: (payload) => apiClient.put('/settings/vat', payload),
-  uploadVatCertificate: (formData) => 
+  uploadVatCertificate: (formData) =>
     apiClient.post('/settings/vat/certificate', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     }),
-  downloadVatCertificate: () => 
+  downloadVatCertificate: () =>
     apiClient.get('/settings/vat/certificate', { responseType: 'blob' }),
   updatePeppolSettings: (payload) => apiClient.put('/settings/peppol', payload),
   testPeppolConnection: () => apiClient.post('/settings/peppol/test'),
@@ -245,7 +245,7 @@ export const usersAPI = {
 };
 
 export const paymentAPI = {
-  verifyPayment: (invoiceId, payload) => 
+  verifyPayment: (invoiceId, payload) =>
     apiClient.post(`/invoices/${invoiceId}/verify-payment`, payload),
 };
 

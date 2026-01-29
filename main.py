@@ -2567,8 +2567,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             company_id=company.id,
             role="COMPANY"
         )
-    # ==================== REFRESH TOKEN ENDPOINT ====================
-    from fastapi import Cookie
+    
+    # If neither user nor company authentication succeeded
+    raise HTTPException(status_code=401, detail="Invalid email or password")
+
+# ==================== REFRESH TOKEN ENDPOINT ====================
+from fastapi import Cookie
 
 class RefreshTokenRequest(BaseModel):
         refresh_token: Optional[str] = None
@@ -3083,9 +3087,24 @@ def update_company_profile(
 @app.get("/companies/{company_id}/subscription", tags=["Companies"])
 def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
     """Get company's current subscription"""
+    # Verify company exists
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
     sub = db.query(CompanySubscriptionDB).filter_by(company_id=company_id).first()
     if not sub:
-        raise HTTPException(404, "No subscription found")
+        # Return empty subscription info instead of 404
+        return {
+            "subscription_id": None,
+            "plan": None,
+            "status": None,
+            "billing_cycle": None,
+            "current_period_start": None,
+            "current_period_end": None,
+            "invoices_this_period": 0,
+            "message": "No active subscription"
+        }
 
     return {
         "subscription_id": sub.id,
@@ -3100,6 +3119,46 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
         "current_period_end": sub.current_period_end.isoformat(),
         "invoices_this_period": sub.invoices_this_period
     }
+
+@app.get("/companies/{company_id}/invoices", tags=["Companies"], response_model=List[InvoiceListOut])
+def get_company_invoices(
+    company_id: str,
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """Get all invoices for a specific company"""
+    # Verify company exists
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+    
+    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == company_id)
+    
+    if status:
+        try:
+            status_enum = InvoiceStatus(status)
+            query = query.filter(InvoiceDB.status == status_enum)
+        except ValueError:
+            raise HTTPException(400, f"Invalid status: {status}")
+    
+    query = query.order_by(InvoiceDB.created_at.desc())
+    invoices = query.offset(offset).limit(limit).all()
+    
+    return [
+        InvoiceListOut(
+            id=inv.id,
+            invoice_number=inv.invoice_number,
+            invoice_type=inv.invoice_type,
+            status=inv.status,
+            issue_date=inv.issue_date.isoformat(),
+            customer_name=inv.customer_name,
+            total_amount=inv.total_amount,
+            currency_code=inv.currency_code,
+            created_at=inv.created_at.isoformat()
+        ) for inv in invoices
+    ]
 
 # ==================== ADMIN ENDPOINTS ====================
 

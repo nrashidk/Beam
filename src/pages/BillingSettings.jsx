@@ -24,7 +24,7 @@ export default function BillingSettings() {
   const [selectedTier, setSelectedTier] = useState(location.state?.selectedTier || null);
   const [selectedCycle, setSelectedCycle] = useState(location.state?.billingCycle || 1);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
   useEffect(() => {
     fetchBillingData();
