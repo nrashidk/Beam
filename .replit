@@ -123,4 +123,4 @@ build = ["npm", "run", "build"]
 VITE_API_URL = "https://7c5411bd-6499-4453-a216-f9907dbb3529-00-79cj4vh86hun.pike.replit.dev"
 
 [userenv.production]
-VITE_API_URL = "https://involinks.ae"
+VITE_API_URL = "https://beam-nrashidk.replit.app"
