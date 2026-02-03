@@ -7777,9 +7777,9 @@ def get_public_stats(db: Session = Depends(get_db)):
 
 # ==================== HEALTH CHECK ====================
 
-@app.get("/", tags=["Health"])
-def root():
-    """API Health Check"""
+@app.get("/api/info", tags=["Health"])
+def api_info():
+    """API Info Endpoint"""
     return {
         "service": "InvoLinks E-Invoicing API",
         "version": "2.0",
@@ -7791,6 +7791,11 @@ def root():
             "Admin approval workflow"
         ]
     }
+
+@app.get("/ping", tags=["Health"])
+def ping():
+    """Simple ping endpoint for deployment health checks"""
+    return {"status": "ok"}
 
 @app.get("/health", tags=["Health"])
 def health_check(db: Session = Depends(get_db)):
@@ -7805,7 +7810,11 @@ def health_check(db: Session = Depends(get_db)):
             "plans": plan_count
         }
     except Exception as e:
-        raise HTTPException(500, f"Health check failed: {str(e)}")
+        return {
+            "status": "degraded",
+            "database": "error",
+            "error": str(e)
+        }
 
 @app.post("/admin/restore-superadmin", tags=["Admin"])
 def restore_superadmin(db: Session = Depends(get_db)):
