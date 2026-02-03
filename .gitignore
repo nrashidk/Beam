@@ -1,3 +1,8 @@
+# Secrets (never commit)
+SECRETS_MESSAGE_FOR_FREELANCER.txt
+*.secret
+*.secrets
+
 # Python
 __pycache__/
 *.py[cod]
