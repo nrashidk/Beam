@@ -1,0 +1,92 @@
+~/workspace$ git status
+interactive rebase in progress; onto 2e8dbcd
+Last commands done (5 commands done):
+   pick 1714812 # Add ability to view company details and fix invoice creation error
+   pick d683187 # Update company information saving and error handling
+  (see more in file .git/rebase-merge/done)
+Next commands to do (7 remaining commands):
+   pick 2610028 # Fix error when saving invoices without VAT enabled # empty
+   pick ab9e27c # Update default API URL for authentication requests
+  (use "git rebase --edit-todo" to view and edit)
+You are currently rebasing branch 'main' on '2e8dbcd'.
+  (fix conflicts and then run "git rebase --continue")
+  (use "git rebase --skip" to skip this patch)
+  (use "git rebase --abort" to check out the original branch)
+
+Changes to be committed:
+  (use "git restore --staged <file>..." to unstage)
+    modified:   package-lock.json
+    modified:   package.json
+    modified:   src/components/CompanyInfoEditDialog.jsx
+    modified:   src/lib/api.js
+    modified:   src/main.jsx
+
+Unmerged paths:
+  (use "git restore --staged <file>..." to unstage)
+  (use "git add <file>..." to mark resolution)
+    both modified:   src/pages/CompanySettings.jsx
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+    modified:   .replit
+    modified:   main.py
+    modified:   src/components/Footer.jsx
+    modified:   src/components/InvoiceDeliveryActions.jsx
+    modified:   src/contexts/AuthContext.jsx
+    modified:   src/lib/api.js
+    modified:   src/pages/APInbox.jsx
+    modified:   src/pages/AdvancedAnalytics.jsx
+    modified:   src/pages/BillingSettings.jsx
+    modified:   src/pages/BulkImport.jsx
+    modified:   src/pages/BusinessDashboard.jsx
+    modified:   src/pages/CompanyBranding.jsx
+    modified:   src/pages/CompanyManagement.jsx
+    modified:   src/pages/ContentManager.jsx
+    modified:   src/pages/CreateInvoice.jsx
+    modified:   src/pages/DailyReconciliation.jsx
+    modified:   src/pages/ExpenseTracker.jsx
+    modified:   src/pages/FTAAuditFiles.jsx
+    modified:   src/pages/FeaturedBusinesses.jsx
+    modified:   src/pages/FinanceDashboard.jsx
+    modified:   src/pages/ForgotPassword.jsx
+    modified:   src/pages/Homepage.jsx
+    modified:   src/pages/InvoiceDashboard.jsx
+    modified:   src/pages/InvoiceDetail.jsx
+    modified:   src/pages/Login.jsx
+    modified:   src/pages/MFASettings.jsx
+    modified:   src/pages/PEPPOLSettings.jsx
+    modified:   src/pages/POList.jsx
+    modified:   src/pages/PaymentVerification.jsx
+    modified:   src/pages/Pricing.jsx
+    modified:   src/pages/PublicInvoiceView.jsx
+    modified:   src/pages/ResetPassword.jsx
+    modified:   src/pages/SuperAdminApprovals.jsx
+    modified:   src/pages/SuperAdminDashboard.jsx
+    modified:   src/pages/SuppliersManagement.jsx
+    modified:   src/pages/TeamManagement.jsx
+    modified:   src/pages/TierManagement.jsx
+    modified:   src/pages/VATSettings.jsx
+    modified:   src/utils/validation.js
+    modified:   utils/bulk_import.py
+    modified:   vite.config.js
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+    .env.example
+    SECRETS_MESSAGE_FOR_FREELANCER.txt
+    UPWORK_JOB_POSTING.md
+    attached_assets/Republish_1770114443367.png
+    attached_assets/Screenshot_2026-02-03_at_2.19.55_PM_1770108598090.png
+    migrations/
+
+~/workspace$ git rebase --abort
+error: Unable to create '/home/runner/workspace/.git/index.lock': File exists.
+
+Another git process seems to be running in this repository, e.g.
+an editor opened by 'git commit'. Please make sure all processes
+are terminated then try again. If it still fails, a git process
+may have crashed in this repository earlier:
+remove the file manually to continue.
+fatal: could not move back to 61a215f4016db912640bd34b4ff745b246ae0ed0
+~/workspace$ ^C
