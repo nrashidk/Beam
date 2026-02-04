@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { settingsAPI } from '../lib/api';
+import { settingsAPI, apiClient } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -63,8 +63,7 @@ export default function PEPPOLSettings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await settingsAPI.getPeppolSettings?.()
-        || await apiClient.get('/settings/peppol');
+      const response = await settingsAPI.getPeppolSettings();
       setSettings(response.data);
       setApiKeyChanged(false); // Reset flag when loading fresh settings
     } catch (error) {

@@ -5202,6 +5202,26 @@ def issue_invoice(
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(400, f"Can only issue draft invoices. Current status: {invoice.status}")
     
+    # Auto-fill supplier TRN from company if missing
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    if (not invoice.supplier_trn or (isinstance(invoice.supplier_trn, str) and invoice.supplier_trn.strip() == "")) and company and company.trn:
+        invoice.supplier_trn = company.trn
+
+    # Auto-calculate monetary totals from line items if missing
+    try:
+        subtotal_calc = sum([(li.line_extension_amount if li.line_extension_amount is not None else (li.quantity * li.unit_price)) for li in invoice.line_items])
+        tax_calc = sum([(li.tax_amount or 0.0) for li in invoice.line_items])
+        total_calc = sum([(li.line_total_amount if li.line_total_amount is not None else ((li.line_extension_amount if li.line_extension_amount is not None else (li.quantity * li.unit_price)) + (li.tax_amount or 0.0))) for li in invoice.line_items])
+    except Exception:
+        subtotal_calc = tax_calc = total_calc = 0.0
+
+    if not invoice.subtotal_amount or invoice.subtotal_amount == 0.0:
+        invoice.subtotal_amount = subtotal_calc
+    if not invoice.tax_amount or invoice.tax_amount == 0.0:
+        invoice.tax_amount = tax_calc
+    if not invoice.total_amount or invoice.total_amount == 0.0:
+        invoice.total_amount = total_calc
+
     # ==== PHASE 1: Digital Signatures, Hash Chain & UBL XML Generation ====
     from utils.crypto_utils import get_crypto_instance
     from utils.ubl_xml_generator import generate_invoice_xml
@@ -5246,6 +5266,15 @@ def issue_invoice(
         'preceding_invoice_id': invoice.preceding_invoice_id,
         'prev_invoice_hash': invoice.prev_invoice_hash
     }
+    # Validate required fields before XML generation
+    missing_fields = []
+    for f in ['supplier_trn', 'subtotal_amount', 'tax_amount', 'total_amount']:
+        val = invoice_data.get(f)
+        if val is None or (isinstance(val, str) and val.strip() == ""):
+            missing_fields.append(f)
+
+    if missing_fields:
+        raise HTTPException(400, f"Missing required fields for XML generation: {missing_fields}")
     
     # Get line items for XML
     line_items_data = []

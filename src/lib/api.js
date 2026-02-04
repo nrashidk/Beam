@@ -227,6 +227,7 @@ export const settingsAPI = {
     }),
   downloadVatCertificate: () =>
     apiClient.get('/settings/vat/certificate', { responseType: 'blob' }),
+  getPeppolSettings: () => apiClient.get('/settings/peppol'),
   updatePeppolSettings: (payload) => apiClient.put('/settings/peppol', payload),
   testPeppolConnection: () => apiClient.post('/settings/peppol/test'),
 };

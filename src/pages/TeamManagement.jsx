@@ -37,7 +37,19 @@ export default function TeamManagement() {
     try {
       setLoading(true);
       const response = await api.get('/users/team');
-      setTeamMembers(response.data);
+      let members = response.data;
+      if (!Array.isArray(members)) {
+        if (members && Array.isArray(members.users)) {
+          members = members.users;
+        } else if (members && Array.isArray(members.data)) {
+          members = members.data;
+        } else if (members && typeof members === 'object') {
+          members = Object.values(members);
+        } else {
+          members = [];
+        }
+      }
+      setTeamMembers(members || []);
     } catch (error) {
       console.error('Failed to fetch team members:', error);
       setError('Failed to load team members');
