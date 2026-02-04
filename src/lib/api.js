@@ -1,7 +1,11 @@
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-console.log("API URL:", API_URL);
+// In production, use same origin (empty string for relative URLs)
+// In development, use VITE_API_URL or fallback to localhost:8000
+const API_URL = import.meta.env.PROD 
+  ? "" 
+  : (import.meta.env.VITE_API_URL || "http://localhost:8000");
+console.log("API URL:", API_URL || "(same origin)");
 
 export const getApiBaseUrl = () => API_URL;
 
