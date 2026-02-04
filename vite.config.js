@@ -4,7 +4,7 @@ import path from 'path'
 
 // Shared proxy configuration
 const proxyConfig = {
-  target: 'http://localhost:8000',
+                                                                                                                                                                                                                                                          target: 'http://localhost:8000',
   changeOrigin: true,
 }
 
