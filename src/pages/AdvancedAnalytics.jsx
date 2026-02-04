@@ -49,11 +49,12 @@ const AdvancedAnalytics = () => {
       const token = localStorage.getItem("token");
       const headers = { Authorization: `Bearer ${token}` };
 
+      const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
       const [revenue, customers, profitability, cashFlow] = await Promise.all([
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/revenue?months=${timePeriod}`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/customers?limit=10`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/profitability?months=${timePeriod}`, { headers }),
-        axios.get(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/analytics/cash-flow?months=${timePeriod}`, { headers })
+        axios.get(`${API_URL}/analytics/revenue?months=${timePeriod}`, { headers }),
+        axios.get(`${API_URL}/analytics/customers?limit=10`, { headers }),
+        axios.get(`${API_URL}/analytics/profitability?months=${timePeriod}`, { headers }),
+        axios.get(`${API_URL}/analytics/cash-flow?months=${timePeriod}`, { headers })
       ]);
 
       setRevenueData(revenue.data);
