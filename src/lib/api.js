@@ -243,6 +243,7 @@ export const platformAPI = {
 };
 
 export const usersAPI = {
+  getTeamMembers: () => apiClient.get('/users/team'),
   inviteUser: (payload) => apiClient.post('/company/users/invite', payload),
   removeUser: (userId) => apiClient.delete(`/company/users/${userId}`),
 };
