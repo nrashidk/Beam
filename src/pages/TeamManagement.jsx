@@ -55,7 +55,7 @@ export default function TeamManagement() {
   const fetchTeamMembers = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/users/team");
+      const response = await usersAPI.getTeamMembers();
       let members = response.data;
       if (!Array.isArray(members)) {
         if (members && Array.isArray(members.users)) {

@@ -4507,7 +4507,7 @@ def invite_user(payload: UserInvite,
     }
 
 
-@app.get("/users/team", response_model=List[UserOut], tags=["Users"])
+@app.get("/users/teams", response_model=List[UserOut], tags=["Users"])
 def get_team_members(
         current_user: UserDB = Depends(get_current_user_from_header),
         db: Session = Depends(get_db)):
@@ -9806,9 +9806,7 @@ async def serve_react_routes(full_path: str):
     # Skip API routes
     if full_path.startswith(
         ("api/", "auth/", "admin/", "companies/", "register/", "plans/",
-         "users/", "subscription/", "invoices/", "payments/", "branding/",
-         "suppliers/", "customers/", "inventory/", "expenses/", "ap/",
-         "docs", "redoc", "openapi.json", "ping", "health")):
+         "docs", "redoc", "openapi.json")):
         raise HTTPException(404, "Not found")
 
     if os.path.exists("dist/index.html"):
