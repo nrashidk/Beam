@@ -5785,11 +5785,12 @@ def issue_invoice(invoice_id: str,
         'preceding_invoice_id': invoice.preceding_invoice_id,
         'prev_invoice_hash': invoice.prev_invoice_hash
     }
-    # Validate required fields before XML generation
+    # Validate required fields before XML generation (TRN is optional for non-VAT parties)
     missing_fields = []
-    for f in ['supplier_trn', 'subtotal_amount', 'tax_amount', 'total_amount']:
+    for f in ['subtotal_amount', 'tax_amount', 'total_amount']:
         val = invoice_data.get(f)
-        if val is None or (isinstance(val, str) and val.strip() == ""):
+        # Allow 0 values - only check for None
+        if val is None:
             missing_fields.append(f)
 
     if missing_fields:

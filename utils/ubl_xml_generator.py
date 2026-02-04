@@ -395,13 +395,20 @@ class UBLXMLGenerator:
         errors = []
         
         # Required fields (TRN optional for non-VAT registered parties)
-        required_fields = [
-            'invoice_number', 'issue_date', 'supplier_name',
-            'customer_name', 'subtotal_amount', 'tax_amount', 'total_amount'
+        required_string_fields = [
+            'invoice_number', 'issue_date', 'supplier_name', 'customer_name'
+        ]
+        required_numeric_fields = [
+            'subtotal_amount', 'tax_amount', 'total_amount'
         ]
         
-        for field in required_fields:
+        for field in required_string_fields:
             if not invoice_data.get(field):
+                errors.append(f"Missing required field: {field}")
+        
+        # Numeric fields allow 0 values - only check for None
+        for field in required_numeric_fields:
+            if invoice_data.get(field) is None:
                 errors.append(f"Missing required field: {field}")
         
         # Validate TRN format (15 digits for UAE)
