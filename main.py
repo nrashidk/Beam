@@ -5918,36 +5918,14 @@ def send_invoice(invoice_id: str,
     peppol_fee = 0.0
     peppol_usage_id = None
 
-    if company:
-        # Get active subscription to determine fee
-        subscription = db.query(SubscriptionDB).filter(
-            SubscriptionDB.company_id == company.id,
-            SubscriptionDB.status == "ACTIVE").first()
-
-        # Determine PEPPOL fee based on tier (pay-per-use pricing)
-        fee_by_tier = {
-            "BASIC": 2.00,  # AED 2.00 per invoice
-            "PRO": 1.00,  # AED 1.00 per invoice
-            "ENTERPRISE": 0.50  # AED 0.50 per invoice
-        }
-
-        if subscription:
-            peppol_fee = fee_by_tier.get(subscription.tier, 2.00)
-        else:
-            # No active subscription - use highest rate
-            peppol_fee = 2.00
-
-        # Record PEPPOL usage
-        usage_record = PEPPOLUsageDB(
-            id=f"pep_{uuid4().hex[:12]}",
-            company_id=company.id,
-            invoice_id=invoice.id,
-            transmission_type="PEPPOL",  # Could be PEPPOL, FTA, EMAIL, etc.
-            fee_amount=peppol_fee,
-            status="COMPLETED"  # or PENDING, FAILED
-        )
-        db.add(usage_record)
-        peppol_usage_id = usage_record.id
+    # TODO: PEPPOL usage tracking - to be implemented when PEPPOLUsageDB model is created
+    # if company:
+    #     subscription = db.query(SubscriptionDB).filter(
+    #         SubscriptionDB.company_id == company.id,
+    #         SubscriptionDB.status == "ACTIVE").first()
+    #     fee_by_tier = {"BASIC": 2.00, "PRO": 1.00, "ENTERPRISE": 0.50}
+    #     peppol_fee = fee_by_tier.get(subscription.tier, 2.00) if subscription else 2.00
+    #     # Record usage when PEPPOLUsageDB model is available
 
     db.commit()
 
