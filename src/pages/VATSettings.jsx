@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { settingsAPI } from '../lib/api';
+import { settingsAPI, apiClient } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -50,7 +50,7 @@ export default function VATSettings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await settingsAPI.getVATSettings?.() || await apiClient.get('/settings/vat');
+      const response = await settingsAPI.getVATSettings();
       const vatEnabled = response.data.vat_enabled || false;
       const hasTrn = !!response.data.tax_registration_number;
       setSettings({

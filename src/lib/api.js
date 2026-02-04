@@ -220,6 +220,7 @@ export const companyAPI = {
 };
 
 export const settingsAPI = {
+  getVATSettings: () => apiClient.get('/settings/vat'),
   updateVATSettings: (payload) => apiClient.put('/settings/vat', payload),
   uploadVatCertificate: (formData) =>
     apiClient.post('/settings/vat/certificate', formData, {
