@@ -41,34 +41,46 @@ export default function DailyReconciliation() {
   const exportToExcel = () => {
     if (!report) return;
 
+    const summary = report.summary || {
+      total_collected: 0,
+      total_transactions: 0,
+      outstanding_amount: 0,
+      outstanding_count: 0
+    };
+    const reportPeriod = report.report_period || { start_date: '', end_date: '' };
+    const paymentBreakdown = Array.isArray(report.payment_breakdown) ? report.payment_breakdown : [];
+    const outstandingInvoices = Array.isArray(report.outstanding_invoices)
+      ? report.outstanding_invoices
+      : [];
+
     // Create CSV content
     let csv = 'Daily Reconciliation Report\n\n';
-    csv += `Report Period:,${report.report_period.start_date} to ${report.report_period.end_date}\n\n`;
+    csv += `Report Period:,${reportPeriod.start_date} to ${reportPeriod.end_date}\n\n`;
     
     csv += 'SUMMARY\n';
-    csv += `Total Collected:,AED ${report.summary.total_collected.toFixed(2)}\n`;
-    csv += `Total Transactions:,${report.summary.total_transactions}\n`;
-    csv += `Outstanding Amount:,AED ${report.summary.outstanding_amount.toFixed(2)}\n`;
-    csv += `Outstanding Count:,${report.summary.outstanding_count}\n\n`;
+    csv += `Total Collected:,AED ${summary.total_collected.toFixed(2)}\n`;
+    csv += `Total Transactions:,${summary.total_transactions}\n`;
+    csv += `Outstanding Amount:,AED ${summary.outstanding_amount.toFixed(2)}\n`;
+    csv += `Outstanding Count:,${summary.outstanding_count}\n\n`;
     
     csv += 'PAYMENT BREAKDOWN\n';
     csv += 'Payment Method,Count,Total Amount\n';
-    report.payment_breakdown.forEach(method => {
+    paymentBreakdown.forEach(method => {
       csv += `${method.payment_method},${method.count},AED ${method.total_amount.toFixed(2)}\n`;
     });
     
     csv += '\n\nDETAILED TRANSACTIONS\n';
     csv += 'Payment Method,Invoice Number,Customer Name,Amount,Reference,Date\n';
-    report.payment_breakdown.forEach(method => {
+    paymentBreakdown.forEach(method => {
       method.invoices.forEach(inv => {
         csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_reference || 'N/A'},${inv.payment_date}\n`;
       });
     });
     
-    if (report.outstanding_invoices.length > 0) {
+    if (outstandingInvoices.length > 0) {
       csv += '\n\nOUTSTANDING INVOICES\n';
       csv += 'Invoice Number,Customer Name,Amount Due,Due Date,Days Overdue\n';
-      report.outstanding_invoices.forEach(inv => {
+      outstandingInvoices.forEach(inv => {
         csv += `${inv.invoice_number},${inv.customer_name},AED ${inv.amount_due.toFixed(2)},${inv.due_date},${inv.days_overdue}\n`;
       });
     }
@@ -78,7 +90,7 @@ export default function DailyReconciliation() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `reconciliation_${report.report_period.start_date}_${report.report_period.end_date}.csv`);
+    link.setAttribute('download', `reconciliation_${reportPeriod.start_date}_${reportPeriod.end_date}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -96,6 +108,19 @@ export default function DailyReconciliation() {
     };
     return colors[method] || 'bg-gray-100 text-gray-800';
   };
+
+  const summary = report?.summary || {
+    total_collected: 0,
+    total_transactions: 0,
+    outstanding_amount: 0,
+    outstanding_count: 0
+  };
+  const paymentBreakdown = Array.isArray(report?.payment_breakdown)
+    ? report.payment_breakdown
+    : [];
+  const outstandingInvoices = Array.isArray(report?.outstanding_invoices)
+    ? report.outstanding_invoices
+    : [];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
@@ -168,7 +193,7 @@ export default function DailyReconciliation() {
                       <div>
                         <p className="text-sm text-gray-600">Total Collected</p>
                         <p className="text-2xl font-bold text-green-600 mt-1">
-                          AED {report.summary.total_collected.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                          AED {summary.total_collected.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -183,7 +208,7 @@ export default function DailyReconciliation() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-gray-600">Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-1">{report.summary.total_transactions}</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-1">{summary.total_transactions}</p>
                       </div>
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                         <DollarSign className="text-blue-600" size={24} />
@@ -198,7 +223,7 @@ export default function DailyReconciliation() {
                       <div>
                         <p className="text-sm text-gray-600">Outstanding</p>
                         <p className="text-2xl font-bold text-orange-600 mt-1">
-                          AED {report.summary.outstanding_amount.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                          AED {summary.outstanding_amount.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
                         </p>
                       </div>
                       <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -213,7 +238,7 @@ export default function DailyReconciliation() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-gray-600">Overdue Count</p>
-                        <p className="text-2xl font-bold text-red-600 mt-1">{report.summary.outstanding_count}</p>
+                        <p className="text-2xl font-bold text-red-600 mt-1">{summary.outstanding_count}</p>
                       </div>
                       <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                         <Calendar className="text-red-600" size={24} />
@@ -229,14 +254,14 @@ export default function DailyReconciliation() {
                   <CardTitle>Payment Method Breakdown</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {report.payment_breakdown.length === 0 ? (
+                  {paymentBreakdown.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <DollarSign size={48} className="mx-auto mb-4 opacity-50" />
                       <p>No payments recorded for this period</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {report.payment_breakdown.map((method, index) => (
+                      {paymentBreakdown.map((method, index) => (
                         <div key={index} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
@@ -290,7 +315,7 @@ export default function DailyReconciliation() {
               </Card>
 
               {/* Outstanding Invoices */}
-              {report.outstanding_invoices && report.outstanding_invoices.length > 0 && (
+              {outstandingInvoices.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -311,7 +336,7 @@ export default function DailyReconciliation() {
                           </tr>
                         </thead>
                         <tbody>
-                          {report.outstanding_invoices.map((inv, index) => (
+                          {outstandingInvoices.map((inv, index) => (
                             <tr key={index} className="border-b hover:bg-gray-50">
                               <td className="py-3 px-4 font-medium text-blue-600">{inv.invoice_number}</td>
                               <td className="py-3 px-4">{inv.customer_name}</td>
