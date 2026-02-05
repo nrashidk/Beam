@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
+import PageLoader from "../components/PageLoader";
 
 export default function PEPPOLSettings() {
   const navigate = useNavigate();
@@ -150,8 +151,11 @@ export default function PEPPOLSettings() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading PEPPOL settings...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }
