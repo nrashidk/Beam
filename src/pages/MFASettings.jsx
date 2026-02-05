@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/badge';
 import MFAEnrollmentWizard from '../components/MFAEnrollmentWizard';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
+import PageLoader from '../components/PageLoader';
 
 export default function MFASettings() {
   const navigate = useNavigate();
@@ -97,11 +98,10 @@ export default function MFASettings() {
 
   if (loading && !mfaStatus) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center py-12">
-            <p className="text-gray-600">Loading...</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
         </div>
       </div>
     );
