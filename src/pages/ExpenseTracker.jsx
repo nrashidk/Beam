@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../lib/api';
 import { Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, X } from 'lucide-react';
 
 const ExpenseTracker = () => {
@@ -24,9 +24,6 @@ const ExpenseTracker = () => {
     description: ''
   });
 
-  const token = localStorage.getItem('token');
-  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
-
   useEffect(() => {
     loadCategories();
     loadExpenses();
@@ -35,9 +32,7 @@ const ExpenseTracker = () => {
 
   const loadCategories = async () => {
     try {
-      const res = await axios.get(`${API_URL}/expense-categories`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await apiClient.get('/expense-categories');
       setCategories(res.data.categories || []);
     } catch (err) {
       console.error('Error loading categories:', err);
@@ -46,8 +41,8 @@ const ExpenseTracker = () => {
 
   const loadExpenses = async () => {
     try {
-      const res = await axios.get(`${API_URL}/expenses?month=${selectedMonth}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await apiClient.get('/expenses', {
+        params: { month: selectedMonth }
       });
       setExpenses(res.data.expenses || []);
     } catch (err) {
@@ -57,8 +52,8 @@ const ExpenseTracker = () => {
 
   const loadSummary = async () => {
     try {
-      const res = await axios.get(`${API_URL}/expenses/summary?month=${selectedMonth}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await apiClient.get('/expenses/summary', {
+        params: { month: selectedMonth }
       });
       setSummary(res.data);
     } catch (err) {
@@ -75,9 +70,8 @@ const ExpenseTracker = () => {
     });
 
     try {
-      await axios.post(`${API_URL}/expenses`, formData, {
+      await apiClient.post('/expenses', formData, {
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
@@ -106,9 +100,8 @@ const ExpenseTracker = () => {
     if (newCategory.description) formData.append('description', newCategory.description);
 
     try {
-      await axios.post(`${API_URL}/expense-categories`, formData, {
+      await apiClient.post('/expense-categories', formData, {
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });

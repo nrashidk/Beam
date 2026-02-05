@@ -5,7 +5,6 @@ import {
   Download, Upload, CheckCircle, AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 
 export default function SuppliersManagement() {
   const navigate = useNavigate();
@@ -14,8 +13,6 @@ export default function SuppliersManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
-
-  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
   useEffect(() => {
     fetchSuppliers();

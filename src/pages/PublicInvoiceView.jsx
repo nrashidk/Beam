@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, FileText, Building2, Calendar, CreditCard, CheckCircle, Mail, Phone } from 'lucide-react';
-import axios from 'axios';
+import apiClient from '../lib/api';
 import PageLoader from '../components/PageLoader';
 
 export default function PublicInvoiceView() {
@@ -10,8 +10,6 @@ export default function PublicInvoiceView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
-
   useEffect(() => {
     fetchInvoice();
   }, [shareToken]);
@@ -19,7 +17,7 @@ export default function PublicInvoiceView() {
   const fetchInvoice = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/invoices/view/${shareToken}`);
+      const response = await apiClient.get(`/invoices/view/${shareToken}`);
       setInvoice(response.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'Invoice not found');
