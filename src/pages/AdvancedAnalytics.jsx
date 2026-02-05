@@ -25,6 +25,8 @@ import {
   ArrowUp,
   ArrowDown
 } from "lucide-react";
+import Sidebar from "../components/Sidebar";
+import BackToDashboard from "../components/BackToDashboard";
 
 const AdvancedAnalytics = () => {
   const navigate = useNavigate();
@@ -80,25 +82,34 @@ const AdvancedAnalytics = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-xl text-gray-600">Loading analytics...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-xl text-gray-600">Loading analytics...</div>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-8 bg-gray-50 min-h-screen">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-            <div className="text-red-600 text-xl font-semibold mb-2">Unable to Load Analytics</div>
-            <p className="text-red-700 mb-4">{error}</p>
-            <button
-              onClick={fetchAnalyticsData}
-              className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Try Again
-            </button>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <BackToDashboard />
+            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+              <div className="text-red-600 text-xl font-semibold mb-2">Unable to Load Analytics</div>
+              <p className="text-red-700 mb-4">{error}</p>
+              <button
+                onClick={fetchAnalyticsData}
+                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -109,21 +120,25 @@ const AdvancedAnalytics = () => {
 
   if (hasNoData) {
     return (
-      <div className="p-8 bg-gray-50 min-h-screen">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Advanced Analytics</h1>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
-            <Activity className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-            <div className="text-blue-900 text-xl font-semibold mb-2">No Analytics Data Available</div>
-            <p className="text-blue-700 mb-4">
-              Start issuing and receiving payments on invoices to see your business analytics and insights here.
-            </p>
-            <button
-              onClick={() => navigate('/invoices')}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Go to Invoices
-            </button>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <BackToDashboard />
+            <h1 className="text-3xl font-bold text-gray-900 mb-8">Advanced Analytics</h1>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+              <Activity className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+              <div className="text-blue-900 text-xl font-semibold mb-2">No Analytics Data Available</div>
+              <p className="text-blue-700 mb-4">
+                Start issuing and receiving payments on invoices to see your business analytics and insights here.
+              </p>
+              <button
+                onClick={() => navigate('/invoices')}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Go to Invoices
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -131,27 +146,30 @@ const AdvancedAnalytics = () => {
   }
 
   return (
-    <div className="p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Advanced Analytics</h1>
-            <p className="text-gray-600 mt-2">Comprehensive business insights and trends</p>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <BackToDashboard />
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Advanced Analytics</h1>
+              <p className="text-gray-600 mt-2">Comprehensive business insights and trends</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700">Time Period:</label>
+              <select
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(Number(e.target.value))}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value={3}>Last 3 Months</option>
+                <option value={6}>Last 6 Months</option>
+                <option value={12}>Last 12 Months</option>
+                <option value={24}>Last 24 Months</option>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">Time Period:</label>
-            <select
-              value={timePeriod}
-              onChange={(e) => setTimePeriod(Number(e.target.value))}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value={3}>Last 3 Months</option>
-              <option value={6}>Last 6 Months</option>
-              <option value={12}>Last 12 Months</option>
-              <option value={24}>Last 24 Months</option>
-            </select>
-          </div>
-        </div>
 
         {/* Key Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -323,29 +341,30 @@ const AdvancedAnalytics = () => {
           </div>
         </div>
 
-        {/* Profitability Summary */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">Financial Summary</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-              <div className="text-sm text-emerald-700 mb-2">Total Revenue</div>
-              <div className="text-2xl font-bold text-emerald-900">
-                {formatCurrency(profitabilityData?.total_revenue || 0)}
+          {/* Profitability Summary */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Financial Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                <div className="text-sm text-emerald-700 mb-2">Total Revenue</div>
+                <div className="text-2xl font-bold text-emerald-900">
+                  {formatCurrency(profitabilityData?.total_revenue || 0)}
+                </div>
               </div>
-            </div>
-            <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-              <div className="text-sm text-red-700 mb-2">Total Expenses</div>
-              <div className="text-2xl font-bold text-red-900">
-                {formatCurrency(profitabilityData?.total_expenses || 0)}
+              <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                <div className="text-sm text-red-700 mb-2">Total Expenses</div>
+                <div className="text-2xl font-bold text-red-900">
+                  {formatCurrency(profitabilityData?.total_expenses || 0)}
+                </div>
               </div>
-            </div>
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="text-sm text-blue-700 mb-2">Net Profit</div>
-              <div className="text-2xl font-bold text-blue-900">
-                {formatCurrency(profitabilityData?.gross_profit || 0)}
-              </div>
-              <div className="text-xs text-blue-600 mt-1">
-                {profitabilityData?.gross_margin?.toFixed(1)}% Margin
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="text-sm text-blue-700 mb-2">Net Profit</div>
+                <div className="text-2xl font-bold text-blue-900">
+                  {formatCurrency(profitabilityData?.gross_profit || 0)}
+                </div>
+                <div className="text-xs text-blue-600 mt-1">
+                  {profitabilityData?.gross_margin?.toFixed(1)}% Margin
+                </div>
               </div>
             </div>
           </div>
