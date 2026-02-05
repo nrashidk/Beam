@@ -8450,9 +8450,9 @@ def get_public_stats(db: Session = Depends(get_db)):
 # ==================== HEALTH CHECK ====================
 
 
-@app.get("/", tags=["Health"])
-def root():
-    """API Health Check"""
+@app.get("/api/info", tags=["Health"])
+def api_info():
+    """API Info endpoint"""
     return {
         "service":
         "InvoLinks E-Invoicing API",
