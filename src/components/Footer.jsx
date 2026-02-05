@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiClient } from '../lib/api';
+import axios from 'axios';
 
+const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
 export default function Footer() {
   const navigate = useNavigate();
@@ -31,7 +32,7 @@ export default function Footer() {
 
   const fetchFooterContent = async () => {
     try {
-      const response = await apiClient.get('/content/footer');
+      const response = await axios.get(`${API_URL}/content/footer`);
       if (response.data) {
         setFooterContent(prev => ({ ...prev, ...response.data }));
       }

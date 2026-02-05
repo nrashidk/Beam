@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { adminAPI } from '../lib/api';
+import api from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -62,7 +62,7 @@ export default function CompanyManagement() {
   const fetchCompanies = async () => {
     try {
       setLoading(true);
-      const response = await adminAPI.getAllCompanies(config.apiStatus);
+      const response = await api.get(`/admin/companies?status=${config.apiStatus}`);
       setCompanies(response.data);
     } catch (error) {
       console.error('Failed to fetch companies', error);

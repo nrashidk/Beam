@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { apiClient } from '../lib/api';
+import axios from 'axios';
 import { Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Tag, X } from 'lucide-react';
 
 const ExpenseTracker = () => {
@@ -24,8 +24,8 @@ const ExpenseTracker = () => {
     description: ''
   });
 
-  // const token = localStorage.getItem('token');
-  // const API_URL = 'http://localhost:8000';
+  const token = localStorage.getItem('token');
+  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
   useEffect(() => {
     loadCategories();
@@ -35,7 +35,9 @@ const ExpenseTracker = () => {
 
   const loadCategories = async () => {
     try {
-      const res = await apiClient.get('/expense-categories');
+      const res = await axios.get(`${API_URL}/expense-categories`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setCategories(res.data.categories || []);
     } catch (err) {
       console.error('Error loading categories:', err);
@@ -44,7 +46,9 @@ const ExpenseTracker = () => {
 
   const loadExpenses = async () => {
     try {
-      const res = await apiClient.get(`/expenses?month=${selectedMonth}`);
+      const res = await axios.get(`${API_URL}/expenses?month=${selectedMonth}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setExpenses(res.data.expenses || []);
     } catch (err) {
       console.error('Error loading expenses:', err);
@@ -53,7 +57,9 @@ const ExpenseTracker = () => {
 
   const loadSummary = async () => {
     try {
-      const res = await apiClient.get(`/expenses/summary?month=${selectedMonth}`);
+      const res = await axios.get(`${API_URL}/expenses/summary?month=${selectedMonth}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setSummary(res.data);
     } catch (err) {
       console.error('Error loading summary:', err);
@@ -62,16 +68,20 @@ const ExpenseTracker = () => {
 
   const createExpense = async (e) => {
     e.preventDefault();
+    
     const formData = new URLSearchParams();
     Object.keys(newExpense).forEach(key => {
       if (newExpense[key]) formData.append(key, newExpense[key]);
     });
+
     try {
-      await apiClient.post('/expenses', formData, {
+      await axios.post(`${API_URL}/expenses`, formData, {
         headers: {
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
+      
       setShowExpenseForm(false);
       setNewExpense({
         expense_date: new Date().toISOString().slice(0, 10),
@@ -90,15 +100,19 @@ const ExpenseTracker = () => {
 
   const createCategory = async (e) => {
     e.preventDefault();
+    
     const formData = new URLSearchParams();
     formData.append('name', newCategory.name);
     if (newCategory.description) formData.append('description', newCategory.description);
+
     try {
-      await apiClient.post('/expense-categories', formData, {
+      await axios.post(`${API_URL}/expense-categories`, formData, {
         headers: {
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/x-www-form-urlencoded'
         }
       });
+      
       setShowCategoryForm(false);
       setNewCategory({ name: '', description: '' });
       loadCategories();

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import { authAPI, mfaAPI } from '../lib/api';
 
 const AuthContext = createContext(null);
@@ -11,34 +11,6 @@ export const AuthProvider = ({ children }) => {
   const [mfaMethod, setMfaMethod] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
 
-
-  // Helper to decode JWT and check expiry
-  const isTokenExpired = (token) => {
-    if (!token) return true;
-    try {
-      const [, payload] = token.split('.');
-      const decoded = JSON.parse(atob(payload));
-      if (!decoded.exp) return true;
-      return decoded.exp * 1000 < Date.now();
-    } catch {
-      return true;
-    }
-  };
-
-  // Try to refresh access token if expired
-  const tryRefreshToken = useCallback(async () => {
-    const token = localStorage.getItem('token');
-    if (!token || !isTokenExpired(token)) return token;
-    const data = await authAPI.refresh();
-    if (data && data.access_token) {
-      localStorage.setItem('token', data.access_token);
-      return data.access_token;
-    } else {
-      logout();
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     const token = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
@@ -48,15 +20,11 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  // Wrap login to always refresh token after login
   const login = async (email, password) => {
     try {
       const response = await authAPI.login(email, password);
       const data = response.data;
-      // Store refresh_token if present (already handled in api.js, but double-check)
-      if (data.refresh_token) {
-        localStorage.setItem('refresh_token', data.refresh_token);
-      }
+      
       if (data.mfa_required) {
         setMfaRequired(true);
         setTempToken(data.temp_token);
@@ -68,13 +36,13 @@ export const AuthProvider = ({ children }) => {
           mfaMethod: data.mfa_method 
         };
       }
+      
       const { access_token, user_id, company_id, company_name, role } = data;
       localStorage.setItem('token', access_token);
       const userData = { user_id, company_id, company_name, role };
       localStorage.setItem('user', JSON.stringify(userData));
       setUser(userData);
-      // Optionally, refresh token to ensure it's valid
-      await tryRefreshToken();
+      
       return { success: true, mfaRequired: false };
     } catch (error) {
       return { 
@@ -122,12 +90,6 @@ export const AuthProvider = ({ children }) => {
     authAPI.logout().catch(() => {});
   };
 
-
-  // Expose a method to get a valid access token (refresh if needed)
-  const getValidAccessToken = async () => {
-    return await tryRefreshToken();
-  };
-
   const value = {
     user,
     login,
@@ -141,7 +103,6 @@ export const AuthProvider = ({ children }) => {
     mfaRequired,
     mfaMethod,
     userEmail,
-    getValidAccessToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

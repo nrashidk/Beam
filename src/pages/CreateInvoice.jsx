@@ -30,8 +30,9 @@ export default function CreateInvoice() {
         item_description: '',
         quantity: 1,
         unit_price: 0,
-        tax_category: 'O',
-        tax_percent: 0
+        tax_category: 'S',
+        tax_percent: 5.0,
+        tax_code: 'SR' // Default tax code for VAT-enabled businesses
       }
     ]
   });
@@ -74,15 +75,11 @@ export default function CreateInvoice() {
   }, []);
 
   const addLineItem = () => {
-    const defaultItem = vatEnabled
-      ? { tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
-      : { tax_category: 'O', tax_percent: 0 };
-
     setFormData({
       ...formData,
       line_items: [
         ...formData.line_items,
-        { item_name: '', item_description: '', quantity: 1, unit_price: 0, ...defaultItem }
+        { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
       ]
     });
   };
@@ -97,19 +94,17 @@ export default function CreateInvoice() {
   };
 
   const updateLineItem = (index, field, value) => {
-    if (!vatEnabled && ['tax_category', 'tax_percent', 'tax_code'].includes(field)) {
-      return;
-    }
-
     const newItems = [...formData.line_items];
     newItems[index] = { ...newItems[index], [field]: value };
     setFormData({ ...formData, line_items: newItems });
   };
 
   const calculateTotal = () => {
-    const subtotal = calculateSubtotal();
-    const tax = vatEnabled ? calculateTax() : 0;
-    return subtotal + tax;
+    return formData.line_items.reduce((total, item) => {
+      const subtotal = item.quantity * item.unit_price;
+      const tax = item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0;
+      return total + subtotal + tax;
+    }, 0);
   };
 
   const calculateSubtotal = () => {
@@ -119,41 +114,11 @@ export default function CreateInvoice() {
   };
 
   const calculateTax = () => {
-    if (!vatEnabled) {
-      return 0;
-    }
-
     return formData.line_items.reduce((total, item) => {
       const subtotal = item.quantity * item.unit_price;
       return total + (item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0);
     }, 0);
   };
-
-  useEffect(() => {
-    setFormData(prev => ({
-      ...prev,
-      line_items: prev.line_items.map(item => {
-        if (!vatEnabled) {
-          const { tax_code, ...itemWithoutTaxCode } = item;
-          return {
-            ...itemWithoutTaxCode,
-            tax_category: 'O',
-            tax_percent: 0
-          };
-        }
-
-        const updatedItem = { ...item };
-        if (!updatedItem.tax_code) {
-          updatedItem.tax_code = 'SR';
-        }
-        if (updatedItem.tax_category === 'O' && updatedItem.tax_percent === 0) {
-          updatedItem.tax_category = 'S';
-          updatedItem.tax_percent = 5.0;
-        }
-        return updatedItem;
-      })
-    }));
-  }, [vatEnabled]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -166,12 +131,9 @@ export default function CreateInvoice() {
         ...formData,
         line_items: formData.line_items.map(item => {
           if (!vatEnabled) {
+            // Strip tax_code for non-VAT businesses
             const { tax_code, ...itemWithoutTaxCode } = item;
-            return {
-              ...itemWithoutTaxCode,
-              tax_category: 'O',
-              tax_percent: 0
-            };
+            return itemWithoutTaxCode;
           }
           return item;
         })
@@ -378,13 +340,6 @@ export default function CreateInvoice() {
                 </button>
               </div>
 
-              {!vatEnabled && (
-                <p className="text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-4">
-                  VAT is currently disabled. All line items will be treated as{' '}
-                  <span className="font-semibold">Out of Scope (0% VAT)</span> on commercial invoices.
-                </p>
-              )}
-
               {/* VAT Info Banner */}
               {vatEnabled && (
                 <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-4">
@@ -461,18 +416,12 @@ export default function CreateInvoice() {
                       value={item.tax_category}
                       onChange={(e) => updateLineItem(index, 'tax_category', e.target.value)}
                       className="px-3 py-2 border border-gray-300 rounded-lg"
-                      disabled={!vatEnabled}
                     >
                       <option value="S">Standard (5%)</option>
                       <option value="Z">Zero Rated</option>
                       <option value="E">Exempt</option>
                       <option value="O">Out of Scope</option>
                     </select>
-                    {!vatEnabled && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        VAT selection locked while VAT registration is disabled.
-                      </p>
-                    )}
 
                     {vatEnabled && (
                       <div className="col-span-2">
@@ -511,7 +460,7 @@ export default function CreateInvoice() {
                   <span className="font-semibold">AED {calculateSubtotal().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-700">
-                  <span>VAT ({vatEnabled ? '5%' : '0%'}):</span>
+                  <span>VAT (5%):</span>
                   <span className="font-semibold">AED {calculateTax().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-2xl font-bold text-indigo-900 pt-2 border-t-2 border-indigo-200">

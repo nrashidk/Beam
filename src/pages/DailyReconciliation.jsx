@@ -1,13 +1,24 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import { Download, DollarSign, TrendingUp, AlertTriangle, Calendar } from 'lucide-react';
-import { format } from 'date-fns';
-import api from '../lib/api';
-import Sidebar from '../components/Sidebar';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
+import {
+  Download,
+  DollarSign,
+  TrendingUp,
+  AlertTriangle,
+  Calendar,
+} from "lucide-react";
+import { format } from "date-fns";
+import api from "../lib/api";
+import Sidebar from "../components/Sidebar";
 
 export default function DailyReconciliation() {
   const navigate = useNavigate();
@@ -15,8 +26,8 @@ export default function DailyReconciliation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState({
-    start_date: new Date().toISOString().split('T')[0],
-    end_date: new Date().toISOString().split('T')[0]
+    start_date: new Date().toISOString().split("T")[0],
+    end_date: new Date().toISOString().split("T")[0],
   });
 
   useEffect(() => {
@@ -31,8 +42,8 @@ export default function DailyReconciliation() {
       const response = await api.get(`/reports/daily-reconciliation?${params}`);
       setReport(response.data);
     } catch (error) {
-      console.error('Failed to fetch reconciliation report:', error);
-      setError('Failed to load reconciliation report');
+      console.error("Failed to fetch reconciliation report:", error);
+      setError("Failed to load reconciliation report");
     } finally {
       setLoading(false);
     }
@@ -45,53 +56,62 @@ export default function DailyReconciliation() {
       total_collected: 0,
       total_transactions: 0,
       outstanding_amount: 0,
-      outstanding_count: 0
+      outstanding_count: 0,
     };
-    const reportPeriod = report.report_period || { start_date: '', end_date: '' };
-    const paymentBreakdown = Array.isArray(report.payment_breakdown) ? report.payment_breakdown : [];
+    const reportPeriod = report.report_period || {
+      start_date: "",
+      end_date: "",
+    };
+    const paymentBreakdown = Array.isArray(report.payment_breakdown)
+      ? report.payment_breakdown
+      : [];
     const outstandingInvoices = Array.isArray(report.outstanding_invoices)
       ? report.outstanding_invoices
       : [];
 
     // Create CSV content
-    let csv = 'Daily Reconciliation Report\n\n';
+    let csv = "Daily Reconciliation Report\n\n";
     csv += `Report Period:,${reportPeriod.start_date} to ${reportPeriod.end_date}\n\n`;
-    
-    csv += 'SUMMARY\n';
+
+    csv += "SUMMARY\n";
     csv += `Total Collected:,AED ${summary.total_collected.toFixed(2)}\n`;
     csv += `Total Transactions:,${summary.total_transactions}\n`;
     csv += `Outstanding Amount:,AED ${summary.outstanding_amount.toFixed(2)}\n`;
     csv += `Outstanding Count:,${summary.outstanding_count}\n\n`;
-    
-    csv += 'PAYMENT BREAKDOWN\n';
-    csv += 'Payment Method,Count,Total Amount\n';
-    paymentBreakdown.forEach(method => {
+
+    csv += "PAYMENT BREAKDOWN\n";
+    csv += "Payment Method,Count,Total Amount\n";
+    paymentBreakdown.forEach((method) => {
       csv += `${method.payment_method},${method.count},AED ${method.total_amount.toFixed(2)}\n`;
     });
-    
-    csv += '\n\nDETAILED TRANSACTIONS\n';
-    csv += 'Payment Method,Invoice Number,Customer Name,Amount,Reference,Date\n';
-    paymentBreakdown.forEach(method => {
-      method.invoices.forEach(inv => {
-        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_reference || 'N/A'},${inv.payment_date}\n`;
+
+    csv += "\n\nDETAILED TRANSACTIONS\n";
+    csv +=
+      "Payment Method,Invoice Number,Customer Name,Amount,Reference,Date\n";
+    paymentBreakdown.forEach((method) => {
+      method.invoices.forEach((inv) => {
+        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_reference || "N/A"},${inv.payment_date}\n`;
       });
     });
-    
+
     if (outstandingInvoices.length > 0) {
-      csv += '\n\nOUTSTANDING INVOICES\n';
-      csv += 'Invoice Number,Customer Name,Amount Due,Due Date,Days Overdue\n';
-      outstandingInvoices.forEach(inv => {
+      csv += "\n\nOUTSTANDING INVOICES\n";
+      csv += "Invoice Number,Customer Name,Amount Due,Due Date,Days Overdue\n";
+      outstandingInvoices.forEach((inv) => {
         csv += `${inv.invoice_number},${inv.customer_name},AED ${inv.amount_due.toFixed(2)},${inv.due_date},${inv.days_overdue}\n`;
       });
     }
 
     // Download CSV
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `reconciliation_${reportPeriod.start_date}_${reportPeriod.end_date}.csv`);
-    link.style.visibility = 'hidden';
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `reconciliation_${reportPeriod.start_date}_${reportPeriod.end_date}.csv`,
+    );
+    link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -99,21 +119,21 @@ export default function DailyReconciliation() {
 
   const getPaymentMethodColor = (method) => {
     const colors = {
-      'Cash': 'bg-green-100 text-green-800',
-      'Card': 'bg-blue-100 text-blue-800',
-      'POS': 'bg-purple-100 text-purple-800',
-      'Bank Transfer': 'bg-indigo-100 text-indigo-800',
-      'Cheque': 'bg-yellow-100 text-yellow-800',
-      'Digital Wallet': 'bg-pink-100 text-pink-800'
+      Cash: "bg-green-100 text-green-800",
+      Card: "bg-blue-100 text-blue-800",
+      POS: "bg-purple-100 text-purple-800",
+      "Bank Transfer": "bg-indigo-100 text-indigo-800",
+      Cheque: "bg-yellow-100 text-yellow-800",
+      "Digital Wallet": "bg-pink-100 text-pink-800",
     };
-    return colors[method] || 'bg-gray-100 text-gray-800';
+    return colors[method] || "bg-gray-100 text-gray-800";
   };
 
   const summary = report?.summary || {
     total_collected: 0,
     total_transactions: 0,
     outstanding_amount: 0,
-    outstanding_count: 0
+    outstanding_count: 0,
   };
   const paymentBreakdown = Array.isArray(report?.payment_breakdown)
     ? report.payment_breakdown
@@ -125,11 +145,13 @@ export default function DailyReconciliation() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
       <Sidebar />
-      
+
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Daily Reconciliation Report</h1>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Daily Reconciliation Report
+            </h1>
             <p className="text-gray-600 mt-2">
               View payment collections and outstanding invoices
             </p>
@@ -152,7 +174,9 @@ export default function DailyReconciliation() {
                   <Input
                     type="date"
                     value={dateRange.start_date}
-                    onChange={(e) => setDateRange({ ...dateRange, start_date: e.target.value })}
+                    onChange={(e) =>
+                      setDateRange({ ...dateRange, start_date: e.target.value })
+                    }
                   />
                 </div>
                 <div>
@@ -162,14 +186,20 @@ export default function DailyReconciliation() {
                   <Input
                     type="date"
                     value={dateRange.end_date}
-                    onChange={(e) => setDateRange({ ...dateRange, end_date: e.target.value })}
+                    onChange={(e) =>
+                      setDateRange({ ...dateRange, end_date: e.target.value })
+                    }
                   />
                 </div>
                 <Button onClick={fetchReport} disabled={loading}>
-                  {loading ? 'Loading...' : 'Generate Report'}
+                  {loading ? "Loading..." : "Generate Report"}
                 </Button>
                 {report && (
-                  <Button variant="outline" onClick={exportToExcel} className="gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={exportToExcel}
+                    className="gap-2"
+                  >
                     <Download size={16} />
                     Export to Excel
                   </Button>
@@ -193,7 +223,10 @@ export default function DailyReconciliation() {
                       <div>
                         <p className="text-sm text-gray-600">Total Collected</p>
                         <p className="text-2xl font-bold text-green-600 mt-1">
-                          AED {summary.total_collected.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                          AED{" "}
+                          {summary.total_collected.toLocaleString("en-AE", {
+                            minimumFractionDigits: 2,
+                          })}
                         </p>
                       </div>
                       <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -208,7 +241,9 @@ export default function DailyReconciliation() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-gray-600">Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-1">{summary.total_transactions}</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-1">
+                          {summary.total_transactions}
+                        </p>
                       </div>
                       <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                         <DollarSign className="text-blue-600" size={24} />
@@ -223,7 +258,10 @@ export default function DailyReconciliation() {
                       <div>
                         <p className="text-sm text-gray-600">Outstanding</p>
                         <p className="text-2xl font-bold text-orange-600 mt-1">
-                          AED {summary.outstanding_amount.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                          AED{" "}
+                          {summary.outstanding_amount.toLocaleString("en-AE", {
+                            minimumFractionDigits: 2,
+                          })}
                         </p>
                       </div>
                       <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -238,7 +276,9 @@ export default function DailyReconciliation() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-gray-600">Overdue Count</p>
-                        <p className="text-2xl font-bold text-red-600 mt-1">{summary.outstanding_count}</p>
+                        <p className="text-2xl font-bold text-red-600 mt-1">
+                          {summary.outstanding_count}
+                        </p>
                       </div>
                       <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                         <Calendar className="text-red-600" size={24} />
@@ -256,7 +296,10 @@ export default function DailyReconciliation() {
                 <CardContent>
                   {paymentBreakdown.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
-                      <DollarSign size={48} className="mx-auto mb-4 opacity-50" />
+                      <DollarSign
+                        size={48}
+                        className="mx-auto mb-4 opacity-50"
+                      />
                       <p>No payments recorded for this period</p>
                     </div>
                   ) : (
@@ -265,41 +308,73 @@ export default function DailyReconciliation() {
                         <div key={index} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
-                              <Badge className={getPaymentMethodColor(method.payment_method)}>
+                              <Badge
+                                className={getPaymentMethodColor(
+                                  method.payment_method,
+                                )}
+                              >
                                 {method.payment_method}
                               </Badge>
                               <span className="text-sm text-gray-600">
-                                {method.count} transaction{method.count !== 1 ? 's' : ''}
+                                {method.count} transaction
+                                {method.count !== 1 ? "s" : ""}
                               </span>
                             </div>
                             <span className="text-lg font-bold text-gray-900">
-                              AED {method.total_amount.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                              AED{" "}
+                              {method.total_amount.toLocaleString("en-AE", {
+                                minimumFractionDigits: 2,
+                              })}
                             </span>
                           </div>
-                          
+
                           {method.invoices.length > 0 && (
                             <div className="overflow-x-auto">
                               <table className="w-full text-sm">
                                 <thead className="border-t">
                                   <tr className="bg-gray-50">
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">Invoice #</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">Customer</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">Reference</th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">Date</th>
-                                    <th className="text-right py-2 px-3 font-medium text-gray-700">Amount</th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                      Invoice #
+                                    </th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                      Customer
+                                    </th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                      Reference
+                                    </th>
+                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                      Date
+                                    </th>
+                                    <th className="text-right py-2 px-3 font-medium text-gray-700">
+                                      Amount
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {method.invoices.map((inv, invIndex) => (
                                     <tr key={invIndex} className="border-t">
-                                      <td className="py-2 px-3 text-blue-600 font-medium">{inv.invoice_number}</td>
-                                      <td className="py-2 px-3">{inv.customer_name}</td>
-                                      <td className="py-2 px-3 text-gray-600">{inv.payment_reference || '—'}</td>
+                                      <td className="py-2 px-3 text-blue-600 font-medium">
+                                        {inv.invoice_number}
+                                      </td>
+                                      <td className="py-2 px-3">
+                                        {inv.customer_name}
+                                      </td>
                                       <td className="py-2 px-3 text-gray-600">
-                                        {inv.payment_date ? format(new Date(inv.payment_date), 'MMM d, yyyy') : '—'}
+                                        {inv.payment_reference || "—"}
+                                      </td>
+                                      <td className="py-2 px-3 text-gray-600">
+                                        {inv.payment_date
+                                          ? format(
+                                              new Date(inv.payment_date),
+                                              "MMM d, yyyy",
+                                            )
+                                          : "—"}
                                       </td>
                                       <td className="py-2 px-3 text-right font-semibold">
-                                        AED {inv.amount.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                                        AED{" "}
+                                        {inv.amount.toLocaleString("en-AE", {
+                                          minimumFractionDigits: 2,
+                                        })}
                                       </td>
                                     </tr>
                                   ))}
@@ -328,26 +403,51 @@ export default function DailyReconciliation() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b">
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice #</th>
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">Customer</th>
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">Due Date</th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-700">Days Overdue</th>
-                            <th className="text-right py-3 px-4 font-medium text-gray-700">Amount Due</th>
+                            <th className="text-left py-3 px-4 font-medium text-gray-700">
+                              Invoice #
+                            </th>
+                            <th className="text-left py-3 px-4 font-medium text-gray-700">
+                              Customer
+                            </th>
+                            <th className="text-left py-3 px-4 font-medium text-gray-700">
+                              Due Date
+                            </th>
+                            <th className="text-center py-3 px-4 font-medium text-gray-700">
+                              Days Overdue
+                            </th>
+                            <th className="text-right py-3 px-4 font-medium text-gray-700">
+                              Amount Due
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {outstandingInvoices.map((inv, index) => (
-                            <tr key={index} className="border-b hover:bg-gray-50">
-                              <td className="py-3 px-4 font-medium text-blue-600">{inv.invoice_number}</td>
+                            <tr
+                              key={index}
+                              className="border-b hover:bg-gray-50"
+                            >
+                              <td className="py-3 px-4 font-medium text-blue-600">
+                                {inv.invoice_number}
+                              </td>
                               <td className="py-3 px-4">{inv.customer_name}</td>
                               <td className="py-3 px-4 text-gray-600">
-                                {inv.due_date ? format(new Date(inv.due_date), 'MMM d, yyyy') : '—'}
+                                {inv.due_date
+                                  ? format(
+                                      new Date(inv.due_date),
+                                      "MMM d, yyyy",
+                                    )
+                                  : "—"}
                               </td>
                               <td className="py-3 px-4 text-center">
-                                <Badge className="bg-red-600">{inv.days_overdue} days</Badge>
+                                <Badge className="bg-red-600">
+                                  {inv.days_overdue} days
+                                </Badge>
                               </td>
                               <td className="py-3 px-4 text-right font-semibold text-red-600">
-                                AED {inv.amount_due.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                                AED{" "}
+                                {inv.amount_due.toLocaleString("en-AE", {
+                                  minimumFractionDigits: 2,
+                                })}
                               </td>
                             </tr>
                           ))}

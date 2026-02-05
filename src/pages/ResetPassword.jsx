@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { PasswordInput } from '../components/ui/validated-input';
-import { authAPI } from '../lib/api';
+import api from '../lib/api';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -34,7 +34,10 @@ export default function ResetPassword() {
     setError('');
 
     try {
-      await authAPI.resetPassword(token, password);
+      await api.post('/auth/reset-password', {
+        token,
+        new_password: password
+      });
       setSuccess(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to reset password. The link may have expired.');

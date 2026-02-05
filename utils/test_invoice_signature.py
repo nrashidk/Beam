@@ -74,7 +74,7 @@ def test_invoice_signature(invoice_id: str = None):
     print("-" * 60)
     
     # Get backend URL
-    backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
     
     try:
         # If no invoice ID provided, get latest invoice

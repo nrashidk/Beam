@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { apiClient } from '../lib/api';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { companyAPI } from '../lib/api';
 import { ArrowLeft, Save, AlertCircle, CheckCircle } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
@@ -20,10 +20,8 @@ const EMIRATES = [
 ];
 
 export default function CompanySettings() {
-  const { user } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({
@@ -34,38 +32,44 @@ export default function CompanySettings() {
     address_line2: '',
     city: '',
     emirate: '',
-    po_box: ''
+    postal_code: ''
   });
 
-  useEffect(() => {
-    loadCompanyData();
-  }, []);
-
-  const loadCompanyData = async () => {
-    if (!user?.company_id) return;
-
-    try {
-      setLoading(true);
-      const response = await apiClient.get(`/companies/${user.company_id}`);
-      const company = response.data;
-      
+  const { data: company, isLoading } = useQuery({
+    queryKey: ['company'],
+    queryFn: async () => {
+      const response = await companyAPI.getMyCompany();
+      const data = response.data;
       setFormData({
-        legal_name: company.legal_name || '',
-        phone: company.phone || '',
-        website: company.website || '',
-        address_line1: company.address_line1 || '',
-        address_line2: company.address_line2 || '',
-        city: company.city || '',
-        emirate: company.emirate || '',
-        po_box: company.po_box || ''
+        legal_name: data.legal_name || '',
+        phone: data.phone || '',
+        website: data.website || '',
+        address_line1: data.address_line1 || '',
+        address_line2: data.address_line2 || '',
+        city: data.city || '',
+        emirate: data.emirate || '',
+        postal_code: data.postal_code || ''
       });
-    } catch (error) {
+      return data;
+    },
+    onError: (error) => {
       console.error('Failed to load company data:', error);
       setError('Failed to load company information');
-    } finally {
-      setLoading(false);
     }
-  };
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload) => companyAPI.updateCompanyProfile(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company'] });
+      setSuccess('Company profile updated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    },
+    onError: (error) => {
+      console.error('Failed to update company profile:', error);
+      setError(error.response?.data?.detail || 'Failed to update company profile');
+    }
+  });
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -77,32 +81,17 @@ export default function CompanySettings() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validation
     if (!formData.legal_name.trim()) {
       setError('Legal name is required');
       return;
     }
 
-    setSaving(true);
     setError('');
     setSuccess('');
-
-    try {
-      await apiClient.put('/company/profile', formData);
-      setSuccess('Company profile updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      
-      // Reload data to ensure consistency
-      await loadCompanyData();
-    } catch (error) {
-      console.error('Failed to update company profile:', error);
-      setError(error.response?.data?.detail || 'Failed to update company profile');
-    } finally {
-      setSaving(false);
-    }
+    updateMutation.mutate(formData);
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex">
         <Sidebar />
@@ -268,14 +257,14 @@ export default function CompanySettings() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      P.O. Box
+                      Postal Code
                     </label>
                     <Input
                       type="text"
-                      name="po_box"
-                      value={formData.po_box}
+                      name="postal_code"
+                      value={formData.postal_code}
                       onChange={handleChange}
-                      placeholder="Enter P.O. Box"
+                      placeholder="00000"
                       className="w-full"
                     />
                   </div>
@@ -293,11 +282,11 @@ export default function CompanySettings() {
               </Button>
               <Button
                 type="submit"
-                disabled={saving}
+                disabled={updateMutation.isPending}
                 className="gap-2"
               >
                 <Save size={16} />
-                {saving ? 'Saving...' : 'Save Changes'}
+                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </div>
           </form>

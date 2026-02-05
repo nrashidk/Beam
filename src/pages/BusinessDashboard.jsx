@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { companiesAPI } from '../lib/api';
@@ -19,16 +19,12 @@ export default function BusinessDashboard() {
   const [loading, setLoading] = useState(true);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const fetchDashboardData = useCallback(async () => {
-    if (!user?.company_id) {
-      setCompany(null);
-      setSubscription(null);
-      setInvoices([]);
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
-    setLoading(true);
+  const fetchDashboardData = async () => {
+    if (!user?.company_id) return;
 
     try {
       const [companyRes, subRes, invoicesRes] = await Promise.all([
@@ -45,11 +41,7 @@ export default function BusinessDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [user?.company_id]);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+  };
 
   if (loading) {
     return (

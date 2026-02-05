@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QrCode, Mail, MessageSquare, Phone, Download, X, Check, Loader } from 'lucide-react';
-import { apiClient } from '../lib/api';
+import axios from 'axios';
 
 export default function InvoiceDeliveryActions({ invoice }) {
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -14,7 +14,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const [emailAddress, setEmailAddress] = useState(invoice.customer_email || '');
   const [phoneNumber, setPhoneNumber] = useState('');
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
   const showQRCode = () => {
     setError('');
@@ -33,7 +33,14 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      await apiClient.post(`/invoices/${invoice.id}/email?recipient_email=${encodeURIComponent(emailAddress)}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/invoices/${invoice.id}/email?recipient_email=${encodeURIComponent(emailAddress)}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
       setSuccess('Email sent successfully!');
       setTimeout(() => {
         setShowEmailModal(false);
@@ -57,7 +64,14 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      await apiClient.post(`/invoices/${invoice.id}/sms?phone_number=${encodeURIComponent(phoneNumber)}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/invoices/${invoice.id}/sms?phone_number=${encodeURIComponent(phoneNumber)}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
       setSuccess('SMS sent successfully!');
       setTimeout(() => {
         setShowSMSModal(false);
@@ -81,7 +95,14 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setSuccess('');
 
     try {
-      await apiClient.post(`/invoices/${invoice.id}/whatsapp?phone_number=${encodeURIComponent(phoneNumber)}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/invoices/${invoice.id}/whatsapp?phone_number=${encodeURIComponent(phoneNumber)}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
       setSuccess('WhatsApp message sent successfully!');
       setTimeout(() => {
         setShowWhatsAppModal(false);

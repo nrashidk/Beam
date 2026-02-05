@@ -168,10 +168,11 @@ class UBLXMLGenerator:
             endpoint_id.set('schemeID', '0195')  # UAE TRN scheme
             endpoint_id.text = invoice_data['supplier_peppol_id']
         
-        # Party identification (TRN)
-        party_id_elem = SubElement(party, 'cac:PartyIdentification')
-        trn_id = self._add_element(party_id_elem, 'ID', invoice_data.get('supplier_trn', ''))
-        trn_id.set('schemeID', 'TRN')  # UAE Tax Registration Number
+        # Party identification (TRN) - only if provided
+        if invoice_data.get('supplier_trn'):
+            party_id_elem = SubElement(party, 'cac:PartyIdentification')
+            trn_id = self._add_element(party_id_elem, 'ID', invoice_data['supplier_trn'])
+            trn_id.set('schemeID', 'TRN')  # UAE Tax Registration Number
         
         # Party name
         party_name = SubElement(party, 'cac:PartyName')
@@ -190,11 +191,12 @@ class UBLXMLGenerator:
             country = SubElement(postal_addr, 'cac:Country')
             self._add_element(country, 'IdentificationCode', invoice_data.get('supplier_country', 'AE'))
         
-        # Party tax scheme (VAT)
-        party_tax = SubElement(party, 'cac:PartyTaxScheme')
-        self._add_element(party_tax, 'CompanyID', invoice_data.get('supplier_trn', ''))
-        tax_scheme = SubElement(party_tax, 'cac:TaxScheme')
-        self._add_element(tax_scheme, 'ID', 'VAT')
+        # Party tax scheme (VAT) - only if TRN provided
+        if invoice_data.get('supplier_trn'):
+            party_tax = SubElement(party, 'cac:PartyTaxScheme')
+            self._add_element(party_tax, 'CompanyID', invoice_data['supplier_trn'])
+            tax_scheme = SubElement(party_tax, 'cac:TaxScheme')
+            self._add_element(tax_scheme, 'ID', 'VAT')
         
         # Party legal entity
         party_legal = SubElement(party, 'cac:PartyLegalEntity')
@@ -392,14 +394,21 @@ class UBLXMLGenerator:
         """
         errors = []
         
-        # Required fields
-        required_fields = [
-            'invoice_number', 'issue_date', 'supplier_trn', 'supplier_name',
-            'customer_name', 'subtotal_amount', 'tax_amount', 'total_amount'
+        # Required fields (TRN optional for non-VAT registered parties)
+        required_string_fields = [
+            'invoice_number', 'issue_date', 'supplier_name', 'customer_name'
+        ]
+        required_numeric_fields = [
+            'subtotal_amount', 'tax_amount', 'total_amount'
         ]
         
-        for field in required_fields:
+        for field in required_string_fields:
             if not invoice_data.get(field):
+                errors.append(f"Missing required field: {field}")
+        
+        # Numeric fields allow 0 values - only check for None
+        for field in required_numeric_fields:
+            if invoice_data.get(field) is None:
                 errors.append(f"Missing required field: {field}")
         
         # Validate TRN format (15 digits for UAE)

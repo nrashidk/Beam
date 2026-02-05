@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Shield, Clock, Award, ArrowRight
 } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { apiClient } from '../lib/api';
+import axios from 'axios';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import StripeCardForm from '../components/StripeCardForm';
@@ -24,7 +24,7 @@ export default function BillingSettings() {
   const [selectedTier, setSelectedTier] = useState(location.state?.selectedTier || null);
   const [selectedCycle, setSelectedCycle] = useState(location.state?.billingCycle || 1);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
 
   useEffect(() => {
     fetchBillingData();
@@ -33,14 +33,24 @@ export default function BillingSettings() {
   const fetchBillingData = async () => {
     try {
       setLoading(true);
+      const token = localStorage.getItem('token');
+      
       const [trialRes, paymentRes] = await Promise.all([
-        apiClient.get('/billing/trial'),
-        apiClient.get('/billing/payment-methods')
+        axios.get(`${API_URL}/billing/trial`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${API_URL}/billing/payment-methods`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
       ]);
+
       setTrialStatus(trialRes.data);
       setPaymentMethods(paymentRes.data);
+
       try {
-        const subRes = await apiClient.get('/billing/subscription');
+        const subRes = await axios.get(`${API_URL}/billing/subscription`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         setSubscription(subRes.data);
       } catch (err) {
         // No active subscription found
@@ -54,7 +64,12 @@ export default function BillingSettings() {
 
   const handleAddCard = async (paymentMethodId) => {
     try {
-      await apiClient.post('/billing/payment-methods', { payment_method_id: paymentMethodId });
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${API_URL}/billing/payment-methods`,
+        { payment_method_id: paymentMethodId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       setShowAddCard(false);
       fetchBillingData();
     } catch (error) {
@@ -66,7 +81,10 @@ export default function BillingSettings() {
     if (!confirm('Are you sure you want to delete this payment method?')) return;
 
     try {
-      await apiClient.delete(`/billing/payment-methods/${paymentMethodId}`);
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/billing/payment-methods/${paymentMethodId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       fetchBillingData();
     } catch (error) {
       alert('Failed to delete payment method');
@@ -87,11 +105,15 @@ export default function BillingSettings() {
     }
 
     try {
+      const token = localStorage.getItem('token');
       const formData = new FormData();
       formData.append('tier', selectedTier);
       formData.append('billing_cycle_months', selectedCycle);
       formData.append('payment_method_id', defaultPaymentMethod.id);
-      const response = await apiClient.post('/billing/subscribe', formData);
+
+      const response = await axios.post(`${API_URL}/billing/subscribe`, formData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       alert(`Subscription created! Total: AED ${response.data.total_amount}`);
       fetchBillingData();
