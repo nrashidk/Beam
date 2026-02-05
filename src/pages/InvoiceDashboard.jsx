@@ -4,6 +4,7 @@ import { apiClient } from '../lib/api';
 import { FileText, Plus, Eye, Send, X, CheckCircle, Clock, XCircle } from 'lucide-react';
 import InvoiceDeliveryActions from '../components/InvoiceDeliveryActions';
 import Sidebar from '../components/Sidebar';
+import PageLoader from '../components/PageLoader';
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -91,10 +92,7 @@ export default function InvoiceDashboard() {
 
           {/* Invoice List */}
         {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-            <p className="text-gray-600 mt-4">Loading invoices...</p>
-          </div>
+          <PageLoader />
         ) : invoices.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />

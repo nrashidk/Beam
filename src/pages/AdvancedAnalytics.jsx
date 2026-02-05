@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
+import PageLoader from "../components/PageLoader";
 
 const AdvancedAnalytics = () => {
   const navigate = useNavigate();
@@ -85,9 +86,7 @@ const AdvancedAnalytics = () => {
       <div className="min-h-screen bg-gray-50 flex">
         <Sidebar />
         <div className="flex-1 ml-64">
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-xl text-gray-600">Loading analytics...</div>
-          </div>
+          <PageLoader />
         </div>
       </div>
     );

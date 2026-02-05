@@ -5,6 +5,7 @@ import { apiClient, getApiBaseUrl } from '../lib/api';
 import { ArrowLeft, Upload, X, CheckCircle, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
+import PageLoader from '../components/PageLoader';
 
 export default function CompanyBranding() {
   const { user } = useAuth();
@@ -153,10 +154,7 @@ export default function CompanyBranding() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
-          <p className="text-gray-600">Loading branding settings...</p>
-        </div>
+        <PageLoader />
       </div>
     );
   }

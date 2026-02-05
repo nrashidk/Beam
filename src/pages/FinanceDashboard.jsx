@@ -9,6 +9,7 @@ import axios from 'axios';
 import { LineChart, Line, BarChart, Bar, PieChart as RePieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
+import PageLoader from '../components/PageLoader';
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
@@ -85,8 +86,11 @@ export default function FinanceDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading financial dashboard...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }

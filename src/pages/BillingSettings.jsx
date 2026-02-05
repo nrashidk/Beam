@@ -10,6 +10,7 @@ import { Elements } from '@stripe/react-stripe-js';
 import StripeCardForm from '../components/StripeCardForm';
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
+import PageLoader from '../components/PageLoader';
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
@@ -125,8 +126,11 @@ export default function BillingSettings() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-600">Loading billing information...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }

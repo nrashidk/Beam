@@ -10,6 +10,7 @@ import { CheckCircle, DollarSign, Calendar, AlertCircle, Search, X } from 'lucid
 import { format } from 'date-fns';
 import api from '../lib/api';
 import Sidebar from '../components/Sidebar';
+import PageLoader from '../components/PageLoader';
 
 export default function PaymentVerification() {
   const navigate = useNavigate();
@@ -236,7 +237,7 @@ export default function PaymentVerification() {
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="text-center py-8 text-gray-500">Loading invoices...</div>
+                <PageLoader />
               ) : filteredInvoices.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <DollarSign size={48} className="mx-auto mb-4 opacity-50" />

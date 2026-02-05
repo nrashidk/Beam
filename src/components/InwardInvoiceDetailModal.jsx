@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { apAPI } from '../lib/api';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import PageLoader from './PageLoader';
 import { 
   X, 
   FileText, 
@@ -72,9 +73,7 @@ export default function InwardInvoiceDetailModal({ invoiceId, onClose, onUpdate 
 
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-gray-600">Loading invoice details...</div>
-            </div>
+            <PageLoader />
           ) : error ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-red-600">{error}</div>

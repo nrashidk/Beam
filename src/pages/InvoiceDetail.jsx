@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api';
 import { ArrowLeft, Send, CheckCircle, XCircle, Share2, Download, FileText } from 'lucide-react';
 import Toast from '../components/ui/Toast';
+import PageLoader from '../components/PageLoader';
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -141,10 +142,7 @@ export default function InvoiceDetail() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
-          <p className="text-gray-600">Loading invoice...</p>
-        </div>
+        <PageLoader />
       </div>
     );
   }

@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/badge";
 import POFormModal from "../components/POFormModal";
 import PODetailModal from "../components/PODetailModal";
 import Sidebar from "../components/Sidebar";
+import PageLoader from "../components/PageLoader";
 import {
   FileText,
   CheckCircle,
@@ -260,10 +261,7 @@ export default function POList() {
 
           {/* Purchase Orders List */}
           {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-              <p className="text-gray-600 mt-4">Loading purchase orders...</p>
-            </div>
+            <PageLoader />
           ) : error ? (
             <Card>
               <CardContent className="p-12 text-center">

@@ -7,6 +7,7 @@ import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import InwardInvoiceDetailModal from '../components/InwardInvoiceDetailModal';
 import Sidebar from '../components/Sidebar';
+import PageLoader from '../components/PageLoader';
 import { 
   FileText, 
   CheckCircle, 
@@ -189,11 +190,7 @@ export default function APInbox() {
         </Card>
 
         {loading ? (
-          <Card>
-            <CardContent className="p-12 text-center">
-              <div className="text-gray-600">Loading invoices...</div>
-            </CardContent>
-          </Card>
+          <PageLoader />
         ) : error ? (
           <Card>
             <CardContent className="p-12 text-center">

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, FileText, Building2, Calendar, CreditCard, CheckCircle, Mail, Phone } from 'lucide-react';
 import axios from 'axios';
+import PageLoader from '../components/PageLoader';
 
 export default function PublicInvoiceView() {
   const { shareToken } = useParams();
@@ -36,10 +37,7 @@ export default function PublicInvoiceView() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-          <p className="text-gray-600">Loading invoice...</p>
-        </div>
+        <PageLoader />
       </div>
     );
   }

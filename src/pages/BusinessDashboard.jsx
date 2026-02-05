@@ -8,6 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { LogOut, FileText, CreditCard, TrendingUp, Calendar, Palette, Users, Shield, Inbox, ShoppingCart, Upload, FileCheck, Network, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import Sidebar from '../components/Sidebar';
+import PageLoader from '../components/PageLoader';
 import CompanyInfoEditDialog from '../components/CompanyInfoEditDialog';
 
 export default function BusinessDashboard() {
@@ -45,8 +46,11 @@ export default function BusinessDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading dashboard...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }
