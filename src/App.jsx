@@ -55,6 +55,25 @@ function ProtectedRoute({ children }) {
   }
 }
 
+function PublicRoute({ children }) {
+  try {
+    const { isAuthenticated, loading } = useAuth();
+
+    if (loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-lg text-gray-600">Loading...</div>
+        </div>
+      );
+    }
+
+    return isAuthenticated ? <Navigate to="/dashboard" replace /> : children;
+  } catch (error) {
+    console.error("PublicRoute error:", error);
+    return children;
+  }
+}
+
 function DashboardRouter() {
   try {
     const { isSuperAdmin, isCompanyAdmin } = useAuth();
@@ -90,13 +109,27 @@ function App() {
       <AuthProvider>
         <ContentProvider>
           <Routes>
-            <Route path="/" element={<Homepage />} />
+            <Route
+              path="/"
+              element={
+                <PublicRoute>
+                  <Homepage />
+                </PublicRoute>
+              }
+            />
             <Route path="/pricing" element={<Pricing />} />
             <Route
               path="/invoices/view/:shareToken"
               element={<PublicInvoiceView />}
             />
-            <Route path="/login" element={<Login />} />
+            <Route
+              path="/login"
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              }
+            />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route
