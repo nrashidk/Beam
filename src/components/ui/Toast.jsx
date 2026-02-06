@@ -12,7 +12,7 @@ export default function Toast({ message, onClose, type = 'success' }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-slideUp">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-[39rem] w-full mx-4 overflow-hidden animate-slideUp">
         <div className={`p-6 ${type === 'success' ? 'bg-gradient-to-br from-green-50 to-emerald-50' : 'bg-gradient-to-br from-red-50 to-rose-50'}`}>
           <div className="flex items-start gap-4">
             <div className={`flex-shrink-0 p-2 rounded-full ${type === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
