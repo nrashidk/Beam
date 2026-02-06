@@ -1315,7 +1315,12 @@ class InventoryTransactionDB(Base):
 
 
 # Create tables
-Base.metadata.create_all(engine)
+try:
+    Base.metadata.create_all(engine)
+    logger.info("Database tables created/verified successfully")
+except Exception as e:
+    logger.error(f"Database table creation error: {e}")
+    logger.warning("Application will attempt to continue - tables may already exist")
 
 
 def get_db():
@@ -2212,34 +2217,37 @@ def startup_event():
             logger.warning("Continuing with mock keys - NOT PRODUCTION READY")
 
     # Seed database plans and content
-    db = SessionLocal()
-    seed_plans(db)
-    seed_content(db)
+    try:
+        db = SessionLocal()
+        seed_plans(db)
+        seed_content(db)
 
-    # Create super admin if it doesn't exist
-    super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "nrashidk@gmail.com")
-    super_admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "AbuDhabi@123")
+        # Create super admin if it doesn't exist
+        super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "nrashidk@gmail.com")
+        super_admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "AbuDhabi@123")
 
-    existing_super_admin = db.query(UserDB).filter(
-        UserDB.role == Role.SUPER_ADMIN).first()
+        existing_super_admin = db.query(UserDB).filter(
+            UserDB.role == Role.SUPER_ADMIN).first()
 
-    if not existing_super_admin:
-        super_admin = UserDB(
-            id=f"user_{uuid4().hex[:8]}",
-            email=super_admin_email,
-            password_hash=get_password_hash(super_admin_password),
-            role=Role.SUPER_ADMIN,
-            company_id=None,
-            is_owner=False,
-            full_name="Super Admin")
-        db.add(super_admin)
-        db.commit()
-        logger.info(f"Super Admin created: {super_admin_email}")
-    else:
-        logger.info(
-            f"Super Admin already exists: {existing_super_admin.email}")
-
-    db.close()
+        if not existing_super_admin:
+            super_admin = UserDB(
+                id=f"user_{uuid4().hex[:8]}",
+                email=super_admin_email,
+                password_hash=get_password_hash(super_admin_password),
+                role=Role.SUPER_ADMIN,
+                company_id=None,
+                is_owner=False,
+                full_name="Super Admin")
+            db.add(super_admin)
+            db.commit()
+            logger.info(f"Super Admin created: {super_admin_email}")
+        else:
+            logger.info(
+                f"Super Admin already exists: {existing_super_admin.email}")
+    except Exception as e:
+        logger.error(f"Startup database seeding error: {e}")
+    finally:
+        db.close()
 
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
@@ -4583,12 +4591,14 @@ def generate_invoice_number(company_id: str, db: Session) -> str:
     return f"INV-{year_month}-{next_num:04d}"
 
 
-def calculate_line_item_totals(line_item: InvoiceLineItemCreate) -> dict:
+def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
+                               vat_enabled: bool) -> dict:
     """Calculate tax and totals for a line item"""
     line_extension = line_item.quantity * line_item.unit_price
-    tax_amount = line_extension * (
-        line_item.tax_percent /
-        100) if line_item.tax_category == TaxCategory.STANDARD else 0
+    if vat_enabled and line_item.tax_category == TaxCategory.STANDARD:
+        tax_amount = line_extension * (line_item.tax_percent / 100)
+    else:
+        tax_amount = 0
     line_total = line_extension + tax_amount
 
     return {
@@ -4720,7 +4730,16 @@ def create_invoice(
 
     # Create line items
     for idx, line_item in enumerate(payload.line_items, 1):
-        totals = calculate_line_item_totals(line_item)
+        if company.vat_enabled:
+            effective_tax_category = line_item.tax_category
+            effective_tax_percent = line_item.tax_percent
+            effective_tax_code = line_item.tax_code
+        else:
+            effective_tax_category = TaxCategory.OUT_OF_SCOPE
+            effective_tax_percent = 0.0
+            effective_tax_code = "OP"
+
+        totals = calculate_line_item_totals(line_item, company.vat_enabled)
 
         line_db = InvoiceLineItemDB(
             id=f"line_{uuid4().hex[:12]}",
@@ -4733,9 +4752,9 @@ def create_invoice(
             unit_code=line_item.unit_code,
             unit_price=line_item.unit_price,
             line_extension_amount=totals["line_extension_amount"],
-            tax_category=line_item.tax_category,
-            tax_percent=line_item.tax_percent,
-            tax_code=line_item.tax_code,  # Save UAE tax code
+            tax_category=effective_tax_category,
+            tax_percent=effective_tax_percent,
+            tax_code=effective_tax_code,  # Save UAE tax code
             tax_amount=totals["tax_amount"],
             line_total_amount=totals["line_total_amount"])
         db.add(line_db)
@@ -4744,22 +4763,24 @@ def create_invoice(
         total_tax += totals["tax_amount"]
 
         # Aggregate tax by category
-        key = (line_item.tax_category, line_item.tax_percent)
-        if key not in tax_by_category:
-            tax_by_category[key] = {"taxable": 0.0, "tax": 0.0}
-        tax_by_category[key]["taxable"] += totals["line_extension_amount"]
-        tax_by_category[key]["tax"] += totals["tax_amount"]
+        if company.vat_enabled:
+            key = (effective_tax_category, effective_tax_percent)
+            if key not in tax_by_category:
+                tax_by_category[key] = {"taxable": 0.0, "tax": 0.0}
+            tax_by_category[key]["taxable"] += totals["line_extension_amount"]
+            tax_by_category[key]["tax"] += totals["tax_amount"]
 
     # Create tax breakdowns
-    for (category, percent), amounts in tax_by_category.items():
-        tax_breakdown = InvoiceTaxBreakdownDB(
-            id=f"tax_{uuid4().hex[:12]}",
-            invoice_id=invoice.id,
-            tax_category=category,
-            taxable_amount=round(amounts["taxable"], 2),
-            tax_percent=percent,
-            tax_amount=round(amounts["tax"], 2))
-        db.add(tax_breakdown)
+    if company.vat_enabled:
+        for (category, percent), amounts in tax_by_category.items():
+            tax_breakdown = InvoiceTaxBreakdownDB(
+                id=f"tax_{uuid4().hex[:12]}",
+                invoice_id=invoice.id,
+                tax_category=category,
+                taxable_amount=round(amounts["taxable"], 2),
+                tax_percent=percent,
+                tax_amount=round(amounts["tax"], 2))
+            db.add(tax_breakdown)
 
     # Update invoice totals
     invoice.subtotal_amount = round(subtotal, 2)

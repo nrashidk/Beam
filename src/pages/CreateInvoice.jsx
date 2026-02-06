@@ -1,9 +1,56 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { apiClient } from '../lib/api';
-import { EmailInput, TRNInput } from '../components/ui/validated-input';
-import { ArrowLeft, Plus, Trash2, Save, FileText, AlertCircle } from 'lucide-react';
-import Toast from '../components/ui/Toast';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiClient } from "../lib/api";
+import { EmailInput, TRNInput } from "../components/ui/validated-input";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  Save,
+  FileText,
+  AlertCircle,
+} from "lucide-react";
+import Toast from "../components/ui/Toast";
+
+const buildDefaultLineItem = (isVatEnabled) => ({
+  item_name: "",
+  item_description: "",
+  quantity: 1,
+  unit_price: 0,
+  tax_category: isVatEnabled ? "S" : "O",
+  tax_percent: isVatEnabled ? 5.0 : 0,
+  tax_code: isVatEnabled ? "SR" : "OP",
+});
+
+const normalizeLineItemForVat = (item, isVatEnabled) => {
+  if (!isVatEnabled) {
+    return {
+      ...item,
+      tax_category: "O",
+      tax_percent: 0,
+      tax_code: "OP",
+    };
+  }
+
+  const nextCategory = item.tax_category === "O" ? "S" : item.tax_category;
+  const nextPercent = nextCategory === "S" ? item.tax_percent || 5.0 : 0;
+  const nextTaxCode =
+    item.tax_code ||
+    (nextCategory === "S"
+      ? "SR"
+      : nextCategory === "Z"
+        ? "ZR"
+        : nextCategory === "E"
+          ? "ES"
+          : "OP");
+
+  return {
+    ...item,
+    tax_category: nextCategory,
+    tax_percent: nextPercent,
+    tax_code: nextTaxCode,
+  };
+};
 
 export default function CreateInvoice() {
   const navigate = useNavigate();
@@ -12,49 +59,50 @@ export default function CreateInvoice() {
   const [vatEnabled, setVatEnabled] = useState(false);
   const [loadingVatSettings, setLoadingVatSettings] = useState(true);
   const [formData, setFormData] = useState({
-    invoice_type: '380',
-    issue_date: new Date().toISOString().split('T')[0],
-    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    currency_code: 'AED',
-    customer_name: '',
-    customer_email: '',
-    customer_trn: '',
-    customer_address: '',
-    customer_city: '',
+    invoice_type: "380",
+    issue_date: new Date().toISOString().split("T")[0],
+    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0],
+    currency_code: "AED",
+    customer_name: "",
+    customer_email: "",
+    customer_trn: "",
+    customer_address: "",
+    customer_city: "",
     payment_due_days: 30,
-    invoice_notes: '',
-    reference_number: '',
-    line_items: [
-      {
-        item_name: '',
-        item_description: '',
-        quantity: 1,
-        unit_price: 0,
-        tax_category: 'S',
-        tax_percent: 5.0,
-        tax_code: 'SR' // Default tax code for VAT-enabled businesses
-      }
-    ]
+    invoice_notes: "",
+    reference_number: "",
+    line_items: [buildDefaultLineItem(false)],
   });
 
   // Fetch VAT settings on component mount and when window gains focus
   useEffect(() => {
     const fetchVatSettings = async () => {
       try {
-        const response = await apiClient.get('/settings/vat');
+        const response = await apiClient.get("/settings/vat");
         const vatStatus = response.data.vat_enabled || false;
         setVatEnabled(vatStatus);
-        
+
         // Set default invoice type based on VAT status
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
-          invoice_type: vatStatus ? '380' : '480' // Tax Invoice for VAT, Commercial Invoice for non-VAT
+          invoice_type: vatStatus ? "380" : "480",
+          line_items: prev.line_items.map((item) =>
+            normalizeLineItemForVat(item, vatStatus),
+          ),
         }));
       } catch (error) {
         // Failed to fetch VAT settings, default to non-VAT mode
         setVatEnabled(false);
         // Default to Commercial Invoice (480) for non-VAT
-        setFormData(prev => ({ ...prev, invoice_type: '480' }));
+        setFormData((prev) => ({
+          ...prev,
+          invoice_type: "480",
+          line_items: prev.line_items.map((item) =>
+            normalizeLineItemForVat(item, false),
+          ),
+        }));
       } finally {
         setLoadingVatSettings(false);
       }
@@ -67,20 +115,17 @@ export default function CreateInvoice() {
       fetchVatSettings();
     };
 
-    window.addEventListener('focus', handleFocus);
-    
+    window.addEventListener("focus", handleFocus);
+
     return () => {
-      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener("focus", handleFocus);
     };
   }, []);
 
   const addLineItem = () => {
     setFormData({
       ...formData,
-      line_items: [
-        ...formData.line_items,
-        { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
-      ]
+      line_items: [...formData.line_items, buildDefaultLineItem(vatEnabled)],
     });
   };
 
@@ -88,7 +133,7 @@ export default function CreateInvoice() {
     if (formData.line_items.length > 1) {
       setFormData({
         ...formData,
-        line_items: formData.line_items.filter((_, i) => i !== index)
+        line_items: formData.line_items.filter((_, i) => i !== index),
       });
     }
   };
@@ -102,21 +147,29 @@ export default function CreateInvoice() {
   const calculateTotal = () => {
     return formData.line_items.reduce((total, item) => {
       const subtotal = item.quantity * item.unit_price;
-      const tax = item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0;
+      const tax =
+        vatEnabled && item.tax_category === "S"
+          ? subtotal * (item.tax_percent / 100)
+          : 0;
       return total + subtotal + tax;
     }, 0);
   };
 
   const calculateSubtotal = () => {
     return formData.line_items.reduce((total, item) => {
-      return total + (item.quantity * item.unit_price);
+      return total + item.quantity * item.unit_price;
     }, 0);
   };
 
   const calculateTax = () => {
     return formData.line_items.reduce((total, item) => {
       const subtotal = item.quantity * item.unit_price;
-      return total + (item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0);
+      return (
+        total +
+        (vatEnabled && item.tax_category === "S"
+          ? subtotal * (item.tax_percent / 100)
+          : 0)
+      );
     }, 0);
   };
 
@@ -129,31 +182,37 @@ export default function CreateInvoice() {
       // This ensures zero impact for non-VAT businesses
       const cleanedFormData = {
         ...formData,
-        line_items: formData.line_items.map(item => {
+        line_items: formData.line_items.map((item) => {
           if (!vatEnabled) {
-            // Strip tax_code for non-VAT businesses
             const { tax_code, ...itemWithoutTaxCode } = item;
-            return itemWithoutTaxCode;
+            return {
+              ...itemWithoutTaxCode,
+              tax_category: "O",
+              tax_percent: 0,
+            };
           }
           return item;
-        })
+        }),
       };
 
-      const response = await apiClient.post('/invoices', cleanedFormData);
+      const response = await apiClient.post("/invoices", cleanedFormData);
       setToast({
         message: `Invoice ${response.data.invoice_number} created successfully!`,
-        type: 'success',
+        type: "success",
         onClose: () => {
           setToast(null);
           navigate(`/invoices/${response.data.id}`);
-        }
+        },
       });
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || error.message || 'Failed to create invoice';
+      const errorMessage =
+        error.response?.data?.detail ||
+        error.message ||
+        "Failed to create invoice";
       setToast({
         message: `Error: ${errorMessage}`,
-        type: 'error',
-        onClose: () => setToast(null)
+        type: "error",
+        onClose: () => setToast(null),
       });
     } finally {
       setLoading(false);
@@ -165,7 +224,7 @@ export default function CreateInvoice() {
       <div className="max-w-5xl mx-auto px-6 py-8">
         {/* Header */}
         <button
-          onClick={() => navigate('/invoices')}
+          onClick={() => navigate("/invoices")}
           className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-medium mb-6"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -178,7 +237,9 @@ export default function CreateInvoice() {
               <FileText className="w-8 h-8 text-indigo-600" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Create New Invoice</h1>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Create New Invoice
+              </h1>
               <p className="text-gray-600">UAE PINT-AE compliant e-invoice</p>
             </div>
           </div>
@@ -193,11 +254,25 @@ export default function CreateInvoice() {
                   </div>
                   <div className="ml-3">
                     <p className="text-sm text-blue-800">
-                      <strong>Non-VAT-Registered Company:</strong> You can only issue <strong>Commercial Invoices (480)</strong> and standard <strong>Credit Notes (81)</strong>.
-                      To issue <strong>Tax Invoices (380)</strong> or <strong>Tax Credit Notes (381)</strong>, please enable VAT in <a href="/settings/vat" className="underline hover:text-blue-900">VAT Settings</a> and upload your TRN certificate.
+                      <strong>Non-VAT-Registered Company:</strong> You can only
+                      issue <strong>Commercial Invoices (480)</strong> and
+                      standard <strong>Credit Notes (81)</strong>. To issue{" "}
+                      <strong>Tax Invoices (380)</strong> or{" "}
+                      <strong>Tax Credit Notes (381)</strong>, please enable VAT
+                      in{" "}
+                      <a
+                        href="/settings/vat"
+                        className="underline hover:text-blue-900"
+                      >
+                        VAT Settings
+                      </a>{" "}
+                      and upload your TRN certificate.
                     </p>
                     <p className="text-xs text-blue-700 mt-2">
-                      ℹ️ As a non-VAT registered business, you cannot charge VAT or issue VAT-compliant tax invoices until you obtain a Tax Registration Number (TRN) from the UAE Federal Tax Authority.
+                      ℹ️ As a non-VAT registered business, you cannot charge VAT
+                      or issue VAT-compliant tax invoices until you obtain a Tax
+                      Registration Number (TRN) from the UAE Federal Tax
+                      Authority.
                     </p>
                   </div>
                 </div>
@@ -206,62 +281,94 @@ export default function CreateInvoice() {
 
             {/* Invoice Details */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Invoice Details</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Invoice Details
+              </h2>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Invoice Type
+                  </label>
                   <select
                     value={formData.invoice_type}
-                    onChange={(e) => setFormData({ ...formData, invoice_type: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, invoice_type: e.target.value })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
                     {vatEnabled ? (
                       <>
-                        <option value="380">Tax Invoice (380) - VAT Taxable Supply</option>
-                        <option value="381">Tax Credit Note (381) - VAT Adjustment</option>
-                        <option value="480">Commercial Invoice (480) - Export/Non-VAT</option>
+                        <option value="380">
+                          Tax Invoice (380) - VAT Taxable Supply
+                        </option>
+                        <option value="381">
+                          Tax Credit Note (381) - VAT Adjustment
+                        </option>
+                        <option value="480">
+                          Commercial Invoice (480) - Export/Non-VAT
+                        </option>
                       </>
                     ) : (
                       <>
-                        <option value="480">Commercial Invoice (480) - Standard Invoice</option>
-                        <option value="81">Credit Note (81) - Returns/Adjustments</option>
+                        <option value="480">
+                          Commercial Invoice (480) - Standard Invoice
+                        </option>
+                        <option value="81">
+                          Credit Note (81) - Returns/Adjustments
+                        </option>
                       </>
                     )}
                   </select>
                   {!vatEnabled && (
                     <p className="mt-1 text-xs text-gray-500">
-                      Tax invoices (380) not available - VAT registration required
+                      Tax invoices (380) not available - VAT registration
+                      required
                     </p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Currency
+                  </label>
                   <input
                     type="text"
                     value={formData.currency_code}
-                    onChange={(e) => setFormData({ ...formData, currency_code: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        currency_code: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Issue Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Issue Date
+                  </label>
                   <input
                     type="date"
                     value={formData.issue_date}
-                    onChange={(e) => setFormData({ ...formData, issue_date: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, issue_date: e.target.value })
+                    }
                     required
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Due Date</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Due Date
+                  </label>
                   <input
                     type="date"
                     value={formData.due_date}
-                    onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, due_date: e.target.value })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
@@ -270,56 +377,91 @@ export default function CreateInvoice() {
 
             {/* Customer Details */}
             <div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Customer Details</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Customer Details
+              </h2>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer Name *
+                  </label>
                   <input
                     type="text"
                     value={formData.customer_name}
-                    onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_name: e.target.value,
+                      })
+                    }
                     required
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Customer Email</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer Email
+                  </label>
                   <EmailInput
                     value={formData.customer_email}
-                    onChange={(e) => setFormData({ ...formData, customer_email: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_email: e.target.value,
+                      })
+                    }
                     className="w-full"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Customer TRN <span className="text-gray-400 text-xs">(Optional - 15 digits)</span>
+                    Customer TRN{" "}
+                    <span className="text-gray-400 text-xs">
+                      (Optional - 15 digits)
+                    </span>
                   </label>
                   <TRNInput
                     value={formData.customer_trn}
-                    onChange={(e) => setFormData({ ...formData, customer_trn: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, customer_trn: e.target.value })
+                    }
                     placeholder="100123456700003"
                     className="w-full"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    City
+                  </label>
                   <input
                     type="text"
                     value={formData.customer_city}
-                    onChange={(e) => setFormData({ ...formData, customer_city: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_city: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
 
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Address</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Address
+                  </label>
                   <input
                     type="text"
                     value={formData.customer_address}
-                    onChange={(e) => setFormData({ ...formData, customer_address: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_address: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
@@ -329,7 +471,9 @@ export default function CreateInvoice() {
             {/* Line Items */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Line Items</h2>
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Line Items
+                </h2>
                 <button
                   type="button"
                   onClick={addLineItem}
@@ -346,9 +490,12 @@ export default function CreateInvoice() {
                   <div className="flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-sm font-medium text-indigo-900">VAT-Registered Business</p>
+                      <p className="text-sm font-medium text-indigo-900">
+                        VAT-Registered Business
+                      </p>
                       <p className="text-sm text-indigo-700 mt-1">
-                        You must select a UAE VAT tax code for each line item. This ensures FTA compliance and accurate tax reporting.
+                        You must select a UAE VAT tax code for each line item.
+                        This ensures FTA compliance and accurate tax reporting.
                       </p>
                     </div>
                   </div>
@@ -358,7 +505,9 @@ export default function CreateInvoice() {
               {formData.line_items.map((item, index) => (
                 <div key={index} className="bg-gray-50 rounded-lg p-4 mb-4">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-semibold text-gray-700">Item #{index + 1}</span>
+                    <span className="text-sm font-semibold text-gray-700">
+                      Item #{index + 1}
+                    </span>
                     {formData.line_items.length > 1 && (
                       <button
                         type="button"
@@ -376,7 +525,9 @@ export default function CreateInvoice() {
                         type="text"
                         placeholder="Item name *"
                         value={item.item_name}
-                        onChange={(e) => updateLineItem(index, 'item_name', e.target.value)}
+                        onChange={(e) =>
+                          updateLineItem(index, "item_name", e.target.value)
+                        }
                         required
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       />
@@ -387,7 +538,13 @@ export default function CreateInvoice() {
                         type="text"
                         placeholder="Description (optional)"
                         value={item.item_description}
-                        onChange={(e) => updateLineItem(index, 'item_description', e.target.value)}
+                        onChange={(e) =>
+                          updateLineItem(
+                            index,
+                            "item_description",
+                            e.target.value,
+                          )
+                        }
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       />
                     </div>
@@ -396,7 +553,13 @@ export default function CreateInvoice() {
                       type="number"
                       placeholder="Quantity"
                       value={item.quantity}
-                      onChange={(e) => updateLineItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateLineItem(
+                          index,
+                          "quantity",
+                          parseFloat(e.target.value) || 0,
+                        )
+                      }
                       step="0.01"
                       required
                       className="px-3 py-2 border border-gray-300 rounded-lg"
@@ -406,7 +569,13 @@ export default function CreateInvoice() {
                       type="number"
                       placeholder="Unit Price (AED)"
                       value={item.unit_price}
-                      onChange={(e) => updateLineItem(index, 'unit_price', parseFloat(e.target.value) || 0)}
+                      onChange={(e) =>
+                        updateLineItem(
+                          index,
+                          "unit_price",
+                          parseFloat(e.target.value) || 0,
+                        )
+                      }
                       step="0.01"
                       required
                       className="px-3 py-2 border border-gray-300 rounded-lg"
@@ -414,13 +583,22 @@ export default function CreateInvoice() {
 
                     <select
                       value={item.tax_category}
-                      onChange={(e) => updateLineItem(index, 'tax_category', e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      onChange={(e) =>
+                        updateLineItem(index, "tax_category", e.target.value)
+                      }
+                      disabled={!vatEnabled}
+                      className="px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
                     >
-                      <option value="S">Standard (5%)</option>
-                      <option value="Z">Zero Rated</option>
-                      <option value="E">Exempt</option>
-                      <option value="O">Out of Scope</option>
+                      {vatEnabled ? (
+                        <>
+                          <option value="S">Standard (5%)</option>
+                          <option value="Z">Zero Rated</option>
+                          <option value="E">Exempt</option>
+                          <option value="O">Out of Scope</option>
+                        </>
+                      ) : (
+                        <option value="O">Out of Scope</option>
+                      )}
                     </select>
 
                     {vatEnabled && (
@@ -429,8 +607,10 @@ export default function CreateInvoice() {
                           UAE VAT Tax Code *
                         </label>
                         <select
-                          value={item.tax_code || 'SR'}
-                          onChange={(e) => updateLineItem(index, 'tax_code', e.target.value)}
+                          value={item.tax_code || "SR"}
+                          onChange={(e) =>
+                            updateLineItem(index, "tax_code", e.target.value)
+                          }
                           className="w-full px-3 py-2 border border-indigo-300 rounded-lg bg-indigo-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                           required={vatEnabled}
                         >
@@ -444,8 +624,20 @@ export default function CreateInvoice() {
                     )}
 
                     <div className="text-right">
-                      <span className="text-sm text-gray-600">Line Total: </span>
-                      <span className="font-semibold">AED {((item.quantity * item.unit_price) * (1 + (item.tax_category === 'S' ? item.tax_percent / 100 : 0))).toFixed(2)}</span>
+                      <span className="text-sm text-gray-600">
+                        Line Total:{" "}
+                      </span>
+                      <span className="font-semibold">
+                        AED{" "}
+                        {(
+                          item.quantity *
+                          item.unit_price *
+                          (1 +
+                            (vatEnabled && item.tax_category === "S"
+                              ? item.tax_percent / 100
+                              : 0))
+                        ).toFixed(2)}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -457,11 +649,15 @@ export default function CreateInvoice() {
               <div className="space-y-2 text-right max-w-md ml-auto">
                 <div className="flex justify-between text-gray-700">
                   <span>Subtotal:</span>
-                  <span className="font-semibold">AED {calculateSubtotal().toFixed(2)}</span>
+                  <span className="font-semibold">
+                    AED {calculateSubtotal().toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-gray-700">
-                  <span>VAT (5%):</span>
-                  <span className="font-semibold">AED {calculateTax().toFixed(2)}</span>
+                  <span>VAT:</span>
+                  <span className="font-semibold">
+                    AED {calculateTax().toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-2xl font-bold text-indigo-900 pt-2 border-t-2 border-indigo-200">
                   <span>Total:</span>
@@ -472,10 +668,14 @@ export default function CreateInvoice() {
 
             {/* Notes */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Invoice Notes
+              </label>
               <textarea
                 value={formData.invoice_notes}
-                onChange={(e) => setFormData({ ...formData, invoice_notes: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, invoice_notes: e.target.value })
+                }
                 rows="3"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 placeholder="Additional notes or terms..."
@@ -486,7 +686,7 @@ export default function CreateInvoice() {
             <div className="flex gap-4 justify-end">
               <button
                 type="button"
-                onClick={() => navigate('/invoices')}
+                onClick={() => navigate("/invoices")}
                 className="px-6 py-3 border border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50"
               >
                 Cancel
@@ -497,13 +697,13 @@ export default function CreateInvoice() {
                 className="inline-flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
               >
                 <Save className="w-5 h-5" />
-                {loading ? 'Creating...' : 'Create Invoice'}
+                {loading ? "Creating..." : "Create Invoice"}
               </button>
             </div>
           </form>
         </div>
       </div>
-      
+
       {/* Toast Notification */}
       {toast && (
         <Toast
