@@ -32,6 +32,7 @@ import { useAuth } from "../contexts/AuthContext";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
+import ConfirmationModal from "../components/ConfirmationModal";
 
 export default function TeamManagement() {
   const navigate = useNavigate();
@@ -47,6 +48,17 @@ export default function TeamManagement() {
   const [inviteResult, setInviteResult] = useState(null);
   const [error, setError] = useState(null);
   const [tierLimits, setTierLimits] = useState(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    userId: null,
+    userName: "",
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    type: "default",
+  });
 
   useEffect(() => {
     fetchTeamMembers();
@@ -116,20 +128,37 @@ export default function TeamManagement() {
     }
   };
 
-  const handleRemoveUser = async (userId, userName) => {
-    if (
-      !confirm(`Are you sure you want to remove ${userName} from the team?`)
-    ) {
-      return;
-    }
+  const handleRemoveUser = (userId, userName) => {
+    setConfirmModal({
+      isOpen: true,
+      userId,
+      userName,
+      title: "Remove Team Member",
+      message: `Are you sure you want to remove ${userName} from the team? This action cannot be undone.`,
+      confirmText: "Remove",
+      cancelText: "Cancel",
+      type: "danger",
+    });
+  };
 
+  const executeRemoveAction = async () => {
+    const { userId } = confirmModal;
+    setConfirmModal({ ...confirmModal, isOpen: false });
+
+    setRemoveLoading(true);
     try {
       await usersAPI.removeUser(userId);
       fetchTeamMembers();
     } catch (error) {
       console.error("Failed to remove user:", error);
       setError(error.response?.data?.detail || "Failed to remove user");
+    } finally {
+      setRemoveLoading(false);
     }
+  };
+
+  const closeConfirmModal = () => {
+    setConfirmModal({ ...confirmModal, isOpen: false });
   };
 
   const getRoleBadge = (role) => {
@@ -562,6 +591,18 @@ export default function TeamManagement() {
           </Card>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={executeRemoveAction}
+        onCancel={closeConfirmModal}
+        isLoading={removeLoading}
+      />
     </div>
   );
 }
