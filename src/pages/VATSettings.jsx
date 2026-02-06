@@ -13,6 +13,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { ArrowLeft, CheckCircle, Info, FileText, Upload } from "lucide-react";
 import Sidebar from "../components/Sidebar";
+import PageLoader from "../components/PageLoader";
 
 function BackToDashboard() {
   const navigate = useNavigate();
@@ -138,8 +139,11 @@ export default function VATSettings() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg text-gray-600">Loading VAT settings...</div>
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }

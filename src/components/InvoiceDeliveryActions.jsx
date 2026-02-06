@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
-import { QrCode, Mail, MessageSquare, Phone, Download, X, Check, Loader } from 'lucide-react';
-import axios from 'axios';
+import React, { useState } from "react";
+import {
+  QrCode,
+  Mail,
+  MessageSquare,
+  Phone,
+  Download,
+  X,
+  Check,
+  Loader,
+} from "lucide-react";
+import apiClient from "../lib/api";
 
 export default function InvoiceDeliveryActions({ invoice }) {
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -8,46 +17,45 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-  
-  const [emailAddress, setEmailAddress] = useState(invoice.customer_email || '');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
 
-  const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
+  const [emailAddress, setEmailAddress] = useState(
+    invoice.customer_email || "",
+  );
+  const [phoneNumber, setPhoneNumber] = useState("");
+
+  const API_URL = import.meta.env.PROD
+    ? ""
+    : import.meta.env.VITE_API_URL || "http://localhost:8000";
 
   const showQRCode = () => {
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
     setShowQRModal(true);
   };
 
   const sendEmail = async () => {
     if (!emailAddress) {
-      setError('Please enter an email address');
+      setError("Please enter an email address");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/email?recipient_email=${encodeURIComponent(emailAddress)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-      setSuccess('Email sent successfully!');
+      await apiClient.post(`/invoices/${invoice.id}/email`, null, {
+        params: { recipient_email: emailAddress },
+      });
+      setSuccess("Email sent successfully!");
       setTimeout(() => {
         setShowEmailModal(false);
-        setSuccess('');
+        setSuccess("");
       }, 2000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send email');
+      setError(err.response?.data?.detail || "Failed to send email");
     } finally {
       setLoading(false);
     }
@@ -55,30 +63,25 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
   const sendSMS = async () => {
     if (!phoneNumber) {
-      setError('Please enter a phone number');
+      setError("Please enter a phone number");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/sms?phone_number=${encodeURIComponent(phoneNumber)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-      setSuccess('SMS sent successfully!');
+      await apiClient.post(`/invoices/${invoice.id}/sms`, null, {
+        params: { phone_number: phoneNumber },
+      });
+      setSuccess("SMS sent successfully!");
       setTimeout(() => {
         setShowSMSModal(false);
-        setSuccess('');
+        setSuccess("");
       }, 2000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send SMS');
+      setError(err.response?.data?.detail || "Failed to send SMS");
     } finally {
       setLoading(false);
     }
@@ -86,30 +89,25 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
   const sendWhatsApp = async () => {
     if (!phoneNumber) {
-      setError('Please enter a phone number');
+      setError("Please enter a phone number");
       return;
     }
 
     setLoading(true);
-    setError('');
-    setSuccess('');
+    setError("");
+    setSuccess("");
 
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        `${API_URL}/invoices/${invoice.id}/whatsapp?phone_number=${encodeURIComponent(phoneNumber)}`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-      setSuccess('WhatsApp message sent successfully!');
+      await apiClient.post(`/invoices/${invoice.id}/whatsapp`, null, {
+        params: { phone_number: phoneNumber },
+      });
+      setSuccess("WhatsApp message sent successfully!");
       setTimeout(() => {
         setShowWhatsAppModal(false);
-        setSuccess('');
+        setSuccess("");
       }, 2000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send WhatsApp message');
+      setError(err.response?.data?.detail || "Failed to send WhatsApp message");
     } finally {
       setLoading(false);
     }
@@ -119,7 +117,10 @@ export default function InvoiceDeliveryActions({ invoice }) {
     <>
       <div className="flex items-center gap-2">
         <button
-          onClick={(e) => { e.stopPropagation(); showQRCode(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            showQRCode();
+          }}
           className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
           title="Show QR Code"
         >
@@ -127,11 +128,11 @@ export default function InvoiceDeliveryActions({ invoice }) {
           QR Code
         </button>
         <button
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            setError('');
-            setSuccess('');
-            setShowEmailModal(true); 
+          onClick={(e) => {
+            e.stopPropagation();
+            setError("");
+            setSuccess("");
+            setShowEmailModal(true);
           }}
           className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
           title="Email Invoice"
@@ -140,11 +141,11 @@ export default function InvoiceDeliveryActions({ invoice }) {
           Email
         </button>
         <button
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            setError('');
-            setSuccess('');
-            setShowSMSModal(true); 
+          onClick={(e) => {
+            e.stopPropagation();
+            setError("");
+            setSuccess("");
+            setShowSMSModal(true);
           }}
           className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
           title="Send via SMS"
@@ -153,11 +154,11 @@ export default function InvoiceDeliveryActions({ invoice }) {
           SMS
         </button>
         <button
-          onClick={(e) => { 
-            e.stopPropagation(); 
-            setError('');
-            setSuccess('');
-            setShowWhatsAppModal(true); 
+          onClick={(e) => {
+            e.stopPropagation();
+            setError("");
+            setSuccess("");
+            setShowWhatsAppModal(true);
           }}
           className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
           title="Send via WhatsApp"
@@ -169,11 +170,22 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
       {/* QR Code Modal */}
       {showQRModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowQRModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowQRModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Invoice QR Code</h3>
-              <button onClick={() => setShowQRModal(false)} className="text-gray-400 hover:text-gray-600">
+              <h3 className="text-lg font-bold text-gray-900">
+                Invoice QR Code
+              </h3>
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -184,7 +196,8 @@ export default function InvoiceDeliveryActions({ invoice }) {
                   alt="Invoice QR Code"
                   className="w-64 h-64"
                   onError={(e) => {
-                    e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23f3f4f6"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af">QR Code</text></svg>';
+                    e.target.src =
+                      'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23f3f4f6"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af">QR Code</text></svg>';
                   }}
                 />
               </div>
@@ -201,11 +214,20 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
       {/* Email Modal */}
       {showEmailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowEmailModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowEmailModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Email Invoice</h3>
-              <button onClick={() => setShowEmailModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -257,11 +279,20 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
       {/* SMS Modal */}
       {showSMSModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowSMSModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowSMSModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Send via SMS</h3>
-              <button onClick={() => setShowSMSModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => setShowSMSModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -313,11 +344,22 @@ export default function InvoiceDeliveryActions({ invoice }) {
 
       {/* WhatsApp Modal */}
       {showWhatsAppModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowWhatsAppModal(false)}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowWhatsAppModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Send via WhatsApp</h3>
-              <button onClick={() => setShowWhatsAppModal(false)} className="text-gray-400 hover:text-gray-600">
+              <h3 className="text-lg font-bold text-gray-900">
+                Send via WhatsApp
+              </h3>
+              <button
+                onClick={() => setShowWhatsAppModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>

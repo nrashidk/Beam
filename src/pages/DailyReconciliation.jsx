@@ -19,6 +19,7 @@ import {
 import { format } from "date-fns";
 import api from "../lib/api";
 import Sidebar from "../components/Sidebar";
+import PageLoader from "../components/PageLoader";
 
 export default function DailyReconciliation() {
   const navigate = useNavigate();
@@ -209,10 +210,7 @@ export default function DailyReconciliation() {
           </Card>
 
           {loading ? (
-            <div className="text-center py-12 text-gray-500">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p>Generating report...</p>
-            </div>
+            <PageLoader />
           ) : report ? (
             <>
               {/* Summary Cards */}
