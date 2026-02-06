@@ -13,6 +13,7 @@ export default function InvoiceDashboard() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState('');
+  const [bulkSuccess, setBulkSuccess] = useState('');
   const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
   const [showBulkSmsModal, setShowBulkSmsModal] = useState(false);
   const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
@@ -149,7 +150,14 @@ export default function InvoiceDashboard() {
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
-    setShowBulkEmailModal(false);
+    if (failedCount === 0) {
+      setBulkSuccess('Email sent successfully!');
+      setTimeout(() => {
+        setShowBulkEmailModal(false);
+        setBulkEmailAddress('');
+        setBulkSuccess('');
+      }, 1500);
+    }
   };
 
   const handleBulkSms = async () => {
@@ -177,7 +185,14 @@ export default function InvoiceDashboard() {
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
-    setShowBulkSmsModal(false);
+    if (failedCount === 0) {
+      setBulkSuccess('SMS sent successfully!');
+      setTimeout(() => {
+        setShowBulkSmsModal(false);
+        setBulkPhoneNumber('');
+        setBulkSuccess('');
+      }, 1500);
+    }
   };
 
   const handleBulkWhatsApp = async () => {
@@ -205,7 +220,14 @@ export default function InvoiceDashboard() {
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
-    setShowBulkWhatsAppModal(false);
+    if (failedCount === 0) {
+      setBulkSuccess('WhatsApp message sent successfully!');
+      setTimeout(() => {
+        setShowBulkWhatsAppModal(false);
+        setBulkPhoneNumber('');
+        setBulkSuccess('');
+      }, 1500);
+    }
   };
 
   return (
@@ -280,6 +302,7 @@ export default function InvoiceDashboard() {
               <button
                 onClick={() => {
                   setBulkError('');
+                  setBulkSuccess('');
                   setShowBulkEmailModal(true);
                 }}
                 disabled={bulkLoading}
@@ -291,6 +314,7 @@ export default function InvoiceDashboard() {
               <button
                 onClick={() => {
                   setBulkError('');
+                  setBulkSuccess('');
                   setShowBulkSmsModal(true);
                 }}
                 disabled={bulkLoading}
@@ -302,6 +326,7 @@ export default function InvoiceDashboard() {
               <button
                 onClick={() => {
                   setBulkError('');
+                  setBulkSuccess('');
                   setShowBulkWhatsAppModal(true);
                 }}
                 disabled={bulkLoading}
@@ -412,11 +437,25 @@ export default function InvoiceDashboard() {
       </div>
 
       {showBulkSmsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowBulkSmsModal(false)}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => {
+            setShowBulkSmsModal(false);
+            setBulkPhoneNumber('');
+            setBulkSuccess('');
+          }}
+        >
           <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk SMS</h3>
-              <button onClick={() => setShowBulkSmsModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowBulkSmsModal(false);
+                  setBulkPhoneNumber('');
+                  setBulkSuccess('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -431,6 +470,17 @@ export default function InvoiceDashboard() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+              {bulkError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {bulkError}
+                </div>
+              )}
+              {bulkSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  {bulkSuccess}
+                </div>
+              )}
               <button
                 onClick={handleBulkSms}
                 disabled={bulkLoading}
@@ -445,11 +495,25 @@ export default function InvoiceDashboard() {
       )}
 
       {showBulkEmailModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowBulkEmailModal(false)}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => {
+            setShowBulkEmailModal(false);
+            setBulkEmailAddress('');
+            setBulkSuccess('');
+          }}
+        >
           <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk Email</h3>
-              <button onClick={() => setShowBulkEmailModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowBulkEmailModal(false);
+                  setBulkEmailAddress('');
+                  setBulkSuccess('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -464,6 +528,17 @@ export default function InvoiceDashboard() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+              {bulkError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {bulkError}
+                </div>
+              )}
+              {bulkSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  {bulkSuccess}
+                </div>
+              )}
               <button
                 onClick={handleBulkEmail}
                 disabled={bulkLoading}
@@ -478,11 +553,25 @@ export default function InvoiceDashboard() {
       )}
 
       {showBulkWhatsAppModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setShowBulkWhatsAppModal(false)}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => {
+            setShowBulkWhatsAppModal(false);
+            setBulkPhoneNumber('');
+            setBulkSuccess('');
+          }}
+        >
           <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk WhatsApp</h3>
-              <button onClick={() => setShowBulkWhatsAppModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowBulkWhatsAppModal(false);
+                  setBulkPhoneNumber('');
+                  setBulkSuccess('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -497,6 +586,17 @@ export default function InvoiceDashboard() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
+              {bulkError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {bulkError}
+                </div>
+              )}
+              {bulkSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  {bulkSuccess}
+                </div>
+              )}
               <button
                 onClick={handleBulkWhatsApp}
                 disabled={bulkLoading}
