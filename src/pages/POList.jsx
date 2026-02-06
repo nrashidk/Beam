@@ -9,6 +9,7 @@ import POFormModal from "../components/POFormModal";
 import PODetailModal from "../components/PODetailModal";
 import Sidebar from "../components/Sidebar";
 import PageLoader from "../components/PageLoader";
+import ConfirmationModal from "../components/ConfirmationModal";
 import {
   FileText,
   CheckCircle,
@@ -30,6 +31,17 @@ export default function POList() {
   const [error, setError] = useState("");
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    action: null,
+    poId: null,
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    type: "default",
+  });
 
   const [filters, setFilters] = useState({
     status: "",
@@ -59,36 +71,56 @@ export default function POList() {
     }
   };
 
-  const handleSend = async (poId) => {
-    if (!window.confirm("Send this purchase order to the supplier?")) return;
+  const handleSend = (poId) => {
+    setConfirmModal({
+      isOpen: true,
+      action: "send",
+      poId,
+      title: "Send Purchase Order",
+      message: "Send this purchase order to the supplier?",
+      confirmText: "Send",
+      cancelText: "Cancel",
+      type: "default",
+    });
+  };
 
+  const handleDelete = (poId) => {
+    setConfirmModal({
+      isOpen: true,
+      action: "delete",
+      poId,
+      title: "Delete Purchase Order",
+      message: "Delete this purchase order? This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      type: "danger",
+    });
+  };
+
+  const executeAction = async () => {
+    const { action, poId } = confirmModal;
+    setConfirmModal({ ...confirmModal, isOpen: false });
+
+    setActionLoading(true);
     try {
-      await apAPI.sendPurchaseOrder(poId);
-      alert("Purchase order sent successfully");
+      if (action === "send") {
+        await apAPI.sendPurchaseOrder(poId);
+        alert("Purchase order sent successfully");
+      } else if (action === "delete") {
+        await apAPI.deletePurchaseOrder(poId);
+        alert("Purchase order deleted");
+      }
       fetchPurchaseOrders();
     } catch (err) {
-      alert(
-        "Failed to send PO: " + (err.response?.data?.detail || err.message),
-      );
+      const message = err.response?.data?.detail || err.message;
+      alert(`Failed to ${action} PO: ${message}`);
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleDelete = async (poId) => {
-    if (
-      !window.confirm(
-        "Delete this purchase order? This action cannot be undone.",
-      )
-    )
-      return;
-    try {
-      await apAPI.deletePurchaseOrder(poId);
-      alert("Purchase order deleted");
-      fetchPurchaseOrders();
-    } catch (err) {
-      alert(
-        "Failed to delete PO: " + (err.response?.data?.detail || err.message),
-      );
-    }
+  const closeConfirmModal = () => {
+    setConfirmModal({ ...confirmModal, isOpen: false });
   };
 
   const handleCreatePO = async (formData) => {
@@ -419,6 +451,18 @@ export default function POList() {
           />
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={executeAction}
+        onCancel={closeConfirmModal}
+        isLoading={actionLoading}
+      />
     </div>
   );
 }
