@@ -5,6 +5,44 @@ import { EmailInput, TRNInput } from '../components/ui/validated-input';
 import { ArrowLeft, Plus, Trash2, Save, FileText, AlertCircle } from 'lucide-react';
 import Toast from '../components/ui/Toast';
 
+const buildDefaultLineItem = (isVatEnabled) => ({
+  item_name: '',
+  item_description: '',
+  quantity: 1,
+  unit_price: 0,
+  tax_category: isVatEnabled ? 'S' : 'O',
+  tax_percent: isVatEnabled ? 5.0 : 0,
+  tax_code: isVatEnabled ? 'SR' : 'OP'
+});
+
+const normalizeLineItemForVat = (item, isVatEnabled) => {
+  if (!isVatEnabled) {
+    return {
+      ...item,
+      tax_category: 'O',
+      tax_percent: 0,
+      tax_code: 'OP'
+    };
+  }
+
+  const nextCategory = item.tax_category === 'O' ? 'S' : item.tax_category;
+  const nextPercent = nextCategory === 'S' ? (item.tax_percent || 5.0) : 0;
+  const nextTaxCode = item.tax_code || (nextCategory === 'S'
+    ? 'SR'
+    : nextCategory === 'Z'
+      ? 'ZR'
+      : nextCategory === 'E'
+        ? 'ES'
+        : 'OP');
+
+  return {
+    ...item,
+    tax_category: nextCategory,
+    tax_percent: nextPercent,
+    tax_code: nextTaxCode
+  };
+};
+
 export default function CreateInvoice() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -24,17 +62,7 @@ export default function CreateInvoice() {
     payment_due_days: 30,
     invoice_notes: '',
     reference_number: '',
-    line_items: [
-      {
-        item_name: '',
-        item_description: '',
-        quantity: 1,
-        unit_price: 0,
-        tax_category: 'S',
-        tax_percent: 5.0,
-        tax_code: 'SR' // Default tax code for VAT-enabled businesses
-      }
-    ]
+    line_items: [buildDefaultLineItem(false)]
   });
 
   // Fetch VAT settings on component mount and when window gains focus
@@ -48,13 +76,18 @@ export default function CreateInvoice() {
         // Set default invoice type based on VAT status
         setFormData(prev => ({
           ...prev,
-          invoice_type: vatStatus ? '380' : '480' // Tax Invoice for VAT, Commercial Invoice for non-VAT
+          invoice_type: vatStatus ? '380' : '480',
+          line_items: prev.line_items.map((item) => normalizeLineItemForVat(item, vatStatus))
         }));
       } catch (error) {
         // Failed to fetch VAT settings, default to non-VAT mode
         setVatEnabled(false);
         // Default to Commercial Invoice (480) for non-VAT
-        setFormData(prev => ({ ...prev, invoice_type: '480' }));
+        setFormData(prev => ({
+          ...prev,
+          invoice_type: '480',
+          line_items: prev.line_items.map((item) => normalizeLineItemForVat(item, false))
+        }));
       } finally {
         setLoadingVatSettings(false);
       }
@@ -79,7 +112,7 @@ export default function CreateInvoice() {
       ...formData,
       line_items: [
         ...formData.line_items,
-        { item_name: '', item_description: '', quantity: 1, unit_price: 0, tax_category: 'S', tax_percent: 5.0, tax_code: 'SR' }
+        buildDefaultLineItem(vatEnabled)
       ]
     });
   };
@@ -102,7 +135,9 @@ export default function CreateInvoice() {
   const calculateTotal = () => {
     return formData.line_items.reduce((total, item) => {
       const subtotal = item.quantity * item.unit_price;
-      const tax = item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0;
+      const tax = vatEnabled && item.tax_category === 'S'
+        ? subtotal * (item.tax_percent / 100)
+        : 0;
       return total + subtotal + tax;
     }, 0);
   };
@@ -116,7 +151,9 @@ export default function CreateInvoice() {
   const calculateTax = () => {
     return formData.line_items.reduce((total, item) => {
       const subtotal = item.quantity * item.unit_price;
-      return total + (item.tax_category === 'S' ? subtotal * (item.tax_percent / 100) : 0);
+      return total + (vatEnabled && item.tax_category === 'S'
+        ? subtotal * (item.tax_percent / 100)
+        : 0);
     }, 0);
   };
 
@@ -131,9 +168,12 @@ export default function CreateInvoice() {
         ...formData,
         line_items: formData.line_items.map(item => {
           if (!vatEnabled) {
-            // Strip tax_code for non-VAT businesses
             const { tax_code, ...itemWithoutTaxCode } = item;
-            return itemWithoutTaxCode;
+            return {
+              ...itemWithoutTaxCode,
+              tax_category: 'O',
+              tax_percent: 0
+            };
           }
           return item;
         })
@@ -415,12 +455,19 @@ export default function CreateInvoice() {
                     <select
                       value={item.tax_category}
                       onChange={(e) => updateLineItem(index, 'tax_category', e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                      disabled={!vatEnabled}
+                      className="px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
                     >
-                      <option value="S">Standard (5%)</option>
-                      <option value="Z">Zero Rated</option>
-                      <option value="E">Exempt</option>
-                      <option value="O">Out of Scope</option>
+                      {vatEnabled ? (
+                        <>
+                          <option value="S">Standard (5%)</option>
+                          <option value="Z">Zero Rated</option>
+                          <option value="E">Exempt</option>
+                          <option value="O">Out of Scope</option>
+                        </>
+                      ) : (
+                        <option value="O">Out of Scope</option>
+                      )}
                     </select>
 
                     {vatEnabled && (
@@ -445,7 +492,7 @@ export default function CreateInvoice() {
 
                     <div className="text-right">
                       <span className="text-sm text-gray-600">Line Total: </span>
-                      <span className="font-semibold">AED {((item.quantity * item.unit_price) * (1 + (item.tax_category === 'S' ? item.tax_percent / 100 : 0))).toFixed(2)}</span>
+                      <span className="font-semibold">AED {((item.quantity * item.unit_price) * (1 + ((vatEnabled && item.tax_category === 'S') ? item.tax_percent / 100 : 0))).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -460,7 +507,7 @@ export default function CreateInvoice() {
                   <span className="font-semibold">AED {calculateSubtotal().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-700">
-                  <span>VAT (5%):</span>
+                  <span>VAT:</span>
                   <span className="font-semibold">AED {calculateTax().toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-2xl font-bold text-indigo-900 pt-2 border-t-2 border-indigo-200">
