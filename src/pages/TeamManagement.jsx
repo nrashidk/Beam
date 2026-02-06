@@ -31,6 +31,7 @@ import api, { usersAPI } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
+import PageLoader from "../components/PageLoader";
 
 export default function TeamManagement() {
   const navigate = useNavigate();
@@ -177,6 +178,17 @@ export default function TeamManagement() {
     }
     return null;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
@@ -382,11 +394,7 @@ export default function TeamManagement() {
                 </form>
               )}
 
-              {loading ? (
-                <div className="text-center py-8 text-gray-500">
-                  Loading team members...
-                </div>
-              ) : teamMembers.length === 0 ? (
+              {teamMembers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <UserPlus size={48} className="mx-auto mb-4 opacity-50" />
                   <p>No team members yet</p>
