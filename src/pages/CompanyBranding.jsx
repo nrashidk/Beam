@@ -68,15 +68,16 @@ export default function CompanyBranding() {
       const formData = new FormData();
       formData.append('logo', file);
 
-      await apiClient.post(`/companies/${user.company_id}/branding/logo`, formData, {
+      const response = await apiClient.post(`/companies/${user.company_id}/branding/logo`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       setSuccess('Logo uploaded successfully!');
       setTimeout(() => setSuccess(''), 3000);
       
-      // Reload branding data
-      await loadBranding();
+      // Update preview directly without reloading entire page
+      const apiBase = getApiBaseUrl();
+      setLogoPreview(`${apiBase}/companies/${user.company_id}/branding/logo?t=${Date.now()}`);
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to upload logo');
     } finally {
@@ -106,16 +107,16 @@ export default function CompanyBranding() {
     try {
       const formData = new FormData();
       formData.append('stamp', file);
-
-      await apiClient.post(`/companies/${user.company_id}/branding/stamp`, formData, {
+const response = await apiClient.post(`/companies/${user.company_id}/branding/stamp`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       setSuccess('Stamp uploaded successfully!');
       setTimeout(() => setSuccess(''), 3000);
       
-      // Reload branding data
-      await loadBranding();
+      // Update preview directly without reloading entire page
+      const apiBase = getApiBaseUrl();
+      setStampPreview(`${apiBase}/companies/${user.company_id}/branding/stamp?t=${Date.now()}`);
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to upload stamp');
     } finally {
@@ -131,7 +132,6 @@ export default function CompanyBranding() {
       setSuccess('Logo deleted successfully!');
       setTimeout(() => setSuccess(''), 3000);
       setLogoPreview(null);
-      await loadBranding();
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to delete logo');
     }
@@ -145,7 +145,6 @@ export default function CompanyBranding() {
       setSuccess('Stamp deleted successfully!');
       setTimeout(() => setSuccess(''), 3000);
       setStampPreview(null);
-      await loadBranding();
     } catch (error) {
       setError(error.response?.data?.detail || 'Failed to delete stamp');
     }
@@ -153,8 +152,11 @@ export default function CompanyBranding() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-        <PageLoader />
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <PageLoader />
+        </div>
       </div>
     );
   }
