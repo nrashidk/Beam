@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import Toast from "../components/ui/Toast";
 import PageLoader from "../components/PageLoader";
+import ConfirmationModal from "../components/ConfirmationModal";
 
 export default function InvoiceDetail() {
   const { id } = useParams();
@@ -20,6 +21,15 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    action: null,
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    type: "default",
+  });
 
   useEffect(() => {
     loadInvoice();
@@ -46,57 +56,83 @@ export default function InvoiceDetail() {
   };
 
   const handleIssue = async () => {
-    if (
-      !confirm(
+    setConfirmModal({
+      isOpen: true,
+      action: "issue",
+      title: "Issue Invoice",
+      message:
         "Issue this invoice? This will generate UBL XML and increment your invoice counter.",
-      )
-    )
-      return;
-
-    setActionLoading(true);
-    try {
-      await apiClient.post(`/invoices/${id}/issue`);
-      setToast({
-        message: "Invoice issued successfully! UBL XML generated.",
-        type: "success",
-        onClose: () => {
-          setToast(null);
-          loadInvoice();
-        },
-      });
-    } catch (error) {
-      setToast({
-        message: error.response?.data?.detail || "Failed to issue invoice",
-        type: "error",
-        onClose: () => setToast(null),
-      });
-    } finally {
-      setActionLoading(false);
-    }
+      confirmText: "Issue",
+      cancelText: "Cancel",
+      type: "default",
+    });
   };
 
   const handleSend = async () => {
-    if (
-      !confirm(
+    setConfirmModal({
+      isOpen: true,
+      action: "send",
+      title: "Send Invoice",
+      message:
         "Send this invoice to customer? This will simulate ASP transmission via Peppol network.",
-      )
-    )
-      return;
+      confirmText: "Send",
+      cancelText: "Cancel",
+      type: "default",
+    });
+  };
+
+  const handleCancel = async () => {
+    setConfirmModal({
+      isOpen: true,
+      action: "cancel",
+      title: "Cancel Invoice",
+      message: "Cancel this invoice? This action cannot be undone.",
+      confirmText: "Cancel Invoice",
+      cancelText: "Keep it",
+      type: "danger",
+    });
+  };
+
+  const executeAction = async () => {
+    const { action } = confirmModal;
+    setConfirmModal({ ...confirmModal, isOpen: false });
 
     setActionLoading(true);
     try {
-      const response = await apiClient.post(`/invoices/${id}/send`);
-      setToast({
-        message: `Invoice sent successfully! Customer share link: ${window.location.origin}/invoices/view/${invoice.share_token}`,
-        type: "success",
-        onClose: () => {
-          setToast(null);
-          loadInvoice();
-        },
-      });
+      if (action === "issue") {
+        await apiClient.post(`/invoices/${id}/issue`);
+        setToast({
+          message: "Invoice issued successfully! UBL XML generated.",
+          type: "success",
+          onClose: () => {
+            setToast(null);
+            loadInvoice();
+          },
+        });
+      } else if (action === "send") {
+        const response = await apiClient.post(`/invoices/${id}/send`);
+        setToast({
+          message: `Invoice sent successfully! Customer share link: ${window.location.origin}/invoices/view/${invoice.share_token}`,
+          type: "success",
+          onClose: () => {
+            setToast(null);
+            loadInvoice();
+          },
+        });
+      } else if (action === "cancel") {
+        await apiClient.post(`/invoices/${id}/cancel`);
+        setToast({
+          message: "Invoice cancelled",
+          type: "success",
+          onClose: () => {
+            setToast(null);
+            loadInvoice();
+          },
+        });
+      }
     } catch (error) {
       setToast({
-        message: error.response?.data?.detail || "Failed to send invoice",
+        message: error.response?.data?.detail || `Failed to ${action} invoice`,
         type: "error",
         onClose: () => setToast(null),
       });
@@ -105,29 +141,8 @@ export default function InvoiceDetail() {
     }
   };
 
-  const handleCancel = async () => {
-    if (!confirm("Cancel this invoice? This action cannot be undone.")) return;
-
-    setActionLoading(true);
-    try {
-      await apiClient.post(`/invoices/${id}/cancel`);
-      setToast({
-        message: "Invoice cancelled",
-        type: "success",
-        onClose: () => {
-          setToast(null);
-          loadInvoice();
-        },
-      });
-    } catch (error) {
-      setToast({
-        message: error.response?.data?.detail || "Failed to cancel invoice",
-        type: "error",
-        onClose: () => setToast(null),
-      });
-    } finally {
-      setActionLoading(false);
-    }
+  const closeConfirmModal = () => {
+    setConfirmModal({ ...confirmModal, isOpen: false });
   };
 
   const copyShareLink = () => {
@@ -500,6 +515,19 @@ export default function InvoiceDetail() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={executeAction}
+        onCancel={closeConfirmModal}
+        isLoading={actionLoading}
+      />
 
       {/* Toast Notification */}
       {toast && (
