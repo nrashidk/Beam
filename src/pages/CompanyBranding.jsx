@@ -6,6 +6,7 @@ import { ArrowLeft, Upload, X, CheckCircle, AlertCircle, Image as ImageIcon } fr
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
 import PageLoader from '../components/PageLoader';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 export default function CompanyBranding() {
   const { user } = useAuth();
@@ -17,6 +18,16 @@ export default function CompanyBranding() {
   const [uploading, setUploading] = useState({ logo: false, stamp: false });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    action: null,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    type: 'default'
+  });
 
   useEffect(() => {
     loadBranding();
@@ -124,30 +135,56 @@ const response = await apiClient.post(`/companies/${user.company_id}/branding/st
     }
   };
 
-  const handleDeleteLogo = async () => {
-    if (!confirm('Are you sure you want to delete the company logo?')) return;
+  const handleDeleteLogo = () => {
+    setConfirmModal({
+      isOpen: true,
+      action: 'logo',
+      title: 'Delete Company Logo',
+      message: 'Are you sure you want to delete the company logo? This action cannot be undone.',
+      confirmText: 'Delete Logo',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+  };
 
+  const handleDeleteStamp = () => {
+    setConfirmModal({
+      isOpen: true,
+      action: 'stamp',
+      title: 'Delete Company Stamp',
+      message: 'Are you sure you want to delete the company stamp? This action cannot be undone.',
+      confirmText: 'Delete Stamp',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+  };
+
+  const executeDeleteAction = async () => {
+    const { action } = confirmModal;
+    setConfirmModal({ ...confirmModal, isOpen: false });
+
+    setDeleteLoading(true);
     try {
-      await apiClient.delete(`/companies/${user.company_id}/branding/logo`);
-      setSuccess('Logo deleted successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      setLogoPreview(null);
+      if (action === 'logo') {
+        await apiClient.delete(`/companies/${user.company_id}/branding/logo`);
+        setSuccess('Logo deleted successfully!');
+        setTimeout(() => setSuccess(''), 3000);
+        setLogoPreview(null);
+      } else if (action === 'stamp') {
+        await apiClient.delete(`/companies/${user.company_id}/branding/stamp`);
+        setSuccess('Stamp deleted successfully!');
+        setTimeout(() => setSuccess(''), 3000);
+        setStampPreview(null);
+      }
     } catch (error) {
-      setError(error.response?.data?.detail || 'Failed to delete logo');
+      setError(error.response?.data?.detail || `Failed to delete ${action}`);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
-  const handleDeleteStamp = async () => {
-    if (!confirm('Are you sure you want to delete the company stamp?')) return;
-
-    try {
-      await apiClient.delete(`/companies/${user.company_id}/branding/stamp`);
-      setSuccess('Stamp deleted successfully!');
-      setTimeout(() => setSuccess(''), 3000);
-      setStampPreview(null);
-    } catch (error) {
-      setError(error.response?.data?.detail || 'Failed to delete stamp');
-    }
+  const closeConfirmModal = () => {
+    setConfirmModal({ ...confirmModal, isOpen: false });
   };
 
   if (loading) {
@@ -162,12 +199,13 @@ const response = await apiClient.post(`/companies/${user.company_id}/branding/st
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
-      <Sidebar />
-      
-      <div className="flex-1 ml-64">
-        <div className="max-w-4xl mx-auto px-6 py-8">
-          <BackToDashboard />
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+        <Sidebar />
+        
+        <div className="flex-1 ml-64">
+          <div className="max-w-4xl mx-auto px-6 py-8">
+            <BackToDashboard />
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Company Branding</h1>
@@ -398,8 +436,21 @@ const response = await apiClient.post(`/companies/${user.company_id}/branding/st
             </div>
           </div>
         )}
+          </div>
         </div>
       </div>
-    </div>
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        type={confirmModal.type}
+        onConfirm={executeDeleteAction}
+        onCancel={closeConfirmModal}
+        isLoading={deleteLoading}
+      />
+    </>
   );
 }
