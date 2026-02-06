@@ -88,7 +88,7 @@ export default function InvoiceDashboard() {
   const runBulkAction = async (action, items, apiCall) => {
     if (items.length === 0) {
       setBulkError(`No invoices available for ${action}.`);
-      return;
+      return 0;
     }
 
     setBulkLoading(true);
@@ -106,6 +106,8 @@ export default function InvoiceDashboard() {
     if (failed.length === 0) {
       clearSelection();
     }
+
+    return failed.length;
   };
 
   const handleBulkIssue = async () => {
@@ -128,11 +130,25 @@ export default function InvoiceDashboard() {
       return;
     }
 
-    await runBulkAction('email', selectedInvoices, (invoice) =>
+    const eligibleInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+    );
+    const skippedCount = selectedInvoices.length - eligibleInvoices.length;
+
+    if (eligibleInvoices.length === 0) {
+      setBulkError('Only issued/sent/paid invoices can be emailed.');
+      return;
+    }
+
+    const failedCount = await runBulkAction('email', eligibleInvoices, (invoice) =>
       apiClient.post(`/invoices/${invoice.id}/email`, null, {
         params: { recipient_email: bulkEmailAddress }
       })
     );
+
+    if (skippedCount > 0 && failedCount === 0) {
+      setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
+    }
     setShowBulkEmailModal(false);
   };
 
@@ -142,11 +158,25 @@ export default function InvoiceDashboard() {
       return;
     }
 
-    await runBulkAction('SMS', selectedInvoices, (invoice) =>
+    const eligibleInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+    );
+    const skippedCount = selectedInvoices.length - eligibleInvoices.length;
+
+    if (eligibleInvoices.length === 0) {
+      setBulkError('Only issued/sent/paid invoices can be sent by SMS.');
+      return;
+    }
+
+    const failedCount = await runBulkAction('SMS', eligibleInvoices, (invoice) =>
       apiClient.post(`/invoices/${invoice.id}/sms`, null, {
         params: { phone_number: bulkPhoneNumber }
       })
     );
+
+    if (skippedCount > 0 && failedCount === 0) {
+      setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
+    }
     setShowBulkSmsModal(false);
   };
 
@@ -156,11 +186,25 @@ export default function InvoiceDashboard() {
       return;
     }
 
-    await runBulkAction('WhatsApp', selectedInvoices, (invoice) =>
+    const eligibleInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+    );
+    const skippedCount = selectedInvoices.length - eligibleInvoices.length;
+
+    if (eligibleInvoices.length === 0) {
+      setBulkError('Only issued/sent/paid invoices can be sent by WhatsApp.');
+      return;
+    }
+
+    const failedCount = await runBulkAction('WhatsApp', eligibleInvoices, (invoice) =>
       apiClient.post(`/invoices/${invoice.id}/whatsapp`, null, {
         params: { phone_number: bulkPhoneNumber }
       })
     );
+
+    if (skippedCount > 0 && failedCount === 0) {
+      setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
+    }
     setShowBulkWhatsAppModal(false);
   };
 
