@@ -9,14 +9,27 @@ import { LineChart, Line, BarChart, Bar, PieChart as RePieChart, Pie, Cell, XAxi
 import Sidebar from '../components/Sidebar';
 import BackToDashboard from '../components/BackToDashboard';
 import PageLoader from '../components/PageLoader';
+import apiClient from '../lib/api';
 
 export default function FinanceDashboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [financialData, setFinancialData] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('30days');
 
   const API_URL = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || 'http://localhost:8000');
+
+  // Map period to months for API calls
+  const getMonthsFromPeriod = (period) => {
+    switch(period) {
+      case '7days': return 1;
+      case '30days': return 1;
+      case '90days': return 3;
+      case 'year': return 12;
+      default: return 1;
+    }
+  };
 
   useEffect(() => {
     fetchFinancialData();
@@ -25,59 +38,98 @@ export default function FinanceDashboard() {
   const fetchFinancialData = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      setError(null);
+      const months = getMonthsFromPeriod(selectedPeriod);
 
-      // In production, these would be real API calls
-      // For now, using mock data to demonstrate the UI
-      const mockData = {
-        summary: {
-          totalRevenue: 125450.50,
-          totalExpenses: 67890.25,
-          netProfit: 57560.25,
-          profitMargin: 45.9,
-          invoicesSent: 87,
-          invoicesReceived: 34,
-          outstandingAR: 23450.00,
-          outstandingAP: 12890.50
-        },
-        revenueByMonth: [
-          { month: 'Jan', revenue: 18200, expenses: 9400 },
-          { month: 'Feb', revenue: 22100, expenses: 11200 },
-          { month: 'Mar', revenue: 19800, expenses: 10100 },
-          { month: 'Apr', revenue: 25300, expenses: 12800 },
-          { month: 'May', revenue: 21050, expenses: 13200 },
-          { month: 'Jun', revenue: 19000, expenses: 11190 }
-        ],
-        cashFlow: [
-          { date: 'Week 1', inflow: 15000, outflow: 8000 },
-          { date: 'Week 2', inflow: 12000, outflow: 9500 },
-          { date: 'Week 3', inflow: 18000, outflow: 7200 },
-          { date: 'Week 4', inflow: 14000, outflow: 10500 }
-        ],
-        expenseBreakdown: [
-          { name: 'Salaries', value: 35000, color: '#3b82f6' },
-          { name: 'Operations', value: 15200, color: '#8b5cf6' },
-          { name: 'Marketing', value: 8900, color: '#10b981' },
-          { name: 'Supplies', value: 5790, color: '#f59e0b' },
-          { name: 'Other', value: 3000, color: '#6b7280' }
-        ],
-        recentInvoices: [
-          { id: '1', type: 'sent', number: 'INV-202506-0087', customer: 'ABC Trading LLC', amount: 4500, status: 'paid', date: '2025-06-28' },
-          { id: '2', type: 'sent', number: 'INV-202506-0086', customer: 'XYZ Services', amount: 2800, status: 'pending', date: '2025-06-27' },
-          { id: '3', type: 'received', number: 'SUPP-1234', supplier: 'Office Supplies Co', amount: 1200, status: 'pending', date: '2025-06-26' },
-          { id: '4', type: 'sent', number: 'INV-202506-0085', customer: 'Global Corp', amount: 8900, status: 'overdue', date: '2025-06-20' }
-        ],
-        topCustomers: [
-          { name: 'ABC Trading LLC', revenue: 45200, invoices: 12 },
-          { name: 'Global Corp', revenue: 38900, invoices: 8 },
-          { name: 'XYZ Services', revenue: 23400, invoices: 15 },
-          { name: 'Dubai Retail', revenue: 18050, invoices: 6 }
-        ]
+      // Fetch data from multiple endpoints in parallel
+      const [summaryRes, revenueRes, cashFlowRes, customersRes, invoicesRes] = await Promise.all([
+        apiClient.get('/expenses/summary'),
+        apiClient.get('/analytics/revenue', { params: { months } }),
+        apiClient.get('/analytics/cash-flow', { params: { months } }),
+        apiClient.get('/analytics/customers', { params: { limit: 4 } }),
+        apiClient.get('/invoices', { params: { limit: 4, sort_by: 'issue_date', sort_order: 'desc' } })
+      ]);
+
+      const summary = summaryRes.data;
+      const revenueData = revenueRes.data;
+      const cashFlowData = cashFlowRes.data;
+      const customersData = customersRes.data;
+      const invoicesData = invoicesRes.data;
+
+      // Transform expense breakdown for pie chart
+      const expenseColors = {
+        'Salaries': '#3b82f6',
+        'Rent': '#8b5cf6',
+        'Utilities': '#10b981',
+        'Marketing': '#f59e0b',
+        'Office Supplies': '#ef4444',
+        'Transportation': '#6366f1',
+        'Other': '#6b7280'
       };
 
-      setFinancialData(mockData);
+      const expenseBreakdown = Object.entries(summary.expenses?.breakdown || {}).map(([category, data]) => ({
+        name: category,
+        value: data.amount,
+        color: expenseColors[category] || '#6b7280'
+      }));
+
+      // Transform revenue data for monthly chart
+      const revenueByMonth = (revenueData.monthly_data || []).map(item => ({
+        month: new Date(item.month).toLocaleDateString('en-US', { month: 'short' }),
+        revenue: item.revenue || 0,
+        expenses: 0 // We'll need to calculate this from expense data
+      }));
+
+      // Transform cash flow data
+      const cashFlow = (cashFlowData.monthly_data || []).map(item => ({
+        date: new Date(item.month).toLocaleDateString('en-US', { month: 'short' }),
+        inflow: item.inflow || 0,
+        outflow: item.outflow || 0
+      }));
+
+      // Transform invoice data for recent transactions
+      const recentInvoices = (invoicesData.invoices || []).slice(0, 4).map(invoice => ({
+        id: invoice.id,
+        type: 'sent',
+        number: invoice.invoice_number,
+        customer: invoice.customer_name,
+        amount: invoice.total_amount,
+        status: invoice.status.toLowerCase(),
+        date: invoice.issue_date
+      }));
+
+      // Transform top customers data
+      const topCustomers = (customersData.top_customers || []).slice(0, 4).map(customer => ({
+        name: customer.customer_name,
+        revenue: customer.total_revenue,
+        invoices: customer.invoice_count
+      }));
+
+      // Calculate outstanding AR (pending + sent invoices)
+      const outstandingAR = (invoicesData.invoices || [])
+        .filter(inv => ['PENDING', 'SENT', 'ISSUED'].includes(inv.status))
+        .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
+
+      setFinancialData({
+        summary: {
+          totalRevenue: summary.revenue?.total || 0,
+          totalExpenses: summary.expenses?.total || 0,
+          netProfit: summary.summary?.net_income || 0,
+          profitMargin: summary.summary?.profit_margin_percent || 0,
+          invoicesSent: summary.revenue?.invoice_count || 0,
+          invoicesReceived: 0, // Placeholder - would need AP endpoint
+          outstandingAR: outstandingAR,
+          outstandingAP: 0 // Placeholder - would need AP endpoint
+        },
+        revenueByMonth,
+        cashFlow,
+        expenseBreakdown,
+        recentInvoices,
+        topCustomers
+      });
     } catch (error) {
       console.error('Failed to fetch financial data:', error);
+      setError('Failed to load financial data. Please try again later.');
     } finally {
       setLoading(false);
     }
@@ -93,6 +145,31 @@ export default function FinanceDashboard() {
       </div>
     );
   }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex">
+        <Sidebar />
+        <div className="flex-1 ml-64">
+          <div className="max-w-7xl mx-auto px-6 py-8">
+            <BackToDashboard />
+            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+              <div className="text-red-600 text-xl font-semibold mb-2">Unable to Load Financial Data</div>
+              <p className="text-red-700 mb-4">{error}</p>
+              <button
+                onClick={fetchFinancialData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!financialData) return null;
 
   const { summary, revenueByMonth, cashFlow, expenseBreakdown, recentInvoices, topCustomers } = financialData;
 
@@ -222,25 +299,34 @@ export default function FinanceDashboard() {
         <div className="grid lg:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-6">Expense Breakdown</h3>
-            <ResponsiveContainer width="100%" height={250}>
-              <RePieChart>
-                <Pie
-                  data={expenseBreakdown}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {expenseBreakdown.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </RePieChart>
-            </ResponsiveContainer>
+            {expenseBreakdown && expenseBreakdown.length > 0 ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <RePieChart>
+                  <Pie
+                    data={expenseBreakdown}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {expenseBreakdown.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </RePieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">
+                <div className="text-center">
+                  <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No expense data available</p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -309,58 +395,76 @@ export default function FinanceDashboard() {
         <div className="grid lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Transactions</h3>
-            <div className="space-y-3">
-              {recentInvoices.map((invoice) => (
-                <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${invoice.type === 'sent' ? 'bg-green-100' : 'bg-orange-100'}`}>
-                      {invoice.type === 'sent' ? (
-                        <ArrowUpRight className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <ArrowDownRight className="h-4 w-4 text-orange-600" />
-                      )}
+            {recentInvoices && recentInvoices.length > 0 ? (
+              <div className="space-y-3">
+                {recentInvoices.map((invoice) => (
+                  <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${invoice.type === 'sent' ? 'bg-green-100' : 'bg-orange-100'}`}>
+                        {invoice.type === 'sent' ? (
+                          <ArrowUpRight className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <ArrowDownRight className="h-4 w-4 text-orange-600" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm text-gray-900">{invoice.number}</div>
+                        <div className="text-xs text-gray-600">{invoice.customer || invoice.supplier}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-medium text-sm text-gray-900">{invoice.number}</div>
-                      <div className="text-xs text-gray-600">{invoice.customer || invoice.supplier}</div>
+                    <div className="text-right">
+                      <div className="font-medium text-sm text-gray-900">AED {invoice.amount.toLocaleString()}</div>
+                      <div className={`text-xs ${
+                        invoice.status === 'paid' ? 'text-green-600' :
+                        invoice.status === 'overdue' ? 'text-red-600' :
+                        'text-yellow-600'
+                      }`}>
+                        {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-medium text-sm text-gray-900">AED {invoice.amount.toLocaleString()}</div>
-                    <div className={`text-xs ${
-                      invoice.status === 'paid' ? 'text-green-600' :
-                      invoice.status === 'overdue' ? 'text-red-600' :
-                      'text-yellow-600'
-                    }`}>
-                      {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                    </div>
-                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">
+                <div className="text-center">
+                  <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No recent transactions</p>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Top Customers</h3>
-            <div className="space-y-4">
-              {topCustomers.map((customer, index) => (
-                <div key={index}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium text-sm text-gray-900">{customer.name}</div>
-                    <div className="text-sm font-medium text-gray-900">AED {customer.revenue.toLocaleString()}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-blue-600 h-2 rounded-full"
-                        style={{ width: `${(customer.revenue / topCustomers[0].revenue) * 100}%` }}
-                      />
+            {topCustomers && topCustomers.length > 0 ? (
+              <div className="space-y-4">
+                {topCustomers.map((customer, index) => (
+                  <div key={index}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium text-sm text-gray-900">{customer.name}</div>
+                      <div className="text-sm font-medium text-gray-900">AED {customer.revenue.toLocaleString()}</div>
                     </div>
-                    <div className="text-xs text-gray-600">{customer.invoices} invoices</div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full"
+                          style={{ width: `${(customer.revenue / topCustomers[0].revenue) * 100}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-600">{customer.invoices} invoices</div>
+                    </div>
                   </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">
+                <div className="text-center">
+                  <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No customer data available</p>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         </div>
         </div>
