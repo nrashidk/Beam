@@ -2,9 +2,9 @@ import axios from "axios";
 
 // In production, use same origin (empty string for relative URLs)
 // In development, use VITE_API_URL or fallback to localhost:8000
-const API_URL = import.meta.env.PROD 
-  ? "" 
-  : (import.meta.env.VITE_API_URL || "http://localhost:8000");
+const API_URL = import.meta.env.PROD
+  ? ""
+  : import.meta.env.VITE_API_URL || "http://localhost:8000";
 console.log("API URL:", API_URL || "(same origin)");
 
 export const getApiBaseUrl = () => API_URL;
@@ -203,6 +203,7 @@ export const adminAPI = {
     apiClient.post(`/admin/companies/${companyId}/approve`, config),
   rejectCompany: (companyId) =>
     apiClient.post(`/admin/companies/${companyId}/reject`),
+  getStats: () => apiClient.get("/admin/stats"),
   getFeaturedBusinesses: () => apiClient.get("/admin/featured-businesses"),
   addFeaturedBusiness: (payload) =>
     apiClient.post("/admin/featured-businesses", payload),

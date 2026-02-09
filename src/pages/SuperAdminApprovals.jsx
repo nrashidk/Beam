@@ -1,14 +1,30 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { adminAPI } from '../lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import { Calendar, Filter, X, LogOut, RefreshCcw, CheckCircle, XCircle, ArrowLeft, User, Settings } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
-import AdminLayout from '../components/AdminLayout';
+import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { adminAPI } from "../lib/api";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
+import {
+  Calendar,
+  Filter,
+  X,
+  LogOut,
+  RefreshCcw,
+  CheckCircle,
+  XCircle,
+  ArrowLeft,
+  User,
+  Settings,
+} from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import AdminLayout from "../components/AdminLayout";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +32,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
+} from "../components/ui/dropdown-menu";
 
 function DateRangePicker({ range, onChange }) {
   function shiftDays(days) {
@@ -25,15 +41,21 @@ function DateRangePicker({ range, onChange }) {
     from.setDate(to.getDate() - days);
     onChange({ from, to });
   }
-  
+
   return (
     <div className="flex flex-wrap gap-2">
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(7)}>Last 7 days</Button>
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(30)}>Last 30 days</Button>
-      <Button variant="secondary" size="sm" onClick={() => shiftDays(90)}>Last 90 days</Button>
+      <Button variant="secondary" size="sm" onClick={() => shiftDays(7)}>
+        Last 7 days
+      </Button>
+      <Button variant="secondary" size="sm" onClick={() => shiftDays(30)}>
+        Last 30 days
+      </Button>
+      <Button variant="secondary" size="sm" onClick={() => shiftDays(90)}>
+        Last 90 days
+      </Button>
       <div className="flex items-center text-sm text-gray-600">
         <Calendar size={16} className="mr-1" />
-        {format(range.from, 'MMM d')} – {format(range.to, 'MMM d, yyyy')}
+        {format(range.from, "MMM d")} – {format(range.to, "MMM d, yyyy")}
       </div>
     </div>
   );
@@ -43,24 +65,31 @@ export default function SuperAdminDashboard() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [range, setRange] = useState({ 
-    from: new Date(new Date().setDate(new Date().getDate() - 29)), 
-    to: new Date() 
+  const [range, setRange] = useState({
+    from: new Date(new Date().setDate(new Date().getDate() - 29)),
+    to: new Date(),
   });
   const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({ 
-    region: 'all', 
-    status: searchParams.get('status') || 'all', 
-    search: '' 
+  const [filters, setFilters] = useState({
+    region: "all",
+    status: searchParams.get("status") || "all",
+    search: "",
   });
   const [companies, setCompanies] = useState([]);
-  const [stats, setStats] = useState({ total_companies: 0, pending_approval: 0, approved: 0, rejected: 0, active: 0, inactive: 0 });
+  const [stats, setStats] = useState({
+    total_companies: 0,
+    pending_approval: 0,
+    approved: 0,
+    rejected: 0,
+    active: 0,
+    inactive: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [approvalModal, setApprovalModal] = useState(null);
   const [freePlanConfig, setFreePlanConfig] = useState({
-    free_plan_type: 'INVOICE_COUNT',
+    free_plan_type: "INVOICE_COUNT",
     free_plan_duration_months: 1,
-    free_plan_invoice_limit: 100
+    free_plan_invoice_limit: 100,
   });
 
   useEffect(() => {
@@ -69,19 +98,32 @@ export default function SuperAdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const statusParam = filters.status === 'all' ? null : 
-        filters.status === 'pending' ? 'PENDING_REVIEW' : 
-        filters.status === 'approved' ? 'APPROVED' : 
-        filters.status === 'active' ? 'ACTIVE' : 
-        filters.status === 'rejected' ? 'REJECTED' : 
-        filters.status === 'inactive' ? 'SUSPENDED' : null;
-      
+      const statusParam =
+        filters.status === "all"
+          ? null
+          : filters.status === "pending"
+            ? "PENDING_REVIEW"
+            : filters.status === "approved"
+              ? "APPROVED"
+              : filters.status === "active"
+                ? "ACTIVE"
+                : filters.status === "rejected"
+                  ? "REJECTED"
+                  : filters.status === "inactive"
+                    ? "SUSPENDED"
+                    : null;
+
       const [companiesResponse, statsResponse] = await Promise.all([
         adminAPI.getAllCompanies(statusParam),
-        adminAPI.getStats()
+        adminAPI.getStats(),
       ]);
-      setCompanies(companiesResponse.data);
-      
+
+      console.log("Companies Response:", companiesResponse);
+      console.log("Companies Data:", companiesResponse.data);
+      console.log("Is Array?", Array.isArray(companiesResponse.data));
+
+      setCompanies(companiesResponse.data || []);
+
       const rawStats = statsResponse.data;
       setStats({
         total_companies: rawStats.total_companies || 0,
@@ -89,10 +131,10 @@ export default function SuperAdminDashboard() {
         approved: rawStats.registrations?.approved || 0,
         rejected: rawStats.registrations?.rejected || 0,
         active: rawStats.companies?.active || 0,
-        inactive: rawStats.companies?.inactive || 0
+        inactive: rawStats.companies?.inactive || 0,
       });
     } catch (error) {
-      console.error('Failed to fetch data', error);
+      console.error("Failed to fetch data", error);
     } finally {
       setLoading(false);
     }
@@ -103,29 +145,35 @@ export default function SuperAdminDashboard() {
   const handleApprove = async (companyId, config) => {
     try {
       await adminAPI.approveCompany(companyId, config);
-      alert('Company approved successfully!');
+      alert("Company approved successfully!");
       setApprovalModal(null);
-      setFreePlanConfig({ free_plan_type: 'INVOICE_COUNT', free_plan_duration_months: 1, free_plan_invoice_limit: 100 });
+      setFreePlanConfig({
+        free_plan_type: "INVOICE_COUNT",
+        free_plan_duration_months: 1,
+        free_plan_invoice_limit: 100,
+      });
       fetchCompanies();
     } catch (error) {
-      alert('Failed to approve company');
+      alert("Failed to approve company");
     }
   };
 
   const handleReject = async (companyId) => {
     try {
       await adminAPI.rejectCompany(companyId);
-      alert('Company rejected');
+      alert("Company rejected");
       fetchCompanies();
     } catch (error) {
-      alert('Failed to reject company');
+      alert("Failed to reject company");
     }
   };
 
   const navigationButtons = (
     <>
-      {user?.role === 'SUPER_ADMIN' && (
-        <Badge variant="info" className="text-xs px-3 py-1">SUPER ADMIN</Badge>
+      {user?.role === "SUPER_ADMIN" && (
+        <Badge variant="info" className="text-xs px-3 py-1">
+          SUPER ADMIN
+        </Badge>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -142,11 +190,11 @@ export default function SuperAdminDashboard() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => navigate('/settings')}>
+          <DropdownMenuItem onClick={() => navigate("/settings")}>
             <Settings size={16} className="mr-2" />
             Account Settings
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate('/security')}>
+          <DropdownMenuItem onClick={() => navigate("/security")}>
             <Settings size={16} className="mr-2" />
             Security Settings
           </DropdownMenuItem>
@@ -161,21 +209,25 @@ export default function SuperAdminDashboard() {
   );
 
   const getPageTitle = () => {
-    if (filters.status === 'pending') return 'Pending Registrations';
-    if (filters.status === 'approved') return 'Approved Registrations';
-    if (filters.status === 'rejected') return 'Rejected Registrations';
-    if (filters.status === 'active') return 'Active Companies';
-    if (filters.status === 'inactive') return 'Inactive Companies';
-    return 'Company Approvals';
+    if (filters.status === "pending") return "Pending Registrations";
+    if (filters.status === "approved") return "Approved Registrations";
+    if (filters.status === "rejected") return "Rejected Registrations";
+    if (filters.status === "active") return "Active Companies";
+    if (filters.status === "inactive") return "Inactive Companies";
+    return "Company Approvals";
   };
 
   const getPageSubtitle = () => {
-    if (filters.status === 'pending') return 'Companies awaiting approval';
-    if (filters.status === 'approved') return 'Companies that have been approved for registration';
-    if (filters.status === 'rejected') return 'Companies that have been rejected during review';
-    if (filters.status === 'active') return 'Companies that are currently active';
-    if (filters.status === 'inactive') return 'Companies that are currently inactive';
-    return 'Manage all company registrations';
+    if (filters.status === "pending") return "Companies awaiting approval";
+    if (filters.status === "approved")
+      return "Companies that have been approved for registration";
+    if (filters.status === "rejected")
+      return "Companies that have been rejected during review";
+    if (filters.status === "active")
+      return "Companies that are currently active";
+    if (filters.status === "inactive")
+      return "Companies that are currently inactive";
+    return "Manage all company registrations";
   };
 
   return (
@@ -183,7 +235,12 @@ export default function SuperAdminDashboard() {
       <div className="bg-gray-50 max-w-7xl mx-auto px-6 py-8 space-y-6">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => navigate('/admin')} className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate("/admin")}
+              className="gap-2"
+            >
               <ArrowLeft size={16} />
               Back to Dashboard
             </Button>
@@ -192,63 +249,78 @@ export default function SuperAdminDashboard() {
               <p className="text-sm text-gray-600">{getPageSubtitle()}</p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchCompanies} className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchCompanies}
+            className="gap-2"
+          >
             <RefreshCcw size={16} />
             Refresh
           </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'pending' })}
+          <Card
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setFilters({ ...filters, status: "pending" })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Pending registrations</CardTitle>
+              <CardTitle className="text-sm text-gray-600">
+                Pending registrations
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats.pending_approval}</div>
             </CardContent>
           </Card>
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'approved' })}
+          <Card
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setFilters({ ...filters, status: "approved" })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Approved registrations</CardTitle>
+              <CardTitle className="text-sm text-gray-600">
+                Approved registrations
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats.approved}</div>
             </CardContent>
           </Card>
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'rejected' })}
+          <Card
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setFilters({ ...filters, status: "rejected" })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Rejected registrations</CardTitle>
+              <CardTitle className="text-sm text-gray-600">
+                Rejected registrations
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats.rejected}</div>
             </CardContent>
           </Card>
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'active' })}
+          <Card
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setFilters({ ...filters, status: "active" })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Active companies</CardTitle>
+              <CardTitle className="text-sm text-gray-600">
+                Active companies
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats.active}</div>
             </CardContent>
           </Card>
-          <Card 
-            className="cursor-pointer hover:opacity-80 transition-opacity" 
-            onClick={() => setFilters({ ...filters, status: 'inactive' })}
+          <Card
+            className="cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => setFilters({ ...filters, status: "inactive" })}
           >
             <CardHeader>
-              <CardTitle className="text-sm text-gray-600">Inactive companies</CardTitle>
+              <CardTitle className="text-sm text-gray-600">
+                Inactive companies
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{stats.inactive}</div>
@@ -258,7 +330,11 @@ export default function SuperAdminDashboard() {
 
         <div className="flex flex-wrap gap-3">
           <DateRangePicker range={range} onChange={setRange} />
-          <Button variant="outline" className="gap-2" onClick={() => setShowFilters(true)}>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setShowFilters(true)}
+          >
             <Filter size={16} /> More filters
           </Button>
         </div>
@@ -268,17 +344,25 @@ export default function SuperAdminDashboard() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-md">
               <div className="flex justify-between mb-4">
                 <h2 className="font-semibold text-lg">Advanced Filters</h2>
-                <Button size="icon" variant="outline" onClick={() => setShowFilters(false)}>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={() => setShowFilters(false)}
+                >
                   <X size={16} />
                 </Button>
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Region</label>
-                  <select 
+                  <label className="text-sm text-gray-600 block mb-1">
+                    Region
+                  </label>
+                  <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={filters.region}
-                    onChange={(e) => setFilters({ ...filters, region: e.target.value })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, region: e.target.value })
+                    }
                   >
                     <option value="all">All</option>
                     <option value="DXB">Dubai (DXB)</option>
@@ -287,11 +371,15 @@ export default function SuperAdminDashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Status</label>
-                  <select 
+                  <label className="text-sm text-gray-600 block mb-1">
+                    Status
+                  </label>
+                  <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={filters.status}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, status: e.target.value })
+                    }
                   >
                     <option value="all">All</option>
                     <option value="pending">Pending Review</option>
@@ -302,12 +390,16 @@ export default function SuperAdminDashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm text-gray-600 block mb-1">Search</label>
-                  <Input 
-                    type="text" 
+                  <label className="text-sm text-gray-600 block mb-1">
+                    Search
+                  </label>
+                  <Input
+                    type="text"
                     placeholder="Company name..."
                     value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    onChange={(e) =>
+                      setFilters({ ...filters, search: e.target.value })
+                    }
                   />
                 </div>
               </div>
@@ -321,12 +413,14 @@ export default function SuperAdminDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>
-              {filters.status === 'all' && `All Companies (${companies.length})`}
-              {filters.status === 'pending' && `${stats.pending_approval} Companies`}
-              {filters.status === 'approved' && `${stats.approved} Companies`}
-              {filters.status === 'active' && `${stats.active} Companies`}
-              {filters.status === 'rejected' && `${stats.rejected} Companies`}
-              {filters.status === 'inactive' && `${stats.inactive} Companies`}
+              {filters.status === "all" &&
+                `All Companies (${companies.length})`}
+              {filters.status === "pending" &&
+                `${stats.pending_approval} Companies`}
+              {filters.status === "approved" && `${stats.approved} Companies`}
+              {filters.status === "active" && `${stats.active} Companies`}
+              {filters.status === "rejected" && `${stats.rejected} Companies`}
+              {filters.status === "inactive" && `${stats.inactive} Companies`}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -340,51 +434,66 @@ export default function SuperAdminDashboard() {
               <div className="space-y-4">
                 {companies.map((company) => {
                   const getDateInfo = () => {
-                    if (company.status === 'PENDING_REVIEW') {
+                    if (company.status === "PENDING_REVIEW") {
                       return {
-                        label: 'Registered',
-                        date: company.created_at
+                        label: "Registered",
+                        date: company.created_at,
                       };
-                    } else if (company.status === 'ACTIVE') {
+                    } else if (company.status === "ACTIVE") {
                       return {
-                        label: 'Approved',
-                        date: company.approved_at || company.created_at
+                        label: "Approved",
+                        date: company.approved_at || company.created_at,
                       };
-                    } else if (company.status === 'REJECTED') {
+                    } else if (company.status === "REJECTED") {
                       return {
-                        label: 'Rejected',
-                        date: company.rejected_at || company.created_at
+                        label: "Rejected",
+                        date: company.rejected_at || company.created_at,
                       };
-                    } else if (company.status === 'SUSPENDED') {
+                    } else if (company.status === "SUSPENDED") {
                       return {
-                        label: 'Registered',
-                        date: company.created_at
+                        label: "Registered",
+                        date: company.created_at,
                       };
                     }
                     return {
-                      label: 'Created',
-                      date: company.created_at
+                      label: "Created",
+                      date: company.created_at,
                     };
                   };
-                  
+
                   const dateInfo = getDateInfo();
-                  const relativeDate = dateInfo.date ? formatDistanceToNow(new Date(dateInfo.date), { addSuffix: true }) : 'N/A';
-                  
+                  const relativeDate = dateInfo.date
+                    ? formatDistanceToNow(new Date(dateInfo.date), {
+                        addSuffix: true,
+                      })
+                    : "N/A";
+
                   return (
-                    <div key={company.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                    <div
+                      key={company.id}
+                      className="border rounded-lg p-4 hover:bg-gray-50"
+                    >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h3 className="font-semibold text-lg">{company.legal_name || 'Unnamed Company'}</h3>
-                          <p className="text-sm text-gray-600">{company.email}</p>
+                          <h3 className="font-semibold text-lg">
+                            {company.legal_name || "Unnamed Company"}
+                          </h3>
+                          <p className="text-sm text-gray-600">
+                            {company.email}
+                          </p>
                           <p className="text-sm text-gray-500">
                             {company.business_type} • {company.phone}
                           </p>
                           <div className="mt-2 flex gap-2 items-center flex-wrap">
-                            <Badge 
+                            <Badge
                               variant={
-                                company.status === 'ACTIVE' ? 'success' : 
-                                company.status === 'PENDING_REVIEW' ? 'warning' :
-                                company.status === 'REJECTED' ? 'destructive' : 'secondary'
+                                company.status === "ACTIVE"
+                                  ? "success"
+                                  : company.status === "PENDING_REVIEW"
+                                    ? "warning"
+                                    : company.status === "REJECTED"
+                                      ? "destructive"
+                                      : "secondary"
                               }
                             >
                               {company.status}
@@ -397,19 +506,19 @@ export default function SuperAdminDashboard() {
                             </span>
                           </div>
                         </div>
-                        {company.status === 'PENDING_REVIEW' && (
+                        {company.status === "PENDING_REVIEW" && (
                           <div className="flex gap-2 ml-4">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               onClick={() => setApprovalModal(company)}
                               className="gap-2"
                             >
                               <CheckCircle size={16} />
                               Approve
                             </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => handleReject(company.id)}
                               className="gap-2"
                             >
@@ -432,11 +541,15 @@ export default function SuperAdminDashboard() {
             <div className="bg-white rounded-2xl p-6 w-full max-w-md">
               <div className="flex justify-between mb-4">
                 <h2 className="font-semibold text-lg">Approve Company</h2>
-                <Button size="icon" variant="outline" onClick={() => setApprovalModal(null)}>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={() => setApprovalModal(null)}
+                >
                   <X size={16} />
                 </Button>
               </div>
-              
+
               <div className="mb-4 p-3 bg-gray-50 rounded-lg">
                 <p className="font-semibold">{approvalModal.legal_name}</p>
                 <p className="text-sm text-gray-600">{approvalModal.email}</p>
@@ -444,25 +557,40 @@ export default function SuperAdminDashboard() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium block mb-2">Free Plan Type</label>
-                  <select 
+                  <label className="text-sm font-medium block mb-2">
+                    Free Plan Type
+                  </label>
+                  <select
                     className="w-full border rounded-lg px-3 py-2"
                     value={freePlanConfig.free_plan_type}
-                    onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_type: e.target.value })}
+                    onChange={(e) =>
+                      setFreePlanConfig({
+                        ...freePlanConfig,
+                        free_plan_type: e.target.value,
+                      })
+                    }
                   >
                     <option value="INVOICE_COUNT">Invoice Count Limit</option>
                     <option value="DURATION">Duration-based (Months)</option>
                   </select>
                 </div>
 
-                {freePlanConfig.free_plan_type === 'INVOICE_COUNT' ? (
+                {freePlanConfig.free_plan_type === "INVOICE_COUNT" ? (
                   <div>
-                    <label className="text-sm font-medium block mb-2">Invoice Limit</label>
-                    <Input 
-                      type="number" 
+                    <label className="text-sm font-medium block mb-2">
+                      Invoice Limit
+                    </label>
+                    <Input
+                      type="number"
                       min="1"
                       value={freePlanConfig.free_plan_invoice_limit}
-                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_invoice_limit: parseInt(e.target.value) || 100 })}
+                      onChange={(e) =>
+                        setFreePlanConfig({
+                          ...freePlanConfig,
+                          free_plan_invoice_limit:
+                            parseInt(e.target.value) || 100,
+                        })
+                      }
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Company can generate up to this many free invoices
@@ -470,12 +598,20 @@ export default function SuperAdminDashboard() {
                   </div>
                 ) : (
                   <div>
-                    <label className="text-sm font-medium block mb-2">Duration (Months)</label>
-                    <Input 
-                      type="number" 
+                    <label className="text-sm font-medium block mb-2">
+                      Duration (Months)
+                    </label>
+                    <Input
+                      type="number"
                       min="1"
                       value={freePlanConfig.free_plan_duration_months}
-                      onChange={(e) => setFreePlanConfig({ ...freePlanConfig, free_plan_duration_months: parseInt(e.target.value) || 1 })}
+                      onChange={(e) =>
+                        setFreePlanConfig({
+                          ...freePlanConfig,
+                          free_plan_duration_months:
+                            parseInt(e.target.value) || 1,
+                        })
+                      }
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Free plan will be active for this many months
@@ -485,10 +621,18 @@ export default function SuperAdminDashboard() {
               </div>
 
               <div className="flex justify-end gap-2 mt-6">
-                <Button variant="outline" onClick={() => setApprovalModal(null)}>
+                <Button
+                  variant="outline"
+                  onClick={() => setApprovalModal(null)}
+                >
                   Cancel
                 </Button>
-                <Button onClick={() => handleApprove(approvalModal.id, freePlanConfig)} className="gap-2">
+                <Button
+                  onClick={() =>
+                    handleApprove(approvalModal.id, freePlanConfig)
+                  }
+                  className="gap-2"
+                >
                   <CheckCircle size={16} />
                   Approve & Configure
                 </Button>

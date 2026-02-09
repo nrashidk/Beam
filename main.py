@@ -2840,6 +2840,13 @@ def login(payload: LoginRequest,
     # Try user authentication first (for super admins, company admins, etc)
     user = authenticate_user(payload.email, payload.password, db)
     if user:
+        # Check company status for non-super-admin users
+        if user.role != Role.SUPER_ADMIN and user.company_id:
+            company = db.get(CompanyDB, user.company_id)
+            if company and company.status != CompanyStatus.ACTIVE:
+                raise HTTPException(
+                    403, f"Company not approved. Status: {company.status.value}. Please wait for admin approval.")
+
         # Check if MFA is enabled
         if user.mfa_enabled:
             # Create temporary token (5 minutes expiry) for MFA verification
