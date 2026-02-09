@@ -21,8 +21,13 @@ export default function PaymentVerification() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  
   // Payment verification modal
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [showBulkVerifyModal, setShowBulkVerifyModal] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [verificationData, setVerificationData] = useState({
     payment_method: 'Cash',
@@ -33,6 +38,9 @@ export default function PaymentVerification() {
   const [verifying, setVerifying] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
 
+  const selectedInvoices = filteredInvoices.filter((invoice) => selectedIds.includes(invoice.id));
+  const allSelected = filteredInvoices.length > 0 && selectedIds.length === filteredInvoices.length;
+
   useEffect(() => {
     fetchPendingInvoices();
   }, []);
@@ -40,6 +48,11 @@ export default function PaymentVerification() {
   useEffect(() => {
     filterInvoices();
   }, [invoices, searchTerm, filterStatus]);
+
+  useEffect(() => {
+    // Clear selection when filters change
+    setSelectedIds([]);
+  }, [searchTerm, filterStatus]);
 
   const fetchPendingInvoices = async () => {
     try {
@@ -75,6 +88,26 @@ export default function PaymentVerification() {
     setFilteredInvoices(filtered);
   };
 
+  const toggleSelected = (invoiceId) => {
+    setSelectedIds((prev) => (
+      prev.includes(invoiceId)
+        ? prev.filter((id) => id !== invoiceId)
+        : [...prev, invoiceId]
+    ));
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(filteredInvoices.map((invoice) => invoice.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
   const handleVerifyPayment = (invoice) => {
     setSelectedInvoice(invoice);
     setVerificationData({
@@ -84,6 +117,20 @@ export default function PaymentVerification() {
       payment_date: new Date().toISOString().split('T')[0]
     });
     setShowVerifyModal(true);
+  };
+
+  const handleBulkVerifyPayment = () => {
+    if (selectedIds.length === 0) {
+      setError('Please select at least one invoice to verify payment');
+      return;
+    }
+    setVerificationData({
+      payment_method: 'Cash',
+      payment_reference: '',
+      payment_notes: '',
+      payment_date: new Date().toISOString().split('T')[0]
+    });
+    setShowBulkVerifyModal(true);
   };
 
   const submitVerification = async () => {
@@ -107,6 +154,50 @@ export default function PaymentVerification() {
       setError(error.response?.data?.detail || 'Failed to verify payment');
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const submitBulkVerification = async () => {
+    try {
+      setBulkLoading(true);
+      setVerifying(true);
+      setError(null);
+      
+      const results = await Promise.allSettled(
+        selectedIds.map(invoiceId => 
+          api.post(`/invoices/${invoiceId}/verify-payment`, verificationData)
+        )
+      );
+      
+      const failed = results.filter(r => r.status === 'rejected');
+      const succeeded = results.filter(r => r.status === 'fulfilled');
+      
+      if (succeeded.length > 0) {
+        setSuccessMessage(`Payment verified for ${succeeded.length} invoice(s)`);
+      }
+      
+      if (failed.length > 0) {
+        setError(`${failed.length} verification(s) failed. Please retry.`);
+      }
+      
+      setShowBulkVerifyModal(false);
+      
+      // Refresh the list
+      await fetchPendingInvoices();
+      
+      // Clear selection if all succeeded
+      if (failed.length === 0) {
+        setSelectedIds([]);
+      }
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      console.error('Failed to verify payments:', error);
+      setError(error.response?.data?.detail || 'Failed to verify payments');
+    } finally {
+      setVerifying(false);
+      setBulkLoading(false);
     }
   };
 
@@ -162,9 +253,9 @@ export default function PaymentVerification() {
                     <p className="text-sm text-gray-600">Pending Payments</p>
                     <p className="text-2xl font-bold text-gray-900 mt-1">{filteredInvoices.length}</p>
                   </div>
-                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  {/* <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                     <DollarSign className="text-blue-600" size={24} />
-                  </div>
+                  </div> */}
                 </div>
               </CardContent>
             </Card>
@@ -178,9 +269,9 @@ export default function PaymentVerification() {
                       AED {totalPending.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
                     </p>
                   </div>
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  {/* <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                     <DollarSign className="text-green-600" size={24} />
-                  </div>
+                  </div> */}
                 </div>
               </CardContent>
             </Card>
@@ -230,6 +321,45 @@ export default function PaymentVerification() {
             </CardContent>
           </Card>
 
+          {/* Bulk Actions Bar */}
+          {selectedIds.length > 0 && (
+            <Card className="mb-4 bg-blue-50 border-blue-200">
+              <CardContent className="pt-6">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    Select all
+                  </label>
+                  <span className="text-sm font-semibold text-gray-700">
+                    {selectedIds.length} selected
+                  </span>
+                  <Button
+                    onClick={handleBulkVerifyPayment}
+                    disabled={bulkLoading}
+                    className="gap-2"
+                    size="sm"
+                  >
+                    <CheckCircle size={16} />
+                    Verify {selectedIds.length} Payment{selectedIds.length > 1 ? 's' : ''}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={clearSelection}
+                    disabled={bulkLoading}
+                    size="sm"
+                  >
+                    Clear Selection
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Invoices List */}
           <Card>
             <CardHeader>
@@ -240,7 +370,7 @@ export default function PaymentVerification() {
                 <PageLoader />
               ) : filteredInvoices.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <DollarSign size={48} className="mx-auto mb-4 opacity-50" />
+                  {/* <DollarSign size={48} className="mx-auto mb-4 opacity-50" /> */}
                   <p>No pending payment invoices found</p>
                 </div>
               ) : (
@@ -248,6 +378,14 @@ export default function PaymentVerification() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b">
+                        <th className="py-3 px-4 w-12">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={toggleSelectAll}
+                            className="h-4 w-4 rounded border-gray-300"
+                          />
+                        </th>
                         <th className="text-left py-3 px-4 font-medium text-gray-700">Invoice #</th>
                         <th className="text-left py-3 px-4 font-medium text-gray-700">Customer</th>
                         <th className="text-left py-3 px-4 font-medium text-gray-700">Issue Date</th>
@@ -260,6 +398,14 @@ export default function PaymentVerification() {
                     <tbody>
                       {filteredInvoices.map((invoice) => (
                         <tr key={invoice.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(invoice.id)}
+                              onChange={() => toggleSelected(invoice.id)}
+                              className="h-4 w-4 rounded border-gray-300"
+                            />
+                          </td>
                           <td className="py-3 px-4 font-medium text-blue-600">
                             {invoice.invoice_number}
                           </td>
@@ -390,6 +536,113 @@ export default function PaymentVerification() {
             </Button>
             <Button onClick={submitVerification} disabled={verifying}>
               {verifying ? 'Verifying...' : 'Confirm Payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Payment Verification Modal */}
+      <Dialog open={showBulkVerifyModal} onOpenChange={setShowBulkVerifyModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bulk Verify Payments</DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="text-sm text-gray-700 mb-2">
+                You are about to verify payments for <span className="font-bold">{selectedIds.length}</span> invoice(s)
+              </p>
+              <div className="max-h-32 overflow-y-auto text-sm">
+                {selectedInvoices.map((inv, idx) => (
+                  <div key={inv.id} className="flex justify-between py-1">
+                    <span className="text-gray-600">{inv.invoice_number}</span>
+                    <span className="font-semibold">{inv.currency_code} {inv.amount_due.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-blue-200 mt-2 pt-2">
+                <div className="flex justify-between font-bold">
+                  <span>Total:</span>
+                  <span className="text-green-600">
+                    AED {selectedInvoices.reduce((sum, inv) => sum + inv.amount_due, 0).toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Method <span className="text-red-500">*</span>
+              </label>
+              <Select
+                value={verificationData.payment_method}
+                onValueChange={(value) => setVerificationData({ ...verificationData, payment_method: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Cash">Cash</SelectItem>
+                  <SelectItem value="Card">Card</SelectItem>
+                  <SelectItem value="POS">POS</SelectItem>
+                  <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="Cheque">Cheque</SelectItem>
+                  <SelectItem value="Digital Wallet">Digital Wallet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Date
+              </label>
+              <Input
+                type="date"
+                value={verificationData.payment_date}
+                onChange={(e) => setVerificationData({ ...verificationData, payment_date: e.target.value })}
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Reference (Optional)
+              </label>
+              <Input
+                type="text"
+                placeholder="e.g., Batch #, Transaction ID"
+                value={verificationData.payment_reference}
+                onChange={(e) => setVerificationData({ ...verificationData, payment_reference: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Payment Notes (Optional)
+              </label>
+              <textarea
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                placeholder="Add notes about this bulk payment verification..."
+                value={verificationData.payment_notes}
+                onChange={(e) => setVerificationData({ ...verificationData, payment_notes: e.target.value })}
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkVerifyModal(false)} disabled={verifying || bulkLoading}>
+              Cancel
+            </Button>
+            <Button onClick={submitBulkVerification} disabled={verifying || bulkLoading}>
+              {verifying || bulkLoading ? 'Verifying...' : `Confirm ${selectedIds.length} Payment${selectedIds.length > 1 ? 's' : ''}`}
             </Button>
           </DialogFooter>
         </DialogContent>
