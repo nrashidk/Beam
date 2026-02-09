@@ -5050,6 +5050,7 @@ def get_peppol_transmission_status(
 def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
                   db: Session = Depends(get_db),
                   status: Optional[str] = None,
+                  invoice_type: Optional[str] = None,
                   limit: int = 50,
                   offset: int = 0):
     """List invoices for the current company"""
@@ -5062,6 +5063,13 @@ def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
             query = query.filter(InvoiceDB.status == status_enum)
         except ValueError:
             raise HTTPException(400, f"Invalid status: {status}")
+    
+    if invoice_type:
+        try:
+            type_enum = InvoiceType(invoice_type)
+            query = query.filter(InvoiceDB.invoice_type == type_enum)
+        except ValueError:
+            raise HTTPException(400, f"Invalid invoice type: {invoice_type}")
 
     query = query.order_by(InvoiceDB.created_at.desc())
     invoices = query.offset(offset).limit(limit).all()

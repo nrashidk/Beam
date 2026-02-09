@@ -10,6 +10,7 @@ export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkError, setBulkError] = useState('');
@@ -23,12 +24,19 @@ export default function InvoiceDashboard() {
 
   useEffect(() => {
     loadInvoices();
-  }, [filter]);
+  }, [filter, typeFilter]);
 
   const loadInvoices = async () => {
     try {
       setLoading(true);
-      const params = filter !== 'all' ? `?status=${filter}` : '';
+      const queryParams = new URLSearchParams();
+      if (filter !== 'all') {
+        queryParams.append('status', filter);
+      }
+      if (typeFilter !== 'all') {
+        queryParams.append('invoice_type', typeFilter);
+      }
+      const params = queryParams.toString() ? `?${queryParams.toString()}` : '';
       const response = await apiClient.get(`/invoices${params}`);
       setInvoices(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
@@ -251,20 +259,49 @@ export default function InvoiceDashboard() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-3 mt-6">
-            {['all', 'DRAFT', 'ISSUED', 'SENT', 'PAID', 'CANCELLED'].map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilter(status)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  filter === status
-                    ? 'bg-indigo-600 text-white shadow-md'
-                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                }`}
-              >
-                {status === 'all' ? 'All' : status.charAt(0) + status.slice(1).toLowerCase()}
-              </button>
-            ))}
+          <div className="space-y-4 mt-6">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Status</label>
+              <div className="flex gap-3 flex-wrap">
+                {['all', 'DRAFT', 'ISSUED', 'SENT', 'PAID', 'CANCELLED'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFilter(status)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      filter === status
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    {status === 'all' ? 'All' : status.charAt(0) + status.slice(1).toLowerCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Invoice Type</label>
+              <div className="flex gap-3 flex-wrap">
+                {[
+                  { value: 'all', label: 'All Types' },
+                  { value: '380', label: 'Tax Invoice' },
+                  { value: '381', label: 'Credit Note' },
+                  { value: '480', label: 'Commercial' }
+                ].map((type) => (
+                  <button
+                    key={type.value}
+                    onClick={() => setTypeFilter(type.value)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      typeFilter === type.value
+                        ? 'bg-purple-600 text-white shadow-md'
+                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Invoice List */}
@@ -407,7 +444,8 @@ export default function InvoiceDashboard() {
                         <span className="text-xs bg-gray-100 px-2 py-1 rounded">
                           Type: {invoice.invoice_type === '380' ? 'Tax Invoice' : 
                                  invoice.invoice_type === '381' ? 'Credit Note' : 
-                                 'Commercial'}
+                                 invoice.invoice_type === '480' ? 'Commercial' :
+                                 'Other'}
                         </span>
                       </div>
                     </div>
