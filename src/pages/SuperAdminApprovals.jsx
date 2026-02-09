@@ -80,7 +80,12 @@ export default function SuperAdminDashboard() {
         adminAPI.getAllCompanies(statusParam),
         adminAPI.getStats()
       ]);
-      setCompanies(companiesResponse.data);
+      
+      console.log('Companies Response:', companiesResponse);
+      console.log('Companies Data:', companiesResponse.data);
+      console.log('Is Array?', Array.isArray(companiesResponse.data));
+      
+      setCompanies(companiesResponse.data || []);
       
       const rawStats = statsResponse.data;
       setStats({
