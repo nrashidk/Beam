@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { X, Plus, Trash2 } from 'lucide-react';
 
-export default function POFormModal({ isOpen, onClose, onSubmit, initialData = null }) {
+export default function POFormModal({ isOpen, onClose, onSubmit, initialData = null, vatEnabled = false }) {
   const [formData, setFormData] = useState(initialData || {
     po_number: '',
     supplier_trn: '',
@@ -27,8 +27,8 @@ export default function POFormModal({ isOpen, onClose, onSubmit, initialData = n
         quantity_ordered: 1,
         unit_code: 'C62',
         unit_price: 0,
-        tax_category: 'STANDARD',
-        tax_percent: 5.0
+        tax_category: vatEnabled ? 'STANDARD' : 'EXEMPT',
+        tax_percent: vatEnabled ? 5.0 : 0.0
       }
     ]
   });
@@ -66,8 +66,8 @@ export default function POFormModal({ isOpen, onClose, onSubmit, initialData = n
           quantity_ordered: 1,
           unit_code: 'C62',
           unit_price: 0,
-          tax_category: 'STANDARD',
-          tax_percent: 5.0
+          tax_category: vatEnabled ? 'STANDARD' : 'EXEMPT',
+          tax_percent: vatEnabled ? 5.0 : 0.0
         }
       ]
     }));
