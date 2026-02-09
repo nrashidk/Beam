@@ -308,11 +308,11 @@ export default function BulkImport() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-1">•</span>
-                <span>Invoice types: TAX_INVOICE, CREDIT_NOTE, or COMMERCIAL</span>
+                <span>Invoice types: TAX_INVOICE (standard invoices), CREDIT_NOTE (refunds), or COMMERCIAL (non-VAT)</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-1">•</span>
-                <span>Free plan users can import up to 10 invoices total</span>
+                <span>Trial users can import up to 10 invoices. Upgrade to import unlimited invoices.</span>
               </li>
             </ul>
           </CardContent>

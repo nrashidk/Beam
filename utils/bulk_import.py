@@ -11,20 +11,20 @@ class BulkImportValidator:
     def generate_invoice_template() -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
         template_data = {
-            'invoice_number': ['INV-001', 'INV-002'],
-            'issue_date': ['2025-01-15', '2025-01-16'],
-            'due_date': ['2025-02-15', '2025-02-16'],
-            'invoice_type': ['TAX_INVOICE', 'TAX_INVOICE'],
-            'customer_trn': ['100000000000003', '100000000000003'],
-            'customer_name': ['ABC Trading LLC', 'XYZ Company'],
-            'customer_email': ['customer@example.com', 'customer2@example.com'],
-            'customer_address': ['Dubai, UAE', 'Abu Dhabi, UAE'],
-            'item_description': ['Consulting Services', 'Software License'],
-            'quantity': [10, 5],
-            'unit_price': [500.00, 1000.00],
-            'tax_percent': [5, 5],
-            'discount_amount': [0, 100],
-            'notes': ['Payment due in 30 days', 'Annual subscription']
+            'invoice_number': ['INV-001', 'INV-002', 'CN-001', 'COM-001'],
+            'issue_date': ['2025-01-15', '2025-01-16', '2025-01-17', '2025-01-18'],
+            'due_date': ['2025-02-15', '2025-02-16', '2025-02-17', '2025-02-18'],
+            'invoice_type': ['TAX_INVOICE', 'CREDIT_NOTE', 'COMMERCIAL', 'TAX_INVOICE'],
+            'customer_trn': ['100000000000003', '100000000000003', '100000000000004', '100000000000005'],
+            'customer_name': ['ABC Trading LLC', 'XYZ Company', 'DEF Corporation', 'GHI Enterprises'],
+            'customer_email': ['customer@example.com', 'customer2@example.com', 'customer3@example.com', 'customer4@example.com'],
+            'customer_address': ['Dubai, UAE', 'Abu Dhabi, UAE', 'Sharjah, UAE', 'Ajman, UAE'],
+            'item_description': ['Consulting Services', 'Refund for returned goods', 'Non-taxable services', 'Software License'],
+            'quantity': [10, 5, 8, 12],
+            'unit_price': [500.00, 1000.00, 750.00, 1200.00],
+            'tax_percent': [5, 5, 0, 5],
+            'discount_amount': [0, 100, 0, 200],
+            'notes': ['Payment due in 30 days', 'Credit note for order #123', 'Non-VAT transaction', 'Annual subscription']
         }
         return pd.DataFrame(template_data)
     

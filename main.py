@@ -9613,10 +9613,12 @@ async def bulk_import_invoices(
                 "errors": errors
             }
 
-        subscription = db.query(SubscriptionDB).filter_by(
-            company_id=company_id, status="ACTIVE").first()
+        subscription = db.query(SubscriptionDB).filter(
+            SubscriptionDB.company_id == company_id,
+            SubscriptionDB.status.in_(["ACTIVE", "TRIAL"])
+        ).first()
         if not subscription:
-            raise HTTPException(403, "No active subscription found")
+            raise HTTPException(403, "No active subscription found. Please subscribe to a plan.")
 
         plan = db.query(SubscriptionPlanDB).filter_by(
             id=subscription.plan_id).first()
