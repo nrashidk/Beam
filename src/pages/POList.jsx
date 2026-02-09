@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
-import { apAPI } from "../lib/api";
+import { apAPI, apiClient } from "../lib/api";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -32,6 +32,7 @@ export default function POList() {
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [vatEnabled, setVatEnabled] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     action: null,
@@ -51,7 +52,19 @@ export default function POList() {
 
   useEffect(() => {
     fetchPurchaseOrders();
+    fetchVatSettings();
   }, []);
+
+  const fetchVatSettings = async () => {
+    try {
+      const response = await apiClient.get("/settings/vat");
+      console.log("VAT settings response:", response.data);
+      setVatEnabled(response.data.vat_enabled || false);
+    } catch (error) {
+      console.error("Failed to fetch VAT settings:", error);
+      setVatEnabled(false);
+    }
+  };
 
   const fetchPurchaseOrders = async () => {
     try {
@@ -437,6 +450,7 @@ export default function POList() {
             isOpen={showCreateModal}
             onClose={() => setShowCreateModal(false)}
             onSubmit={handleCreatePO}
+            vatEnabled={vatEnabled}
           />
 
           {/* PO Detail Modal */}

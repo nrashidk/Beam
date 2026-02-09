@@ -1,7 +1,19 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { authAPI, mfaAPI } from '../lib/api';
+import React, { createContext, useState, useContext, useEffect } from "react";
+import { authAPI, mfaAPI } from "../lib/api";
 
 const AuthContext = createContext(null);
+
+// Helper function to decode JWT and check expiration
+const isTokenExpired = (token) => {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const expirationTime = payload.exp * 1000; // Convert to milliseconds
+    return Date.now() >= expirationTime;
+  } catch (error) {
+    return true; // If we can't decode, consider it expired
+  }
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -12,42 +24,86 @@ export const AuthProvider = ({ children }) => {
   const [userEmail, setUserEmail] = useState(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const userData = localStorage.getItem('user');
-    if (token && userData) {
-      setUser(JSON.parse(userData));
-    }
-    setLoading(false);
+    const checkAndRefreshToken = async () => {
+      const token = localStorage.getItem("token");
+      const userData = localStorage.getItem("user");
+      const refreshToken = localStorage.getItem("refresh_token");
+
+      if (!token || !userData) {
+        setLoading(false);
+        return;
+      }
+
+      // Check if access token is expired
+      if (isTokenExpired(token)) {
+        // Try to refresh using refresh token
+        if (refreshToken && !isTokenExpired(refreshToken)) {
+          try {
+            const response = await authAPI.refresh();
+            if (response && response.access_token) {
+              // Token refreshed successfully, user stays logged in
+              setUser(JSON.parse(userData));
+            } else {
+              // Refresh failed, logout
+              logout();
+            }
+          } catch (error) {
+            // Refresh failed, logout
+            logout();
+          }
+        } else {
+          // No valid refresh token, logout
+          logout();
+        }
+      } else {
+        // Token is still valid
+        setUser(JSON.parse(userData));
+      }
+
+      setLoading(false);
+    };
+
+    checkAndRefreshToken();
   }, []);
 
   const login = async (email, password) => {
     try {
       const response = await authAPI.login(email, password);
       const data = response.data;
-      
+
       if (data.mfa_required) {
         setMfaRequired(true);
         setTempToken(data.temp_token);
         setMfaMethod(data.mfa_method);
         setUserEmail(email);
-        return { 
-          success: true, 
+        return {
+          success: true,
           mfaRequired: true,
-          mfaMethod: data.mfa_method 
+          mfaMethod: data.mfa_method,
         };
       }
-      
-      const { access_token, user_id, company_id, company_name, role } = data;
-      localStorage.setItem('token', access_token);
+
+      const {
+        access_token,
+        refresh_token,
+        user_id,
+        company_id,
+        company_name,
+        role,
+      } = data;
+      localStorage.setItem("token", access_token);
+      if (refresh_token) {
+        localStorage.setItem("refresh_token", refresh_token);
+      }
       const userData = { user_id, company_id, company_name, role };
-      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem("user", JSON.stringify(userData));
       setUser(userData);
-      
+
       return { success: true, mfaRequired: false };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.detail || 'Login failed' 
+      return {
+        success: false,
+        error: error.response?.data?.detail || "Login failed",
       };
     }
   };
@@ -55,23 +111,33 @@ export const AuthProvider = ({ children }) => {
   const verifyMFA = async (code, method) => {
     try {
       const response = await mfaAPI.verifyMFA(tempToken, code, method);
-      const { access_token, user_id, company_id, company_name, role } = response.data;
-      
-      localStorage.setItem('token', access_token);
+      const {
+        access_token,
+        refresh_token,
+        user_id,
+        company_id,
+        company_name,
+        role,
+      } = response.data;
+
+      localStorage.setItem("token", access_token);
+      if (refresh_token) {
+        localStorage.setItem("refresh_token", refresh_token);
+      }
       const userData = { user_id, company_id, company_name, role };
-      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem("user", JSON.stringify(userData));
       setUser(userData);
-      
+
       setMfaRequired(false);
       setTempToken(null);
       setMfaMethod(null);
       setUserEmail(null);
-      
+
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.detail || 'Verification failed' 
+      return {
+        success: false,
+        error: error.response?.data?.detail || "Verification failed",
       };
     }
   };
@@ -84,8 +150,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setUser(null);
     authAPI.logout().catch(() => {});
   };
@@ -98,8 +164,8 @@ export const AuthProvider = ({ children }) => {
     cancelMFA,
     loading,
     isAuthenticated: !!user,
-    isSuperAdmin: user?.role === 'SUPER_ADMIN',
-    isCompanyAdmin: user?.role === 'COMPANY_ADMIN' || user?.role === 'COMPANY',
+    isSuperAdmin: user?.role === "SUPER_ADMIN",
+    isCompanyAdmin: user?.role === "COMPANY_ADMIN" || user?.role === "COMPANY",
     mfaRequired,
     mfaMethod,
     userEmail,
@@ -111,7 +177,7 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    throw new Error("useAuth must be used within AuthProvider");
   }
   return context;
 };
