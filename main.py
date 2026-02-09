@@ -3113,13 +3113,15 @@ def verify_mfa_login(payload: MFALoginVerifyRequest,
     user.last_login = datetime.utcnow()
     db.commit()
 
-    # Create full access token
+    # Create full access token and refresh token
     access_token = create_access_token(data={"sub": user.id, "type": "user"})
+    refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
 
     return MFALoginResponse(mfa_required=False,
                             mfa_method=None,
                             temp_token=None,
                             access_token=access_token,
+                            refresh_token=refresh_token,
                             token_type="bearer",
                             user_id=user.id,
                             company_id=user.company_id,
