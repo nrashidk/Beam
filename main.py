@@ -5903,10 +5903,10 @@ def issue_invoice(invoice_id: str,
 
 
 @app.post("/invoices/{invoice_id}/send", tags=["Invoices"])
-def send_invoice(invoice_id: str,
+async def send_invoice(invoice_id: str,
                  current_user: UserDB = Depends(get_current_user_from_header),
                  db: Session = Depends(get_db)):
-    """Send invoice to customer (simulates ASP transmission and email notification)"""
+    """Send invoice to customer via email and update status to SENT"""
     invoice = db.query(InvoiceDB).filter(
         InvoiceDB.id == invoice_id,
         InvoiceDB.company_id == current_user.company_id).first()
@@ -5920,44 +5920,46 @@ def send_invoice(invoice_id: str,
 
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(400, "Cannot send cancelled invoice")
+    
+    # Validate email exists
+    if not invoice.customer_email:
+        raise HTTPException(
+            400, "Cannot send invoice: Customer email is required.")
 
     # Update status
     invoice.status = InvoiceStatus.SENT
     invoice.sent_at = datetime.utcnow()
-
-    # PEPPOL Usage Tracking - Record transmission fee
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
-    peppol_fee = 0.0
-    peppol_usage_id = None
-
-    # TODO: PEPPOL usage tracking - to be implemented when PEPPOLUsageDB model is created
-    # if company:
-    #     subscription = db.query(SubscriptionDB).filter(
-    #         SubscriptionDB.company_id == company.id,
-    #         SubscriptionDB.status == "ACTIVE").first()
-    #     fee_by_tier = {"BASIC": 2.00, "PRO": 1.00, "ENTERPRISE": 0.50}
-    #     peppol_fee = fee_by_tier.get(subscription.tier, 2.00) if subscription else 2.00
-    #     # Record usage when PEPPOLUsageDB model is available
-
     db.commit()
 
-    # In production, this would:
-    # 1. Send UBL XML to centralized ASP API (Tradeshift/Basware)
-    # 2. ASP transmits via PEPPOL network to customer
-    # 3. ASP reports to FTA for compliance
-    # 4. Send email to customer with share link
-    # 5. Charge accumulated PEPPOL fees on next billing cycle
+    # Get the base URL for share link
+    base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+    
+    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+
+    # Get company details
+    company = db.get(CompanyDB, current_user.company_id)
+    company_email = company.email if company else "support@involinks.ae"
+
+    # Send invoice email via AWS SES
+    email_result = email_service.send_invoice_email(
+        to_email=invoice.customer_email,
+        customer_name=invoice.customer_name or "Customer",
+        invoice_number=invoice.invoice_number,
+        invoice_url=share_url,
+        company_name=invoice.supplier_name,
+        company_email=company_email,
+        amount=invoice.total_amount,
+        currency="AED")
 
     return {
         "message": "Invoice sent successfully",
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
-        "sent_to": invoice.customer_email or invoice.customer_name,
+        "sent_to": invoice.customer_email,
         "share_link": f"/invoices/view/{invoice.share_token}",
-        "peppol_transmission": "simulated",
-        "peppol_fee": f"AED {peppol_fee:.2f}",
-        "peppol_usage_id": peppol_usage_id,
+        "email_status": "sent" if email_result.get("success") else "simulated",
         "sent_at": invoice.sent_at.isoformat()
     }
 

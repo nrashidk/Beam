@@ -60,11 +60,20 @@ export default function InvoiceDetail() {
   };
 
   const handleSend = async () => {
+    if (!invoice.customer_email) {
+      setToast({
+        message: 'Cannot send invoice: Customer email is required.',
+        type: 'error',
+        onClose: () => setToast(null)
+      });
+      return;
+    }
+    
     setConfirmModal({
       isOpen: true,
       action: 'send',
       title: 'Send Invoice',
-      message: 'Send this invoice to customer? This will simulate ASP transmission via Peppol network.',
+      message: `Send this invoice to ${invoice.customer_email}? This will send via email and update the status to SENT.`,
       confirmText: 'Send',
       cancelText: 'Cancel',
       type: 'default'
