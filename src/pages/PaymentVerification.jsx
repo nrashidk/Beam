@@ -534,7 +534,7 @@ export default function PaymentVerification() {
 
       {/* Payment Verification Modal */}
       <Dialog open={showVerifyModal} onOpenChange={setShowVerifyModal}>
-        <DialogContent className=" w-[700px] overflow-x-hidden">
+        <DialogContent className="!w-[600px] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Verify Payment</DialogTitle>
           </DialogHeader>
@@ -663,7 +663,7 @@ export default function PaymentVerification() {
 
       {/* Bulk Payment Verification Modal */}
       <Dialog open={showBulkVerifyModal} onOpenChange={setShowBulkVerifyModal}>
-        <DialogContent className="w-[700px] overflow-x-hidden">
+        <DialogContent className="!w-[600px] overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Bulk Verify Payments</DialogTitle>
           </DialogHeader>
