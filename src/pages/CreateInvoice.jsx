@@ -49,6 +49,8 @@ export default function CreateInvoice() {
   const [toast, setToast] = useState(null);
   const [vatEnabled, setVatEnabled] = useState(false);
   const [loadingVatSettings, setLoadingVatSettings] = useState(true);
+  const [originalInvoices, setOriginalInvoices] = useState([]);
+  const [loadingOriginalInvoices, setLoadingOriginalInvoices] = useState(false);
   const [formData, setFormData] = useState({
     invoice_type: '380',
     issue_date: new Date().toISOString().split('T')[0],
@@ -62,6 +64,7 @@ export default function CreateInvoice() {
     payment_due_days: 30,
     invoice_notes: '',
     reference_number: '',
+    preceding_invoice_id: '',
     line_items: [buildDefaultLineItem(false)]
   });
 
@@ -106,6 +109,31 @@ export default function CreateInvoice() {
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
+
+  useEffect(() => {
+    const fetchOriginalInvoices = async () => {
+      const isCreditNote = formData.invoice_type === '381' || formData.invoice_type === '81';
+      if (!isCreditNote) {
+        setOriginalInvoices([]);
+        setFormData(prev => ({ ...prev, preceding_invoice_id: '' }));
+        return;
+      }
+
+      const originalType = formData.invoice_type === '381' ? '380' : '480';
+      setLoadingOriginalInvoices(true);
+      try {
+        const response = await apiClient.get(`/invoices?invoice_type=${originalType}`);
+        const list = Array.isArray(response.data) ? response.data : [];
+        setOriginalInvoices(list.filter((inv) => inv.status !== 'CANCELLED'));
+      } catch (error) {
+        setOriginalInvoices([]);
+      } finally {
+        setLoadingOriginalInvoices(false);
+      }
+    };
+
+    fetchOriginalInvoices();
+  }, [formData.invoice_type]);
 
   const addLineItem = () => {
     setFormData({
@@ -157,11 +185,40 @@ export default function CreateInvoice() {
     }, 0);
   };
 
+  const isCreditNote = formData.invoice_type === '381' || formData.invoice_type === '81';
+  const selectedOriginalInvoice = originalInvoices.find(
+    (inv) => inv.id === formData.preceding_invoice_id
+  );
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      if (isCreditNote) {
+        if (!formData.preceding_invoice_id || !selectedOriginalInvoice) {
+          setToast({
+            message: 'Please select the original invoice for this credit note.',
+            type: 'error',
+            onClose: () => setToast(null)
+          });
+          setLoading(false);
+          return;
+        }
+
+        const creditTotal = calculateTotal();
+        const originalTotal = Number(selectedOriginalInvoice.total_amount || 0);
+        if (creditTotal > originalTotal) {
+          setToast({
+            message: `Credit note total cannot exceed original invoice total (${selectedOriginalInvoice.currency_code} ${originalTotal.toFixed(2)}).`,
+            type: 'error',
+            onClose: () => setToast(null)
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
       // Clean payload: Remove tax_code from line items when VAT is disabled
       // This ensures zero impact for non-VAT businesses
       const cleanedFormData = {
@@ -252,7 +309,11 @@ export default function CreateInvoice() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Invoice Type</label>
                   <select
                     value={formData.invoice_type}
-                    onChange={(e) => setFormData({ ...formData, invoice_type: e.target.value })}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      invoice_type: e.target.value,
+                      preceding_invoice_id: ''
+                    })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   >
                     {vatEnabled ? (
@@ -274,6 +335,36 @@ export default function CreateInvoice() {
                     </p>
                   )}
                 </div>
+
+                {isCreditNote && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Original Invoice <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.preceding_invoice_id}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        preceding_invoice_id: e.target.value
+                      })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      <option value="">
+                        {loadingOriginalInvoices ? 'Loading invoices...' : 'Select original invoice'}
+                      </option>
+                      {originalInvoices.map((inv) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.invoice_number} - {inv.customer_name} - {inv.currency_code} {inv.total_amount.toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedOriginalInvoice && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Max credit: {selectedOriginalInvoice.currency_code} {selectedOriginalInvoice.total_amount.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>

@@ -4789,8 +4789,44 @@ def create_invoice(
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
 
-    # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     from decimal import Decimal
+
+    # Credit note validation: must reference matching invoice and not exceed original total
+    if invoice.invoice_type in [
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+    ]:
+        if not invoice.preceding_invoice_id:
+            raise HTTPException(
+                400,
+                "Credit notes must reference an existing invoice.")
+
+        original_invoice = db.query(InvoiceDB).filter(
+            InvoiceDB.id == invoice.preceding_invoice_id,
+            InvoiceDB.company_id == company.id).first()
+
+        if not original_invoice:
+            raise HTTPException(400, "Referenced invoice not found.")
+
+        if (invoice.invoice_type == InvoiceType.TAX_CREDIT_NOTE
+                and original_invoice.invoice_type != InvoiceType.TAX_INVOICE):
+            raise HTTPException(
+                400,
+                "Tax credit notes must reference a tax invoice.")
+
+        if (invoice.invoice_type == InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+                and original_invoice.invoice_type != InvoiceType.COMMERCIAL_INVOICE):
+            raise HTTPException(
+                400,
+                "Out-of-scope credit notes must reference a commercial invoice.")
+
+        if Decimal(str(invoice.total_amount)) > Decimal(
+                str(original_invoice.total_amount)):
+            raise HTTPException(
+                400,
+                "Credit note total cannot exceed the original invoice total.")
+
+    # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
         total_amount=Decimal(str(invoice.total_amount)),
         vat_enabled=company.vat_enabled or False)
@@ -9696,7 +9732,12 @@ async def bulk_import_invoices(
                         ]
                     }
 
+        from decimal import Decimal
+
         created_count = 0
+        bulk_errors = []
+        prepared_invoices = []
+
         for invoice_data in parsed_invoices:
             line_total = invoice_data['quantity'] * invoice_data['unit_price']
             discount = invoice_data.get('discount_amount', 0)
@@ -9704,16 +9745,76 @@ async def bulk_import_invoices(
             tax_amount_calc = (taxable_amount * invoice_data['tax_percent']) / 100
             total_amount_calc = taxable_amount + tax_amount_calc
 
+            invoice_type_key = invoice_data['invoice_type']
+            row_num = invoice_data.get('row_num', 'Unknown')
+            preceding_invoice_id = None
+
             # Map invoice type strings to enum values
             invoice_type_mapping = {
                 'TAX_INVOICE': InvoiceType.TAX_INVOICE,
-                'CREDIT_NOTE': InvoiceType.TAX_CREDIT_NOTE,
                 'COMMERCIAL': InvoiceType.COMMERCIAL_INVOICE
             }
-            invoice_type = invoice_type_mapping.get(
-                invoice_data['invoice_type'], 
-                InvoiceType.TAX_INVOICE
-            )
+
+            if invoice_type_key == 'CREDIT_NOTE':
+                preceding_number = invoice_data.get('preceding_invoice_number')
+                if not preceding_number:
+                    bulk_errors.append(
+                        f"Row {row_num}: preceding_invoice_number is required for credit notes")
+                    continue
+
+                original_invoice = db.query(InvoiceDB).filter(
+                    InvoiceDB.company_id == company_id,
+                    InvoiceDB.invoice_number == preceding_number).first()
+
+                if not original_invoice:
+                    bulk_errors.append(
+                        f"Row {row_num}: Referenced invoice '{preceding_number}' not found")
+                    continue
+
+                if original_invoice.invoice_type == InvoiceType.TAX_INVOICE:
+                    invoice_type = InvoiceType.TAX_CREDIT_NOTE
+                elif original_invoice.invoice_type == InvoiceType.COMMERCIAL_INVOICE:
+                    invoice_type = InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+                else:
+                    bulk_errors.append(
+                        f"Row {row_num}: Credit notes must reference a tax or commercial invoice")
+                    continue
+
+                if Decimal(str(total_amount_calc)) > Decimal(
+                        str(original_invoice.total_amount)):
+                    bulk_errors.append(
+                        f"Row {row_num}: Credit note total cannot exceed original invoice total")
+                    continue
+
+                preceding_invoice_id = original_invoice.id
+            else:
+                invoice_type = invoice_type_mapping.get(
+                    invoice_type_key,
+                    InvoiceType.TAX_INVOICE)
+
+            prepared_invoices.append({
+                "invoice_data": invoice_data,
+                "invoice_type": invoice_type,
+                "taxable_amount": taxable_amount,
+                "tax_amount_calc": tax_amount_calc,
+                "total_amount_calc": total_amount_calc,
+                "preceding_invoice_id": preceding_invoice_id
+            })
+
+        if bulk_errors:
+            return {
+                "success": False,
+                "total_rows": len(parsed_invoices),
+                "valid_rows": 0,
+                "errors": bulk_errors
+            }
+
+        for prepared in prepared_invoices:
+            invoice_data = prepared["invoice_data"]
+            invoice_type = prepared["invoice_type"]
+            taxable_amount = prepared["taxable_amount"]
+            tax_amount_calc = prepared["tax_amount_calc"]
+            total_amount_calc = prepared["total_amount_calc"]
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
@@ -9745,6 +9846,9 @@ async def bulk_import_invoices(
                 tax_amount=float(tax_amount_calc),
                 total_amount=float(total_amount_calc),
                 amount_due=float(total_amount_calc),
+
+                # Credit note reference
+                preceding_invoice_id=prepared["preceding_invoice_id"],
                 
                 # Status and notes - use correct field names
                 status=InvoiceStatus.DRAFT,
