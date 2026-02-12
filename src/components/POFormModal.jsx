@@ -34,7 +34,7 @@ export default function POFormModal({
           quantity_ordered: 1,
           unit_code: "C62",
           unit_price: 0,
-          tax_category: vatEnabled ? "STANDARD" : "EXEMPT",
+          tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
           tax_percent: vatEnabled ? 5.0 : 0.0,
         },
       ],
@@ -56,6 +56,16 @@ export default function POFormModal({
     setFormData((prev) => {
       const newLineItems = [...prev.line_items];
       newLineItems[index] = { ...newLineItems[index], [field]: value };
+
+      // Auto-set tax_percent based on tax_category
+      if (field === "tax_category") {
+        if (value === "STANDARD") {
+          newLineItems[index].tax_percent = 5.0;
+        } else {
+          newLineItems[index].tax_percent = 0.0;
+        }
+      }
+
       return { ...prev, line_items: newLineItems };
     });
   };
@@ -74,7 +84,7 @@ export default function POFormModal({
           quantity_ordered: 1,
           unit_code: "C62",
           unit_price: 0,
-          tax_category: vatEnabled ? "STANDARD" : "EXEMPT",
+          tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
           tax_percent: vatEnabled ? 5.0 : 0.0,
         },
       ],
@@ -104,7 +114,10 @@ export default function POFormModal({
 
     formData.line_items.forEach((item) => {
       const lineTotal = item.quantity_ordered * item.unit_price;
-      const lineTax = lineTotal * (item.tax_percent / 100);
+      const lineTax =
+        vatEnabled && item.tax_category === "STANDARD"
+          ? lineTotal * (item.tax_percent / 100)
+          : 0;
       subtotal += lineTotal;
       tax += lineTax;
     });
@@ -501,22 +514,35 @@ export default function POFormModal({
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
-                        Tax %
+                        Tax Category
                       </label>
-                      <Input
-                        type="number"
-                        value={item.tax_percent}
+                      <select
+                        value={item.tax_category}
                         onChange={(e) =>
                           handleLineItemChange(
                             index,
-                            "tax_percent",
-                            parseFloat(e.target.value) || 0,
+                            "tax_category",
+                            e.target.value,
                           )
                         }
-                        min="0"
-                        max="100"
-                        step="0.1"
-                      />
+                        disabled={!vatEnabled}
+                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                      >
+                        {vatEnabled ? (
+                          <>
+                            <option value="STANDARD">Standard (5%)</option>
+                            <option value="ZERO">Zero Rated (0%)</option>
+                            <option value="EXEMPT">Exempt (0%)</option>
+                            <option value="OUT_OF_SCOPE">
+                              Out of Scope (0%)
+                            </option>
+                          </>
+                        ) : (
+                          <option value="OUT_OF_SCOPE">
+                            Out of Scope (0%)
+                          </option>
+                        )}
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -527,7 +553,10 @@ export default function POFormModal({
                           {(
                             item.quantity_ordered *
                             item.unit_price *
-                            (1 + item.tax_percent / 100)
+                            (1 +
+                              (vatEnabled && item.tax_category === "STANDARD"
+                                ? item.tax_percent / 100
+                                : 0))
                           ).toFixed(2)}{" "}
                           AED
                         </span>
