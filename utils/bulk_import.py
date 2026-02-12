@@ -19,6 +19,7 @@ class BulkImportValidator:
             ['2025-02-15', '2025-02-16', '2025-02-17', '2025-02-18'],
             'invoice_type':
             ['TAX_INVOICE', 'CREDIT_NOTE', 'COMMERCIAL', 'TAX_INVOICE'],
+            'preceding_invoice_number': ['', '', 'INV-001', ''],
             'customer_trn': [
                 '100000000000003', '100000000000003', '100000000000004',
                 '100000000000005'
@@ -99,6 +100,8 @@ class BulkImportValidator:
                     f"Missing required columns: {', '.join(missing_columns)}")
                 return False, [], errors
 
+            has_preceding_invoice = 'preceding_invoice_number' in df.columns
+
             for idx, row in df.iterrows():
                 row_num = idx + 2
                 row_errors = []
@@ -148,6 +151,17 @@ class BulkImportValidator:
                         f"Row {row_num}: Invalid invoice type. Must be TAX_INVOICE, CREDIT_NOTE, or COMMERCIAL"
                     )
 
+                preceding_invoice_number = None
+                if has_preceding_invoice and not pd.isna(
+                        row['preceding_invoice_number']):
+                    preceding_invoice_number = str(
+                        row['preceding_invoice_number']).strip()
+
+                if invoice_type == 'CREDIT_NOTE' and not preceding_invoice_number:
+                    row_errors.append(
+                        f"Row {row_num}: preceding_invoice_number is required for credit notes"
+                    )
+
                 issue_date_str = None
                 if not pd.isna(row['issue_date']):
                     try:
@@ -188,6 +202,8 @@ class BulkImportValidator:
                     errors.extend(row_errors)
                 else:
                     invoice_data = {
+                        'row_num':
+                        row_num,
                         'invoice_number':
                         str(row['invoice_number']).strip(),
                         'issue_date':
@@ -196,6 +212,8 @@ class BulkImportValidator:
                         due_date_str,
                         'invoice_type':
                         invoice_type,
+                        'preceding_invoice_number':
+                        preceding_invoice_number,
                         'customer_trn':
                         str(row['customer_trn']).strip(),
                         'customer_name':
