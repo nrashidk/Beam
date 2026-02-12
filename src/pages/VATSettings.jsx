@@ -77,12 +77,18 @@ export default function VATSettings() {
   const handleCertificateUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // Clear the file input
+    e.target.value = '';
+    
     if (file.type !== "application/pdf") {
-      setError("Please upload a PDF file");
+      setError("Please upload a PDF file. Only PDF format is accepted.");
+      setCertificateFile(null);
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
       setError("File size must be less than 5MB");
+      setCertificateFile(null);
       return;
     }
     setUploadingCert(true);
@@ -97,6 +103,7 @@ export default function VATSettings() {
       setCertificateFile(null);
     } catch (error) {
       setError(error.response?.data?.detail || "Failed to upload certificate");
+      setCertificateFile(null);
     } finally {
       setUploadingCert(false);
     }
@@ -118,6 +125,11 @@ export default function VATSettings() {
         }
         if (settings.tax_registration_number.length !== 15) {
           setError("TRN must be exactly 15 digits");
+          setSaving(false);
+          return;
+        }
+        if (!settings.vat_certificate_uploaded) {
+          setError("Please upload your VAT Registration Certificate before enabling VAT");
           setSaving(false);
           return;
         }
@@ -182,10 +194,20 @@ export default function VATSettings() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-2xl">VAT Registration</CardTitle>
-                <CardDescription>
-                  Configure your business VAT registration status and TRN
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-2xl">VAT Registration</CardTitle>
+                    <CardDescription>
+                      Configure your business VAT registration status and TRN
+                    </CardDescription>
+                  </div>
+                  {isVatActive && (
+                    <Badge className="bg-green-100 text-green-800 border-green-300">
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Active
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 {error && (
@@ -293,7 +315,7 @@ export default function VATSettings() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        VAT Registration Certificate (Optional)
+                        VAT Registration Certificate <span className="text-red-500">*</span>
                       </label>
                       <div className="flex items-center gap-3">
                         <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors">
@@ -324,8 +346,7 @@ export default function VATSettings() {
                         </p>
                       )}
                       <p className="mt-2 text-sm text-gray-600">
-                        Upload your FTA VAT registration certificate (PDF format
-                        only)
+                        Upload your official FTA VAT registration certificate (PDF format only, max 5MB)
                       </p>
                     </div>
 
@@ -372,39 +393,17 @@ export default function VATSettings() {
                     disabled={
                       saving ||
                       (settings.vat_enabled &&
-                        !settings.tax_registration_number)
+                        (!settings.tax_registration_number || !settings.vat_certificate_uploaded))
                     }
                     className="bg-blue-600 hover:bg-blue-700"
                   >
-                    {saving ? "Saving..." : "Save VAT Settings"}
+                    {saving ? "Saving..." : isVatActive ? "Update VAT Settings" : "Save VAT Settings"}
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* VAT Registration Active Banner - Only shown after successful save */}
-            {isVatActive && (
-              <Card className="border-green-200 bg-green-50">
-                <CardContent className="pt-6">
-                  <div className="flex gap-4">
-                    <CheckCircle
-                      className="text-green-600 flex-shrink-0"
-                      size={24}
-                    />
-                    <div className="space-y-1">
-                      <h3 className="font-semibold text-green-900">
-                        VAT Registration Active
-                      </h3>
-                      <p className="text-sm text-green-800">
-                        Your business is configured as VAT-registered. All
-                        invoices will include your TRN and comply with UAE
-                        Federal Tax Authority requirements.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+
           </div>
         </div>
       </div>
