@@ -68,8 +68,8 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 SECRET_KEY = os.getenv("JWT_SECRET_KEY",
                        "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15  # 15 minutes for production use
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 1
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -2845,7 +2845,9 @@ def login(payload: LoginRequest,
             company = db.get(CompanyDB, user.company_id)
             if company and company.status != CompanyStatus.ACTIVE:
                 raise HTTPException(
-                    403, f"Company not approved. Status: {company.status.value}. Please wait for admin approval.")
+                    403,
+                    f"Company not approved. Status: {company.status.value}. Please wait for admin approval."
+                )
 
         # Check if MFA is enabled
         if user.mfa_enabled:
@@ -5920,9 +5922,10 @@ def issue_invoice(invoice_id: str,
 
 
 @app.post("/invoices/{invoice_id}/send", tags=["Invoices"])
-async def send_invoice(invoice_id: str,
-                 current_user: UserDB = Depends(get_current_user_from_header),
-                 db: Session = Depends(get_db)):
+async def send_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
     """Send invoice to customer via email and update status to SENT"""
     invoice = db.query(InvoiceDB).filter(
         InvoiceDB.id == invoice_id,
@@ -9632,18 +9635,21 @@ async def bulk_import_invoices(
                 "errors": errors
             }
 
+        # Check if user has active subscription (paid tier)
         subscription = db.query(SubscriptionDB).filter(
             SubscriptionDB.company_id == company_id,
-            SubscriptionDB.status.in_(["ACTIVE", "TRIAL"])
-        ).first()
+            SubscriptionDB.status.in_(["ACTIVE", "TRIAL"])).first()
+
+        # If no paid subscription, check if on trial
         if not subscription:
-            raise HTTPException(403, "No active subscription found. Please subscribe to a plan.")
+            # Check if company has active trial
+            if company.trial_status != "ACTIVE":
+                raise HTTPException(
+                    403,
+                    "No active subscription or trial found. Please subscribe to a plan or contact support."
+                )
 
-        plan = db.query(SubscriptionPlanDB).filter_by(
-            id=subscription.plan_id).first()
-        is_free_plan = plan and plan.name.lower() == 'free'
-
-        if is_free_plan:
+            # Trial users: limit to 10 invoices total
             invoice_count = db.query(InvoiceDB).filter_by(
                 company_id=company_id).count()
             max_invoices = 10
@@ -9652,7 +9658,8 @@ async def bulk_import_invoices(
             if available_slots <= 0:
                 raise HTTPException(
                     403,
-                    "Free plan limit (10 invoices) reached. Please upgrade.")
+                    "Trial limit (10 invoices) reached. Please upgrade to a paid plan."
+                )
 
             if len(parsed_invoices) > available_slots:
                 return {
@@ -9663,42 +9670,102 @@ async def bulk_import_invoices(
                     "valid_rows":
                     0,
                     "errors": [
-                        f"Free plan allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
+                        f"Trial allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
                         f"Can only import {available_slots} more. Please upgrade or delete existing invoices."
                     ]
                 }
+        else:
+            # Has paid subscription - check tier limits if applicable
+            # For FREE tier in SubscriptionDB, also apply 10 invoice limit
+            if subscription.tier == "FREE":
+                invoice_count = db.query(InvoiceDB).filter_by(
+                    company_id=company_id).count()
+                max_invoices = 10
+                available_slots = max_invoices - invoice_count
+
+                if available_slots <= 0:
+                    raise HTTPException(
+                        403,
+                        "Free plan limit (10 invoices) reached. Please upgrade."
+                    )
+
+                if len(parsed_invoices) > available_slots:
+                    return {
+                        "success":
+                        False,
+                        "total_rows":
+                        len(parsed_invoices),
+                        "valid_rows":
+                        0,
+                        "errors": [
+                            f"Free plan allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
+                            f"Can only import {available_slots} more. Please upgrade or delete existing invoices."
+                        ]
+                    }
 
         created_count = 0
         for invoice_data in parsed_invoices:
             line_total = invoice_data['quantity'] * invoice_data['unit_price']
             discount = invoice_data.get('discount_amount', 0)
             taxable_amount = line_total - discount
-            tax_amount = (taxable_amount * invoice_data['tax_percent']) / 100
-            total = taxable_amount + tax_amount
+            tax_amount_calc = (taxable_amount *
+                               invoice_data['tax_percent']) / 100
+            total_amount_calc = taxable_amount + tax_amount_calc
+
+            # Map invoice type strings to enum values
+            invoice_type_mapping = {
+                'TAX_INVOICE': InvoiceType.TAX_INVOICE,
+                'CREDIT_NOTE': InvoiceType.TAX_CREDIT_NOTE,
+                'COMMERCIAL': InvoiceType.COMMERCIAL_INVOICE
+            }
+            invoice_type = invoice_type_mapping.get(
+                invoice_data['invoice_type'], InvoiceType.TAX_INVOICE)
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
                 company_id=company_id,
                 invoice_number=invoice_data['invoice_number'],
-                invoice_type=invoice_data['invoice_type'],
+                invoice_type=invoice_type,
                 issue_date=datetime.strptime(invoice_data['issue_date'],
                                              '%Y-%m-%d').date()
                 if invoice_data.get('issue_date') else date.today(),
                 due_date=datetime.strptime(invoice_data['due_date'],
                                            '%Y-%m-%d').date()
                 if invoice_data.get('due_date') else None,
+
+                # Supplier info from company
+                supplier_trn=company.trn,
+                supplier_name=company.legal_name or company.email,
+                supplier_address=
+                f"{company.address_line1 or ''} {company.address_line2 or ''}".
+                strip() or None,
+                supplier_city=company.city,
+                supplier_country="AE",
+
+                # Customer info from CSV
                 customer_trn=invoice_data['customer_trn'],
                 customer_name=invoice_data['customer_name'],
                 customer_email=invoice_data.get('customer_email'),
                 customer_address=invoice_data.get('customer_address'),
-                subtotal=float(taxable_amount),
-                tax_amount=float(tax_amount),
-                total=float(total),
-                status='DRAFT',
-                notes=invoice_data.get('notes'),
+
+                # Amounts - use correct field names
+                subtotal_amount=float(taxable_amount),
+                tax_amount=float(tax_amount_calc),
+                total_amount=float(total_amount_calc),
+                amount_due=float(total_amount_calc),
+
+                # Status and notes - use correct field names
+                status=InvoiceStatus.DRAFT,
+                invoice_notes=invoice_data.get('notes'),
+                share_token=f"share_{uuid4().hex[:16]}",
                 created_at=datetime.utcnow())
             db.add(new_invoice)
             created_count += 1
+
+        # Update trial invoice count if on trial
+        if company.trial_status == "ACTIVE":
+            company.trial_invoice_count = (company.trial_invoice_count
+                                           or 0) + created_count
 
         db.commit()
 
