@@ -6210,6 +6210,12 @@ async def email_invoice(
     if not email_to:
         raise HTTPException(400, "No recipient email provided")
 
+    # Persist recipient email only when invoice is missing one
+    if recipient_email and not invoice.customer_email:
+        invoice.customer_email = recipient_email
+        db.commit()
+        db.refresh(invoice)
+
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:

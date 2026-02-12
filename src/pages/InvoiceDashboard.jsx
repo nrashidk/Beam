@@ -121,13 +121,43 @@ export default function InvoiceDashboard() {
 
   const handleBulkIssue = async () => {
     const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
+    const nonDraftCount = selectedInvoices.length - draftInvoices.length;
+    
+    if (draftInvoices.length === 0) {
+      setBulkError('Only draft invoices can be issued. Please select draft invoices.');
+      return;
+    }
+    
+    if (nonDraftCount > 0) {
+      setBulkError(`${nonDraftCount} invoice(s) skipped - only draft invoices can be issued.`);
+    }
+    
     await runBulkAction('issue', draftInvoices, (invoice) =>
       apiClient.post(`/invoices/${invoice.id}/issue`)
     );
   };
 
   const handleBulkCancel = async () => {
-    const cancellableInvoices = selectedInvoices.filter((invoice) => invoice.status !== 'CANCELLED');
+    const paidInvoices = selectedInvoices.filter((invoice) => invoice.status === 'PAID');
+    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
+    const cancellableInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status !== 'CANCELLED' && invoice.status !== 'PAID'
+    );
+    
+    if (paidInvoices.length > 0) {
+      setBulkError(`${paidInvoices.length} paid invoice(s) can't be cancelled.`);
+      return;
+    }
+    
+    if (cancellableInvoices.length === 0) {
+      if (cancelledInvoices.length > 0) {
+        setBulkError('Selected invoice(s) are already cancelled.');
+      } else {
+        setBulkError('No cancellable invoices selected.');
+      }
+      return;
+    }
+    
     await runBulkAction('cancel', cancellableInvoices, (invoice) =>
       apiClient.post(`/invoices/${invoice.id}/cancel`)
     );
@@ -139,13 +169,23 @@ export default function InvoiceDashboard() {
       return;
     }
 
+    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
+    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
     const eligibleInvoices = selectedInvoices.filter(
       (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
-      setBulkError('Only issued/sent/paid invoices can be emailed.');
+      if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
+        setBulkError('Draft and cancelled invoices can\'t be emailed.');
+      } else if (draftInvoices.length > 0) {
+        setBulkError('Draft invoices can\'t be emailed.');
+      } else if (cancelledInvoices.length > 0) {
+        setBulkError('Cancelled invoices can\'t be emailed.');
+      } else {
+        setBulkError('Only issued/sent/paid invoices can be emailed.');
+      }
       return;
     }
 
@@ -174,13 +214,23 @@ export default function InvoiceDashboard() {
       return;
     }
 
+    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
+    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
     const eligibleInvoices = selectedInvoices.filter(
       (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
-      setBulkError('Only issued/sent/paid invoices can be sent by SMS.');
+      if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
+        setBulkError('Draft and cancelled invoices can\'t be sent via SMS.');
+      } else if (draftInvoices.length > 0) {
+        setBulkError('Draft invoices can\'t be sent via SMS.');
+      } else if (cancelledInvoices.length > 0) {
+        setBulkError('Cancelled invoices can\'t be sent via SMS.');
+      } else {
+        setBulkError('Only issued/sent/paid invoices can be sent by SMS.');
+      }
       return;
     }
 
@@ -209,13 +259,23 @@ export default function InvoiceDashboard() {
       return;
     }
 
+    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
+    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
     const eligibleInvoices = selectedInvoices.filter(
       (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
-      setBulkError('Only issued/sent/paid invoices can be sent by WhatsApp.');
+      if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
+        setBulkError('Draft and cancelled invoices can\'t be sent via WhatsApp.');
+      } else if (draftInvoices.length > 0) {
+        setBulkError('Draft invoices can\'t be sent via WhatsApp.');
+      } else if (cancelledInvoices.length > 0) {
+        setBulkError('Cancelled invoices can\'t be sent via WhatsApp.');
+      } else {
+        setBulkError('Only issued/sent/paid invoices can be sent by WhatsApp.');
+      }
       return;
     }
 
