@@ -312,7 +312,7 @@ export default function BulkImport() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-400 mt-1">•</span>
-                <span>Trial users can import up to 10 invoices. Upgrade to import unlimited invoices.</span>
+                <span>Free and trial users can bulk import up to 10 invoices total. Upgrade to a paid plan for unlimited bulk imports.</span>
               </li>
             </ul>
           </CardContent>
