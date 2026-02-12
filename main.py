@@ -4116,8 +4116,8 @@ class FeaturedBusinessOut(BaseModel):
     id: str
     company_id: str
     company_name: str
-    display_name: Optional[str]
-    logo_url: Optional[str]
+    display_name: str  # Empty string if not set
+    logo_url: str  # Empty string if not set
     is_active: bool
     display_order: int
     created_at: str
@@ -4297,20 +4297,38 @@ def get_featured_businesses(
         raise HTTPException(
             403, "Only Super Admins can manage featured businesses")
 
-    featured = db.query(FeaturedBusinessDB).join(CompanyDB).order_by(
-        FeaturedBusinessDB.display_order).all()
+    try:
+        # Use outerjoin to handle cases where company might be deleted
+        featured = db.query(FeaturedBusinessDB).outerjoin(CompanyDB).order_by(
+            FeaturedBusinessDB.display_order).all()
 
-    return [
-        FeaturedBusinessOut(id=f.id,
-                            company_id=f.company_id,
-                            company_name=f.company.legal_name,
-                            display_name=f.display_name,
-                            logo_url=f.logo_url,
-                            is_active=f.is_active,
-                            display_order=f.display_order,
-                            created_at=f.created_at.isoformat())
-        for f in featured
-    ]
+        result = []
+        for f in featured:
+            # Handle missing company gracefully
+            if f.company and f.company.legal_name:
+                company_name = f.company.legal_name
+            elif f.company and f.company.email:
+                company_name = f.company.email
+            else:
+                company_name = f"Company {f.company_id}"
+            
+            result.append(
+                FeaturedBusinessOut(
+                    id=f.id,
+                    company_id=f.company_id,
+                    company_name=company_name,
+                    display_name=f.display_name or "",
+                    logo_url=f.logo_url or "",
+                    is_active=f.is_active,
+                    display_order=f.display_order,
+                    created_at=f.created_at.isoformat()
+                )
+            )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching featured businesses: {str(e)}")
+        raise HTTPException(500, f"Failed to fetch featured businesses: {str(e)}")
 
 
 @app.post("/admin/featured-businesses", tags=["Admin", "Featured Businesses"])
@@ -4421,22 +4439,40 @@ def remove_featured_business(
          tags=["Public"])
 def get_public_featured_businesses(db: Session = Depends(get_db)):
     """Get active featured businesses for homepage (public, no auth required)"""
-    featured = db.query(FeaturedBusinessDB).join(CompanyDB).filter(
-        FeaturedBusinessDB.is_active == True).order_by(
-            FeaturedBusinessDB.display_order).all()
+    try:
+        # Use outerjoin to handle cases where company might be deleted
+        featured = db.query(FeaturedBusinessDB).outerjoin(CompanyDB).filter(
+            FeaturedBusinessDB.is_active == True).order_by(
+                FeaturedBusinessDB.display_order).all()
 
-    return [
-        FeaturedBusinessOut(id=f.id,
-                            company_id=f.company_id,
-                            company_name=f.company.legal_name,
-                            display_name=f.display_name
-                            or f.company.legal_name,
-                            logo_url=f.logo_url,
-                            is_active=f.is_active,
-                            display_order=f.display_order,
-                            created_at=f.created_at.isoformat())
-        for f in featured
-    ]
+        result = []
+        for f in featured:
+            # Skip if company is deleted or missing
+            if not f.company:
+                continue
+            
+            # Ensure we have valid strings
+            company_name = f.company.legal_name or f.company.email or f"Company {f.company_id}"
+            display_name = f.display_name or company_name
+            
+            result.append(
+                FeaturedBusinessOut(
+                    id=f.id,
+                    company_id=f.company_id,
+                    company_name=company_name,
+                    display_name=display_name,
+                    logo_url=f.logo_url or "",
+                    is_active=f.is_active,
+                    display_order=f.display_order,
+                    created_at=f.created_at.isoformat()
+                )
+            )
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching public featured businesses: {str(e)}")
+        # Don't expose error details to public
+        raise HTTPException(500, "Failed to fetch featured businesses")
 
 
 # ==================== USER MANAGEMENT ENDPOINTS ====================
