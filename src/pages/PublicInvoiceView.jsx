@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, FileText, Building2, Calendar, CreditCard, CheckCircle, Mail, Phone } from 'lucide-react';
-import apiClient from '../lib/api';
+import { apiClient } from '../lib/api';
 import PageLoader from '../components/PageLoader';
 
 export default function PublicInvoiceView() {
