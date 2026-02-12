@@ -68,8 +68,8 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 SECRET_KEY = os.getenv("JWT_SECRET_KEY",
                        "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15  # 15 minutes for production use
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_MINUTES = 15 
+REFRESH_TOKEN_EXPIRE_DAYS = 1  
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 

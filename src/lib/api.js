@@ -44,6 +44,16 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    // Don't try to refresh if this is the refresh endpoint itself
+    if (originalRequest.url === '/auth/refresh') {
+      localStorage.clear();
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+      return Promise.reject(error);
+    }
+
     if (
       error.response &&
       error.response.status === 401 &&
@@ -69,9 +79,11 @@ apiClient.interceptors.response.use(
           processQueue(null, data.access_token);
           originalRequest.headers["Authorization"] =
             "Bearer " + data.access_token;
+          isRefreshing = false;
           return apiClient(originalRequest);
         } else {
           processQueue("Refresh failed", null);
+          isRefreshing = false;
           localStorage.clear();
           if (window.location.pathname !== "/login") {
             window.location.href = "/login";
@@ -80,13 +92,12 @@ apiClient.interceptors.response.use(
         }
       } catch (err) {
         processQueue(err, null);
+        isRefreshing = false;
         localStorage.clear();
         if (window.location.pathname !== "/login") {
           window.location.href = "/login";
         }
         return Promise.reject(error);
-      } finally {
-        isRefreshing = false;
       }
     }
     return Promise.reject(error);
