@@ -156,7 +156,11 @@ export default function InvoiceDetail() {
   const copyShareLink = () => {
     const link = `${window.location.origin}/invoices/view/${invoice.share_token}`;
     navigator.clipboard.writeText(link);
-    alert("Share link copied to clipboard!");
+    setToast({
+      message: "Share link copied to clipboard!",
+      type: "success",
+      onClose: () => setToast(null),
+    });
   };
 
   const getStatusColor = (status) => {

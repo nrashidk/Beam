@@ -10,7 +10,7 @@ import {
   Mail,
   Phone,
 } from "lucide-react";
-import apiClient from "../lib/api";
+import { apiClient } from "../lib/api";
 import PageLoader from "../components/PageLoader";
 
 export default function PublicInvoiceView() {
