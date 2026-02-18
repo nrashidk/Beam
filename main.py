@@ -4758,7 +4758,7 @@ def create_invoice(
         payment_due_days=payload.payment_due_days,
         invoice_notes=payload.invoice_notes,
         reference_number=payload.reference_number,
-        preceding_invoice_id=payload.preceding_invoice_id,
+        preceding_invoice_id=payload.preceding_invoice_id if payload.preceding_invoice_id else None,
         credit_note_reason=payload.credit_note_reason,
         share_token=f"share_{uuid4().hex[:16]}")
 
