@@ -214,7 +214,7 @@ export default function SuperAdminDashboard() {
     async function fetchPlatformStats() {
       try {
         setPlatformLoading(true);
-        const response = await api.get('/admin/platform-stats');
+        const response = await api.get(`/admin/platform-stats?from_date=${fromISO}&to_date=${toISO}`);
         setPlatformStats(response.data);
       } catch (error) {
         console.error('Failed to fetch platform stats:', error);
@@ -223,7 +223,7 @@ export default function SuperAdminDashboard() {
       }
     }
     fetchPlatformStats();
-  }, []);
+  }, [fromISO, toISO]);
 
   const mtdDelta = useMemo(() => {
     if (!stats) return { pct: '', positive: true };

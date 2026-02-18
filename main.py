@@ -4244,24 +4244,64 @@ def update_subscription_plan(
          tags=["Admin", "Platform Stats"])
 def get_platform_statistics(
         current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db),
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None):
     """Get aggregated platform statistics (Super Admin only) - Privacy-focused: Only aggregated data, no individual business details"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(
             403, "Only Super Admins can access platform statistics")
 
-    # Total companies
-    total_companies = db.query(CompanyDB).count()
-    active_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE).count()
-    pending_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
+    from_dt = None
+    to_dt = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            pass
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            pass
 
-    # Total invoices across all businesses
-    total_invoices = db.query(InvoiceDB).count()
+    # Total companies (filtered by created_at if date range provided)
+    company_query = db.query(CompanyDB)
+    if from_dt:
+        company_query = company_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        company_query = company_query.filter(CompanyDB.created_at <= to_dt)
+    total_companies = company_query.count()
 
-    # Total revenue (sum of all invoice amounts)
-    total_revenue = db.query(func.sum(InvoiceDB.total_amount)).scalar() or 0.0
+    active_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE)
+    if from_dt:
+        active_query = active_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        active_query = active_query.filter(CompanyDB.created_at <= to_dt)
+    active_companies = active_query.count()
+
+    pending_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+    if from_dt:
+        pending_query = pending_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        pending_query = pending_query.filter(CompanyDB.created_at <= to_dt)
+    pending_companies = pending_query.count()
+
+    # Total invoices (filtered by created_at)
+    invoice_query = db.query(InvoiceDB)
+    if from_dt:
+        invoice_query = invoice_query.filter(InvoiceDB.created_at >= from_dt)
+    if to_dt:
+        invoice_query = invoice_query.filter(InvoiceDB.created_at <= to_dt)
+    total_invoices = invoice_query.count()
+
+    # Total revenue (filtered)
+    revenue_query = db.query(func.sum(InvoiceDB.total_amount))
+    if from_dt:
+        revenue_query = revenue_query.filter(InvoiceDB.created_at >= from_dt)
+    if to_dt:
+        revenue_query = revenue_query.filter(InvoiceDB.created_at <= to_dt)
+    total_revenue = revenue_query.scalar() or 0.0
 
     # Active subscriptions
     active_subscriptions = db.query(SubscriptionDB).filter(
