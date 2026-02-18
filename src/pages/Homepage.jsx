@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useContent } from '../contexts/ContentContext';
 import { Button } from '../components/ui/button';
@@ -12,6 +12,7 @@ import api from '../lib/api';
 
 export default function Homepage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   
   // Dynamic content
@@ -47,6 +48,17 @@ export default function Homepage() {
     }
     fetchPublicStats();
   }, [user]);
+
+  useEffect(() => {
+    if (location.hash === '#signup') {
+      setTimeout(() => {
+        const el = document.getElementById('signup');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 300);
+    }
+  }, [location.hash]);
 
   const fetchUserInfo = async () => {
     try {
