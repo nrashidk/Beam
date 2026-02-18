@@ -305,10 +305,28 @@ export default function SuperAdminDashboard() {
               <RefreshCcw size={16} />
               Reset Range
             </Button>
-            <Button variant="secondary" className="gap-2" disabled>
-              <CalendarIcon size={16} />
-              {format(range.from, 'MMM d')} – {format(range.to, 'MMM d, yyyy')}
-            </Button>
+            <div className="flex items-center gap-1 bg-secondary rounded-md px-3 py-1.5">
+              <CalendarIcon size={16} className="text-muted-foreground" />
+              <input
+                type="date"
+                value={format(range.from, 'yyyy-MM-dd')}
+                onChange={(e) => {
+                  const d = new Date(e.target.value + 'T00:00:00');
+                  if (!isNaN(d)) setRange(prev => ({ ...prev, from: d }));
+                }}
+                className="bg-transparent text-sm font-medium border-none outline-none cursor-pointer"
+              />
+              <span className="text-muted-foreground">–</span>
+              <input
+                type="date"
+                value={format(range.to, 'yyyy-MM-dd')}
+                onChange={(e) => {
+                  const d = new Date(e.target.value + 'T23:59:59');
+                  if (!isNaN(d)) setRange(prev => ({ ...prev, to: d }));
+                }}
+                className="bg-transparent text-sm font-medium border-none outline-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
 
