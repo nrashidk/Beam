@@ -52,12 +52,12 @@ export default function TeamManagement() {
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     userId: null,
-    userName: '',
-    title: '',
-    message: '',
-    confirmText: 'Confirm',
-    cancelText: 'Cancel',
-    type: 'default'
+    userName: "",
+    title: "",
+    message: "",
+    confirmText: "Confirm",
+    cancelText: "Cancel",
+    type: "default",
   });
 
   useEffect(() => {
@@ -133,11 +133,11 @@ export default function TeamManagement() {
       isOpen: true,
       userId,
       userName,
-      title: 'Remove Team Member',
+      title: "Remove Team Member",
       message: `Are you sure you want to remove ${userName} from the team? This action cannot be undone.`,
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-      type: 'danger'
+      confirmText: "Remove",
+      cancelText: "Cancel",
+      type: "danger",
     });
   };
 

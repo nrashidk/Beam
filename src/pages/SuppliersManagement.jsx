@@ -1,16 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Plus, Search, Edit2, Trash2, Building2, Mail, Phone, 
-  MapPin, FileText, DollarSign, Calendar, MoreVertical,
-  Download, Upload, CheckCircle, AlertCircle
-} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import {
+  Plus,
+  Search,
+  Edit2,
+  Trash2,
+  Building2,
+  Mail,
+  Phone,
+  MapPin,
+  FileText,
+  DollarSign,
+  Calendar,
+  MoreVertical,
+  Download,
+  Upload,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function SuppliersManagement() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [suppliers, setSuppliers] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
 
@@ -25,80 +38,81 @@ export default function SuppliersManagement() {
       // For now, using mock data
       const mockSuppliers = [
         {
-          id: '1',
-          name: 'Office Supplies Co LLC',
-          trn: '123456789012345',
-          email: 'accounts@officesupplies.ae',
-          phone: '+971 4 123 4567',
-          address: 'Dubai Business Bay',
-          category: 'Supplies',
+          id: "1",
+          name: "Office Supplies Co LLC",
+          trn: "123456789012345",
+          email: "accounts@officesupplies.ae",
+          phone: "+971 4 123 4567",
+          address: "Dubai Business Bay",
+          category: "Supplies",
           totalSpent: 45200,
           invoiceCount: 24,
           averagePaymentDays: 28,
-          status: 'active',
-          lastInvoice: '2025-06-25'
+          status: "active",
+          lastInvoice: "2025-06-25",
         },
         {
-          id: '2',
-          name: 'Tech Solutions DMCC',
-          trn: '987654321098765',
-          email: 'billing@techsolutions.ae',
-          phone: '+971 4 987 6543',
-          address: 'DMCC Dubai',
-          category: 'Technology',
+          id: "2",
+          name: "Tech Solutions DMCC",
+          trn: "987654321098765",
+          email: "billing@techsolutions.ae",
+          phone: "+971 4 987 6543",
+          address: "DMCC Dubai",
+          category: "Technology",
           totalSpent: 128900,
           invoiceCount: 15,
           averagePaymentDays: 22,
-          status: 'active',
-          lastInvoice: '2025-06-28'
+          status: "active",
+          lastInvoice: "2025-06-28",
         },
         {
-          id: '3',
-          name: 'Emirates Logistics FZE',
-          trn: '456789012345678',
-          email: 'finance@emirateslog.ae',
-          phone: '+971 6 456 7890',
-          address: 'Sharjah Airport Free Zone',
-          category: 'Logistics',
+          id: "3",
+          name: "Emirates Logistics FZE",
+          trn: "456789012345678",
+          email: "finance@emirateslog.ae",
+          phone: "+971 6 456 7890",
+          address: "Sharjah Airport Free Zone",
+          category: "Logistics",
           totalSpent: 67500,
           invoiceCount: 32,
           averagePaymentDays: 35,
-          status: 'active',
-          lastInvoice: '2025-06-20'
+          status: "active",
+          lastInvoice: "2025-06-20",
         },
         {
-          id: '4',
-          name: 'Professional Services Ltd',
-          trn: '321654987012345',
-          email: 'accounts@proservices.ae',
-          phone: '+971 4 321 6549',
-          address: 'Abu Dhabi',
-          category: 'Consulting',
+          id: "4",
+          name: "Professional Services Ltd",
+          trn: "321654987012345",
+          email: "accounts@proservices.ae",
+          phone: "+971 4 321 6549",
+          address: "Abu Dhabi",
+          category: "Consulting",
           totalSpent: 89400,
           invoiceCount: 8,
           averagePaymentDays: 18,
-          status: 'active',
-          lastInvoice: '2025-06-27'
-        }
+          status: "active",
+          lastInvoice: "2025-06-27",
+        },
       ];
       setSuppliers(mockSuppliers);
     } catch (error) {
-      console.error('Failed to fetch suppliers:', error);
+      console.error("Failed to fetch suppliers:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredSuppliers = suppliers.filter(supplier =>
-    supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    supplier.trn.includes(searchTerm) ||
-    supplier.category.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredSuppliers = suppliers.filter(
+    (supplier) =>
+      supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      supplier.trn.includes(searchTerm) ||
+      supplier.category.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const handleDeleteSupplier = async (supplierId) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return;
+    if (!confirm("Are you sure you want to delete this supplier?")) return;
     // Delete logic here
-    setSuppliers(suppliers.filter(s => s.id !== supplierId));
+    setSuppliers(suppliers.filter((s) => s.id !== supplierId));
   };
 
   if (loading) {
@@ -114,14 +128,17 @@ export default function SuppliersManagement() {
       <nav className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/dashboard')}>
+            <div
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => navigate("/dashboard")}
+            >
               <Building2 className="h-8 w-8 text-blue-600" />
               <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 InvoLinks
               </span>
             </div>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate("/dashboard")}
               className="text-sm text-gray-600 hover:text-gray-900"
             >
               Back to Dashboard
@@ -134,11 +151,13 @@ export default function SuppliersManagement() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Suppliers</h1>
-            <p className="text-gray-600 mt-2">Manage your suppliers and vendor relationships</p>
+            <p className="text-gray-600 mt-2">
+              Manage your suppliers and vendor relationships
+            </p>
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => alert('Bulk import suppliers via CSV/Excel')}
+              onClick={() => alert("Bulk import suppliers via CSV/Excel")}
               className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               <Upload className="h-4 w-4" />
@@ -163,7 +182,9 @@ export default function SuppliersManagement() {
               </div>
               <div className="text-sm text-gray-600">Total Suppliers</div>
             </div>
-            <div className="text-2xl font-bold text-gray-900">{suppliers.length}</div>
+            <div className="text-2xl font-bold text-gray-900">
+              {suppliers.length}
+            </div>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -174,7 +195,7 @@ export default function SuppliersManagement() {
               <div className="text-sm text-gray-600">Active Suppliers</div>
             </div>
             <div className="text-2xl font-bold text-gray-900">
-              {suppliers.filter(s => s.status === 'active').length}
+              {suppliers.filter((s) => s.status === "active").length}
             </div>
           </div>
 
@@ -186,7 +207,10 @@ export default function SuppliersManagement() {
               <div className="text-sm text-gray-600">Total Spend</div>
             </div>
             <div className="text-2xl font-bold text-gray-900">
-              AED {suppliers.reduce((sum, s) => sum + s.totalSpent, 0).toLocaleString()}
+              AED{" "}
+              {suppliers
+                .reduce((sum, s) => sum + s.totalSpent, 0)
+                .toLocaleString()}
             </div>
           </div>
 
@@ -255,11 +279,18 @@ export default function SuppliersManagement() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {filteredSuppliers.map((supplier) => (
-                <tr key={supplier.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={supplier.id}
+                  className="hover:bg-gray-50 transition-colors"
+                >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="font-medium text-gray-900">{supplier.name}</div>
-                      <div className="text-sm text-gray-600">TRN: {supplier.trn}</div>
+                      <div className="font-medium text-gray-900">
+                        {supplier.name}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        TRN: {supplier.trn}
+                      </div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -288,16 +319,21 @@ export default function SuppliersManagement() {
                     <div className="text-gray-900">{supplier.invoiceCount}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-gray-900">{supplier.averagePaymentDays} days</div>
+                    <div className="text-gray-900">
+                      {supplier.averagePaymentDays} days
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                      supplier.status === 'active'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                        supplier.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-700"
+                      }`}
+                    >
                       <CheckCircle className="h-3 w-3" />
-                      {supplier.status.charAt(0).toUpperCase() + supplier.status.slice(1)}
+                      {supplier.status.charAt(0).toUpperCase() +
+                        supplier.status.slice(1)}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
@@ -342,7 +378,9 @@ export default function SuppliersManagement() {
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl max-w-2xl w-full p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Add New Supplier</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Add New Supplier
+            </h3>
             <div className="grid md:grid-cols-2 gap-4 mb-6">
               <input
                 type="text"
@@ -387,7 +425,7 @@ export default function SuppliersManagement() {
               </button>
               <button
                 onClick={() => {
-                  alert('Supplier would be added here');
+                  alert("Supplier would be added here");
                   setShowAddModal(false);
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"

@@ -77,10 +77,10 @@ export default function VATSettings() {
   const handleCertificateUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     // Clear the file input
-    e.target.value = '';
-    
+    e.target.value = "";
+
     if (file.type !== "application/pdf") {
       setError("Please upload a PDF file. Only PDF format is accepted.");
       setCertificateFile(null);
@@ -129,7 +129,9 @@ export default function VATSettings() {
           return;
         }
         if (!settings.vat_certificate_uploaded) {
-          setError("Please upload your VAT Registration Certificate before enabling VAT");
+          setError(
+            "Please upload your VAT Registration Certificate before enabling VAT",
+          );
           setSaving(false);
           return;
         }
@@ -315,7 +317,8 @@ export default function VATSettings() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        VAT Registration Certificate <span className="text-red-500">*</span>
+                        VAT Registration Certificate{" "}
+                        <span className="text-red-500">*</span>
                       </label>
                       <div className="flex items-center gap-3">
                         <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-colors">
@@ -346,7 +349,8 @@ export default function VATSettings() {
                         </p>
                       )}
                       <p className="mt-2 text-sm text-gray-600">
-                        Upload your official FTA VAT registration certificate (PDF format only, max 5MB)
+                        Upload your official FTA VAT registration certificate
+                        (PDF format only, max 5MB)
                       </p>
                     </div>
 
@@ -393,17 +397,20 @@ export default function VATSettings() {
                     disabled={
                       saving ||
                       (settings.vat_enabled &&
-                        (!settings.tax_registration_number || !settings.vat_certificate_uploaded))
+                        (!settings.tax_registration_number ||
+                          !settings.vat_certificate_uploaded))
                     }
                     className="bg-blue-600 hover:bg-blue-700"
                   >
-                    {saving ? "Saving..." : isVatActive ? "Update VAT Settings" : "Save VAT Settings"}
+                    {saving
+                      ? "Saving..."
+                      : isVatActive
+                        ? "Update VAT Settings"
+                        : "Save VAT Settings"}
                   </Button>
                 </div>
               </CardContent>
             </Card>
-
-
           </div>
         </div>
       </div>

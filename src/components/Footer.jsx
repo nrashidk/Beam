@@ -1,27 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import apiClient from '../lib/api';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import apiClient from "../lib/api";
 
 export default function Footer() {
   const navigate = useNavigate();
   const [footerContent, setFooterContent] = useState({
-    company_name: 'InvoLinks',
-    company_description: 'Simple, Compliant Digital Invoicing for UAE',
-    address: 'Dubai, United Arab Emirates',
-    email: 'support@involinks.ae',
-    phone: '+971 4 123 4567',
-    copyright: '© 2025 InvoLinks. All rights reserved.'
+    company_name: "InvoLinks",
+    company_description: "Simple, Compliant Digital Invoicing for UAE",
+    address: "Dubai, United Arab Emirates",
+    email: "support@involinks.ae",
+    phone: "+971 4 123 4567",
+    copyright: "© 2025 InvoLinks. All rights reserved.",
   });
 
   const quickLinks = [
-    { label: 'Home', url: '/' },
-    { label: 'Pricing', url: '/pricing' },
-    { label: 'Sign In', url: '/login' }
+    { label: "Home", url: "/" },
+    { label: "Pricing", url: "/pricing" },
+    { label: "Sign In", url: "/login" },
   ];
 
   const legalLinks = [
-    { label: 'Privacy Policy', url: '/privacy' },
-    { label: 'Terms of Service', url: '/terms' }
+    { label: "Privacy Policy", url: "/privacy" },
+    { label: "Terms of Service", url: "/terms" },
   ];
 
   useEffect(() => {
@@ -30,9 +30,9 @@ export default function Footer() {
 
   const fetchFooterContent = async () => {
     try {
-      const response = await apiClient.get('/content/footer');
+      const response = await apiClient.get("/content/footer");
       if (response.data) {
-        setFooterContent(prev => ({ ...prev, ...response.data }));
+        setFooterContent((prev) => ({ ...prev, ...response.data }));
       }
     } catch (error) {
       // Using default footer content
@@ -57,12 +57,24 @@ export default function Footer() {
             )}
             {footerContent.email && (
               <p className="text-sm text-gray-400">
-                Email: <a href={`mailto:${footerContent.email}`} className="hover:text-blue-400">{footerContent.email}</a>
+                Email:{" "}
+                <a
+                  href={`mailto:${footerContent.email}`}
+                  className="hover:text-blue-400"
+                >
+                  {footerContent.email}
+                </a>
               </p>
             )}
             {footerContent.phone && (
               <p className="text-sm text-gray-400">
-                Phone: <a href={`tel:${footerContent.phone}`} className="hover:text-blue-400">{footerContent.phone}</a>
+                Phone:{" "}
+                <a
+                  href={`tel:${footerContent.phone}`}
+                  className="hover:text-blue-400"
+                >
+                  {footerContent.phone}
+                </a>
               </p>
             )}
           </div>

@@ -1,23 +1,23 @@
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle } from "lucide-react";
 
-export default function ConfirmationModal({ 
-  isOpen, 
-  title, 
-  message, 
-  confirmText = "Confirm", 
-  cancelText = "Cancel", 
-  onConfirm, 
-  onCancel, 
+export default function ConfirmationModal({
+  isOpen,
+  title,
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  onConfirm,
+  onCancel,
   isLoading = false,
-  type = "default" 
+  type = "default",
 }) {
   if (!isOpen) return null;
 
   const getConfirmButtonColor = () => {
     const colors = {
-      default: 'bg-indigo-600 hover:bg-indigo-700',
-      danger: 'bg-red-600 hover:bg-red-700',
-      success: 'bg-green-600 hover:bg-green-700'
+      default: "bg-indigo-600 hover:bg-indigo-700",
+      danger: "bg-red-600 hover:bg-red-700",
+      success: "bg-green-600 hover:bg-green-700",
     };
     return colors[type] || colors.default;
   };
@@ -26,7 +26,7 @@ export default function ConfirmationModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 animate-in fadeIn zoom-in-95">
         <div className="flex items-start gap-4 mb-4">
-          {type === 'danger' && (
+          {type === "danger" && (
             <div className="flex-shrink-0">
               <AlertCircle className="w-6 h-6 text-red-600" />
             </div>

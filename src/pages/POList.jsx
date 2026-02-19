@@ -57,11 +57,11 @@ export default function POList() {
 
   const fetchVatSettings = async () => {
     try {
-      const response = await apiClient.get('/settings/vat');
-      console.log('VAT settings response:', response.data);
+      const response = await apiClient.get("/settings/vat");
+      console.log("VAT settings response:", response.data);
       setVatEnabled(response.data.vat_enabled || false);
     } catch (error) {
-      console.error('Failed to fetch VAT settings:', error);
+      console.error("Failed to fetch VAT settings:", error);
       setVatEnabled(false);
     }
   };
@@ -449,7 +449,9 @@ export default function POList() {
           <POFormModal
             isOpen={showCreateModal}
             onClose={() => setShowCreateModal(false)}
-            onSubmit={handleCreatePO}            vatEnabled={vatEnabled}          />
+            onSubmit={handleCreatePO}
+            vatEnabled={vatEnabled}
+          />
 
           {/* PO Detail Modal */}
           <PODetailModal

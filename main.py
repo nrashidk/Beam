@@ -2846,7 +2846,7 @@ def login(payload: LoginRequest,
             if company and company.status != CompanyStatus.ACTIVE:
                 raise HTTPException(
                     403, f"Company not approved. Status: {company.status.value}. Please wait for admin approval.")
-        
+
         # Check if MFA is enabled
         if user.mfa_enabled:
             # Create temporary token (5 minutes expiry) for MFA verification
@@ -4244,24 +4244,64 @@ def update_subscription_plan(
          tags=["Admin", "Platform Stats"])
 def get_platform_statistics(
         current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+        db: Session = Depends(get_db),
+        from_date: Optional[str] = None,
+        to_date: Optional[str] = None):
     """Get aggregated platform statistics (Super Admin only) - Privacy-focused: Only aggregated data, no individual business details"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(
             403, "Only Super Admins can access platform statistics")
 
-    # Total companies
-    total_companies = db.query(CompanyDB).count()
-    active_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE).count()
-    pending_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
+    from_dt = None
+    to_dt = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            pass
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            pass
 
-    # Total invoices across all businesses
-    total_invoices = db.query(InvoiceDB).count()
+    # Total companies (filtered by created_at if date range provided)
+    company_query = db.query(CompanyDB)
+    if from_dt:
+        company_query = company_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        company_query = company_query.filter(CompanyDB.created_at <= to_dt)
+    total_companies = company_query.count()
 
-    # Total revenue (sum of all invoice amounts)
-    total_revenue = db.query(func.sum(InvoiceDB.total_amount)).scalar() or 0.0
+    active_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE)
+    if from_dt:
+        active_query = active_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        active_query = active_query.filter(CompanyDB.created_at <= to_dt)
+    active_companies = active_query.count()
+
+    pending_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+    if from_dt:
+        pending_query = pending_query.filter(CompanyDB.created_at >= from_dt)
+    if to_dt:
+        pending_query = pending_query.filter(CompanyDB.created_at <= to_dt)
+    pending_companies = pending_query.count()
+
+    # Total invoices (filtered by created_at)
+    invoice_query = db.query(InvoiceDB)
+    if from_dt:
+        invoice_query = invoice_query.filter(InvoiceDB.created_at >= from_dt)
+    if to_dt:
+        invoice_query = invoice_query.filter(InvoiceDB.created_at <= to_dt)
+    total_invoices = invoice_query.count()
+
+    # Total revenue (filtered)
+    revenue_query = db.query(func.sum(InvoiceDB.total_amount))
+    if from_dt:
+        revenue_query = revenue_query.filter(InvoiceDB.created_at >= from_dt)
+    if to_dt:
+        revenue_query = revenue_query.filter(InvoiceDB.created_at <= to_dt)
+    total_revenue = revenue_query.scalar() or 0.0
 
     # Active subscriptions
     active_subscriptions = db.query(SubscriptionDB).filter(
@@ -4311,7 +4351,7 @@ def get_featured_businesses(
                 company_name = f.company.email
             else:
                 company_name = f"Company {f.company_id}"
-            
+
             result.append(
                 FeaturedBusinessOut(
                     id=f.id,
@@ -4324,7 +4364,7 @@ def get_featured_businesses(
                     created_at=f.created_at.isoformat()
                 )
             )
-        
+
         return result
     except Exception as e:
         logger.error(f"Error fetching featured businesses: {str(e)}")
@@ -4450,11 +4490,11 @@ def get_public_featured_businesses(db: Session = Depends(get_db)):
             # Skip if company is deleted or missing
             if not f.company:
                 continue
-            
+
             # Ensure we have valid strings
             company_name = f.company.legal_name or f.company.email or f"Company {f.company_id}"
             display_name = f.display_name or company_name
-            
+
             result.append(
                 FeaturedBusinessOut(
                     id=f.id,
@@ -4467,7 +4507,7 @@ def get_public_featured_businesses(db: Session = Depends(get_db)):
                     created_at=f.created_at.isoformat()
                 )
             )
-        
+
         return result
     except Exception as e:
         logger.error(f"Error fetching public featured businesses: {str(e)}")
@@ -4758,7 +4798,7 @@ def create_invoice(
         payment_due_days=payload.payment_due_days,
         invoice_notes=payload.invoice_notes,
         reference_number=payload.reference_number,
-        preceding_invoice_id=payload.preceding_invoice_id,
+        preceding_invoice_id=payload.preceding_invoice_id if payload.preceding_invoice_id else None,
         credit_note_reason=payload.credit_note_reason,
         share_token=f"share_{uuid4().hex[:16]}")
 
@@ -5142,7 +5182,7 @@ def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
             query = query.filter(InvoiceDB.status == status_enum)
         except ValueError:
             raise HTTPException(400, f"Invalid status: {status}")
-    
+
     if invoice_type:
         try:
             type_enum = InvoiceType(invoice_type)
@@ -6009,7 +6049,7 @@ async def send_invoice(invoice_id: str,
 
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(400, "Cannot send cancelled invoice")
-    
+
     # Validate email exists
     if not invoice.customer_email:
         raise HTTPException(
@@ -6024,7 +6064,7 @@ async def send_invoice(invoice_id: str,
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
         base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
-    
+
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
     # Get company details
@@ -9721,7 +9761,7 @@ async def bulk_import_invoices(
             # Check if company has active trial
             if company.trial_status != "ACTIVE":
                 raise HTTPException(403, "No active subscription or trial found. Please subscribe to a plan or contact support.")
-            
+
             # Trial users: limit to 10 invoices total
             invoice_count = db.query(InvoiceDB).filter_by(
                 company_id=company_id).count()
@@ -9863,20 +9903,20 @@ async def bulk_import_invoices(
                 due_date=datetime.strptime(invoice_data['due_date'],
                                            '%Y-%m-%d').date()
                 if invoice_data.get('due_date') else None,
-                
+
                 # Supplier info from company
                 supplier_trn=company.trn,
                 supplier_name=company.legal_name or company.email,
                 supplier_address=f"{company.address_line1 or ''} {company.address_line2 or ''}".strip() or None,
                 supplier_city=company.city,
                 supplier_country="AE",
-                
+
                 # Customer info from CSV
                 customer_trn=invoice_data['customer_trn'],
                 customer_name=invoice_data['customer_name'],
                 customer_email=invoice_data.get('customer_email'),
                 customer_address=invoice_data.get('customer_address'),
-                
+
                 # Amounts - use correct field names
                 subtotal_amount=float(taxable_amount),
                 tax_amount=float(tax_amount_calc),
@@ -9885,7 +9925,7 @@ async def bulk_import_invoices(
 
                 # Credit note reference
                 preceding_invoice_id=prepared["preceding_invoice_id"],
-                
+
                 # Status and notes - use correct field names
                 status=InvoiceStatus.DRAFT,
                 invoice_notes=invoice_data.get('notes'),

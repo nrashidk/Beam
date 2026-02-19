@@ -4,7 +4,7 @@ import axios from "axios";
 // In development, use VITE_API_URL or fallback to localhost:8000
 const API_URL = import.meta.env.PROD
   ? ""
-  : (import.meta.env.VITE_API_URL || "http://localhost:8000");
+  : import.meta.env.VITE_API_URL || "http://localhost:8000";
 console.log("API URL:", API_URL || "(same origin)");
 
 export const getApiBaseUrl = () => API_URL;
@@ -46,7 +46,7 @@ apiClient.interceptors.response.use(
     const originalRequest = error.config;
 
     // Don't try to refresh if this is the refresh endpoint itself
-    if (originalRequest.url === '/auth/refresh') {
+    if (originalRequest.url === "/auth/refresh") {
       localStorage.clear();
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";

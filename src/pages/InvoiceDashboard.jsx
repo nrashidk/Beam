@@ -1,25 +1,36 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { apiClient } from '../lib/api';
-import { FileText, Plus, Send, Mail, MessageSquare, Phone, CheckCircle, Clock, XCircle, X } from 'lucide-react';
-import InvoiceDeliveryActions from '../components/InvoiceDeliveryActions';
-import Sidebar from '../components/Sidebar';
-import PageLoader from '../components/PageLoader';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { apiClient } from "../lib/api";
+import {
+  FileText,
+  Plus,
+  Send,
+  Mail,
+  MessageSquare,
+  Phone,
+  CheckCircle,
+  Clock,
+  XCircle,
+  X,
+} from "lucide-react";
+import InvoiceDeliveryActions from "../components/InvoiceDeliveryActions";
+import Sidebar from "../components/Sidebar";
+import PageLoader from "../components/PageLoader";
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [filter, setFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkError, setBulkError] = useState('');
-  const [bulkSuccess, setBulkSuccess] = useState('');
+  const [bulkError, setBulkError] = useState("");
+  const [bulkSuccess, setBulkSuccess] = useState("");
   const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
   const [showBulkSmsModal, setShowBulkSmsModal] = useState(false);
   const [showBulkWhatsAppModal, setShowBulkWhatsAppModal] = useState(false);
-  const [bulkEmailAddress, setBulkEmailAddress] = useState('');
-  const [bulkPhoneNumber, setBulkPhoneNumber] = useState('');
+  const [bulkEmailAddress, setBulkEmailAddress] = useState("");
+  const [bulkPhoneNumber, setBulkPhoneNumber] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,17 +41,17 @@ export default function InvoiceDashboard() {
     try {
       setLoading(true);
       const queryParams = new URLSearchParams();
-      if (filter !== 'all') {
-        queryParams.append('status', filter);
+      if (filter !== "all") {
+        queryParams.append("status", filter);
       }
-      if (typeFilter !== 'all') {
-        queryParams.append('invoice_type', typeFilter);
+      if (typeFilter !== "all") {
+        queryParams.append("invoice_type", typeFilter);
       }
-      const params = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      const params = queryParams.toString() ? `?${queryParams.toString()}` : "";
       const response = await apiClient.get(`/invoices${params}`);
       setInvoices(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
-      console.error('Failed to load invoices:', error);
+      console.error("Failed to load invoices:", error);
       setInvoices([]);
     } finally {
       setLoading(false);
@@ -49,36 +60,45 @@ export default function InvoiceDashboard() {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'DRAFT': return <Clock className="w-4 h-4 text-gray-400" />;
-      case 'ISSUED': return <CheckCircle className="w-4 h-4 text-blue-500" />;
-      case 'SENT': return <Send className="w-4 h-4 text-green-500" />;
-      case 'PAID': return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'CANCELLED': return <XCircle className="w-4 h-4 text-red-500" />;
-      default: return null;
+      case "DRAFT":
+        return <Clock className="w-4 h-4 text-gray-400" />;
+      case "ISSUED":
+        return <CheckCircle className="w-4 h-4 text-blue-500" />;
+      case "SENT":
+        return <Send className="w-4 h-4 text-green-500" />;
+      case "PAID":
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case "CANCELLED":
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      default:
+        return null;
     }
   };
 
   const getStatusBadge = (status) => {
     const colors = {
-      DRAFT: 'bg-gray-100 text-gray-700',
-      ISSUED: 'bg-blue-100 text-blue-700',
-      SENT: 'bg-green-100 text-green-700',
-      PAID: 'bg-green-100 text-green-800',
-      CANCELLED: 'bg-red-100 text-red-700',
-      OVERDUE: 'bg-orange-100 text-orange-700'
+      DRAFT: "bg-gray-100 text-gray-700",
+      ISSUED: "bg-blue-100 text-blue-700",
+      SENT: "bg-green-100 text-green-700",
+      PAID: "bg-green-100 text-green-800",
+      CANCELLED: "bg-red-100 text-red-700",
+      OVERDUE: "bg-orange-100 text-orange-700",
     };
-    return colors[status] || 'bg-gray-100 text-gray-700';
+    return colors[status] || "bg-gray-100 text-gray-700";
   };
 
-  const selectedInvoices = invoices.filter((invoice) => selectedIds.includes(invoice.id));
-  const allSelected = invoices.length > 0 && selectedIds.length === invoices.length;
+  const selectedInvoices = invoices.filter((invoice) =>
+    selectedIds.includes(invoice.id),
+  );
+  const allSelected =
+    invoices.length > 0 && selectedIds.length === invoices.length;
 
   const toggleSelected = (invoiceId) => {
-    setSelectedIds((prev) => (
+    setSelectedIds((prev) =>
       prev.includes(invoiceId)
         ? prev.filter((id) => id !== invoiceId)
-        : [...prev, invoiceId]
-    ));
+        : [...prev, invoiceId],
+    );
   };
 
   const toggleSelectAll = () => {
@@ -91,7 +111,7 @@ export default function InvoiceDashboard() {
 
   const clearSelection = () => {
     setSelectedIds([]);
-    setBulkError('');
+    setBulkError("");
   };
 
   const runBulkAction = async (action, items, apiCall) => {
@@ -101,13 +121,15 @@ export default function InvoiceDashboard() {
     }
 
     setBulkLoading(true);
-    setBulkError('');
+    setBulkError("");
 
     const results = await Promise.allSettled(items.map(apiCall));
-    const failed = results.filter((result) => result.status === 'rejected');
+    const failed = results.filter((result) => result.status === "rejected");
 
     if (failed.length > 0) {
-      setBulkError(`${failed.length} ${action} action(s) failed. Please retry.`);
+      setBulkError(
+        `${failed.length} ${action} action(s) failed. Please retry.`,
+      );
     }
 
     await loadInvoices();
@@ -120,180 +142,215 @@ export default function InvoiceDashboard() {
   };
 
   const handleBulkIssue = async () => {
-    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
+    const draftInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "DRAFT",
+    );
     const nonDraftCount = selectedInvoices.length - draftInvoices.length;
-    
+
     if (draftInvoices.length === 0) {
-      setBulkError('Only draft invoices can be issued. Please select draft invoices.');
+      setBulkError(
+        "Only draft invoices can be issued. Please select draft invoices.",
+      );
       return;
     }
-    
+
     if (nonDraftCount > 0) {
-      setBulkError(`${nonDraftCount} invoice(s) skipped - only draft invoices can be issued.`);
+      setBulkError(
+        `${nonDraftCount} invoice(s) skipped - only draft invoices can be issued.`,
+      );
     }
-    
-    await runBulkAction('issue', draftInvoices, (invoice) =>
-      apiClient.post(`/invoices/${invoice.id}/issue`)
+
+    await runBulkAction("issue", draftInvoices, (invoice) =>
+      apiClient.post(`/invoices/${invoice.id}/issue`),
     );
   };
 
   const handleBulkCancel = async () => {
-    const paidInvoices = selectedInvoices.filter((invoice) => invoice.status === 'PAID');
-    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
-    const cancellableInvoices = selectedInvoices.filter(
-      (invoice) => invoice.status !== 'CANCELLED' && invoice.status !== 'PAID'
+    const paidInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "PAID",
     );
-    
+    const cancelledInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "CANCELLED",
+    );
+    const cancellableInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status !== "CANCELLED" && invoice.status !== "PAID",
+    );
+
     if (paidInvoices.length > 0) {
-      setBulkError(`${paidInvoices.length} paid invoice(s) can't be cancelled.`);
+      setBulkError(
+        `${paidInvoices.length} paid invoice(s) can't be cancelled.`,
+      );
       return;
     }
-    
+
     if (cancellableInvoices.length === 0) {
       if (cancelledInvoices.length > 0) {
-        setBulkError('Selected invoice(s) are already cancelled.');
+        setBulkError("Selected invoice(s) are already cancelled.");
       } else {
-        setBulkError('No cancellable invoices selected.');
+        setBulkError("No cancellable invoices selected.");
       }
       return;
     }
-    
-    await runBulkAction('cancel', cancellableInvoices, (invoice) =>
-      apiClient.post(`/invoices/${invoice.id}/cancel`)
+
+    await runBulkAction("cancel", cancellableInvoices, (invoice) =>
+      apiClient.post(`/invoices/${invoice.id}/cancel`),
     );
   };
 
   const handleBulkEmail = async () => {
     if (!bulkEmailAddress) {
-      setBulkError('Please enter an email address for bulk email.');
+      setBulkError("Please enter an email address for bulk email.");
       return;
     }
 
-    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
-    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
+    const draftInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "DRAFT",
+    );
+    const cancelledInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "CANCELLED",
+    );
     const eligibleInvoices = selectedInvoices.filter(
-      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+      (invoice) => invoice.status !== "DRAFT" && invoice.status !== "CANCELLED",
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
       if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
-        setBulkError('Draft and cancelled invoices can\'t be emailed.');
+        setBulkError("Draft and cancelled invoices can't be emailed.");
       } else if (draftInvoices.length > 0) {
-        setBulkError('Draft invoices can\'t be emailed.');
+        setBulkError("Draft invoices can't be emailed.");
       } else if (cancelledInvoices.length > 0) {
-        setBulkError('Cancelled invoices can\'t be emailed.');
+        setBulkError("Cancelled invoices can't be emailed.");
       } else {
-        setBulkError('Only issued/sent/paid invoices can be emailed.');
+        setBulkError("Only issued/sent/paid invoices can be emailed.");
       }
       return;
     }
 
-    const failedCount = await runBulkAction('email', eligibleInvoices, (invoice) =>
-      apiClient.post(`/invoices/${invoice.id}/email`, null, {
-        params: { recipient_email: bulkEmailAddress }
-      })
+    const failedCount = await runBulkAction(
+      "email",
+      eligibleInvoices,
+      (invoice) =>
+        apiClient.post(`/invoices/${invoice.id}/email`, null, {
+          params: { recipient_email: bulkEmailAddress },
+        }),
     );
 
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
     if (failedCount === 0) {
-      setBulkSuccess('Email sent successfully!');
+      setBulkSuccess("Email sent successfully!");
       setTimeout(() => {
         setShowBulkEmailModal(false);
-        setBulkEmailAddress('');
-        setBulkSuccess('');
+        setBulkEmailAddress("");
+        setBulkSuccess("");
       }, 1500);
     }
   };
 
   const handleBulkSms = async () => {
     if (!bulkPhoneNumber) {
-      setBulkError('Please enter a phone number for bulk SMS.');
+      setBulkError("Please enter a phone number for bulk SMS.");
       return;
     }
 
-    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
-    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
+    const draftInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "DRAFT",
+    );
+    const cancelledInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "CANCELLED",
+    );
     const eligibleInvoices = selectedInvoices.filter(
-      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+      (invoice) => invoice.status !== "DRAFT" && invoice.status !== "CANCELLED",
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
       if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
-        setBulkError('Draft and cancelled invoices can\'t be sent via SMS.');
+        setBulkError("Draft and cancelled invoices can't be sent via SMS.");
       } else if (draftInvoices.length > 0) {
-        setBulkError('Draft invoices can\'t be sent via SMS.');
+        setBulkError("Draft invoices can't be sent via SMS.");
       } else if (cancelledInvoices.length > 0) {
-        setBulkError('Cancelled invoices can\'t be sent via SMS.');
+        setBulkError("Cancelled invoices can't be sent via SMS.");
       } else {
-        setBulkError('Only issued/sent/paid invoices can be sent by SMS.');
+        setBulkError("Only issued/sent/paid invoices can be sent by SMS.");
       }
       return;
     }
 
-    const failedCount = await runBulkAction('SMS', eligibleInvoices, (invoice) =>
-      apiClient.post(`/invoices/${invoice.id}/sms`, null, {
-        params: { phone_number: bulkPhoneNumber }
-      })
+    const failedCount = await runBulkAction(
+      "SMS",
+      eligibleInvoices,
+      (invoice) =>
+        apiClient.post(`/invoices/${invoice.id}/sms`, null, {
+          params: { phone_number: bulkPhoneNumber },
+        }),
     );
 
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
     if (failedCount === 0) {
-      setBulkSuccess('SMS sent successfully!');
+      setBulkSuccess("SMS sent successfully!");
       setTimeout(() => {
         setShowBulkSmsModal(false);
-        setBulkPhoneNumber('');
-        setBulkSuccess('');
+        setBulkPhoneNumber("");
+        setBulkSuccess("");
       }, 1500);
     }
   };
 
   const handleBulkWhatsApp = async () => {
     if (!bulkPhoneNumber) {
-      setBulkError('Please enter a phone number for bulk WhatsApp.');
+      setBulkError("Please enter a phone number for bulk WhatsApp.");
       return;
     }
 
-    const draftInvoices = selectedInvoices.filter((invoice) => invoice.status === 'DRAFT');
-    const cancelledInvoices = selectedInvoices.filter((invoice) => invoice.status === 'CANCELLED');
+    const draftInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "DRAFT",
+    );
+    const cancelledInvoices = selectedInvoices.filter(
+      (invoice) => invoice.status === "CANCELLED",
+    );
     const eligibleInvoices = selectedInvoices.filter(
-      (invoice) => invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED'
+      (invoice) => invoice.status !== "DRAFT" && invoice.status !== "CANCELLED",
     );
     const skippedCount = selectedInvoices.length - eligibleInvoices.length;
 
     if (eligibleInvoices.length === 0) {
       if (draftInvoices.length > 0 && cancelledInvoices.length > 0) {
-        setBulkError('Draft and cancelled invoices can\'t be sent via WhatsApp.');
+        setBulkError(
+          "Draft and cancelled invoices can't be sent via WhatsApp.",
+        );
       } else if (draftInvoices.length > 0) {
-        setBulkError('Draft invoices can\'t be sent via WhatsApp.');
+        setBulkError("Draft invoices can't be sent via WhatsApp.");
       } else if (cancelledInvoices.length > 0) {
-        setBulkError('Cancelled invoices can\'t be sent via WhatsApp.');
+        setBulkError("Cancelled invoices can't be sent via WhatsApp.");
       } else {
-        setBulkError('Only issued/sent/paid invoices can be sent by WhatsApp.');
+        setBulkError("Only issued/sent/paid invoices can be sent by WhatsApp.");
       }
       return;
     }
 
-    const failedCount = await runBulkAction('WhatsApp', eligibleInvoices, (invoice) =>
-      apiClient.post(`/invoices/${invoice.id}/whatsapp`, null, {
-        params: { phone_number: bulkPhoneNumber }
-      })
+    const failedCount = await runBulkAction(
+      "WhatsApp",
+      eligibleInvoices,
+      (invoice) =>
+        apiClient.post(`/invoices/${invoice.id}/whatsapp`, null, {
+          params: { phone_number: bulkPhoneNumber },
+        }),
     );
 
     if (skippedCount > 0 && failedCount === 0) {
       setBulkError(`${skippedCount} draft/cancelled invoice(s) were skipped.`);
     }
     if (failedCount === 0) {
-      setBulkSuccess('WhatsApp message sent successfully!');
+      setBulkSuccess("WhatsApp message sent successfully!");
       setTimeout(() => {
         setShowBulkWhatsAppModal(false);
-        setBulkPhoneNumber('');
-        setBulkSuccess('');
+        setBulkPhoneNumber("");
+        setBulkSuccess("");
       }, 1500);
     }
   };
@@ -301,16 +358,18 @@ export default function InvoiceDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
-      
+
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-              <p className="text-gray-600 mt-1">Create and manage UAE-compliant e-invoices</p>
+              <p className="text-gray-600 mt-1">
+                Create and manage UAE-compliant e-invoices
+              </p>
             </div>
             <button
-              onClick={() => navigate('/invoices/create')}
+              onClick={() => navigate("/invoices/create")}
               className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
             >
               <Plus className="w-5 h-5" />
@@ -321,40 +380,48 @@ export default function InvoiceDashboard() {
           {/* Filters */}
           <div className="space-y-4 mt-6">
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Status</label>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">
+                Filter by Status
+              </label>
               <div className="flex gap-3 flex-wrap">
-                {['all', 'DRAFT', 'ISSUED', 'SENT', 'PAID', 'CANCELLED'].map((status) => (
-                  <button
-                    key={status}
-                    onClick={() => setFilter(status)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                      filter === status
-                        ? 'bg-indigo-600 text-white shadow-md'
-                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-                    }`}
-                  >
-                    {status === 'all' ? 'All' : status.charAt(0) + status.slice(1).toLowerCase()}
-                  </button>
-                ))}
+                {["all", "DRAFT", "ISSUED", "SENT", "PAID", "CANCELLED"].map(
+                  (status) => (
+                    <button
+                      key={status}
+                      onClick={() => setFilter(status)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        filter === status
+                          ? "bg-indigo-600 text-white shadow-md"
+                          : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                      }`}
+                    >
+                      {status === "all"
+                        ? "All"
+                        : status.charAt(0) + status.slice(1).toLowerCase()}
+                    </button>
+                  ),
+                )}
               </div>
             </div>
-            
+
             <div>
-              <label className="text-sm font-medium text-gray-700 mb-2 block">Filter by Invoice Type</label>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">
+                Filter by Invoice Type
+              </label>
               <div className="flex gap-3 flex-wrap">
                 {[
-                  { value: 'all', label: 'All Types' },
-                  { value: '380', label: 'Tax Invoice' },
-                  { value: '381', label: 'Credit Note' },
-                  { value: '480', label: 'Commercial' }
+                  { value: "all", label: "All Types" },
+                  { value: "380", label: "Tax Invoice" },
+                  { value: "381", label: "Credit Note" },
+                  { value: "480", label: "Commercial" },
                 ].map((type) => (
                   <button
                     key={type.value}
                     onClick={() => setTypeFilter(type.value)}
                     className={`px-4 py-2 rounded-lg font-medium transition-all ${
                       typeFilter === type.value
-                        ? 'bg-purple-600 text-white shadow-md'
-                        : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                        ? "bg-purple-600 text-white shadow-md"
+                        : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
                     }`}
                   >
                     {type.label}
@@ -398,8 +465,8 @@ export default function InvoiceDashboard() {
               </button>
               <button
                 onClick={() => {
-                  setBulkError('');
-                  setBulkSuccess('');
+                  setBulkError("");
+                  setBulkSuccess("");
                   setShowBulkEmailModal(true);
                 }}
                 disabled={bulkLoading}
@@ -410,8 +477,8 @@ export default function InvoiceDashboard() {
               </button>
               <button
                 onClick={() => {
-                  setBulkError('');
-                  setBulkSuccess('');
+                  setBulkError("");
+                  setBulkSuccess("");
                   setShowBulkSmsModal(true);
                 }}
                 disabled={bulkLoading}
@@ -422,8 +489,8 @@ export default function InvoiceDashboard() {
               </button>
               <button
                 onClick={() => {
-                  setBulkError('');
-                  setBulkSuccess('');
+                  setBulkError("");
+                  setBulkSuccess("");
                   setShowBulkWhatsAppModal(true);
                 }}
                 disabled={bulkLoading}
@@ -440,97 +507,117 @@ export default function InvoiceDashboard() {
                 Clear
               </button>
               {bulkError && (
-                <div className="w-full text-sm text-red-600">
-                  {bulkError}
-                </div>
+                <div className="w-full text-sm text-red-600">{bulkError}</div>
               )}
             </div>
           )}
-        {loading ? (
-          <PageLoader />
-        ) : invoices.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No invoices found</h3>
-            <p className="text-gray-600 mb-6">
-              {filter === 'all' 
-                ? 'Create your first UAE-compliant e-invoice'
-                : `No invoices with status: ${filter}`}
-            </p>
-            <button
-              onClick={() => navigate('/invoices/create')}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all"
-            >
-              <Plus className="w-5 h-5" />
-              Create Invoice
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {invoices.map((invoice) => (
-              <div
-                key={invoice.id}
-                className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition-all border border-gray-100 cursor-pointer"
-                onClick={() => navigate(`/invoices/${invoice.id}`)}
+          {loading ? (
+            <PageLoader />
+          ) : invoices.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+              <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                No invoices found
+              </h3>
+              <p className="text-gray-600 mb-6">
+                {filter === "all"
+                  ? "Create your first UAE-compliant e-invoice"
+                  : `No invoices with status: ${filter}`}
+              </p>
+              <button
+                onClick={() => navigate("/invoices/create")}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(invoice.id)}
-                      onChange={() => toggleSelected(invoice.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4"
-                    />
-                    <div className="p-3 bg-indigo-50 rounded-xl">
-                      <FileText className="w-6 h-6 text-indigo-600" />
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-1">
-                        <h3 className="text-lg font-bold text-gray-900">
-                          {invoice.invoice_number}
-                        </h3>
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(invoice.status)}`}>
-                          {getStatusIcon(invoice.status)}
-                          {invoice.status}
-                        </span>
+                <Plus className="w-5 h-5" />
+                Create Invoice
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {invoices.map((invoice) => (
+                <div
+                  key={invoice.id}
+                  className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition-all border border-gray-100 cursor-pointer"
+                  onClick={() => navigate(`/invoices/${invoice.id}`)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 flex-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(invoice.id)}
+                        onChange={() => toggleSelected(invoice.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-4 w-4"
+                      />
+                      <div className="p-3 bg-indigo-50 rounded-xl">
+                        <FileText className="w-6 h-6 text-indigo-600" />
                       </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
-                        <span className="font-medium">{invoice.customer_name}</span>
-                        <span>•</span>
-                        <span>{new Date(invoice.issue_date).toLocaleDateString('en-AE')}</span>
-                        <span>•</span>
-                        <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          Type: {invoice.invoice_type === '380' ? 'Tax Invoice' : 
-                                 invoice.invoice_type === '381' ? 'Credit Note' : 
-                                 invoice.invoice_type === '480' ? 'Commercial' :
-                                 'Other'}
-                        </span>
+
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-1">
+                          <h3 className="text-lg font-bold text-gray-900">
+                            {invoice.invoice_number}
+                          </h3>
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadge(invoice.status)}`}
+                          >
+                            {getStatusIcon(invoice.status)}
+                            {invoice.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span className="font-medium">
+                            {invoice.customer_name}
+                          </span>
+                          <span>•</span>
+                          <span>
+                            {new Date(invoice.issue_date).toLocaleDateString(
+                              "en-AE",
+                            )}
+                          </span>
+                          <span>•</span>
+                          <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            Type:{" "}
+                            {invoice.invoice_type === "380"
+                              ? "Tax Invoice"
+                              : invoice.invoice_type === "381"
+                                ? "Credit Note"
+                                : invoice.invoice_type === "480"
+                                  ? "Commercial"
+                                  : "Other"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-gray-900">
+                        {invoice.currency_code}{" "}
+                        {invoice.total_amount.toFixed(2)}
+                      </div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        Created{" "}
+                        {new Date(invoice.created_at).toLocaleDateString(
+                          "en-AE",
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-gray-900">
-                      {invoice.currency_code} {invoice.total_amount.toFixed(2)}
-                    </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      Created {new Date(invoice.created_at).toLocaleDateString('en-AE')}
-                    </div>
-                  </div>
+                  {/* Delivery Actions - Only show for issued/sent invoices */}
+                  {invoice.status !== "DRAFT" &&
+                    invoice.status !== "CANCELLED" && (
+                      <div
+                        className="mt-4 pt-4 border-t border-gray-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <InvoiceDeliveryActions invoice={invoice} />
+                      </div>
+                    )}
                 </div>
-                
-                {/* Delivery Actions - Only show for issued/sent invoices */}
-                {invoice.status !== 'DRAFT' && invoice.status !== 'CANCELLED' && (
-                  <div className="mt-4 pt-4 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                    <InvoiceDeliveryActions invoice={invoice} />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -539,18 +626,21 @@ export default function InvoiceDashboard() {
           className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
           onClick={() => {
             setShowBulkSmsModal(false);
-            setBulkPhoneNumber('');
-            setBulkSuccess('');
+            setBulkPhoneNumber("");
+            setBulkSuccess("");
           }}
         >
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk SMS</h3>
               <button
                 onClick={() => {
                   setShowBulkSmsModal(false);
-                  setBulkPhoneNumber('');
-                  setBulkSuccess('');
+                  setBulkPhoneNumber("");
+                  setBulkSuccess("");
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -559,7 +649,9 @@ export default function InvoiceDashboard() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number
+                </label>
                 <input
                   type="tel"
                   value={bulkPhoneNumber}
@@ -597,18 +689,21 @@ export default function InvoiceDashboard() {
           className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
           onClick={() => {
             setShowBulkEmailModal(false);
-            setBulkEmailAddress('');
-            setBulkSuccess('');
+            setBulkEmailAddress("");
+            setBulkSuccess("");
           }}
         >
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk Email</h3>
               <button
                 onClick={() => {
                   setShowBulkEmailModal(false);
-                  setBulkEmailAddress('');
-                  setBulkSuccess('');
+                  setBulkEmailAddress("");
+                  setBulkSuccess("");
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -617,7 +712,9 @@ export default function InvoiceDashboard() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Recipient Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Recipient Email
+                </label>
                 <input
                   type="email"
                   value={bulkEmailAddress}
@@ -655,18 +752,21 @@ export default function InvoiceDashboard() {
           className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
           onClick={() => {
             setShowBulkWhatsAppModal(false);
-            setBulkPhoneNumber('');
-            setBulkSuccess('');
+            setBulkPhoneNumber("");
+            setBulkSuccess("");
           }}
         >
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white rounded-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-900">Bulk WhatsApp</h3>
               <button
                 onClick={() => {
                   setShowBulkWhatsAppModal(false);
-                  setBulkPhoneNumber('');
-                  setBulkSuccess('');
+                  setBulkPhoneNumber("");
+                  setBulkSuccess("");
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -675,7 +775,9 @@ export default function InvoiceDashboard() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number
+                </label>
                 <input
                   type="tel"
                   value={bulkPhoneNumber}
