@@ -194,7 +194,7 @@ export default function SuperAdminDashboard() {
             <Settings size={16} className="mr-2" />
             Account Settings
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate("/security")}>
+          <DropdownMenuItem onClick={() => navigate("/settings/security")}>
             <Settings size={16} className="mr-2" />
             Security Settings
           </DropdownMenuItem>
