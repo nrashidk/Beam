@@ -190,11 +190,11 @@ export default function SuperAdminDashboard() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => navigate("/settings")}>
+          {/* <DropdownMenuItem onClick={() => navigate("/settings")}>
             <Settings size={16} className="mr-2" />
             Account Settings
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => navigate("/security")}>
+          </DropdownMenuItem> */}
+          <DropdownMenuItem onClick={() => navigate("/settings/security")}>
             <Settings size={16} className="mr-2" />
             Security Settings
           </DropdownMenuItem>

@@ -3648,7 +3648,11 @@ def get_all_companies(
         "approved_at": c.approved_at.isoformat() if c.approved_at else None,
         "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
         "subscription_plan": c.subscription_plan_id,
-        "invoices_generated": c.invoices_generated or 0
+        "invoices_generated": c.invoices_generated or 0,
+        "free_plan_type": c.free_plan_type,
+        "free_plan_invoice_limit": c.free_plan_invoice_limit,
+        "free_plan_duration_months": c.free_plan_duration_months,
+        "free_plan_start_date": c.free_plan_start_date.isoformat() if c.free_plan_start_date else None
     } for c in companies]
 
 
@@ -4697,6 +4701,23 @@ def create_invoice(
     if not company:
         raise HTTPException(404, "Company not found")
 
+    # Enforce Super Admin configured free plan invoice limits (invoice-count based)
+    if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit is not None:
+        active_paid_subscription = db.query(SubscriptionDB).filter(
+            SubscriptionDB.company_id == company.id,
+            SubscriptionDB.status == "ACTIVE",
+            SubscriptionDB.tier != "FREE").first()
+
+        if not active_paid_subscription:
+            used_invoice_count = db.query(InvoiceDB).filter(
+                InvoiceDB.company_id == company.id).count()
+
+            if used_invoice_count >= company.free_plan_invoice_limit:
+                raise HTTPException(
+                    403,
+                    f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin."
+                )
+
     # Only require TRN when VAT is enabled
     if company.vat_enabled and not company.trn:
         raise HTTPException(
@@ -4910,6 +4931,9 @@ def create_invoice(
     # Increment trial invoice count if in trial
     if company.trial_status == "ACTIVE":
         company.trial_invoice_count += 1
+
+    # Keep company-level invoice counter in sync for admin explorer/reporting
+    company.invoices_generated = (company.invoices_generated or 0) + 1
 
     # Invoice created as DRAFT - use /issue endpoint to generate XML and finalize
     db.commit()
