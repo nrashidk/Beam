@@ -10066,6 +10066,11 @@ async def bulk_import_invoices(
 
                 if original_invoice.invoice_type == InvoiceType.TAX_INVOICE:
                     invoice_type = InvoiceType.TAX_CREDIT_NOTE
+                    # Check if company is VAT enabled before allowing tax credit notes
+                    if not company.vat_enabled:
+                        bulk_errors.append(
+                            f"Row {row_num}: Company must be VAT-enabled to create tax credit notes (381)")
+                        continue
                 elif original_invoice.invoice_type == InvoiceType.COMMERCIAL_INVOICE:
                     invoice_type = InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
                 else:
@@ -10084,6 +10089,12 @@ async def bulk_import_invoices(
                 invoice_type = invoice_type_mapping.get(
                     invoice_type_key,
                     InvoiceType.TAX_INVOICE)
+
+                # Validate VAT requirement for Tax Invoices
+                if invoice_type == InvoiceType.TAX_INVOICE and not company.vat_enabled:
+                    bulk_errors.append(
+                        f"Row {row_num}: Company must be VAT-enabled to create tax invoices (380). Non-VAT companies can only create Commercial Invoices (480)")
+                    continue
 
             prepared_invoices.append({
                 "invoice_data": invoice_data,

@@ -153,6 +153,46 @@ export default function CreateInvoice() {
     fetchOriginalInvoices();
   }, [formData.invoice_type]);
 
+  // Auto-populate credit note data from selected original invoice
+  useEffect(() => {
+    const autoPopulateFromOriginalInvoice = async () => {
+      if (!formData.preceding_invoice_id) {
+        return;
+      }
+
+      try {
+        const response = await apiClient.get(
+          `/invoices/${formData.preceding_invoice_id}`,
+        );
+        const originalInvoice = response.data;
+
+        // Populate customer details from original invoice
+        setFormData((prev) => ({
+          ...prev,
+          customer_name: originalInvoice.customer_name,
+          customer_email: originalInvoice.customer_email || "",
+          customer_trn: originalInvoice.customer_trn || "",
+          customer_address: originalInvoice.customer_address || "",
+          customer_city: originalInvoice.customer_city || "",
+          // Copy line items from original invoice
+          line_items: originalInvoice.line_items.map((item) => ({
+            item_name: item.item_name,
+            item_description: item.item_description || "",
+            quantity: 0, // Start with 0 quantity for user to adjust
+            unit_price: item.unit_price,
+            tax_category: item.tax_category,
+            tax_percent: item.tax_percent,
+            tax_code: item.tax_code || "SR",
+          })),
+        }));
+      } catch (error) {
+        console.error("Failed to load original invoice details:", error);
+      }
+    };
+
+    autoPopulateFromOriginalInvoice();
+  }, [formData.preceding_invoice_id]);
+
   const addLineItem = () => {
     setFormData({
       ...formData,
