@@ -9,6 +9,7 @@ import {
   Share2,
   Download,
   FileText,
+  Edit2,
 } from "lucide-react";
 import Toast from "../components/ui/Toast";
 import PageLoader from "../components/PageLoader";
@@ -264,6 +265,16 @@ export default function InvoiceDetail() {
 
           {/* Actions */}
           <div className="p-6 bg-gray-50 border-b flex gap-3">
+            {invoice.status === "DRAFT" && (
+              <button
+                onClick={() => navigate(`/invoices/${id}/edit`)}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700"
+              >
+                <Edit2 className="w-5 h-5" />
+                Edit Invoice
+              </button>
+            )}
+
             {invoice.status === "DRAFT" && (
               <button
                 onClick={handleIssue}
