@@ -9323,6 +9323,9 @@ class TrialStatusOut(BaseModel):
     trial_days_remaining: Optional[int]
     trial_invoices_remaining: Optional[int]
     trial_expired: bool
+    free_plan_type: Optional[str] = None  # "INVOICE_COUNT" or "DURATION"
+    free_plan_invoice_limit: Optional[int] = None
+    free_plan_duration_months: Optional[int] = None
 
 
 @app.post("/billing/payment-methods", tags=["Billing"])
@@ -9652,12 +9655,14 @@ async def get_trial_status(
     trial_expired = False
 
     if company.trial_status == "ACTIVE" and company.trial_start_date:
-        # Calculate days remaining (30 day trial)
+        # Calculate days remaining based on free_plan_duration_months (default 1 month = 30 days)
+        trial_duration_days = (company.free_plan_duration_months or 1) * 30
         days_elapsed = (datetime.utcnow() - company.trial_start_date).days
-        trial_days_remaining = max(0, 30 - days_elapsed)
+        trial_days_remaining = max(0, trial_duration_days - days_elapsed)
 
-        # Calculate invoices remaining (100 invoice limit)
-        trial_invoices_remaining = max(0, 100 - company.trial_invoice_count)
+        # Calculate invoices remaining using actual free_plan_invoice_limit (default to 100 if not set)
+        invoice_limit = company.free_plan_invoice_limit or 100
+        trial_invoices_remaining = max(0, invoice_limit - company.trial_invoice_count)
 
         # Check if expired
         if trial_days_remaining == 0 or trial_invoices_remaining == 0:
@@ -9673,7 +9678,10 @@ async def get_trial_status(
         trial_invoice_count=company.trial_invoice_count,
         trial_days_remaining=trial_days_remaining,
         trial_invoices_remaining=trial_invoices_remaining,
-        trial_expired=trial_expired)
+        trial_expired=trial_expired,
+        free_plan_type=company.free_plan_type,
+        free_plan_invoice_limit=company.free_plan_invoice_limit,
+        free_plan_duration_months=company.free_plan_duration_months)
 
 
 # ==================== BULK IMPORT ====================
