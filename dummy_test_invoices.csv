@@ -1,0 +1,3 @@
+invoice_number,issue_date,due_date,invoice_type,customer_name,customer_email,customer_trn,customer_address,customer_city,preceding_invoice_number,item_name,item_description,quantity,unit_price,unit_name,tax_category,tax_percent,tax_code
+,20-02-2025,22-03-2025,COMMERCIAL,Tech Solutions LLC,contact@techsolutions.ae,1.00123E+14,P.O. Box 12345 Sheikh Zayed Road,Dubai,,,Professional Consulting Services,System design and implementation consultation,5,500,Hour,S,5
+CN-001,22-02-2025,24-03-2025,CREDIT_NOTE,Tech Solutions LLC,contact@techsolutions.ae,1.00123E+14,P.O. Box 12345 Sheikh Zayed Road,Dubai,INV-001,Professional Consulting Services,System design and implementation consultation - partial return,2,500,Hour,S,5,S_5_5
