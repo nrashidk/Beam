@@ -7,6 +7,7 @@ import os, enum, hashlib, secrets, json, logging
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
+from decimal import Decimal
 
 # Configure logging
 logging.basicConfig(
@@ -3551,13 +3552,16 @@ def get_company_invoices(company_id: str,
                          status: Optional[str] = None,
                          limit: int = 50,
                          offset: int = 0):
-    """Get all invoices for a specific company"""
+    """Get all invoices for a specific company (excludes CANCELLED invoices for recent listing)"""
     # Verify company exists
     company = db.get(CompanyDB, company_id)
     if not company:
         raise HTTPException(404, "Company not found")
 
-    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == company_id)
+    query = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == company_id,
+        InvoiceDB.status != InvoiceStatus.CANCELLED  # Exclude cancelled invoices
+    )
 
     if status:
         try:
@@ -5239,7 +5243,7 @@ def get_pending_payment_invoices(
     """
     Get list of invoices awaiting payment
 
-    Returns invoices that are not yet paid (status != PAID)
+    Returns invoices that are not yet paid (status != PAID and status != CANCELLED)
     Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
     """
     # Check role-based permissions
@@ -5250,8 +5254,9 @@ def get_pending_payment_invoices(
             403, "Insufficient permissions to view pending payments")
 
     invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id, InvoiceDB.status
-        != InvoiceStatus.PAID).order_by(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED])
+    ).order_by(
             InvoiceDB.due_date.asc()).limit(limit).all()
 
     return [{
@@ -5347,6 +5352,186 @@ def get_invoice(invoice_id: str,
                                    tax_amount=tb.tax_amount)
             for tb in invoice.tax_breakdowns
         ])
+
+
+@app.put("/invoices/{invoice_id}",
+         tags=["Invoices"],
+         response_model=InvoiceOut)
+def update_invoice(invoice_id: str,
+                   data: InvoiceCreate,
+                   current_user: UserDB = Depends(get_current_user_from_header),
+                   db: Session = Depends(get_db)):
+    """Update a DRAFT invoice (only DRAFT invoices can be edited)"""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id).first()
+
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+
+    if invoice.status != InvoiceStatus.DRAFT:
+        raise HTTPException(
+            403,
+            f"Cannot edit invoice. Only DRAFT invoices can be edited. Current status: {invoice.status.value}"
+        )
+
+    try:
+        # Update basic invoice details
+        invoice.invoice_type = data.invoice_type
+        invoice.issue_date = datetime.fromisoformat(data.issue_date)
+        invoice.due_date = datetime.fromisoformat(
+            data.due_date) if data.due_date else None
+        invoice.currency_code = data.currency_code
+
+        # Update customer details
+        invoice.customer_name = data.customer_name
+        invoice.customer_email = data.customer_email
+        invoice.customer_trn = data.customer_trn
+        invoice.customer_address = data.customer_address
+        invoice.customer_city = data.customer_city
+        invoice.customer_country = data.customer_country or "AE"
+        invoice.customer_peppol_id = data.customer_peppol_id
+
+        # Optional fields
+        invoice.payment_terms = data.payment_terms
+        invoice.payment_due_days = data.payment_due_days or 30
+        invoice.invoice_notes = data.invoice_notes
+        invoice.reference_number = data.reference_number
+
+        # Clear existing line items
+        db.query(InvoiceLineItemDB).filter(
+            InvoiceLineItemDB.invoice_id == invoice_id).delete()
+        db.flush()
+
+        # Add updated line items
+        subtotal = Decimal("0")
+        total_tax = Decimal("0")
+        line_number = 1
+        tax_by_category = {}
+
+        for item_data in data.line_items:
+            line_extension_amount = Decimal(
+                str(item_data.quantity)) * Decimal(str(item_data.unit_price))
+
+            # Calculate tax
+            tax_amount = Decimal("0")
+            if item_data.tax_category == "S":
+                tax_amount = line_extension_amount * (Decimal(
+                    str(item_data.tax_percent)) / Decimal("100"))
+
+            line_total = line_extension_amount + tax_amount
+
+            line_item = InvoiceLineItemDB(
+                id=f"li_{uuid4().hex[:12]}",
+                invoice_id=invoice_id,
+                line_number=line_number,
+                item_name=item_data.item_name,
+                item_description=item_data.item_description,
+                item_code=item_data.item_code,
+                quantity=Decimal(str(item_data.quantity)),
+                unit_code=item_data.unit_code or "C62",
+                unit_price=Decimal(str(item_data.unit_price)),
+                line_extension_amount=line_extension_amount,
+                tax_category=item_data.tax_category,
+                tax_percent=Decimal(str(item_data.tax_percent)),
+                tax_code=item_data.tax_code,
+                tax_amount=tax_amount,
+                line_total_amount=line_total,
+            )
+            db.add(line_item)
+
+            subtotal += line_extension_amount
+            total_tax += tax_amount
+
+            # Track tax by category for breakdowns
+            cat = item_data.tax_category  # Already a string
+            if cat not in tax_by_category:
+                tax_by_category[cat] = {"taxable": Decimal("0"), "tax": Decimal("0")}
+            tax_by_category[cat]["taxable"] += line_extension_amount
+            tax_by_category[cat]["tax"] += tax_amount
+
+            line_number += 1
+
+        # Update invoice totals
+        invoice.subtotal_amount = float(subtotal)
+        invoice.tax_amount = float(total_tax)
+        invoice.total_amount = float(subtotal + total_tax)
+        invoice.amount_due = float(subtotal + total_tax)
+
+        # Clear and rebuild tax breakdowns
+        db.query(InvoiceTaxBreakdownDB).filter(
+            InvoiceTaxBreakdownDB.invoice_id == invoice_id).delete()
+        db.flush()
+
+        for tax_category, amounts in tax_by_category.items():
+            breakdown = InvoiceTaxBreakdownDB(
+                id=f"tb_{uuid4().hex[:12]}",
+                invoice_id=invoice_id,
+                tax_category=tax_category,
+                taxable_amount=float(amounts["taxable"]),
+                tax_percent=float(5.0)
+                if tax_category == "S" else 0,
+                tax_amount=float(amounts["tax"]),
+            )
+            db.add(breakdown)
+
+        db.commit()
+
+        # Return updated invoice
+        return InvoiceOut(
+            id=invoice.id,
+            company_id=invoice.company_id,
+            invoice_number=invoice.invoice_number,
+            invoice_type=invoice.invoice_type,
+            status=invoice.status,
+            issue_date=invoice.issue_date.isoformat(),
+            due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+            currency_code=invoice.currency_code,
+            supplier_trn=invoice.supplier_trn,
+            supplier_name=invoice.supplier_name,
+            supplier_address=invoice.supplier_address,
+            supplier_peppol_id=invoice.supplier_peppol_id,
+            customer_trn=invoice.customer_trn,
+            customer_name=invoice.customer_name,
+            customer_email=invoice.customer_email,
+            customer_address=invoice.customer_address,
+            customer_peppol_id=invoice.customer_peppol_id,
+            subtotal_amount=invoice.subtotal_amount,
+            tax_amount=invoice.tax_amount,
+            total_amount=invoice.total_amount,
+            amount_due=invoice.amount_due,
+            xml_file_path=invoice.xml_file_path,
+            pdf_file_path=invoice.pdf_file_path,
+            share_token=invoice.share_token,
+            created_at=invoice.created_at.isoformat(),
+            sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
+            viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
+            line_items=[
+                InvoiceLineItemOut(id=li.id,
+                                   line_number=li.line_number,
+                                   item_name=li.item_name,
+                                   item_description=li.item_description,
+                                   quantity=li.quantity,
+                                   unit_code=li.unit_code,
+                                   unit_price=li.unit_price,
+                                   line_extension_amount=li.line_extension_amount,
+                                   tax_category=li.tax_category,
+                                   tax_percent=li.tax_percent,
+                                   tax_amount=li.tax_amount,
+                                   line_total_amount=li.line_total_amount)
+                for li in invoice.line_items
+            ],
+            tax_breakdowns=[
+                InvoiceTaxBreakdownOut(id=tb.id,
+                                       tax_category=tb.tax_category,
+                                       taxable_amount=tb.taxable_amount,
+                                       tax_percent=tb.tax_percent,
+                                       tax_amount=tb.tax_amount)
+                for tb in invoice.tax_breakdowns
+            ])
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(500, f"Failed to update invoice: {str(e)}")
 
 
 # ==================== PAYMENT VERIFICATION ENDPOINTS ====================

@@ -13,6 +13,7 @@ import FeaturedBusinesses from "./pages/FeaturedBusinesses";
 import BusinessDashboard from "./pages/BusinessDashboard";
 import InvoiceDashboard from "./pages/InvoiceDashboard";
 import CreateInvoice from "./pages/CreateInvoice";
+import EditInvoice from "./pages/EditInvoice";
 import InvoiceDetail from "./pages/InvoiceDetail";
 import CompanyBranding from "./pages/CompanyBranding";
 import TeamManagement from "./pages/TeamManagement";
@@ -153,6 +154,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <CreateInvoice />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoices/:id/edit"
+              element={
+                <ProtectedRoute>
+                  <EditInvoice />
                 </ProtectedRoute>
               }
             />
