@@ -136,8 +136,22 @@ export default function BillingSettings() {
 
   const trialDaysRemaining = trialStatus?.trial_days_remaining || 0;
   const trialInvoicesRemaining = trialStatus?.trial_invoices_remaining || 0;
-  const trialProgress = trialStatus?.trial_invoice_count
-    ? Math.min(100, (trialStatus.trial_invoice_count / 100) * 100)
+  const trialInvoiceLimit = trialStatus?.free_plan_invoice_limit || 100;
+  const trialDurationMonths = trialStatus?.free_plan_duration_months || 1;
+  const trialTotalDays = trialDurationMonths * 30;
+  const invoicesUsed = trialStatus?.trial_invoice_count || 0;
+  const daysUsed = trialTotalDays - trialDaysRemaining;
+  
+  // Determine which metric to show based on free_plan_type
+  // Default to INVOICE_COUNT if not explicitly set to DURATION
+  const showInvoiceCount = trialStatus?.free_plan_type !== "DURATION";
+  const showDaysRemaining = trialStatus?.free_plan_type === "DURATION";
+  
+  const trialProgress = invoicesUsed
+    ? Math.min(100, (invoicesUsed / trialInvoiceLimit) * 100)
+    : 0;
+  const daysProgress = daysUsed
+    ? Math.min(100, (daysUsed / trialTotalDays) * 100)
     : 0;
 
   const pricingTiers = {
@@ -184,8 +198,9 @@ export default function BillingSettings() {
                       Free Trial Active
                     </h3>
                     <p className="text-blue-100">
-                      You have {trialDaysRemaining} days and{" "}
-                      {trialInvoicesRemaining} invoices remaining
+                      {showInvoiceCount 
+                        ? `You have ${trialInvoicesRemaining} invoices remaining`
+                        : `You have ${trialDaysRemaining} days remaining`}
                     </p>
                   </div>
                   <button
@@ -197,31 +212,35 @@ export default function BillingSettings() {
                 </div>
 
                 <div className="space-y-3">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Invoices Used</span>
-                      <span>{trialStatus.trial_invoice_count} / 100</span>
+                  {showInvoiceCount && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Invoices Used</span>
+                        <span>{invoicesUsed} / {trialInvoiceLimit}</span>
+                      </div>
+                      <div className="bg-white/20 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-white h-full rounded-full transition-all"
+                          style={{ width: `${trialProgress}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="bg-white/20 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-white h-full rounded-full transition-all"
-                        style={{ width: `${trialProgress}%` }}
-                      />
-                    </div>
-                  </div>
+                  )}
 
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span>Days Remaining</span>
-                      <span>{trialDaysRemaining} / 30 days</span>
+                  {showDaysRemaining && (
+                    <div className={showInvoiceCount ? "opacity-40 cursor-not-allowed" : ""}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span>Days Remaining</span>
+                        <span>{trialDaysRemaining} / {trialTotalDays} days</span>
+                      </div>
+                      <div className="bg-white/20 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-white h-full rounded-full transition-all"
+                          style={{ width: `${daysProgress}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="bg-white/20 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="bg-white h-full rounded-full transition-all"
-                        style={{ width: `${(trialDaysRemaining / 30) * 100}%` }}
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
