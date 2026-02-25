@@ -60,6 +60,29 @@ export default function CreateInvoice() {
   const [loadingVatSettings, setLoadingVatSettings] = useState(true);
   const [originalInvoices, setOriginalInvoices] = useState([]);
   const [loadingOriginalInvoices, setLoadingOriginalInvoices] = useState(false);
+
+  const getDocumentTypeLabel = (type) => {
+    const labels = {
+      "380": "Tax Invoice (380)",
+      "381": "Tax Credit Note (381)",
+      "480": "Commercial Invoice (480)",
+      "81": "Credit Note (81)",
+    };
+    return labels[type] || type;
+  };
+
+  // Get the valid credit note type for a given invoice type
+  const getValidCreditNoteType = (invoiceType) => {
+    if (invoiceType === "380") return "381"; // Tax Invoice → Tax Credit Note
+    if (invoiceType === "480") return "81";  // Commercial Invoice → Credit Note
+    return null;
+  };
+
+  // Check if a credit note type matches the original invoice type
+  const isValidCreditNoteType = (originalType, creditNoteType) => {
+    return getValidCreditNoteType(originalType) === creditNoteType;
+  };
+
   const [formData, setFormData] = useState({
     invoice_type: "380",
     issue_date: new Date().toISOString().split("T")[0],
@@ -172,6 +195,7 @@ export default function CreateInvoice() {
           customer_trn: originalInvoice.customer_trn || "",
           customer_address: originalInvoice.customer_address || "",
           customer_city: originalInvoice.customer_city || "",
+          currency_code: originalInvoice.currency_code, // Match original invoice currency
           // Copy line items from original invoice
           line_items: originalInvoice.line_items.map((item) => ({
             item_name: item.item_name,
@@ -264,11 +288,52 @@ export default function CreateInvoice() {
           return;
         }
 
+        // Validate credit note type matches original invoice type
+        const expectedCreditNoteType = getValidCreditNoteType(selectedOriginalInvoice.invoice_type);
+        
+        if (formData.invoice_type !== expectedCreditNoteType) {
+          const originalLabel = getDocumentTypeLabel(selectedOriginalInvoice.invoice_type);
+          const expectedLabel = getDocumentTypeLabel(expectedCreditNoteType);
+          const currentLabel = getDocumentTypeLabel(formData.invoice_type);
+          
+          setToast({
+            message: `${originalLabel} requires ${expectedLabel}, not ${currentLabel}. Please select the correct credit note type.`,
+            type: "error",
+            onClose: () => setToast(null),
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Validate credit note total doesn't exceed original invoice total
         const creditTotal = calculateTotal();
         const originalTotal = Number(selectedOriginalInvoice.total_amount || 0);
+        
         if (creditTotal > originalTotal) {
           setToast({
-            message: `Credit note total cannot exceed original invoice total (${selectedOriginalInvoice.currency_code} ${originalTotal.toFixed(2)}).`,
+            message: `Credit note total (${formData.currency_code} ${creditTotal.toFixed(2)}) cannot exceed original invoice total (${selectedOriginalInvoice.currency_code} ${originalTotal.toFixed(2)}).`,
+            type: "error",
+            onClose: () => setToast(null),
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Validate currency matches
+        if (formData.currency_code !== selectedOriginalInvoice.currency_code) {
+          setToast({
+            message: `Currency must match the original invoice (${selectedOriginalInvoice.currency_code}).`,
+            type: "error",
+            onClose: () => setToast(null),
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Validate date is on or after original invoice date
+        if (formData.issue_date < selectedOriginalInvoice.issue_date) {
+          setToast({
+            message: `Credit note date must be on or after the original invoice date (${selectedOriginalInvoice.issue_date}).`,
             type: "error",
             onClose: () => setToast(null),
           });
@@ -337,13 +402,49 @@ export default function CreateInvoice() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                Create New Invoice
+                Create {getDocumentTypeLabel(formData.invoice_type)}
               </h1>
-              <p className="text-gray-600">UAE PINT-AE compliant e-invoice</p>
+              <p className="text-gray-600">
+                {isCreditNote 
+                  ? "Adjust or return goods from a previous invoice"
+                  : "UAE PINT-AE compliant e-invoice"}
+              </p>
             </div>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-8">
+            {/* Credit Note Information Banner */}
+            {isCreditNote && (
+              <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded-r-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-amber-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-amber-800">
+                      <strong>Credit Note Rules:</strong> 
+                    </p>
+                    <ul className="text-xs text-amber-700 mt-2 list-disc list-inside space-y-1">
+                      {selectedOriginalInvoice && (
+                        <li>
+                          This credit note must be type{" "}
+                          <strong>{getDocumentTypeLabel(getValidCreditNoteType(selectedOriginalInvoice.invoice_type))}</strong>{" "}
+                          to match the original{" "}
+                          <strong>{getDocumentTypeLabel(selectedOriginalInvoice.invoice_type)}</strong>
+                        </li>
+                      )}
+                      <li>Cannot exceed the original invoice total amount</li>
+                      <li>Must use the same currency as the original invoice</li>
+                      <li>Date must be on or after the original invoice date</li>
+                      {vatEnabled && selectedOriginalInvoice?.invoice_type === "380" && (
+                        <li>Tax Credit Notes reduce BOTH principal and VAT amounts</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* VAT Status Information */}
             {!vatEnabled && (
               <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
@@ -401,24 +502,14 @@ export default function CreateInvoice() {
                   >
                     {vatEnabled ? (
                       <>
-                        <option value="380">
-                          Tax Invoice (380) - VAT Taxable Supply
-                        </option>
-                        <option value="381">
-                          Tax Credit Note (381) - VAT Adjustment
-                        </option>
-                        <option value="480">
-                          Commercial Invoice (480) - Export/Non-VAT
-                        </option>
+                        <option value="380">Tax Invoice (380) - VAT Taxable Supply</option>
+                        <option value="381">Tax Credit Note (381) - VAT Adjustment</option>
+                        <option value="480">Commercial Invoice (480) - Export/Non-VAT</option>
                       </>
                     ) : (
                       <>
-                        <option value="480">
-                          Commercial Invoice (480) - Standard Invoice
-                        </option>
-                        <option value="81">
-                          Credit Note (81) - Returns/Adjustments
-                        </option>
+                        <option value="480">Commercial Invoice (480) - Standard Invoice</option>
+                        <option value="81">Credit Note (81) - Returns/Adjustments</option>
                       </>
                     )}
                   </select>
@@ -430,41 +521,49 @@ export default function CreateInvoice() {
                   )}
                 </div>
 
-                {isCreditNote && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Original Invoice <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={formData.preceding_invoice_id}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          preceding_invoice_id: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      <option value="">
-                        {loadingOriginalInvoices
-                          ? "Loading invoices..."
-                          : "Select original invoice"}
-                      </option>
-                      {originalInvoices.map((inv) => (
-                        <option key={inv.id} value={inv.id}>
-                          {inv.invoice_number} - {inv.customer_name} -{" "}
-                          {inv.currency_code} {inv.total_amount.toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedOriginalInvoice && (
-                      <p className="mt-1 text-xs text-gray-500">
-                        Max credit: {selectedOriginalInvoice.currency_code}{" "}
-                        {selectedOriginalInvoice.total_amount.toFixed(2)}
-                      </p>
-                    )}
+            {isCreditNote && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Original Invoice <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.preceding_invoice_id}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      preceding_invoice_id: e.target.value,
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="">
+                    {loadingOriginalInvoices
+                      ? "Loading invoices..."
+                      : "Select original invoice"}
+                  </option>
+                  {originalInvoices.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.invoice_number} - {inv.customer_name} -{" "}
+                      {inv.currency_code} {inv.total_amount.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+                {selectedOriginalInvoice && (
+                  <div className="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
+                    <p className="text-xs text-gray-600 mb-1">
+                      <strong>Original Invoice:</strong> {selectedOriginalInvoice.invoice_number}
+                    </p>
+                    <p className="text-xs text-gray-600 mb-1">
+                      <strong>Customer:</strong> {selectedOriginalInvoice.customer_name}
+                    </p>
+                    <p className="text-xs font-semibold text-blue-700">
+                      Max Credit: {selectedOriginalInvoice.currency_code}{" "}
+                      {selectedOriginalInvoice.total_amount.toFixed(2)}
+                    </p>
                   </div>
                 )}
+              </div>
+            )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
