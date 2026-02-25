@@ -10123,10 +10123,15 @@ async def bulk_import_invoices(
             tax_amount_calc = prepared["tax_amount_calc"]
             total_amount_calc = prepared["total_amount_calc"]
 
+            # Auto-generate invoice number if not provided
+            invoice_number = invoice_data['invoice_number']
+            if not invoice_number:
+                invoice_number = generate_invoice_number(company_id, db)
+
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
                 company_id=company_id,
-                invoice_number=invoice_data['invoice_number'],
+                invoice_number=invoice_number,
                 invoice_type=invoice_type,
                 issue_date=datetime.strptime(invoice_data['issue_date'],
                                              '%Y-%m-%d').date()
