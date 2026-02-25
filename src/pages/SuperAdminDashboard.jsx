@@ -141,7 +141,6 @@ export default function SuperAdminDashboard() {
   const [q, setQ] = useState("");
   const [plan, setPlan] = useState("all");
   const [status, setStatus] = useState("all");
-  const [minInvoices, setMinInvoices] = useState("");
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -220,15 +219,50 @@ export default function SuperAdminDashboard() {
         status: status,
       });
 
-      // Reload stats
-      const response = await api.get(
-        `/admin/stats?from=${fromISO}&to=${toISO}`,
+      // Wait a brief moment for backend to process the update
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Reload both admin stats and platform stats with current date range
+      const fromISO = range.from.toISOString();
+      const toISO = range.to.toISOString();
+      const [statsResponse, platformResponse] = await Promise.all([
+        api.get(`/admin/stats?from=${fromISO}&to=${toISO}`),
+        api.get(`/admin/platform-stats?from_date=${fromISO}&to_date=${toISO}`),
+      ]);
+
+      setStats(statsResponse.data);
+      setPlatformStats(platformResponse.data);
+
+      // Debug: log suspended companies count
+      const suspendedCount =
+        statsResponse.data?.companies?.all?.filter(
+          (c) => c.status?.toLowerCase() === "suspended",
+        ).length ?? 0;
+      console.log(
+        "Suspended companies after save:",
+        suspendedCount,
+        statsResponse.data?.companies?.all?.map((c) => ({
+          name: c.name,
+          status: c.status,
+        })),
       );
-      setStats(response.data);
+
+      // Auto-set filter to show the newly suspended/unsuspended company
+      const newStatus = isSuspended ? "suspended" : "all";
+      setStatus(newStatus);
 
       setShowEditModal(false);
       setEditingCompany(null);
       alert("Company updated successfully!");
+
+      // Scroll to show the updated company
+      setTimeout(
+        () =>
+          document
+            .querySelector("#company-explorer")
+            ?.scrollIntoView({ behavior: "smooth" }),
+        100,
+      );
     } catch (error) {
       console.error("Failed to update company:", error);
       alert(
@@ -277,17 +311,6 @@ export default function SuperAdminDashboard() {
     fetchPlatformStats();
   }, [fromISO, toISO]);
 
-  const mtdDelta = useMemo(() => {
-    if (!stats) return { pct: "", positive: true };
-    const { monthToDate, lastMonth } = stats.invoices;
-    const delta =
-      lastMonth === 0 ? 0 : ((monthToDate - lastMonth) / lastMonth) * 100;
-    return {
-      pct: `${delta > 0 ? "+" : ""}${delta.toFixed(1)}% vs last month`,
-      positive: delta >= 0,
-    };
-  }, [stats]);
-
   const filteredCompanies = useMemo(() => {
     const list = stats?.companies.all || [];
     const ql = q.trim().toLowerCase();
@@ -295,12 +318,10 @@ export default function SuperAdminDashboard() {
       if (plan !== "all" && c.plan !== plan) return false;
       // Convert backend uppercase status to lowercase for comparison
       if (status !== "all" && c.status?.toLowerCase() !== status) return false;
-      if (minInvoices && c.invoicesThisMonth < Number(minInvoices))
-        return false;
       if (ql && !`${c.name}`.toLowerCase().includes(ql)) return false;
       return true;
     });
-  }, [stats, q, plan, status, minInvoices]);
+  }, [stats, q, plan, status]);
 
   const navigationButtons = (
     <>
@@ -591,14 +612,9 @@ export default function SuperAdminDashboard() {
             onClick={() => navigate("/admin/companies/inactive")}
           />
           <Stat
-            label="Invoices month-to-date"
-            value={
-              loading
-                ? "—"
-                : (stats?.invoices.monthToDate.toLocaleString() ?? "—")
-            }
-            delta={mtdDelta.pct}
-            positive={mtdDelta.positive}
+            label="Suspended companies"
+            value={loading ? "—" : (stats?.companies.suspended ?? "—")}
+            onClick={() => navigate("/admin/companies/suspended")}
           />
         </div>
 
@@ -707,14 +723,6 @@ export default function SuperAdminDashboard() {
                   <SelectItem value="suspended">Suspended</SelectItem>
                 </SelectContent>
               </Select>
-              <Input
-                type="number"
-                min={0}
-                placeholder="Min inv."
-                value={minInvoices}
-                onChange={(e) => setMinInvoices(e.target.value)}
-                className="w-[120px] h-9 text-sm"
-              />
               <Button
                 variant="outline"
                 size="sm"
@@ -743,7 +751,7 @@ export default function SuperAdminDashboard() {
                     <td className="px-4 py-3">{c.name}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
                       >
                         {c.status}
                       </span>
