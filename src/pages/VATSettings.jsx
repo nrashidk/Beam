@@ -99,7 +99,11 @@ export default function VATSettings() {
       formData.append("file", file);
       await settingsAPI.uploadVatCertificate(formData);
       setSuccess("VAT certificate uploaded successfully!");
-      await fetchSettings();
+      // Only update the certificate status locally, don't refresh entire settings
+      setSettings((prev) => ({
+        ...prev,
+        vat_certificate_uploaded: true,
+      }));
       setCertificateFile(null);
     } catch (error) {
       setError(error.response?.data?.detail || "Failed to upload certificate");

@@ -135,12 +135,14 @@ export default function BillingSettings() {
   }
 
   const trialDaysRemaining = trialStatus?.trial_days_remaining || 0;
-  const trialInvoicesRemaining = trialStatus?.trial_invoices_remaining || 0;
   const trialInvoiceLimit = trialStatus?.free_plan_invoice_limit || 100;
   const trialDurationMonths = trialStatus?.free_plan_duration_months || 1;
   const trialTotalDays = trialDurationMonths * 30;
   const invoicesUsed = trialStatus?.trial_invoice_count || 0;
   const daysUsed = trialTotalDays - trialDaysRemaining;
+
+  // Calculate invoices remaining (backend might not send this directly)
+  const trialInvoicesRemaining = Math.max(0, trialInvoiceLimit - invoicesUsed);
 
   // Determine which metric to show based on free_plan_type
   // Default to INVOICE_COUNT if not explicitly set to DURATION
@@ -160,16 +162,11 @@ export default function BillingSettings() {
     ENTERPRISE: { monthly: 799, name: "Enterprise" },
   };
 
-  const calculatePrice = (tier) => {
-    const monthlyPrice = pricingTiers[tier]?.monthly || 0;
-    const discounts = {
-      1: 0,
-      3: tier === "ENTERPRISE" ? 10 : 5,
-      6: tier === "ENTERPRISE" ? 15 : 10,
-    };
-    const discount = discounts[selectedCycle] || 0;
-    const subtotal = monthlyPrice * selectedCycle;
-    return Math.round(subtotal - (subtotal * discount) / 100);
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "N/A";
+    return date.toLocaleDateString();
   };
 
   return (
@@ -230,15 +227,11 @@ export default function BillingSettings() {
                   )}
 
                   {showDaysRemaining && (
-                    <div
-                      className={
-                        showInvoiceCount ? "opacity-40 cursor-not-allowed" : ""
-                      }
-                    >
+                    <div>
                       <div className="flex justify-between text-sm mb-1">
-                        <span>Days Remaining</span>
+                        <span>Days Used</span>
                         <span>
-                          {trialDaysRemaining} / {trialTotalDays} days
+                          {daysUsed} / {trialTotalDays} days
                         </span>
                       </div>
                       <div className="bg-white/20 rounded-full h-2 overflow-hidden">
@@ -304,13 +297,10 @@ export default function BillingSettings() {
                       <div>
                         <div className="text-gray-600 mb-1">Current Period</div>
                         <div className="font-medium">
-                          {new Date(
-                            subscription.current_period_start,
-                          ).toLocaleDateString()}{" "}
-                          -
-                          {new Date(
-                            subscription.current_period_end,
-                          ).toLocaleDateString()}
+                          {subscription.current_period_start &&
+                          subscription.current_period_end
+                            ? `${formatDate(subscription.current_period_start)} - ${formatDate(subscription.current_period_end)}`
+                            : `${invoicesUsed} / ${trialInvoiceLimit} invoices used`}
                         </div>
                       </div>
                       <div>
