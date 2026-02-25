@@ -39,9 +39,8 @@ const STATUS_CONFIG = {
   },
   inactive: {
     title: 'Inactive Companies',
-    description: 'Suspended or inactive companies',
-    badgeClass: 'bg-gray-100 text-gray-800',
-    apiStatus: 'INACTIVE'
+    description: 'Companies that are pending review or rejected',
+    badgeClass: 'bg-gray-100 text-gray-800'
   },
   suspended: {
     title: 'Suspended Companies',
@@ -68,8 +67,22 @@ export default function CompanyManagement() {
   const fetchCompanies = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/admin/companies?status=${config.apiStatus}`);
-      setCompanies(response.data);
+      let allCompanies = [];
+      
+      if (status === 'inactive') {
+        // For inactive, fetch both PENDING_REVIEW and REJECTED companies
+        const [pendingRes, rejectedRes] = await Promise.all([
+          api.get('/admin/companies?status=PENDING_REVIEW'),
+          api.get('/admin/companies?status=REJECTED')
+        ]);
+        allCompanies = [...(pendingRes.data || []), ...(rejectedRes.data || [])];
+      } else {
+        // For other statuses, use the configured API status
+        const response = await api.get(`/admin/companies?status=${config.apiStatus}`);
+        allCompanies = response.data || [];
+      }
+      
+      setCompanies(allCompanies);
     } catch (error) {
       console.error('Failed to fetch companies', error);
     } finally {

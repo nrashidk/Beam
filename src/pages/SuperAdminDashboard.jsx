@@ -440,9 +440,10 @@ export default function SuperAdminDashboard() {
           />
           <Stat 
             label="Suspended companies" 
-            value={loading ? '—' : (stats?.companies.all?.filter(c => c.status?.toLowerCase() === 'suspended').length ?? 0)} 
+            value={loading ? '—' : stats?.companies.suspended ?? '—'} 
             onClick={() => navigate('/admin/companies/suspended')}
           />
+
         </div>
 
         <div>

@@ -3855,8 +3855,10 @@ def get_admin_stats(
         CompanyDB.status == CompanyStatus.REJECTED).count()
     active_companies = db.query(CompanyDB).filter(
         CompanyDB.status == CompanyStatus.ACTIVE).count()
-    inactive_companies = db.query(CompanyDB).filter(
+    suspended_companies = db.query(CompanyDB).filter(
         CompanyDB.status == CompanyStatus.SUSPENDED).count()
+    inactive_companies = db.query(CompanyDB).filter(
+        (CompanyDB.status == CompanyStatus.PENDING_REVIEW) | (CompanyDB.status == CompanyStatus.REJECTED)).count()
 
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
@@ -3944,6 +3946,7 @@ def get_admin_stats(
         "companies": {
             "active": active_companies,
             "inactive": inactive_companies,
+            "suspended": suspended_companies,
             "all": all_companies_list
         },
         "invoices": {
