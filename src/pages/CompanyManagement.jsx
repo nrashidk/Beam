@@ -42,6 +42,12 @@ const STATUS_CONFIG = {
     description: 'Suspended or inactive companies',
     badgeClass: 'bg-gray-100 text-gray-800',
     apiStatus: 'INACTIVE'
+  },
+  suspended: {
+    title: 'Suspended Companies',
+    description: 'Companies that have been suspended from the platform',
+    badgeClass: 'bg-orange-100 text-orange-800',
+    apiStatus: 'SUSPENDED'
   }
 };
 

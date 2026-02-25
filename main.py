@@ -3884,7 +3884,7 @@ def get_admin_stats(
             "name":
             company.legal_name or "Unnamed Company",
             "status":
-            "active" if company.status == CompanyStatus.ACTIVE else "inactive",
+            "active" if company.status == CompanyStatus.ACTIVE else ("suspended" if company.status == CompanyStatus.SUSPENDED else "inactive"),
             "invoicesThisMonth":
             invoices_this_month,
             "invoicesLimit":
