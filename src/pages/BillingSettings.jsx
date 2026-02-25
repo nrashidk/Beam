@@ -162,16 +162,11 @@ export default function BillingSettings() {
     ENTERPRISE: { monthly: 799, name: "Enterprise" },
   };
 
-  const calculatePrice = (tier) => {
-    const monthlyPrice = pricingTiers[tier]?.monthly || 0;
-    const discounts = {
-      1: 0,
-      3: tier === "ENTERPRISE" ? 10 : 5,
-      6: tier === "ENTERPRISE" ? 15 : 10,
-    };
-    const discount = discounts[selectedCycle] || 0;
-    const subtotal = monthlyPrice * selectedCycle;
-    return Math.round(subtotal - (subtotal * discount) / 100);
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleDateString();
   };
 
   return (
@@ -230,10 +225,10 @@ export default function BillingSettings() {
                   )}
 
                   {showDaysRemaining && (
-                    <div className={showInvoiceCount ? "opacity-40 cursor-not-allowed" : ""}>
+                    <div>
                       <div className="flex justify-between text-sm mb-1">
-                        <span>Days Remaining</span>
-                        <span>{trialDaysRemaining} / {trialTotalDays} days</span>
+                        <span>Days Used</span>
+                        <span>{daysUsed} / {trialTotalDays} days</span>
                       </div>
                       <div className="bg-white/20 rounded-full h-2 overflow-hidden">
                         <div
@@ -298,13 +293,10 @@ export default function BillingSettings() {
                       <div>
                         <div className="text-gray-600 mb-1">Current Period</div>
                         <div className="font-medium">
-                          {new Date(
-                            subscription.current_period_start,
-                          ).toLocaleDateString()}{" "}
-                          -
-                          {new Date(
-                            subscription.current_period_end,
-                          ).toLocaleDateString()}
+                          {subscription.current_period_start && subscription.current_period_end 
+                            ? `${formatDate(subscription.current_period_start)} - ${formatDate(subscription.current_period_end)}`
+                            : `${invoicesUsed} / ${trialInvoiceLimit} invoices used`
+                          }
                         </div>
                       </div>
                       <div>
