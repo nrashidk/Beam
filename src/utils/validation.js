@@ -37,7 +37,7 @@ export const validateEmail = (value) => {
  */
 export const validatePassword = (value) => {
   if (!value) return { isValid: true, error: '' };
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#_\-])[A-Za-z\d@$!%*?&#_\-]{8,}$/;
   const isValid = passwordRegex.test(value);
   return {
     isValid,
@@ -79,7 +79,7 @@ export const formatEmail = (value) => {
 export const VALIDATION_PATTERNS = {
   phone: '[0-9]{10}',
   email: '[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}',
-  password: '^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#])[A-Za-z\\d@$!%*?&#]{8,}$',
+  password: '^(?=.*[a-z])(?=.*[A-Z])(?=.*[@$!%*?&#_\\-])[A-Za-z\\d@$!%*?&#_\\-]{8,}$',
   trn: '[0-9]{15}'
 };
 
