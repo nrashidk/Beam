@@ -135,12 +135,14 @@ export default function BillingSettings() {
   }
 
   const trialDaysRemaining = trialStatus?.trial_days_remaining || 0;
-  const trialInvoicesRemaining = trialStatus?.trial_invoices_remaining || 0;
   const trialInvoiceLimit = trialStatus?.free_plan_invoice_limit || 100;
   const trialDurationMonths = trialStatus?.free_plan_duration_months || 1;
   const trialTotalDays = trialDurationMonths * 30;
   const invoicesUsed = trialStatus?.trial_invoice_count || 0;
   const daysUsed = trialTotalDays - trialDaysRemaining;
+  
+  // Calculate invoices remaining (backend might not send this directly)
+  const trialInvoicesRemaining = Math.max(0, trialInvoiceLimit - invoicesUsed);
   
   // Determine which metric to show based on free_plan_type
   // Default to INVOICE_COUNT if not explicitly set to DURATION
