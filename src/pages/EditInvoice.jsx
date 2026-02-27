@@ -60,6 +60,8 @@ export default function EditInvoice() {
   const [toast, setToast] = useState(null);
   const [vatEnabled, setVatEnabled] = useState(false);
   const [invoice, setInvoice] = useState(null);
+  const [originalInvoices, setOriginalInvoices] = useState([]);
+  const [loadingOriginalInvoices, setLoadingOriginalInvoices] = useState(false);
   const [formData, setFormData] = useState({
     invoice_type: "380",
     issue_date: new Date().toISOString().split("T")[0],
@@ -75,6 +77,7 @@ export default function EditInvoice() {
     payment_due_days: 30,
     invoice_notes: "",
     reference_number: "",
+    preceding_invoice_id: "",
     line_items: [buildDefaultLineItem(false)],
   });
 
@@ -124,8 +127,29 @@ export default function EditInvoice() {
           payment_due_days: 30,
           invoice_notes: invoiceData.invoice_notes || "",
           reference_number: invoiceData.reference_number || "",
+          preceding_invoice_id: invoiceData.preceding_invoice_id || "",
           line_items: invoiceData.line_items || [buildDefaultLineItem(vatStatus)],
         });
+
+        // Fetch original invoices if this is a credit note
+        const isCreditNote = invoiceData.invoice_type === "381" || invoiceData.invoice_type === "81";
+        if (isCreditNote) {
+          const originalType = invoiceData.invoice_type === "381" ? "380" : "480";
+          setLoadingOriginalInvoices(true);
+          try {
+            const originalRes = await apiClient.get(
+              `/invoices?invoice_type=${originalType}`,
+            );
+            const originalList = Array.isArray(originalRes.data.results || originalRes.data) 
+              ? (originalRes.data.results || originalRes.data)
+              : [];
+            setOriginalInvoices(originalList.filter((inv) => inv.status !== "CANCELLED"));
+          } catch (err) {
+            console.error("Failed to load original invoices:", err);
+          } finally {
+            setLoadingOriginalInvoices(false);
+          }
+        }
       } catch (error) {
         const errorMessage =
           error.response?.data?.detail ||
@@ -168,7 +192,35 @@ export default function EditInvoice() {
 
   const updateLineItem = (index, field, value) => {
     const newItems = [...formData.line_items];
-    newItems[index] = { ...newItems[index], [field]: value };
+    const item = { ...newItems[index], [field]: value };
+
+    // Smart tax calculation when tax_code changes
+    if (field === "tax_code") {
+      switch (value) {
+        case "SR": // Standard Rate
+          item.tax_category = "S";
+          item.tax_percent = 5.0;
+          break;
+        case "ZR": // Zero Rated
+          item.tax_category = "Z";
+          item.tax_percent = 0;
+          break;
+        case "ES": // Exempt
+          item.tax_category = "E";
+          item.tax_percent = 0;
+          break;
+        case "RC": // Reverse Charge
+          item.tax_category = "S";
+          item.tax_percent = 0;
+          break;
+        case "OP": // Out of Scope
+          item.tax_category = "O";
+          item.tax_percent = 0;
+          break;
+      }
+    }
+
+    newItems[index] = item;
     setFormData({ ...formData, line_items: newItems });
   };
 
@@ -344,6 +396,37 @@ export default function EditInvoice() {
                     Invoice type cannot be changed after creation
                   </p>
                 </div>
+
+                {(formData.invoice_type === "381" || formData.invoice_type === "81") && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Original Invoice <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={formData.preceding_invoice_id}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          preceding_invoice_id: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">
+                        {loadingOriginalInvoices
+                          ? "Loading invoices..."
+                          : "Select original invoice"}
+                      </option>
+                      {originalInvoices.map((inv) => (
+                        <option key={inv.id} value={inv.id}>
+                          {inv.invoice_number} - {inv.customer_name} -{" "}
+                          {inv.currency_code} {inv.total_amount.toFixed(2)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -581,47 +664,41 @@ export default function EditInvoice() {
                       className="px-3 py-2 border border-gray-300 rounded-lg"
                     />
 
-                    <select
-                      value={item.tax_category}
-                      onChange={(e) =>
-                        updateLineItem(index, "tax_category", e.target.value)
-                      }
-                      disabled={!vatEnabled}
-                      className="px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-500"
-                    >
-                      {vatEnabled ? (
-                        <>
-                          <option value="S">Standard (5%)</option>
-                          <option value="Z">Zero Rated</option>
-                          <option value="E">Exempt</option>
-                          <option value="O">Out of Scope</option>
-                        </>
-                      ) : (
-                        <option value="O">Out of Scope</option>
-                      )}
-                    </select>
-
-                    {vatEnabled && (
-                      <div className="col-span-2">
-                        <label className="block text-xs font-medium text-indigo-700 mb-1">
-                          UAE VAT Tax Code *
-                        </label>
-                        <select
-                          value={item.tax_code || "SR"}
-                          onChange={(e) =>
-                            updateLineItem(index, "tax_code", e.target.value)
-                          }
-                          className="w-full px-3 py-2 border border-indigo-300 rounded-lg bg-indigo-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                          required={vatEnabled}
-                        >
-                          <option value="SR">SR - Standard Rate (5%)</option>
-                          <option value="ZR">ZR - Zero Rated (0%)</option>
-                          <option value="ES">ES - Exempt</option>
-                          <option value="RC">RC - Reverse Charge</option>
-                          <option value="OP">OP - Out of Scope</option>
-                        </select>
-                      </div>
-                    )}
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-indigo-700 mb-1">
+                        UAE VAT Tax Code *
+                      </label>
+                      <select
+                        value={item.tax_code || (vatEnabled ? "SR" : "OP")}
+                        onChange={(e) =>
+                          updateLineItem(index, "tax_code", e.target.value)
+                        }
+                        disabled={!vatEnabled}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-indigo-50 focus:ring-2 focus:ring-indigo-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500 disabled:border-gray-300"
+                        required
+                      >
+                        {vatEnabled && formData.invoice_type !== "480" ? (
+                          <>
+                            <option value="SR">SR - Standard Rate (5%)</option>
+                            <option value="ZR">ZR - Zero Rated (0%)</option>
+                            <option value="ES">ES - Exempt</option>
+                            <option value="RC">RC - Reverse Charge</option>
+                            <option value="OP">OP - Out of Scope</option>
+                          </>
+                        ) : vatEnabled && formData.invoice_type === "480" ? (
+                          <>
+                            <option value="ZR">ZR - Zero Rated (0%)</option>
+                            <option value="ES">ES - Exempt</option>
+                            <option value="RC">RC - Reverse Charge</option>
+                            <option value="OP">OP - Out of Scope</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="OP">OP - Out of Scope</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
 
                     <div className="text-right">
                       <span className="text-sm text-gray-600">
