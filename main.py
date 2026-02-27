@@ -10138,6 +10138,9 @@ async def bulk_import_invoices(
                 "errors": bulk_errors
             }
 
+        # Track invoice counts per type for this batch to avoid duplicate numbers
+        invoice_type_counts = {}
+        
         for prepared in prepared_invoices:
             invoice_data = prepared["invoice_data"]
             invoice_type = prepared["invoice_type"]
@@ -10148,7 +10151,29 @@ async def bulk_import_invoices(
             # Auto-generate invoice number if not provided
             invoice_number = invoice_data['invoice_number']
             if not invoice_number:
-                invoice_number = generate_invoice_number(company_id, db, invoice_type)
+                # Get invoice type value for counting
+                invoice_type_value = invoice_type.value if hasattr(invoice_type, 'value') else str(invoice_type)
+                
+                # Initialize counter for this type if not already done
+                if invoice_type_value not in invoice_type_counts:
+                    # Start with current database count for this type
+                    invoice_type_counts[invoice_type_value] = db.query(InvoiceDB).filter(
+                        InvoiceDB.company_id == company_id,
+                        InvoiceDB.invoice_type == invoice_type
+                    ).count()
+                
+                # Increment counter for this type
+                invoice_type_counts[invoice_type_value] += 1
+                
+                # Generate number using the batch-aware counter
+                prefix_map = {
+                    "380": "TI",      # Tax Invoice
+                    "381": "TCN",     # Tax Credit Note
+                    "480": "CI",      # Commercial Invoice
+                    "81": "CN"        # Credit Note
+                }
+                prefix = prefix_map.get(invoice_type_value, "TI")
+                invoice_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
