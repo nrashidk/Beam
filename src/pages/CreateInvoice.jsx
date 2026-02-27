@@ -84,7 +84,7 @@ export default function CreateInvoice() {
   };
 
   const [formData, setFormData] = useState({
-    invoice_type: "380",
+    invoice_type: "480", // Default to Commercial Invoice (safer for non-VAT companies)
     issue_date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
@@ -202,7 +202,7 @@ export default function CreateInvoice() {
           line_items: originalInvoice.line_items.map((item) => ({
             item_name: item.item_name,
             item_description: item.item_description || "",
-            quantity: 0, // Start with 0 quantity for user to adjust
+            quantity: item.quantity, // Copy quantity from original invoice
             unit_price: item.unit_price,
             tax_category: item.tax_category,
             tax_percent: item.tax_percent,
@@ -582,22 +582,6 @@ export default function CreateInvoice() {
                         </option>
                       ))}
                     </select>
-                    {selectedOriginalInvoice && (
-                      <div className="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
-                        <p className="text-xs text-gray-600 mb-1">
-                          <strong>Original Invoice:</strong>{" "}
-                          {selectedOriginalInvoice.invoice_number}
-                        </p>
-                        <p className="text-xs text-gray-600 mb-1">
-                          <strong>Customer:</strong>{" "}
-                          {selectedOriginalInvoice.customer_name}
-                        </p>
-                        <p className="text-xs font-semibold text-blue-700">
-                          Max Credit: {selectedOriginalInvoice.currency_code}{" "}
-                          {selectedOriginalInvoice.total_amount.toFixed(2)}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -631,6 +615,21 @@ export default function CreateInvoice() {
                     required
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
+
+                  {selectedOriginalInvoice && (
+                    <div className="mt-2 p-3 bg-blue-50 rounded border border-blue-200">
+                      {/* <p className="text-xs text-gray-600 mb-1">
+                      <strong>Original Invoice:</strong> {selectedOriginalInvoice.invoice_number}
+                    </p>
+                    <p className="text-xs text-gray-600 mb-1">
+                      <strong>Customer:</strong> {selectedOriginalInvoice.customer_name}
+                    </p> */}
+                      <p className="text-xs font-semibold text-blue-700">
+                        Max Credit: {selectedOriginalInvoice.currency_code}{" "}
+                        {selectedOriginalInvoice.total_amount.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

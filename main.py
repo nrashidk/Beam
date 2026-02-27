@@ -1372,6 +1372,31 @@ def get_password_hash(password: str) -> str:
     return hashed.decode('utf-8')
 
 
+def generate_temp_password(length: int = 16) -> str:
+    """Generate a secure temporary password that meets complexity requirements
+
+    Requirements: Minimum 8 characters with uppercase, lowercase, special char, and digit
+    """
+    import string
+
+    # Ensure we have at least one of each required character type
+    uppercase = secrets.choice(string.ascii_uppercase)
+    lowercase = secrets.choice(string.ascii_lowercase)
+    digit = secrets.choice(string.digits)
+    special = secrets.choice('!@#$%^&*')
+
+    # Fill the rest with random characters from all types
+    remaining_length = max(length - 4, 4)
+    all_chars = string.ascii_letters + string.digits + '!@#$%^&*'
+    remaining = ''.join(secrets.choice(all_chars) for _ in range(remaining_length))
+
+    # Combine and shuffle
+    password_list = list(uppercase + lowercase + digit + special + remaining)
+    secrets.SystemRandom().shuffle(password_list)
+
+    return ''.join(password_list)
+
+
 def authenticate_user(email: str, password: str, db: Session):
     """Authenticate user (super admin, company admin, etc) by email and password"""
     user = db.query(UserDB).filter(UserDB.email == email).first()
@@ -1864,6 +1889,10 @@ class InvoiceOut(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
+
+    # Credit note fields
+    preceding_invoice_id: Optional[str] = None
+    credit_note_reason: Optional[str] = None
 
     # Documents
     xml_file_path: Optional[str]
@@ -4566,9 +4595,8 @@ def invite_user(payload: UserInvite,
 
     # Create new user
     user_id = f"usr_{uuid4().hex[:12]}"
-    temp_password = secrets.token_urlsafe(16)
-    password_hash = bcrypt.hashpw(temp_password.encode('utf-8'),
-                                  bcrypt.gensalt()).decode('utf-8')
+    temp_password = generate_temp_password(16)
+    password_hash = get_password_hash(temp_password)
 
     new_user = UserDB(id=user_id,
                       email=payload.email,
@@ -4668,15 +4696,33 @@ def remove_team_member(
 # ==================== INVOICE ENDPOINTS ====================
 
 
-def generate_invoice_number(company_id: str, db: Session) -> str:
-    """Generate sequential invoice number for company"""
-    # Count existing invoices for this company
+def generate_invoice_number(company_id: str, db: Session, invoice_type: str = "380") -> str:
+    """Generate sequential invoice number for company with type-specific prefix"""
+    # Map invoice type to prefix
+    prefix_map = {
+        "380": "TI",      # Tax Invoice
+        "381": "TCN",     # Tax Credit Note
+        "480": "CI",      # Commercial Invoice
+        "81": "CN"        # Credit Note
+    }
+
+    # Handle both enum and string types
+    if hasattr(invoice_type, 'value'):
+        invoice_type_value = invoice_type.value  # Extract enum value
+    else:
+        invoice_type_value = str(invoice_type)
+
+    # Get prefix, default to TI if unknown type
+    prefix = prefix_map.get(invoice_type_value, "TI")
+
+    # Count existing invoices of this type for this company
     count = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company_id).count()
+        InvoiceDB.company_id == company_id,
+        InvoiceDB.invoice_type == invoice_type).count()
     next_num = count + 1
-    # Format: INV-YYYYMM-XXXX (e.g., INV-202510-0001)
-    year_month = datetime.utcnow().strftime("%Y%m")
-    return f"INV-{year_month}-{next_num:04d}"
+
+    # Format: PREFIX-XXXXX (e.g., TI-00001, CN-00001)
+    return f"{prefix}-{next_num:05d}"
 
 
 def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
@@ -4779,7 +4825,7 @@ def create_invoice(
 
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
-    invoice_number = generate_invoice_number(company.id, db)
+    invoice_number = generate_invoice_number(company.id, db, payload.invoice_type)
 
     # Calculate totals
     subtotal = 0.0
@@ -4930,6 +4976,13 @@ def create_invoice(
                 400,
                 "Credit note total cannot exceed the original invoice total.")
 
+        # Deduct credit note amount from original invoice's amount_due
+        new_amount_due = float(
+            Decimal(str(original_invoice.amount_due)) - Decimal(str(invoice.total_amount)))
+        # Ensure amount_due doesn't go below 0
+        original_invoice.amount_due = max(0.0, new_amount_due)
+        db.add(original_invoice)  # Explicitly mark for update
+
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
         total_amount=Decimal(str(invoice.total_amount)),
@@ -4969,6 +5022,8 @@ def create_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,
@@ -5326,6 +5381,8 @@ def get_invoice(invoice_id: str,
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,
@@ -5503,6 +5560,8 @@ def update_invoice(invoice_id: str,
             tax_amount=invoice.tax_amount,
             total_amount=invoice.total_amount,
             amount_due=invoice.amount_due,
+            preceding_invoice_id=invoice.preceding_invoice_id,
+            credit_note_reason=invoice.credit_note_reason,
             xml_file_path=invoice.xml_file_path,
             pdf_file_path=invoice.pdf_file_path,
             share_token=invoice.share_token,
@@ -5571,6 +5630,10 @@ def verify_invoice_payment(
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
+
+    # Ensure invoice is issued before payment can be verified
+    if invoice.status == InvoiceStatus.DRAFT:
+        raise HTTPException(400, "Cannot verify payment for a DRAFT invoice. Please issue the invoice first.")
 
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(400, "Invoice is already marked as paid")
@@ -6689,6 +6752,8 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,
@@ -10116,6 +10181,9 @@ async def bulk_import_invoices(
                 "errors": bulk_errors
             }
 
+        # Track invoice counts per type for this batch to avoid duplicate numbers
+        invoice_type_counts = {}
+
         for prepared in prepared_invoices:
             invoice_data = prepared["invoice_data"]
             invoice_type = prepared["invoice_type"]
@@ -10126,7 +10194,29 @@ async def bulk_import_invoices(
             # Auto-generate invoice number if not provided
             invoice_number = invoice_data['invoice_number']
             if not invoice_number:
-                invoice_number = generate_invoice_number(company_id, db)
+                # Get invoice type value for counting
+                invoice_type_value = invoice_type.value if hasattr(invoice_type, 'value') else str(invoice_type)
+
+                # Initialize counter for this type if not already done
+                if invoice_type_value not in invoice_type_counts:
+                    # Start with current database count for this type
+                    invoice_type_counts[invoice_type_value] = db.query(InvoiceDB).filter(
+                        InvoiceDB.company_id == company_id,
+                        InvoiceDB.invoice_type == invoice_type
+                    ).count()
+
+                # Increment counter for this type
+                invoice_type_counts[invoice_type_value] += 1
+
+                # Generate number using the batch-aware counter
+                prefix_map = {
+                    "380": "TI",      # Tax Invoice
+                    "381": "TCN",     # Tax Credit Note
+                    "480": "CI",      # Commercial Invoice
+                    "81": "CN"        # Credit Note
+                }
+                prefix = prefix_map.get(invoice_type_value, "TI")
+                invoice_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),

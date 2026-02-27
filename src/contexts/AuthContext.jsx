@@ -166,7 +166,11 @@ export const AuthProvider = ({ children }) => {
     loading,
     isAuthenticated: !!user,
     isSuperAdmin: user?.role === "SUPER_ADMIN",
-    isCompanyAdmin: user?.role === "COMPANY_ADMIN" || user?.role === "COMPANY",
+    isCompanyAdmin:
+      user?.role === "COMPANY_ADMIN" ||
+      user?.role === "COMPANY" ||
+      user?.role === "BUSINESS_ADMIN" ||
+      user?.role === "FINANCE_USER",
     mfaRequired,
     mfaMethod,
     userEmail,

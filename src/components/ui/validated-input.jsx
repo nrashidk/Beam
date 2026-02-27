@@ -1,33 +1,39 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
-import { Input } from './input';
-import { 
-  validatePhone, 
-  validateEmail, 
+import React, { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { Input } from "./input";
+import {
+  validatePhone,
+  validateEmail,
   validatePassword,
   validateTRN,
-  formatPhone, 
+  formatPhone,
   formatEmail,
   VALIDATION_PATTERNS,
-  VALIDATION_TITLES
-} from '../../utils/validation';
+  VALIDATION_TITLES,
+} from "../../utils/validation";
 
 /**
  * Phone Input with built-in validation
  */
-export function PhoneInput({ value, onChange, required = false, className = '', ...props }) {
-  const [error, setError] = useState('');
+export function PhoneInput({
+  value,
+  onChange,
+  required = false,
+  className = "",
+  ...props
+}) {
+  const [error, setError] = useState("");
 
   const handleChange = (e) => {
     const formatted = formatPhone(e.target.value);
-    
+
     if (formatted.length > 0) {
       const validation = validatePhone(formatted);
       setError(validation.error);
     } else {
-      setError('');
+      setError("");
     }
-    
+
     onChange({ target: { value: formatted, name: e.target.name } });
   };
 
@@ -45,9 +51,7 @@ export function PhoneInput({ value, onChange, required = false, className = '', 
         className={className}
         {...props}
       />
-      {error && (
-        <small className="text-xs text-red-500">{error}</small>
-      )}
+      {error && <small className="text-xs text-red-500">{error}</small>}
     </div>
   );
 }
@@ -55,19 +59,25 @@ export function PhoneInput({ value, onChange, required = false, className = '', 
 /**
  * Email Input with built-in validation
  */
-export function EmailInput({ value, onChange, required = false, className = '', ...props }) {
-  const [error, setError] = useState('');
+export function EmailInput({
+  value,
+  onChange,
+  required = false,
+  className = "",
+  ...props
+}) {
+  const [error, setError] = useState("");
 
   const handleChange = (e) => {
     const formatted = formatEmail(e.target.value);
-    
+
     if (formatted.length > 0) {
       const validation = validateEmail(formatted);
       setError(validation.error);
     } else {
-      setError('');
+      setError("");
     }
-    
+
     onChange({ target: { value: formatted, name: e.target.name } });
   };
 
@@ -84,30 +94,37 @@ export function EmailInput({ value, onChange, required = false, className = '', 
         className={className}
         {...props}
       />
-      {error && (
-        <small className="text-xs text-red-500">{error}</small>
-      )}
+      {error && <small className="text-xs text-red-500">{error}</small>}
     </div>
   );
 }
 
 /**
  * Password Input with built-in validation and visibility toggle
+ * @param {boolean} noValidation - Skip password validation (useful for login forms)
  */
-export function PasswordInput({ value, onChange, required = false, className = '', placeholder = 'Enter strong password', ...props }) {
-  const [error, setError] = useState('');
+export function PasswordInput({
+  value,
+  onChange,
+  required = false,
+  className = "",
+  placeholder = "Enter strong password",
+  noValidation = false,
+  ...props
+}) {
+  const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     const newValue = e.target.value;
-    
-    if (newValue.length > 0) {
+
+    if (!noValidation && newValue.length > 0) {
       const validation = validatePassword(newValue);
       setError(validation.error);
     } else {
-      setError('');
+      setError("");
     }
-    
+
     onChange(e);
   };
 
@@ -119,12 +136,12 @@ export function PasswordInput({ value, onChange, required = false, className = '
     <div>
       <div className="relative">
         <Input
-          type={showPassword ? 'text' : 'password'}
+          type={showPassword ? "text" : "password"}
           required={required}
           placeholder={placeholder}
-          minLength={8}
-          pattern={VALIDATION_PATTERNS.password}
-          title={VALIDATION_TITLES.password}
+          minLength={noValidation ? undefined : 8}
+          pattern={noValidation ? undefined : VALIDATION_PATTERNS.password}
+          title={noValidation ? undefined : VALIDATION_TITLES.password}
           value={value}
           onChange={handleChange}
           className={className}
@@ -134,7 +151,7 @@ export function PasswordInput({ value, onChange, required = false, className = '
           type="button"
           onClick={togglePasswordVisibility}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
-          aria-label={showPassword ? 'Hide password' : 'Show password'}
+          aria-label={showPassword ? "Hide password" : "Show password"}
         >
           {showPassword ? (
             <EyeOff className="h-5 w-5" />
@@ -143,9 +160,7 @@ export function PasswordInput({ value, onChange, required = false, className = '
           )}
         </button>
       </div>
-      {error && (
-        <small className="text-xs text-red-500">{error}</small>
-      )}
+      {error && <small className="text-xs text-red-500">{error}</small>}
     </div>
   );
 }
@@ -153,19 +168,25 @@ export function PasswordInput({ value, onChange, required = false, className = '
 /**
  * TRN Input with built-in validation
  */
-export function TRNInput({ value, onChange, required = false, className = '', ...props }) {
-  const [error, setError] = useState('');
+export function TRNInput({
+  value,
+  onChange,
+  required = false,
+  className = "",
+  ...props
+}) {
+  const [error, setError] = useState("");
 
   const handleChange = (e) => {
-    const formatted = e.target.value.replace(/[^0-9]/g, '');
-    
+    const formatted = e.target.value.replace(/[^0-9]/g, "");
+
     if (formatted.length > 0) {
       const validation = validateTRN(formatted);
       setError(validation.error);
     } else {
-      setError('');
+      setError("");
     }
-    
+
     onChange({ target: { value: formatted, name: e.target.name } });
   };
 
@@ -183,9 +204,7 @@ export function TRNInput({ value, onChange, required = false, className = '', ..
         className={className}
         {...props}
       />
-      {error && (
-        <small className="text-xs text-red-500">{error}</small>
-      )}
+      {error && <small className="text-xs text-red-500">{error}</small>}
     </div>
   );
 }
