@@ -84,7 +84,7 @@ export default function CreateInvoice() {
   };
 
   const [formData, setFormData] = useState({
-    invoice_type: "380",
+    invoice_type: "480", // Default to Commercial Invoice (safer for non-VAT companies)
     issue_date: new Date().toISOString().split("T")[0],
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()

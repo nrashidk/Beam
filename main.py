@@ -4668,15 +4668,33 @@ def remove_team_member(
 # ==================== INVOICE ENDPOINTS ====================
 
 
-def generate_invoice_number(company_id: str, db: Session) -> str:
-    """Generate sequential invoice number for company"""
-    # Count existing invoices for this company
+def generate_invoice_number(company_id: str, db: Session, invoice_type: str = "380") -> str:
+    """Generate sequential invoice number for company with type-specific prefix"""
+    # Map invoice type to prefix
+    prefix_map = {
+        "380": "TI",      # Tax Invoice
+        "381": "TCN",     # Tax Credit Note
+        "480": "CI",      # Commercial Invoice
+        "81": "CN"        # Credit Note
+    }
+    
+    # Handle both enum and string types
+    if hasattr(invoice_type, 'value'):
+        invoice_type_value = invoice_type.value  # Extract enum value
+    else:
+        invoice_type_value = str(invoice_type)
+    
+    # Get prefix, default to TI if unknown type
+    prefix = prefix_map.get(invoice_type_value, "TI")
+    
+    # Count existing invoices of this type for this company
     count = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company_id).count()
+        InvoiceDB.company_id == company_id,
+        InvoiceDB.invoice_type == invoice_type).count()
     next_num = count + 1
-    # Format: INV-YYYYMM-XXXX (e.g., INV-202510-0001)
-    year_month = datetime.utcnow().strftime("%Y%m")
-    return f"INV-{year_month}-{next_num:04d}"
+    
+    # Format: PREFIX-XXXXX (e.g., TI-00001, CN-00001)
+    return f"{prefix}-{next_num:05d}"
 
 
 def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
@@ -4779,7 +4797,7 @@ def create_invoice(
 
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
-    invoice_number = generate_invoice_number(company.id, db)
+    invoice_number = generate_invoice_number(company.id, db, payload.invoice_type)
 
     # Calculate totals
     subtotal = 0.0
@@ -10126,7 +10144,7 @@ async def bulk_import_invoices(
             # Auto-generate invoice number if not provided
             invoice_number = invoice_data['invoice_number']
             if not invoice_number:
-                invoice_number = generate_invoice_number(company_id, db)
+                invoice_number = generate_invoice_number(company_id, db, invoice_type)
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),

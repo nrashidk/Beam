@@ -11,7 +11,7 @@ class BulkImportValidator:
     def generate_invoice_template() -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
         template_data = {
-            'invoice_number': ['', '', 'CN-001', ''],  # Optional except for credit notes
+            'invoice_number': ['', '', 'CN-00001', ''],  # Optional - auto-generated (TI-, TCN-, CI-, CN-)
             'issue_date': ['2025-01-15', '2025-01-16', '2025-01-17', '2025-01-18'],
             'due_date': ['2025-02-15', '2025-02-16', '2025-02-17', '2025-02-18'],
             'invoice_type': ['COMMERCIAL', 'COMMERCIAL', 'CREDIT_NOTE', 'COMMERCIAL'],
@@ -20,7 +20,7 @@ class BulkImportValidator:
             'customer_trn': ['', '', '', ''],  # Optional for all
             'customer_address': ['Dubai, UAE', 'Abu Dhabi, UAE', 'Sharjah, UAE', 'Ajman, UAE'],
             'customer_city': ['Dubai', 'Abu Dhabi', 'Sharjah', 'Ajman'],
-            'preceding_invoice_number': ['', '', 'INV-001', ''],
+            'preceding_invoice_number': ['', '', 'CI-00001', ''],
             'item_name': ['Goods', 'Services', 'Refund', 'License'],
             'item_description': ['Consulting Services', 'Professional work', 'Refund for returned goods', 'Software License'],
             'quantity': ['10', '5', '8', '12'],
