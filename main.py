@@ -10191,9 +10191,23 @@ async def bulk_import_invoices(
             tax_amount_calc = prepared["tax_amount_calc"]
             total_amount_calc = prepared["total_amount_calc"]
 
-            # Auto-generate invoice number if not provided
+            # Check if invoice number is provided and already exists
             invoice_number = invoice_data['invoice_number']
-            if not invoice_number:
+            row_num = invoice_data.get('row_num', 'Unknown')
+            
+            if invoice_number:
+                # Check if this invoice number already exists in database
+                existing_invoice = db.query(InvoiceDB).filter(
+                    InvoiceDB.company_id == company_id,
+                    InvoiceDB.invoice_number == invoice_number
+                ).first()
+                if existing_invoice:
+                    # Invoice number already exists - reject this invoice
+                    bulk_errors.append(
+                        f"Row {row_num}: Invoice number '{invoice_number}' already exists in the system. Please use a different invoice number or leave blank for auto-generation.")
+                    continue
+            else:
+                # No invoice number provided - auto-generate
                 # Get invoice type value for counting
                 invoice_type_value = invoice_type.value if hasattr(invoice_type, 'value') else str(invoice_type)
                 
@@ -10216,7 +10230,18 @@ async def bulk_import_invoices(
                     "81": "CN"        # Credit Note
                 }
                 prefix = prefix_map.get(invoice_type_value, "TI")
-                invoice_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                
+                # Ensure generated number is unique (check if it conflicts with existing)
+                while db.query(InvoiceDB).filter(
+                    InvoiceDB.company_id == company_id,
+                    InvoiceDB.invoice_number == generated_number
+                ).first():
+                    # Increment counter and try again
+                    invoice_type_counts[invoice_type_value] += 1
+                    generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                
+                invoice_number = generated_number
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
@@ -10267,11 +10292,11 @@ async def bulk_import_invoices(
         db.commit()
 
         return {
-            "success": True,
+            "success": len(bulk_errors) == 0,  # Only true if no errors
             "total_rows": len(parsed_invoices),
             "valid_rows": created_count,
-            "errors": [],
-            "message": f"Successfully imported {created_count} invoices"
+            "errors": bulk_errors,  # Include any duplicate errors
+            "message": f"Successfully imported {created_count} invoices" + (f". {len(bulk_errors)} row(s) rejected due to duplicate invoice numbers." if bulk_errors else "")
         }
 
     except HTTPException:
