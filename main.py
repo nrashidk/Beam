@@ -1372,6 +1372,31 @@ def get_password_hash(password: str) -> str:
     return hashed.decode('utf-8')
 
 
+def generate_temp_password(length: int = 16) -> str:
+    """Generate a secure temporary password that meets complexity requirements
+    
+    Requirements: Minimum 8 characters with uppercase, lowercase, special char, and digit
+    """
+    import string
+    
+    # Ensure we have at least one of each required character type
+    uppercase = secrets.choice(string.ascii_uppercase)
+    lowercase = secrets.choice(string.ascii_lowercase)
+    digit = secrets.choice(string.digits)
+    special = secrets.choice('!@#$%^&*')
+    
+    # Fill the rest with random characters from all types
+    remaining_length = max(length - 4, 4)
+    all_chars = string.ascii_letters + string.digits + '!@#$%^&*'
+    remaining = ''.join(secrets.choice(all_chars) for _ in range(remaining_length))
+    
+    # Combine and shuffle
+    password_list = list(uppercase + lowercase + digit + special + remaining)
+    secrets.SystemRandom().shuffle(password_list)
+    
+    return ''.join(password_list)
+
+
 def authenticate_user(email: str, password: str, db: Session):
     """Authenticate user (super admin, company admin, etc) by email and password"""
     user = db.query(UserDB).filter(UserDB.email == email).first()
@@ -4566,9 +4591,8 @@ def invite_user(payload: UserInvite,
 
     # Create new user
     user_id = f"usr_{uuid4().hex[:12]}"
-    temp_password = secrets.token_urlsafe(16)
-    password_hash = bcrypt.hashpw(temp_password.encode('utf-8'),
-                                  bcrypt.gensalt()).decode('utf-8')
+    temp_password = generate_temp_password(16)
+    password_hash = get_password_hash(temp_password)
 
     new_user = UserDB(id=user_id,
                       email=payload.email,

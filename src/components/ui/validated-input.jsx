@@ -93,15 +93,16 @@ export function EmailInput({ value, onChange, required = false, className = '', 
 
 /**
  * Password Input with built-in validation and visibility toggle
+ * @param {boolean} noValidation - Skip password validation (useful for login forms)
  */
-export function PasswordInput({ value, onChange, required = false, className = '', placeholder = 'Enter strong password', ...props }) {
+export function PasswordInput({ value, onChange, required = false, className = '', placeholder = 'Enter strong password', noValidation = false, ...props }) {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     const newValue = e.target.value;
     
-    if (newValue.length > 0) {
+    if (!noValidation && newValue.length > 0) {
       const validation = validatePassword(newValue);
       setError(validation.error);
     } else {
@@ -122,9 +123,9 @@ export function PasswordInput({ value, onChange, required = false, className = '
           type={showPassword ? 'text' : 'password'}
           required={required}
           placeholder={placeholder}
-          minLength={8}
-          pattern={VALIDATION_PATTERNS.password}
-          title={VALIDATION_TITLES.password}
+          minLength={noValidation ? undefined : 8}
+          pattern={noValidation ? undefined : VALIDATION_PATTERNS.password}
+          title={noValidation ? undefined : VALIDATION_TITLES.password}
           value={value}
           onChange={handleChange}
           className={className}

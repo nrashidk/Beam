@@ -93,6 +93,8 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  noValidation={true}
+                  placeholder="Enter your password"
                 />
               </div>
 
