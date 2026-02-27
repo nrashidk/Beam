@@ -32,6 +32,7 @@ export default function POList() {
   const [error, setError] = useState("");
   const [selectedPOId, setSelectedPOId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingPO, setEditingPO] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [vatEnabled, setVatEnabled] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
@@ -131,13 +132,23 @@ export default function POList() {
 
   const handleCreatePO = async (formData) => {
     try {
-      await apAPI.createPurchaseOrder(formData);
-      alert("Purchase order created successfully!");
+      if (editingPO) {
+        // Update existing PO
+        await apAPI.updatePurchaseOrder(editingPO.id, formData);
+        alert("Purchase order updated successfully!");
+        setEditingPO(null);
+      } else {
+        // Create new PO
+        await apAPI.createPurchaseOrder(formData);
+        alert("Purchase order created successfully!");
+      }
       setShowCreateModal(false);
       fetchPurchaseOrders();
     } catch (err) {
+      const action = editingPO ? "update" : "create";
       alert(
-        "Failed to create PO: " + (err.response?.data?.detail || err.message),
+        `Failed to ${action} PO: ` +
+          (err.response?.data?.detail || err.message),
       );
     }
   };
@@ -441,9 +452,13 @@ export default function POList() {
           {/* Create/Edit PO Modal */}
           <POFormModal
             isOpen={showCreateModal}
-            onClose={() => setShowCreateModal(false)}
+            onClose={() => {
+              setShowCreateModal(false);
+              setEditingPO(null);
+            }}
             onSubmit={handleCreatePO}
             vatEnabled={vatEnabled}
+            initialData={editingPO}
           />
 
           {/* PO Send Modal */}
@@ -463,9 +478,10 @@ export default function POList() {
             poId={selectedPOId}
             isOpen={Boolean(selectedPOId)}
             onClose={() => setSelectedPOId(null)}
-            onUpdate={() => {
+            onUpdate={(po) => {
               setSelectedPOId(null);
-              fetchPurchaseOrders();
+              setEditingPO(po);
+              setShowCreateModal(true);
             }}
           />
         </div>
