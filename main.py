@@ -1890,6 +1890,10 @@ class InvoiceOut(BaseModel):
     total_amount: float
     amount_due: float
 
+    # Credit note fields
+    preceding_invoice_id: Optional[str] = None
+    credit_note_reason: Optional[str] = None
+
     # Documents
     xml_file_path: Optional[str]
     pdf_file_path: Optional[str]
@@ -4971,6 +4975,13 @@ def create_invoice(
             raise HTTPException(
                 400,
                 "Credit note total cannot exceed the original invoice total.")
+        
+        # Deduct credit note amount from original invoice's amount_due
+        new_amount_due = float(
+            Decimal(str(original_invoice.amount_due)) - Decimal(str(invoice.total_amount)))
+        # Ensure amount_due doesn't go below 0
+        original_invoice.amount_due = max(0.0, new_amount_due)
+        db.add(original_invoice)  # Explicitly mark for update
 
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
@@ -5011,6 +5022,8 @@ def create_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,
@@ -5368,6 +5381,8 @@ def get_invoice(invoice_id: str,
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,
@@ -5545,6 +5560,8 @@ def update_invoice(invoice_id: str,
             tax_amount=invoice.tax_amount,
             total_amount=invoice.total_amount,
             amount_due=invoice.amount_due,
+            preceding_invoice_id=invoice.preceding_invoice_id,
+            credit_note_reason=invoice.credit_note_reason,
             xml_file_path=invoice.xml_file_path,
             pdf_file_path=invoice.pdf_file_path,
             share_token=invoice.share_token,
@@ -6735,6 +6752,8 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        preceding_invoice_id=invoice.preceding_invoice_id,
+        credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
         pdf_file_path=invoice.pdf_file_path,
         share_token=invoice.share_token,

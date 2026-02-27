@@ -495,6 +495,14 @@ export default function InvoiceDetail() {
                     {invoice.currency_code} {invoice.total_amount.toFixed(2)}
                   </span>
                 </div>
+                {invoice.amount_due !== invoice.total_amount && (
+                  <div className="flex justify-between text-xl font-bold text-green-700 pt-2 mt-2 border-t border-green-200 bg-green-50 px-3 py-2 rounded-lg">
+                    <span>Amount Due:</span>
+                    <span>
+                      {invoice.currency_code} {invoice.amount_due.toFixed(2)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 

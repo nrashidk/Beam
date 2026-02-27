@@ -200,7 +200,7 @@ export default function CreateInvoice() {
           line_items: originalInvoice.line_items.map((item) => ({
             item_name: item.item_name,
             item_description: item.item_description || "",
-            quantity: 0, // Start with 0 quantity for user to adjust
+            quantity: item.quantity, // Copy quantity from original invoice
             unit_price: item.unit_price,
             tax_category: item.tax_category,
             tax_percent: item.tax_percent,
