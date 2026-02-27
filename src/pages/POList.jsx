@@ -8,6 +8,7 @@ import { Badge } from "../components/ui/badge";
 import POFormModal from "../components/POFormModal";
 import PODetailModal from "../components/PODetailModal";
 import Sidebar from "../components/Sidebar";
+import POSendModal from "../components/POSendModal";
 import PageLoader from "../components/PageLoader";
 import ConfirmationModal from "../components/ConfirmationModal";
 import {
@@ -43,6 +44,8 @@ export default function POList() {
     cancelText: "Cancel",
     type: "default",
   });
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [selectedPOForSend, setSelectedPOForSend] = useState(null);
 
   const [filters, setFilters] = useState({
     status: "",
@@ -85,16 +88,9 @@ export default function POList() {
   };
 
   const handleSend = (poId) => {
-    setConfirmModal({
-      isOpen: true,
-      action: "send",
-      poId,
-      title: "Send Purchase Order",
-      message: "Send this purchase order to the supplier?",
-      confirmText: "Send",
-      cancelText: "Cancel",
-      type: "default",
-    });
+    const po = purchaseOrders.find((p) => p.id === poId);
+    setSelectedPOForSend(po);
+    setSendModalOpen(true);
   };
 
   const handleDelete = (poId) => {
@@ -116,10 +112,7 @@ export default function POList() {
 
     setActionLoading(true);
     try {
-      if (action === "send") {
-        await apAPI.sendPurchaseOrder(poId);
-        alert("Purchase order sent successfully");
-      } else if (action === "delete") {
+      if (action === "delete") {
         await apAPI.deletePurchaseOrder(poId);
         alert("Purchase order deleted");
       }
@@ -451,6 +444,18 @@ export default function POList() {
             onClose={() => setShowCreateModal(false)}
             onSubmit={handleCreatePO}
             vatEnabled={vatEnabled}
+          />
+
+          {/* PO Send Modal */}
+          <POSendModal
+            isOpen={sendModalOpen}
+            onClose={() => setSendModalOpen(false)}
+            poId={selectedPOForSend?.id}
+            poNumber={selectedPOForSend?.po_number}
+            onSuccess={() => {
+              setSendModalOpen(false);
+              fetchPurchaseOrders();
+            }}
           />
 
           {/* PO Detail Modal */}
