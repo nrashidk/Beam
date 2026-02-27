@@ -5590,6 +5590,10 @@ def verify_invoice_payment(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
+    # Ensure invoice is issued before payment can be verified
+    if invoice.status == InvoiceStatus.DRAFT:
+        raise HTTPException(400, "Cannot verify payment for a DRAFT invoice. Please issue the invoice first.")
+
     if invoice.status == InvoiceStatus.PAID:
         raise HTTPException(400, "Invoice is already marked as paid")
 
