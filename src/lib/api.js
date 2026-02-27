@@ -177,6 +177,8 @@ export const apAPI = {
     apiClient.post(`/purchase-orders/${poId}/cancel`),
   createPurchaseOrder: (formData) =>
     apiClient.post("/purchase-orders", formData),
+  updatePurchaseOrder: (poId, formData) =>
+    apiClient.put(`/purchase-orders/${poId}`, formData),
   getPurchaseOrders: (params) => apiClient.get("/purchase-orders", { params }),
   deletePurchaseOrder: (poId) => apiClient.delete(`/purchase-orders/${poId}`),
 };

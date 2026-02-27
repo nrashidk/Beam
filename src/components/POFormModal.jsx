@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -42,6 +42,57 @@ export default function POFormModal({
   );
 
   const [errors, setErrors] = useState({});
+
+  // Update formData when initialData changes (for editing)
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData({
+        ...initialData,
+        line_items: initialData.line_items || [
+          {
+            line_number: 1,
+            item_name: "",
+            item_description: "",
+            item_code: "",
+            quantity_ordered: 1,
+            unit_code: "C62",
+            unit_price: 0,
+            tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
+            tax_percent: vatEnabled ? 5.0 : 0.0,
+          },
+        ],
+      });
+    } else if (!initialData && isOpen) {
+      // Reset to new PO form when creating
+      setFormData({
+        po_number: "",
+        supplier_trn: "",
+        supplier_name: "",
+        supplier_contact_email: "",
+        supplier_address: "",
+        supplier_peppol_id: "",
+        order_date: new Date().toISOString().split("T")[0],
+        expected_delivery_date: "",
+        delivery_address: "",
+        currency_code: "AED",
+        reference_number: "",
+        notes: "",
+        line_items: [
+          {
+            line_number: 1,
+            item_name: "",
+            item_description: "",
+            item_code: "",
+            quantity_ordered: 1,
+            unit_code: "C62",
+            unit_price: 0,
+            tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
+            tax_percent: vatEnabled ? 5.0 : 0.0,
+          },
+        ],
+      });
+    }
+  }, [initialData, isOpen, vatEnabled]);
 
   if (!isOpen) return null;
 
