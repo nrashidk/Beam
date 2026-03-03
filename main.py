@@ -6523,6 +6523,22 @@ def cancel_invoice(
         raise HTTPException(
             400, f"Cannot cancel invoice with status: {invoice.status}")
 
+    # If cancelling a credit note, restore the original invoice's amount_due
+    if invoice.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]:
+        if invoice.preceding_invoice_id:
+            original_invoice = db.query(InvoiceDB).filter(
+                InvoiceDB.id == invoice.preceding_invoice_id,
+                InvoiceDB.company_id == current_user.company_id
+            ).first()
+            
+            if original_invoice:
+                # Add back the credit note amount to the original invoice's amount_due
+                new_amount_due = float(
+                    Decimal(str(original_invoice.amount_due)) + Decimal(str(invoice.total_amount)))
+                # Ensure we don't exceed the original total_amount
+                original_invoice.amount_due = min(original_invoice.total_amount, new_amount_due)
+                db.add(original_invoice)
+
     invoice.status = InvoiceStatus.CANCELLED
     db.commit()
 
