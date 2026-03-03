@@ -216,6 +216,8 @@ export const adminAPI = {
     apiClient.post(`/admin/companies/${companyId}/approve`, config),
   rejectCompany: (companyId) =>
     apiClient.post(`/admin/companies/${companyId}/reject`),
+  resetTrial: (companyId) =>
+    apiClient.post(`/admin/companies/${companyId}/reset-trial`),
   getStats: () => apiClient.get("/admin/stats"),
   getFeaturedBusinesses: () => apiClient.get("/admin/featured-businesses"),
   addFeaturedBusiness: (payload) =>

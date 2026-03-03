@@ -300,7 +300,11 @@ export default function BillingSettings() {
                           {subscription.current_period_start &&
                           subscription.current_period_end
                             ? `${formatDate(subscription.current_period_start)} - ${formatDate(subscription.current_period_end)}`
-                            : `${invoicesUsed} / ${trialInvoiceLimit} invoices used`}
+                            : showInvoiceCount
+                              ? `${invoicesUsed} / ${trialInvoiceLimit} invoices used`
+                              : trialStatus?.trial_start_date
+                                ? `${formatDate(trialStatus.trial_start_date)} - ${formatDate(new Date(new Date(trialStatus.trial_start_date).getTime() + trialTotalDays * 24 * 60 * 60 * 1000).toISOString())}`
+                                : "N/A"}
                         </div>
                       </div>
                       <div>
