@@ -4335,13 +4335,18 @@ def get_platform_statistics(
         invoice_query = invoice_query.filter(InvoiceDB.created_at <= to_dt)
     total_invoices = invoice_query.count()
 
-    # Total revenue (filtered)
-    revenue_query = db.query(func.sum(InvoiceDB.total_amount))
+    # Total revenue (filtered) - subtract credit notes from revenue
+    invoice_list_query = db.query(InvoiceDB)
     if from_dt:
-        revenue_query = revenue_query.filter(InvoiceDB.created_at >= from_dt)
+        invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at >= from_dt)
     if to_dt:
-        revenue_query = revenue_query.filter(InvoiceDB.created_at <= to_dt)
-    total_revenue = revenue_query.scalar() or 0.0
+        invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at <= to_dt)
+    
+    invoices_for_revenue = invoice_list_query.all()
+    total_revenue = sum(
+        (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1)
+        for inv in invoices_for_revenue
+    )
 
     # Active subscriptions
     active_subscriptions = db.query(SubscriptionDB).filter(
@@ -5841,7 +5846,11 @@ def get_revenue_analytics(
             month_key = inv.paid_at.strftime('%Y-%m')
             if month_key not in monthly_revenue:
                 monthly_revenue[month_key] = {'revenue': 0.0, 'count': 0}
-            monthly_revenue[month_key]['revenue'] += inv.total_amount or 0.0
+            # Credit notes should be subtracted from revenue, not added
+            if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]:
+                monthly_revenue[month_key]['revenue'] -= inv.total_amount or 0.0
+            else:
+                monthly_revenue[month_key]['revenue'] += inv.total_amount or 0.0
             monthly_revenue[month_key]['count'] += 1
 
     # Calculate growth rate
@@ -5871,8 +5880,11 @@ def get_revenue_analytics(
         })
         prev_revenue = revenue if revenue > 0 else prev_revenue
 
-    # Calculate totals
-    total_revenue = sum(inv.total_amount or 0.0 for inv in invoices)
+    # Calculate totals - subtract credit notes from revenue
+    total_revenue = sum(
+        (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1)
+        for inv in invoices
+    )
     avg_monthly = total_revenue / months if months > 0 else 0
 
     return {
@@ -5914,7 +5926,9 @@ def get_customer_analytics(
                 'average_invoice_value': 0.0,
                 'last_payment_date': None
             }
-        customer_data[customer]['total_revenue'] += inv.total_amount or 0.0
+        customer_data[customer]['total_revenue'] += (inv.total_amount or 0.0) * (
+            -1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1
+        )
         customer_data[customer]['invoice_count'] += 1
         if inv.paid_at:
             if not customer_data[customer][
@@ -5968,13 +5982,16 @@ def get_profitability_metrics(
     end_date = datetime.utcnow()
     start_date = end_date - relativedelta(months=months)
 
-    # Get revenue (paid invoices)
+    # Get revenue (paid invoices) - subtract credit notes
     revenue_invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
         InvoiceDB.status == InvoiceStatus.PAID, InvoiceDB.paid_at
         >= start_date, InvoiceDB.paid_at <= end_date).all()
 
-    total_revenue = sum(inv.total_amount or 0.0 for inv in revenue_invoices)
+    total_revenue = sum(
+        (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1)
+        for inv in revenue_invoices
+    )
 
     # Get expenses
     expenses = db.query(ExpenseDB).filter(
@@ -6001,7 +6018,8 @@ def get_profitability_metrics(
                      relativedelta(months=1)) - timedelta(seconds=1)
 
         month_revenue = sum(
-            inv.total_amount or 0.0 for inv in revenue_invoices
+            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1)
+            for inv in revenue_invoices
             if inv.paid_at and month_start <= inv.paid_at <= month_end)
 
         month_expenses = sum(
@@ -6071,7 +6089,8 @@ def get_cash_flow_analytics(
                      relativedelta(months=1)) - timedelta(seconds=1)
 
         month_inflows = sum(
-            inv.total_amount or 0.0 for inv in inflows
+            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1)
+            for inv in inflows
             if inv.paid_at and month_start <= inv.paid_at <= month_end)
 
         month_outflows = sum(
@@ -7137,8 +7156,13 @@ def get_financial_summary(
     invoice_count = 0
 
     for invoice in revenue_query.all():
-        total_revenue += invoice.subtotal_amount or 0.0
-        output_vat += invoice.tax_amount or 0.0
+        # Credit notes should be subtracted from revenue, not added
+        if invoice.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]:
+            total_revenue -= invoice.subtotal_amount or 0.0
+            output_vat -= invoice.tax_amount or 0.0
+        else:
+            total_revenue += invoice.subtotal_amount or 0.0
+            output_vat += invoice.tax_amount or 0.0
         invoice_count += 1
 
     # ========== EXPENSES (from expense records) ==========
