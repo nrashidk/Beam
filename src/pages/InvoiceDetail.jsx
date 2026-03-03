@@ -451,7 +451,7 @@ export default function InvoiceDetail() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
-                          {item.quantity} {item.unit_code}
+                          {item.quantity}
                         </td>
                         <td className="px-4 py-3 text-sm text-right">
                           {invoice.currency_code} {item.unit_price.toFixed(2)}
