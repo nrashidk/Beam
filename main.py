@@ -3731,7 +3731,9 @@ def approve_company(
 
     # Configure free plan settings
     company.free_plan_type = config.free_plan_type
-    company.free_plan_start_date = datetime.utcnow()
+    company.trial_start_date = datetime.utcnow()  # Use trial_start_date for billing tracking
+    company.trial_status = "ACTIVE"  # Ensure trial is active
+    company.free_plan_start_date = datetime.utcnow()  # Keep for backwards compatibility
 
     if config.free_plan_type == "DURATION":
         company.free_plan_duration_months = config.free_plan_duration_months or 1
@@ -3814,6 +3816,43 @@ def reject_company(
         "status": company.status.value,
         "message": "Company rejected",
         "email_sent": email_result.get("success", False)
+    }
+
+
+@app.post("/admin/companies/{company_id}/reset-trial", tags=["Admin"])
+def reset_company_trial(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Reset company trial to start fresh (Super Admin only - for testing)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    # Reset trial data
+    company.trial_status = "ACTIVE"
+    company.trial_start_date = datetime.utcnow()
+    company.trial_invoice_count = 0
+    company.trial_ended_at = None
+    
+    db.commit()
+
+    # Calculate new remaining
+    trial_duration_days = (company.free_plan_duration_months or 1) * 30
+    invoice_limit = company.free_plan_invoice_limit or 100
+
+    return {
+        "success": True,
+        "company_id": company_id,
+        "message": "Trial reset successfully",
+        "trial_status": company.trial_status,
+        "trial_start_date": company.trial_start_date.isoformat(),
+        "free_plan_type": company.free_plan_type,
+        "days_remaining": trial_duration_days,
+        "invoices_remaining": invoice_limit
     }
 
 
@@ -9968,12 +10007,28 @@ async def get_trial_status(
         invoice_limit = company.free_plan_invoice_limit or 100
         trial_invoices_remaining = max(0, invoice_limit - company.trial_invoice_count)
 
-        # Check if expired
-        if trial_days_remaining == 0 or trial_invoices_remaining == 0:
-            trial_expired = True
-            company.trial_status = "EXPIRED"
-            company.trial_ended_at = datetime.utcnow()
-            db.commit()
+        # Check if expired based on free_plan_type
+        if company.free_plan_type == "DURATION":
+            # Duration-based: only check days, unlimited invoices
+            if trial_days_remaining == 0:
+                trial_expired = True
+                company.trial_status = "EXPIRED"
+                company.trial_ended_at = datetime.utcnow()
+                db.commit()
+        elif company.free_plan_type == "INVOICE_COUNT":
+            # Invoice count-based: only check invoices, unlimited duration
+            if trial_invoices_remaining == 0:
+                trial_expired = True
+                company.trial_status = "EXPIRED"
+                company.trial_ended_at = datetime.utcnow()
+                db.commit()
+        else:
+            # Default behavior (backward compatibility): check both
+            if trial_days_remaining == 0 or trial_invoices_remaining == 0:
+                trial_expired = True
+                company.trial_status = "EXPIRED"
+                company.trial_ended_at = datetime.utcnow()
+                db.commit()
 
     return TrialStatusOut(
         trial_status=company.trial_status,

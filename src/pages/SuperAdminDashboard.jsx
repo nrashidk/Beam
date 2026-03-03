@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Calendar as CalendarIcon, ArrowUpRight, ArrowDownRight, RefreshCcw, Search, LogOut, User, Settings } from 'lucide-react';
 import { format } from 'date-fns';
-import api from '../lib/api';
+import api, { adminAPI } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import AdminLayout from '../components/AdminLayout';
 import {
@@ -107,6 +107,7 @@ export default function SuperAdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [addExtraInvoices, setAddExtraInvoices] = useState(0);
   const [addExtraMonths, setAddExtraMonths] = useState(0);
   const [freePlanType, setFreePlanType] = useState('INVOICE_COUNT'); // INVOICE_COUNT or DURATION
@@ -209,6 +210,37 @@ export default function SuperAdminDashboard() {
       alert('Failed to update company: ' + (error.response?.data?.detail || error.message));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleResetTrial() {
+    if (!confirm('Reset this company\'s trial to start fresh from today? This will:\n\n• Reset trial_start_date to NOW\n• Set trial_invoice_count to 0\n• Mark trial as ACTIVE\n\nContinue?')) {
+      return;
+    }
+    
+    try {
+      setResetting(true);
+      await adminAPI.resetTrial(editingCompany.id);
+      alert('Trial reset successfully! Trial now starts from today.');
+      
+      // Refresh company data
+      const updatedCompany = await adminAPI.getCompany(editingCompany.id);
+      setEditingCompany(updatedCompany.data);
+      
+      // Refresh the companies list
+      const fromISO = range.from.toISOString();
+      const toISO = range.to.toISOString();
+      const [statsResponse, platformResponse] = await Promise.all([
+        api.get(`/admin/stats?from=${fromISO}&to=${toISO}`),
+        api.get(`/admin/platform-stats?from_date=${fromISO}&to_date=${toISO}`)
+      ]);
+      setStats(statsResponse.data);
+      setPlatformStats(platformResponse.data);
+    } catch (error) {
+      console.error('Failed to reset trial:', error);
+      alert('Failed to reset trial: ' + (error.response?.data?.detail || error.message));
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -737,10 +769,17 @@ export default function SuperAdminDashboard() {
                 <div className="flex gap-2 pt-4 border-t">
                   <Button
                     onClick={saveCompanyChanges}
-                    disabled={saving}
+                    disabled={saving || resetting}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                   >
                     {saving ? 'Saving...' : 'Save All Changes'}
+                  </Button>
+                  <Button
+                    onClick={handleResetTrial}
+                    disabled={saving || resetting}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    {resetting ? 'Resetting...' : '🔄 Reset Trial'}
                   </Button>
                   <Button
                     variant="outline"
