@@ -2297,6 +2297,8 @@ class QuickRegisterCreate(BaseModel):
 def quick_register(payload: QuickRegisterCreate,
                    db: Session = Depends(get_db)):
     """Quick registration - submit all data in one request"""
+    
+    
     # Check if email belongs to a SUPER_ADMIN (protect from accidental override)
     existing_super_admin = db.query(UserDB).filter(
         UserDB.email == payload.email,
@@ -2365,15 +2367,15 @@ def quick_register(payload: QuickRegisterCreate,
         platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
         verification_url = f"{platform_url}/?verify={verification_token}"
 
-        # Send verification email via AWS SES
-        email_result = email_service.send_verification_email(
-            to_email=company.email,
-            company_name=company.legal_name or company.email,
-            verification_url=verification_url)
-
-        print(
-            f"📧 Verification email sent to {company.email}: {email_result.get('note', 'Success')}"
-        )
+        # Skip verification email sending for now (temporarily disabled)
+        # email_result = email_service.send_verification_email(
+        #     to_email=company.email,
+        #     company_name=company.legal_name or company.email,
+        #     verification_url=verification_url)
+        email_result = {
+            "success": False,
+            "note": "Email sending skipped (temporarily disabled)"
+        }
 
         return {
             "success": True,
@@ -2691,17 +2693,21 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
     platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
     verification_url = f"{platform_url}/?verify={verification_token}"
 
-    # Send verification email via AWS SES
-    result = email_service.send_verification_email(
-        to_email=company.email,
-        company_name=company.legal_name or company.email,
-        verification_url=verification_url)
+    # Skip verification email sending for now (temporarily disabled)
+    # result = email_service.send_verification_email(
+    #     to_email=company.email,
+    #     company_name=company.legal_name or company.email,
+    #     verification_url=verification_url)
+    result = {
+        "success": False,
+        "note": "Email sending skipped (temporarily disabled)"
+    }
 
     return {
-        "message": "Verification email sent",
+        "message": "Verification email skipped",
         "email": company.email,
-        "email_status": "sent" if result.get("success") else "simulated",
-        "note": result.get("note", "Email sent successfully")
+        "email_status": "skipped",
+        "note": result.get("note", "Email sending skipped")
     }
 
 
@@ -3742,11 +3748,15 @@ def approve_company(
 
     db.commit()
 
-    # Send approval email via AWS SES
-    email_result = email_service.send_approval_notification(
-        to_email=company.email,
-        company_name=company.legal_name or company.email,
-        status="APPROVED")
+    # Skip approval email sending for now (temporarily disabled)
+    # email_result = email_service.send_approval_notification(
+    #     to_email=company.email,
+    #     company_name=company.legal_name or company.email,
+    #     status="APPROVED")
+    email_result = {
+        "success": False,
+        "note": "Email sending skipped (temporarily disabled)"
+    }
 
     return {
         "success": True,
@@ -3755,7 +3765,8 @@ def approve_company(
         "free_plan_type": company.free_plan_type,
         "free_plan_config": plan_description,
         "message": "Company approved successfully",
-        "email_sent": email_result.get("success", False)
+        "email_sent": email_result.get("success", False),
+        "email_status": "skipped"
     }
 
 
