@@ -154,7 +154,12 @@ export default function BusinessDashboard() {
               <CardContent>
                 <div className="text-3xl font-bold">
                   {invoices
-                    .reduce((sum, inv) => sum + (inv.total_amount || 0), 0)
+                    .reduce((sum, inv) => {
+                      const amount = inv.total_amount || 0;
+                      // Credit notes (381, 81) should be subtracted from revenue
+                      const isCreditNote = inv.invoice_type === '381' || inv.invoice_type === '81';
+                      return sum + (isCreditNote ? -amount : amount);
+                    }, 0)
                     .toLocaleString()}
                 </div>
                 <p className="text-xs text-green-600 mt-1">

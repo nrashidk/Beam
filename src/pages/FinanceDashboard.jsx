@@ -154,7 +154,12 @@ export default function FinanceDashboard() {
       // Calculate outstanding AR (pending + sent invoices)
       const outstandingAR = (invoicesData.invoices || [])
         .filter((inv) => ["PENDING", "SENT", "ISSUED"].includes(inv.status))
-        .reduce((sum, inv) => sum + (inv.total_amount || 0), 0);
+        .reduce((sum, inv) => {
+          const amount = inv.total_amount || 0;
+          // Credit notes (381, 81) should be subtracted from AR
+          const isCreditNote = inv.invoice_type === '381' || inv.invoice_type === '81';
+          return sum + (isCreditNote ? -amount : amount);
+        }, 0);
 
       setFinancialData({
         summary: {
