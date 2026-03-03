@@ -204,7 +204,7 @@ export default function PublicInvoiceView() {
                         )}
                       </td>
                       <td className="text-center py-4 text-gray-700">
-                        {item.quantity} {item.unit_code}
+                        {item.quantity}
                       </td>
                       <td className="text-right py-4 text-gray-700">
                         {invoice.currency_code} {item.unit_price.toFixed(2)}
