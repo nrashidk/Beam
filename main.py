@@ -2298,24 +2298,43 @@ class QuickRegisterCreate(BaseModel):
 def quick_register(payload: QuickRegisterCreate,
                    db: Session = Depends(get_db)):
     """Quick registration - submit all data in one request"""
-    # Check if email belongs to a SUPER_ADMIN (protect from accidental override)
-    existing_super_admin = db.query(UserDB).filter(
-        UserDB.email == payload.email,
-        UserDB.role == Role.SUPER_ADMIN).first()
-    if existing_super_admin:
-        raise HTTPException(
-            403, "This email is reserved for system administration")
+    import traceback
 
-    # Check if email already exists
-    existing = db.query(CompanyDB).filter(
-        CompanyDB.email == payload.email).first()
-    if existing:
-        raise HTTPException(400, "Email already registered")
-
-    company_id = f"co_{uuid4().hex[:8]}"
+    logger.info(f"🚀 Quick registration started for email: {payload.email}")
+    logger.info(
+        f"📋 Registration payload - company_name: {payload.company_name}, business_type: {payload.business_type}, emirate: {payload.emirate}"
+    )
 
     try:
+        # Check if email belongs to a SUPER_ADMIN (protect from accidental override)
+        logger.info(f"🔍 Checking if {payload.email} is a SUPER_ADMIN...")
+        existing_super_admin = db.query(UserDB).filter(
+            UserDB.email == payload.email,
+            UserDB.role == Role.SUPER_ADMIN).first()
+        if existing_super_admin:
+            logger.warning(
+                f"❌ Registration blocked - {payload.email} is a SUPER_ADMIN email"
+            )
+            raise HTTPException(
+                403, "This email is reserved for system administration")
+
+        # Check if email already exists
+        logger.info(
+            f"🔍 Checking if {payload.email} already exists in CompanyDB...")
+        existing = db.query(CompanyDB).filter(
+            CompanyDB.email == payload.email).first()
+        if existing:
+            logger.warning(
+                f"❌ Registration blocked - {payload.email} already registered (company_id: {existing.id})"
+            )
+            raise HTTPException(400, "Email already registered")
+
+        company_id = f"co_{uuid4().hex[:8]}"
+        logger.info(
+            f"✅ Email checks passed. Generated company_id: {company_id}")
+
         # Create company with all registration data
+        logger.info(f"📝 Creating CompanyDB record for {company_id}...")
         company = CompanyDB(id=company_id,
                             legal_name=payload.company_name,
                             email=payload.email,
@@ -2333,15 +2352,20 @@ def quick_register(payload: QuickRegisterCreate,
                             country="AE",
                             email_verified=False)
         db.add(company)
+        logger.info(f"✅ CompanyDB record added to session")
 
         # Create progress tracker
+        logger.info(f"📝 Creating RegistrationProgressDB record...")
         progress = RegistrationProgressDB(id=f"prog_{uuid4().hex[:8]}",
                                           company_id=company_id,
                                           current_step=1,
                                           step_company_info=True)
         db.add(progress)
+        logger.info(f"✅ RegistrationProgressDB record added to session")
 
         # Create user account (owner)
+        logger.info(
+            f"📝 Creating UserDB record (COMPANY_ADMIN) for {payload.email}...")
         user = UserDB(
             id=f"user_{uuid4().hex[:8]}",
             email=payload.email,
@@ -2352,28 +2376,44 @@ def quick_register(payload: QuickRegisterCreate,
             full_name=payload.company_name  # Use company name as default
         )
         db.add(user)
+        logger.info(f"✅ UserDB record added to session")
 
+        logger.info(f"💾 Committing initial records to database...")
         db.commit()
         db.refresh(company)
+        logger.info(
+            f"✅ Database commit successful for company_id: {company_id}")
 
         # Automatically send verification email
+        logger.info(f"🔑 Generating verification token...")
         verification_token = f"verify_{uuid4().hex}"
         company.verification_token = verification_token
         company.verification_sent_at = datetime.utcnow()
+        logger.info(f"💾 Saving verification token to database...")
         db.commit()
+        logger.info(f"✅ Verification token saved")
 
         # Get platform URL for verification link
         platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
         verification_url = f"{platform_url}/?verify={verification_token}"
+        logger.info(f"🔗 Verification URL generated: {verification_url}")
 
         # Send verification email via AWS SES
-        email_result = email_service.send_verification_email(
-            to_email=company.email,
-            company_name=company.legal_name or company.email,
-            verification_url=verification_url)
+        logger.info(f"📧 Sending verification email to {company.email}...")
+        try:
+            email_result = email_service.send_verification_email(
+                to_email=company.email,
+                company_name=company.legal_name or company.email,
+                verification_url=verification_url)
+            logger.info(f"✅ Email service response: {email_result}")
+        except Exception as email_error:
+            logger.error(f"❌ Email sending failed: {str(email_error)}")
+            logger.error(f"📋 Email error traceback: {traceback.format_exc()}")
+            # Continue even if email fails
+            email_result = {"success": False, "error": str(email_error)}
 
-        print(
-            f"📧 Verification email sent to {company.email}: {email_result.get('note', 'Success')}"
+        logger.info(
+            f"🎉 Registration completed successfully for {payload.email} (company_id: {company_id})"
         )
 
         return {
@@ -2384,8 +2424,21 @@ def quick_register(payload: QuickRegisterCreate,
             "status": company.status,
             "email_sent": email_result.get("success", False)
         }
+    except HTTPException as http_exc:
+        # Re-raise HTTPExceptions as they are (400, 403, etc.)
+        logger.warning(
+            f"⚠️ HTTP Exception during registration: {http_exc.status_code} - {http_exc.detail}"
+        )
+        raise http_exc
     except Exception as e:
+        logger.error(
+            f"❌ CRITICAL ERROR during quick registration for {payload.email}")
+        logger.error(f"❌ Error type: {type(e).__name__}")
+        logger.error(f"❌ Error message: {str(e)}")
+        logger.error(f"❌ Full traceback:")
+        logger.error(traceback.format_exc())
         db.rollback()
+        logger.info(f"🔄 Database rolled back due to error")
         raise HTTPException(500, f"Registration failed: {str(e)}")
 
 
@@ -4361,13 +4414,21 @@ def get_platform_statistics(current_user: UserDB = Depends(
         invoice_query = invoice_query.filter(InvoiceDB.created_at <= to_dt)
     total_invoices = invoice_query.count()
 
-    # Total revenue (filtered)
-    revenue_query = db.query(func.sum(InvoiceDB.total_amount))
+    # Total revenue (filtered) - subtract credit notes from revenue
+    invoice_list_query = db.query(InvoiceDB)
     if from_dt:
-        revenue_query = revenue_query.filter(InvoiceDB.created_at >= from_dt)
+        invoice_list_query = invoice_list_query.filter(
+            InvoiceDB.created_at >= from_dt)
     if to_dt:
-        revenue_query = revenue_query.filter(InvoiceDB.created_at <= to_dt)
-    total_revenue = revenue_query.scalar() or 0.0
+        invoice_list_query = invoice_list_query.filter(
+            InvoiceDB.created_at <= to_dt)
+
+    invoices_for_revenue = invoice_list_query.all()
+    total_revenue = sum(
+        (inv.total_amount or 0.0) *
+        (-1 if inv.invoice_type in
+         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
+          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in invoices_for_revenue)
 
     # Active subscriptions
     active_subscriptions = db.query(SubscriptionDB).filter(
@@ -5875,7 +5936,16 @@ def get_revenue_analytics(
             month_key = inv.paid_at.strftime('%Y-%m')
             if month_key not in monthly_revenue:
                 monthly_revenue[month_key] = {'revenue': 0.0, 'count': 0}
-            monthly_revenue[month_key]['revenue'] += inv.total_amount or 0.0
+            # Credit notes should be subtracted from revenue, not added
+            if inv.invoice_type in [
+                    InvoiceType.TAX_CREDIT_NOTE,
+                    InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+            ]:
+                monthly_revenue[month_key][
+                    'revenue'] -= inv.total_amount or 0.0
+            else:
+                monthly_revenue[month_key][
+                    'revenue'] += inv.total_amount or 0.0
             monthly_revenue[month_key]['count'] += 1
 
     # Calculate growth rate
@@ -5905,8 +5975,12 @@ def get_revenue_analytics(
         })
         prev_revenue = revenue if revenue > 0 else prev_revenue
 
-    # Calculate totals
-    total_revenue = sum(inv.total_amount or 0.0 for inv in invoices)
+    # Calculate totals - subtract credit notes from revenue
+    total_revenue = sum(
+        (inv.total_amount or 0.0) *
+        (-1 if inv.invoice_type in
+         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
+          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in invoices)
     avg_monthly = total_revenue / months if months > 0 else 0
 
     return {
@@ -5948,7 +6022,11 @@ def get_customer_analytics(
                 'average_invoice_value': 0.0,
                 'last_payment_date': None
             }
-        customer_data[customer]['total_revenue'] += inv.total_amount or 0.0
+        customer_data[customer]['total_revenue'] += (
+            inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+            ] else 1)
         customer_data[customer]['invoice_count'] += 1
         if inv.paid_at:
             if not customer_data[customer][
@@ -6002,13 +6080,17 @@ def get_profitability_metrics(
     end_date = datetime.utcnow()
     start_date = end_date - relativedelta(months=months)
 
-    # Get revenue (paid invoices)
+    # Get revenue (paid invoices) - subtract credit notes
     revenue_invoices = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
         InvoiceDB.status == InvoiceStatus.PAID, InvoiceDB.paid_at
         >= start_date, InvoiceDB.paid_at <= end_date).all()
 
-    total_revenue = sum(inv.total_amount or 0.0 for inv in revenue_invoices)
+    total_revenue = sum(
+        (inv.total_amount or 0.0) *
+        (-1 if inv.invoice_type in
+         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
+          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in revenue_invoices)
 
     # Get expenses
     expenses = db.query(ExpenseDB).filter(
@@ -6035,7 +6117,10 @@ def get_profitability_metrics(
                      relativedelta(months=1)) - timedelta(seconds=1)
 
         month_revenue = sum(
-            inv.total_amount or 0.0 for inv in revenue_invoices
+            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
+                InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
+                CREDIT_NOTE_OUT_OF_SCOPE
+            ] else 1) for inv in revenue_invoices
             if inv.paid_at and month_start <= inv.paid_at <= month_end)
 
         month_expenses = sum(
@@ -6105,7 +6190,10 @@ def get_cash_flow_analytics(
                      relativedelta(months=1)) - timedelta(seconds=1)
 
         month_inflows = sum(
-            inv.total_amount or 0.0 for inv in inflows
+            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
+                InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
+                CREDIT_NOTE_OUT_OF_SCOPE
+            ] else 1) for inv in inflows
             if inv.paid_at and month_start <= inv.paid_at <= month_end)
 
         month_outflows = sum(
@@ -7175,8 +7263,16 @@ def get_financial_summary(
     invoice_count = 0
 
     for invoice in revenue_query.all():
-        total_revenue += invoice.subtotal_amount or 0.0
-        output_vat += invoice.tax_amount or 0.0
+        # Credit notes should be subtracted from revenue, not added
+        if invoice.invoice_type in [
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+        ]:
+            total_revenue -= invoice.subtotal_amount or 0.0
+            output_vat -= invoice.tax_amount or 0.0
+        else:
+            total_revenue += invoice.subtotal_amount or 0.0
+            output_vat += invoice.tax_amount or 0.0
         invoice_count += 1
 
     # ========== EXPENSES (from expense records) ==========
