@@ -263,7 +263,7 @@ export default function VATSettings() {
                   </label>
                 </div>
 
-                {settings.vat_enabled && (
+                {settings.vat_enabled && !isVatActive && (
                   <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
