@@ -18,6 +18,7 @@ import InvoiceDetail from "./pages/InvoiceDetail";
 import CompanyBranding from "./pages/CompanyBranding";
 import TeamManagement from "./pages/TeamManagement";
 import MFASettings from "./pages/MFASettings";
+import AdminMFASettings from "./pages/AdminMFASettings";
 import APInbox from "./pages/APInbox";
 import POList from "./pages/POList";
 import BulkImport from "./pages/BulkImport";
@@ -346,6 +347,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <FeaturedBusinesses />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/settings/security"
+              element={
+                <ProtectedRoute>
+                  <AdminMFASettings />
                 </ProtectedRoute>
               }
             />
