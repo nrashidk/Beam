@@ -10588,14 +10588,23 @@ async def bulk_import_vendors(
 # These routes MUST be last to avoid intercepting API routes
 
 
+@app.get("/ping", tags=["Health"])
+def ping():
+    """Lightweight health check - no DB dependency"""
+    return {"status": "ok"}
+
+
 @app.get("/", tags=["General"])
 async def root():
     """Serve React app or API info"""
-    if os.path.exists("dist/index.html"):
-        return FileResponse("dist/index.html")
-    elif os.path.exists("static/index.html"):
-        return FileResponse("static/index.html")
-    return {"message": "InvoLinks API v2.0 - React dev server at port 5173"}
+    try:
+        if os.path.exists("dist/index.html"):
+            return FileResponse("dist/index.html")
+        elif os.path.exists("static/index.html"):
+            return FileResponse("static/index.html")
+    except Exception:
+        pass
+    return {"status": "ok", "service": "InvoLinks API"}
 
 
 # Catch-all route for React Router (MUST be absolutely last)

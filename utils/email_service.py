@@ -43,29 +43,6 @@ class EmailService:
                     f"✅ AWS SES configured successfully (Region: {self.aws_region}, Sender: {self.sender_email})"
                 )
 
-                # Check SES sending quota and sandbox status
-                try:
-                    quota = self.client.get_send_quota()
-                    print(f"📊 AWS SES Quota:")
-                    print(
-                        f"   ├─ Max 24 Hour Send: {quota.get('Max24HourSend', 'N/A')}"
-                    )
-                    print(
-                        f"   ├─ Max Send Rate: {quota.get('MaxSendRate', 'N/A')}/sec"
-                    )
-                    print(
-                        f"   └─ Sent Last 24 Hours: {quota.get('SentLast24Hours', 'N/A')}"
-                    )
-
-                    # Check account sending status
-                    account = self.client.get_account_sending_enabled()
-                    print(
-                        f"📧 Account Sending: {'Enabled ✅' if account.get('Enabled') else 'Disabled ❌'}"
-                    )
-
-                except Exception as quota_err:
-                    print(f"⚠️  Could not retrieve SES quota: {quota_err}")
-
             except Exception as e:
                 print(f"⚠️  AWS SES client initialization error: {e}")
                 self.is_configured = False
