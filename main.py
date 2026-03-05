@@ -3824,11 +3824,16 @@ def reject_company(
     db.commit()
 
     # Send rejection email via AWS SES
-    email_result = email_service.send_approval_notification(
-        to_email=company.email,
-        company_name=company.legal_name or company.email,
-        status="REJECTED",
-        admin_message=notes)
+    # email_result = email_service.send_approval_notification(
+    #     to_email=company.email,
+    #     company_name=company.legal_name or company.email,
+    #     status="REJECTED",
+    #     admin_message=notes)
+
+    email_result = {
+        "success": False,
+        "note": "Email sending skipped (temporarily disabled)"
+    }
 
     return {
         "success": True,
@@ -10588,23 +10593,14 @@ async def bulk_import_vendors(
 # These routes MUST be last to avoid intercepting API routes
 
 
-@app.get("/ping", tags=["Health"])
-def ping():
-    """Lightweight health check - no DB dependency"""
-    return {"status": "ok"}
-
-
 @app.get("/", tags=["General"])
 async def root():
     """Serve React app or API info"""
-    try:
-        if os.path.exists("dist/index.html"):
-            return FileResponse("dist/index.html")
-        elif os.path.exists("static/index.html"):
-            return FileResponse("static/index.html")
-    except Exception:
-        pass
-    return {"status": "ok", "service": "InvoLinks API"}
+    if os.path.exists("dist/index.html"):
+        return FileResponse("dist/index.html")
+    elif os.path.exists("static/index.html"):
+        return FileResponse("static/index.html")
+    return {"message": "InvoLinks API v2.0 - React dev server at port 5173"}
 
 
 # Catch-all route for React Router (MUST be absolutely last)
