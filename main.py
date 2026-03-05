@@ -3803,12 +3803,16 @@ def reject_company(
     company.rejected_at = datetime.utcnow()
     db.commit()
 
-    # Send rejection email via AWS SES
-    email_result = email_service.send_approval_notification(
-        to_email=company.email,
-        company_name=company.legal_name or company.email,
-        status="REJECTED",
-        admin_message=notes)
+    # Skip rejection email sending for now (temporarily disabled)
+    # email_result = email_service.send_approval_notification(
+    #     to_email=company.email,
+    #     company_name=company.legal_name or company.email,
+    #     status="REJECTED",
+    #     admin_message=notes)
+    email_result = {
+        "success": False,
+        "note": "Email sending skipped (temporarily disabled)"
+    }
 
     return {
         "success": True,
