@@ -10339,58 +10339,22 @@ async def bulk_import_invoices(
                 "errors": errors
             }
 
-        # Check if user has active subscription (paid tier)
-        subscription = db.query(SubscriptionDB).filter(
-            SubscriptionDB.company_id == company_id,
-            SubscriptionDB.status.in_(["ACTIVE", "TRIAL"])).first()
+        # Enforce the same Super Admin free-plan invoice limit used by /invoices create endpoint.
+        if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit is not None:
+            active_paid_subscription = db.query(SubscriptionDB).filter(
+                SubscriptionDB.company_id == company.id,
+                SubscriptionDB.status == "ACTIVE", SubscriptionDB.tier
+                != "FREE").first()
 
-        # If no paid subscription, check if on trial
-        if not subscription:
-            # Check if company has active trial
-            if company.trial_status != "ACTIVE":
-                raise HTTPException(
-                    403,
-                    "No active subscription or trial found. Please subscribe to a plan or contact support."
-                )
-
-            # Trial users: limit to 10 invoices total
-            invoice_count = db.query(InvoiceDB).filter_by(
-                company_id=company_id).count()
-            max_invoices = 10
-            available_slots = max_invoices - invoice_count
-
-            if available_slots <= 0:
-                raise HTTPException(
-                    403,
-                    "Trial limit (10 invoices) reached. Please upgrade to a paid plan."
-                )
-
-            if len(parsed_invoices) > available_slots:
-                return {
-                    "success":
-                    False,
-                    "total_rows":
-                    len(parsed_invoices),
-                    "valid_rows":
-                    0,
-                    "errors": [
-                        f"Trial allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
-                        f"Can only import {available_slots} more. Please upgrade or delete existing invoices."
-                    ]
-                }
-        else:
-            # Has paid subscription - check tier limits if applicable
-            # For FREE tier in SubscriptionDB, also apply 10 invoice limit
-            if subscription.tier == "FREE":
-                invoice_count = db.query(InvoiceDB).filter_by(
-                    company_id=company_id).count()
-                max_invoices = 10
-                available_slots = max_invoices - invoice_count
+            if not active_paid_subscription:
+                used_invoice_count = db.query(InvoiceDB).filter(
+                    InvoiceDB.company_id == company.id).count()
+                available_slots = company.free_plan_invoice_limit - used_invoice_count
 
                 if available_slots <= 0:
                     raise HTTPException(
                         403,
-                        "Free plan limit (10 invoices) reached. Please upgrade."
+                        f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin."
                     )
 
                 if len(parsed_invoices) > available_slots:
@@ -10402,8 +10366,8 @@ async def bulk_import_invoices(
                         "valid_rows":
                         0,
                         "errors": [
-                            f"Free plan allows {max_invoices} invoices total. You have {invoice_count} invoices. ",
-                            f"Can only import {available_slots} more. Please upgrade or delete existing invoices."
+                            f"Invoice limit is {company.free_plan_invoice_limit}. You already used {used_invoice_count}.",
+                            f"Can only import {available_slots} more invoice(s)."
                         ]
                     }
 
