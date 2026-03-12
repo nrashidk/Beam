@@ -503,71 +503,19 @@ export default function SuperAdminDashboard() {
                 );
               }}
             />
-            <Stat
-              label="Active Companies"
-              value={
-                platformLoading
-                  ? "—"
-                  : (platformStats?.active_companies?.toLocaleString() ?? "—")
-              }
+            {/* <Stat 
+              label="Active Companies" 
+              value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
               onClick={() => {
-                setStatus("active");
-                setTimeout(
-                  () =>
-                    document
-                      .querySelector("#company-explorer")
-                      ?.scrollIntoView({ behavior: "smooth" }),
-                  100,
-                );
+                setStatus('active');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
-            />
-            <Stat
-              label="Pending Approvals"
-              value={
-                platformLoading
-                  ? "—"
-                  : (platformStats?.pending_companies?.toLocaleString() ?? "—")
-              }
-              onClick={() => navigate("/admin/approvals?status=pending")}
-            />
-            <Stat
-              label="Total Invoices"
-              value={
-                platformLoading
-                  ? "—"
-                  : (platformStats?.total_invoices?.toLocaleString() ?? "—")
-              }
-              onClick={() => {
-                setStatus("all");
-                setTimeout(
-                  () =>
-                    document
-                      .querySelector("#company-explorer")
-                      ?.scrollIntoView({ behavior: "smooth" }),
-                  100,
-                );
-              }}
-            />
-          </div>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4 mt-3">
-            <Stat
-              label="Platform Revenue (AED)"
-              value={
-                platformLoading
-                  ? "—"
-                  : `${(platformStats?.total_revenue_aed || 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              }
-              onClick={() => {
-                setStatus("all");
-                setTimeout(
-                  () =>
-                    document
-                      .querySelector("#company-explorer")
-                      ?.scrollIntoView({ behavior: "smooth" }),
-                  100,
-                );
-              }}
-            />
+            /> */}
+            {/* <Stat 
+              label="Pending Approvals" 
+              value={platformLoading ? '—' : platformStats?.pending_companies?.toLocaleString() ?? '—'} 
+              onClick={() => navigate('/admin/approvals?status=pending')}
+            /> */}
             <Stat
               label="Active Subscriptions"
               value={
@@ -605,6 +553,7 @@ export default function SuperAdminDashboard() {
                 );
               }}
             />
+
             <Stat
               label="Paid Tier Users"
               value={
@@ -623,20 +572,57 @@ export default function SuperAdminDashboard() {
                 );
               }}
             />
+            <Stat
+              label="Total Invoices"
+              value={
+                platformLoading
+                  ? "—"
+                  : (platformStats?.total_invoices?.toLocaleString() ?? "—")
+              }
+              onClick={() => {
+                setStatus("all");
+                setTimeout(
+                  () =>
+                    document
+                      .querySelector("#company-explorer")
+                      ?.scrollIntoView({ behavior: "smooth" }),
+                  100,
+                );
+              }}
+            />
+
+            <Stat
+              label="Platform Revenue (AED)"
+              value={
+                platformLoading
+                  ? "—"
+                  : `${(platformStats?.total_revenue_aed || 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              }
+              onClick={() => {
+                setStatus("all");
+                setTimeout(
+                  () =>
+                    document
+                      .querySelector("#company-explorer")
+                      ?.scrollIntoView({ behavior: "smooth" }),
+                  100,
+                );
+              }}
+            />
+            <Stat
+              label="Pending registrations"
+              value={loading ? "—" : (stats?.registrations.pending ?? "—")}
+              onClick={() => navigate("/admin/approvals")}
+            />
+            <Stat
+              label="Approved registrations"
+              value={loading ? "—" : (stats?.registrations.approved ?? "—")}
+              onClick={() => navigate("/admin/companies/approved")}
+            />
           </div>
         </Section>
 
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-          <Stat
-            label="Pending registrations"
-            value={loading ? "—" : (stats?.registrations.pending ?? "—")}
-            onClick={() => navigate("/admin/approvals")}
-          />
-          <Stat
-            label="Approved registrations"
-            value={loading ? "—" : (stats?.registrations.approved ?? "—")}
-            onClick={() => navigate("/admin/companies/approved")}
-          />
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
           <Stat
             label="Rejected registrations"
             value={loading ? "—" : (stats?.registrations.rejected ?? "—")}

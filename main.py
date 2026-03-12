@@ -1374,7 +1374,7 @@ def get_password_hash(password: str) -> str:
 
 def generate_temp_password(length: int = 16) -> str:
     """Generate a secure temporary password that meets complexity requirements
-    
+
     Requirements: Minimum 8 characters with uppercase, lowercase, special char, and digit
     """
     import string
@@ -3968,10 +3968,17 @@ def get_admin_stats(
     companies = db.query(CompanyDB).all()
     all_companies_list = []
     for company in companies:
-        # Get plan info
+        # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
         plan = None
         arpu = 0
-        if company.subscription_plan_id:
+        # Check for latest company subscription
+        latest_sub = db.query(CompanySubscriptionDB).filter(
+            CompanySubscriptionDB.company_id == company.id).order_by(
+                CompanySubscriptionDB.created_at.desc()).first()
+        if latest_sub and latest_sub.plan:
+            plan = latest_sub.plan.name
+            arpu = latest_sub.plan.price_monthly or 0
+        elif company.subscription_plan_id:
             plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
             if plan_obj:
                 plan = plan_obj.name
@@ -4432,18 +4439,64 @@ def get_platform_statistics(current_user: UserDB = Depends(
          [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
           CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in invoices_for_revenue)
 
-    # Active subscriptions
-    active_subscriptions = db.query(SubscriptionDB).filter(
-        SubscriptionDB.status == "ACTIVE").count()
+    # Active subscriptions (company_subscriptions table)
+    active_subscriptions = db.query(CompanySubscriptionDB).filter(
+        CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE).count()
 
-    # Free vs paid tier users (based on monthly_price in subscriptions table)
-    free_tier = db.query(SubscriptionDB).filter(
-        SubscriptionDB.monthly_price == 0.0,
-        SubscriptionDB.status == "ACTIVE").count()
+    # Free vs paid tier users - consider company_subscriptions (company_subscriptions.plan -> subscription_plans)
+    # and legacy Company.subscription_plan_id
+    # 1) companies with a company_subscription whose plan has price_monthly == 0 and status in (TRIAL, ACTIVE)
+    free_plan_company_ids = set()
+    free_plan_subs = db.query(CompanySubscriptionDB).join(
+        SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.price_monthly == 0.0,
+            CompanySubscriptionDB.status.in_(
+                [SubscriptionStatus.ACTIVE,
+                 SubscriptionStatus.TRIAL])).with_entities(
+                     CompanySubscriptionDB.company_id).distinct().all()
+    for cid in free_plan_subs:
+        free_plan_company_ids.add(cid[0])
 
-    paid_tier = db.query(SubscriptionDB).filter(
-        SubscriptionDB.monthly_price > 0.0,
-        SubscriptionDB.status == "ACTIVE").count()
+    # 2) companies with legacy subscription_plan_id pointing to a free plan
+    free_plans = db.query(SubscriptionPlanDB).filter(
+        SubscriptionPlanDB.price_monthly == 0.0).with_entities(
+            SubscriptionPlanDB.id).all()
+    free_plan_ids = [p[0] for p in free_plans]
+    if free_plan_ids:
+        legacy_free_companies = db.query(CompanyDB).filter(
+            CompanyDB.subscription_plan_id.in_(free_plan_ids)).with_entities(
+                CompanyDB.id).distinct().all()
+        for cid in legacy_free_companies:
+            free_plan_company_ids.add(cid[0])
+
+    free_tier = len(free_plan_company_ids)
+
+    # Paid tier users - similar logic for company_subscriptions with price_monthly > 0
+    paid_plan_company_ids = set()
+    paid_plan_subs = db.query(CompanySubscriptionDB).join(
+        SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.price_monthly > 0.0,
+            CompanySubscriptionDB.status.in_(
+                [SubscriptionStatus.ACTIVE,
+                 SubscriptionStatus.TRIAL])).with_entities(
+                     CompanySubscriptionDB.company_id).distinct().all()
+    for cid in paid_plan_subs:
+        paid_plan_company_ids.add(cid[0])
+
+    # Legacy companies with subscription_plan_id pointing to paid plans
+    paid_plan_ids = [
+        p[0] for p in db.query(SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.price_monthly > 0.0).with_entities(
+                SubscriptionPlanDB.id).all()
+    ]
+    if paid_plan_ids:
+        legacy_paid_companies = db.query(CompanyDB).filter(
+            CompanyDB.subscription_plan_id.in_(paid_plan_ids)).with_entities(
+                CompanyDB.id).distinct().all()
+        for cid in legacy_paid_companies:
+            paid_plan_company_ids.add(cid[0])
+
+    paid_tier = len(paid_plan_company_ids)
 
     return PlatformStatsOut(total_companies=total_companies,
                             active_companies=active_companies,
