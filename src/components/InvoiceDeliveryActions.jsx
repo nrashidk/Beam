@@ -19,6 +19,7 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
+  const [qrSrc, setQrSrc] = useState(null);
 
   const [emailAddress, setEmailAddress] = useState(
     invoice.customer_email || "",
@@ -29,10 +30,35 @@ export default function InvoiceDeliveryActions({ invoice }) {
     ? ""
     : import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-  const showQRCode = () => {
+  const showQRCode = async () => {
     setError("");
     setSuccess("");
+    setQrSrc(null);
     setShowQRModal(true);
+
+    try {
+      // If share_token exists on the invoice, use it; otherwise request backend to create one
+      let publicUrl = null;
+      if (invoice.share_token) {
+        publicUrl = `${window.location.origin}/invoices/view/${invoice.share_token}`;
+      } else {
+        setLoading(true);
+        const resp = await apiClient.post(`/invoices/${invoice.id}/share`);
+        publicUrl = resp.data.public_url || resp.data.publicUrl || resp.data.public_url;
+      }
+
+      if (publicUrl) {
+        const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(publicUrl)}`;
+        setQrSrc(qrImage);
+      } else {
+        setQrSrc(null);
+      }
+    } catch (err) {
+      console.error('Failed to ensure share link:', err);
+      setError(err.response?.data?.detail || 'Failed to generate share link');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const sendEmail = async () => {
@@ -191,16 +217,50 @@ export default function InvoiceDeliveryActions({ invoice }) {
             </div>
             <div className="text-center">
               <div className="bg-white p-4 rounded-lg border-2 border-gray-200 inline-block">
-                <img
-                  src={`${API_URL}/invoices/${invoice.id}/qr`}
-                  alt="Invoice QR Code"
-                  className="w-64 h-64"
-                  onError={(e) => {
-                    e.target.src =
-                      'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23f3f4f6"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af">QR Code</text></svg>';
-                  }}
-                />
+                {qrSrc ? (
+                  <img
+                    src={qrSrc}
+                    alt="Invoice QR Code"
+                    className="w-64 h-64"
+                    onError={(e) => {
+                      e.target.src =
+                        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="%23f3f4f6"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%239ca3af">QR Code</text></svg>';
+                    }}
+                  />
+                ) : (
+                  <div className="w-64 h-64 flex items-center justify-center text-sm text-gray-600">
+                    Share link not available for this invoice. Please send the invoice or generate a share link first.
+                  </div>
+                )}
               </div>
+              {qrSrc && (
+                <div className="flex gap-2 justify-center mt-4">
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}/invoices/view/${invoice.share_token}`;
+                      navigator.clipboard.writeText(link);
+                      setSuccess('Link copied to clipboard');
+                      setTimeout(() => setSuccess(''), 2000);
+                    }}
+                    className="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg"
+                  >
+                    Copy Link
+                  </button>
+                  <button
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = qrSrc;
+                      a.download = `invoice-${invoice.invoice_number}-qr.png`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="px-3 py-2 bg-indigo-600 text-white rounded-lg"
+                  >
+                    Download
+                  </button>
+                </div>
+              )}
               <p className="text-sm text-gray-600 mt-4">
                 Customer can scan this QR code to view the invoice
               </p>
