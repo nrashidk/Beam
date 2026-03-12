@@ -1374,7 +1374,7 @@ def get_password_hash(password: str) -> str:
 
 def generate_temp_password(length: int = 16) -> str:
     """Generate a secure temporary password that meets complexity requirements
-
+    
     Requirements: Minimum 8 characters with uppercase, lowercase, special char, and digit
     """
     import string
@@ -3823,13 +3823,12 @@ def reject_company(
     company.rejected_at = datetime.utcnow()
     db.commit()
 
-    # Send rejection email via AWS SES
+    # Skip rejection email sending for now (temporarily disabled)
     # email_result = email_service.send_approval_notification(
     #     to_email=company.email,
     #     company_name=company.legal_name or company.email,
     #     status="REJECTED",
     #     admin_message=notes)
-
     email_result = {
         "success": False,
         "note": "Email sending skipped (temporarily disabled)"
@@ -6723,6 +6722,40 @@ def get_invoice_qr_code(
     return StreamingResponse(buf, media_type="image/png")
 
 
+@app.post("/invoices/{invoice_id}/share", tags=["Invoices"])
+def ensure_invoice_share_link(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Ensure an invoice has a public share token and return the public URL."""
+    invoice = db.query(InvoiceDB).filter(
+        InvoiceDB.id == invoice_id,
+        InvoiceDB.company_id == current_user.company_id).first()
+
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+
+    # Create share token if missing
+    if not invoice.share_token:
+        invoice.share_token = f"share_{uuid4().hex[:16]}"
+        db.commit()
+
+    # Build public URL using same logic as other endpoints
+    base_url = os.getenv("REPLIT_DOMAINS", None) or os.getenv(
+        "PLATFORM_URL", None) or "https://involinks.replit.app"
+    if base_url:
+        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+
+    public_url = f"{base_url}/invoices/view/{invoice.share_token}"
+
+    return {
+        "invoice_id": invoice.id,
+        "share_token": invoice.share_token,
+        "share_link": f"/invoices/view/{invoice.share_token}",
+        "public_url": public_url
+    }
+
+
 @app.post("/invoices/{invoice_id}/email", tags=["Invoices"])
 async def email_invoice(
     invoice_id: str,
@@ -6769,7 +6802,6 @@ async def email_invoice(
     #     company_email=company_email,
     #     amount=invoice.total_amount,
     #     currency="AED")
-
     email_result = {
         "success": False,
         "note": "Email sending skipped (temporarily disabled)"
