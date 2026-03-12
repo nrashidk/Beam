@@ -6760,15 +6760,20 @@ async def email_invoice(
     company_email = company.email if company else "support@involinks.ae"
 
     # Send invoice email via AWS SES
-    email_result = email_service.send_invoice_email(
-        to_email=email_to,
-        customer_name=invoice.customer_name or "Customer",
-        invoice_number=invoice.invoice_number,
-        invoice_url=share_url,
-        company_name=invoice.supplier_name,
-        company_email=company_email,
-        amount=invoice.total_amount,
-        currency="AED")
+    # email_result = email_service.send_invoice_email(
+    #     to_email=email_to,
+    #     customer_name=invoice.customer_name or "Customer",
+    #     invoice_number=invoice.invoice_number,
+    #     invoice_url=share_url,
+    #     company_name=invoice.supplier_name,
+    #     company_email=company_email,
+    #     amount=invoice.total_amount,
+    #     currency="AED")
+
+    email_result = {
+        "success": False,
+        "note": "Email sending skipped (temporarily disabled)"
+    }
 
     return {
         "message": "Invoice email sent successfully",
