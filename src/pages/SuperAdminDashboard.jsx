@@ -386,38 +386,20 @@ export default function SuperAdminDashboard() {
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
-            <Stat 
+            {/* <Stat 
               label="Active Companies" 
               value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
               onClick={() => {
                 setStatus('active');
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
-            />
-            <Stat 
+            /> */}
+            {/* <Stat 
               label="Pending Approvals" 
               value={platformLoading ? '—' : platformStats?.pending_companies?.toLocaleString() ?? '—'} 
               onClick={() => navigate('/admin/approvals?status=pending')}
-            />
-            <Stat 
-              label="Total Invoices" 
-              value={platformLoading ? '—' : platformStats?.total_invoices?.toLocaleString() ?? '—'} 
-              onClick={() => {
-                setStatus('all');
-                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-              }}
-            />
-          </div>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4 mt-3">
-            <Stat 
-              label="Platform Revenue (AED)" 
-              value={platformLoading ? '—' : `${(platformStats?.total_revenue_aed || 0).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
-              onClick={() => {
-                setStatus('all');
-                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-              }}
-            />
-            <Stat 
+            /> */}
+              <Stat 
               label="Active Subscriptions" 
               value={platformLoading ? '—' : platformStats?.active_subscriptions?.toLocaleString() ?? '—'} 
               onClick={() => {
@@ -433,7 +415,8 @@ export default function SuperAdminDashboard() {
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
-            <Stat 
+
+             <Stat 
               label="Paid Tier Users" 
               value={platformLoading ? '—' : platformStats?.paid_tier_users?.toLocaleString() ?? '—'} 
               onClick={() => {
@@ -441,20 +424,40 @@ export default function SuperAdminDashboard() {
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
-          </div>
-        </Section>
+            <Stat 
+              label="Total Invoices" 
+              value={platformLoading ? '—' : platformStats?.total_invoices?.toLocaleString() ?? '—'} 
+              onClick={() => {
+                setStatus('all');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
+              
+            />
 
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
-          <Stat 
+             <Stat 
+              label="Platform Revenue (AED)" 
+              value={platformLoading ? '—' : `${(platformStats?.total_revenue_aed || 0).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} 
+              onClick={() => {
+                setStatus('all');
+                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }}
+            />
+            <Stat 
             label="Pending registrations" 
             value={loading ? '—' : stats?.registrations.pending ?? '—'} 
             onClick={() => navigate('/admin/approvals')}
           />
-          <Stat 
+           <Stat 
             label="Approved registrations" 
             value={loading ? '—' : stats?.registrations.approved ?? '—'}
             onClick={() => navigate('/admin/companies/approved')}
           />
+          </div>
+        </Section>
+
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
+          
+         
           <Stat 
             label="Rejected registrations" 
             value={loading ? '—' : stats?.registrations.rejected ?? '—'}

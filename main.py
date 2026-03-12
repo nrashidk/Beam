@@ -3552,16 +3552,27 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
     sub = db.query(CompanySubscriptionDB).filter_by(
         company_id=company_id).first()
     if not sub:
-        # Return empty subscription info instead of 404
+        # No subscription record — default to Free plan
+        free_plan = db.query(SubscriptionPlanDB).filter_by(id="plan_free").first()
         return {
             "subscription_id": None,
-            "plan": None,
-            "status": None,
-            "billing_cycle": None,
+            "plan": {
+                "id": free_plan.id if free_plan else "plan_free",
+                "name": free_plan.name if free_plan else "Free",
+                "price_monthly": free_plan.price_monthly if free_plan else 0,
+                "max_invoices_per_month": free_plan.max_invoices_per_month if free_plan else 100,
+                "max_users": free_plan.max_users if free_plan else 1,
+                "allow_api_access": free_plan.allow_api_access if free_plan else True,
+                "allow_branding": free_plan.allow_branding if free_plan else False,
+                "allow_multi_currency": free_plan.allow_multi_currency if free_plan else False,
+                "priority_support": free_plan.priority_support if free_plan else False,
+            } if free_plan else {"id": "plan_free", "name": "Free", "price_monthly": 0},
+            "status": "ACTIVE",
+            "billing_cycle": "monthly",
             "current_period_start": None,
             "current_period_end": None,
             "invoices_this_period": 0,
-            "message": "No active subscription"
+            "message": "No subscription record — defaulting to Free plan"
         }
 
     return {
@@ -3947,14 +3958,23 @@ def get_admin_stats(
     companies = db.query(CompanyDB).all()
     all_companies_list = []
     for company in companies:
-        # Get plan info
+        # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
         plan = None
         arpu = 0
-        if company.subscription_plan_id:
+        # Check for latest company subscription
+        latest_sub = db.query(CompanySubscriptionDB).filter(CompanySubscriptionDB.company_id == company.id).order_by(CompanySubscriptionDB.created_at.desc()).first()
+        if latest_sub and latest_sub.plan:
+            plan = latest_sub.plan.name
+            arpu = latest_sub.plan.price_monthly or 0
+        elif company.subscription_plan_id:
             plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
             if plan_obj:
                 plan = plan_obj.name
                 arpu = plan_obj.price_monthly
+        else:
+            # No plan assigned — default to Free
+            plan = "Free"
+            arpu = 0
 
         # Get invoice count for this month
         now = datetime.utcnow()
@@ -4402,18 +4422,60 @@ def get_platform_statistics(
         for inv in invoices_for_revenue
     )
 
-    # Active subscriptions
-    active_subscriptions = db.query(SubscriptionDB).filter(
-        SubscriptionDB.status == "ACTIVE").count()
+    # Active subscriptions (company_subscriptions table)
+    active_subscriptions = db.query(CompanySubscriptionDB).filter(
+        CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE).count()
 
-    # Free vs paid tier users (based on monthly_price in subscriptions table)
-    free_tier = db.query(SubscriptionDB).filter(
-        SubscriptionDB.monthly_price == 0.0,
-        SubscriptionDB.status == "ACTIVE").count()
+    # Free vs paid tier users - consider company_subscriptions (company_subscriptions.plan -> subscription_plans)
+    # and legacy Company.subscription_plan_id
+    # 1) companies with a company_subscription whose plan has price_monthly == 0 and status in (TRIAL, ACTIVE)
+    free_plan_company_ids = set()
+    free_plan_subs = db.query(CompanySubscriptionDB).join(SubscriptionPlanDB).filter(
+        SubscriptionPlanDB.price_monthly == 0.0,
+        CompanySubscriptionDB.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).with_entities(CompanySubscriptionDB.company_id).distinct().all()
+    for cid in free_plan_subs:
+        free_plan_company_ids.add(cid[0])
 
-    paid_tier = db.query(SubscriptionDB).filter(
-        SubscriptionDB.monthly_price > 0.0,
-        SubscriptionDB.status == "ACTIVE").count()
+    # 2) companies with legacy subscription_plan_id pointing to a free plan
+    free_plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.price_monthly == 0.0).with_entities(SubscriptionPlanDB.id).all()
+    free_plan_ids = [p[0] for p in free_plans]
+    if free_plan_ids:
+        legacy_free_companies = db.query(CompanyDB).filter(CompanyDB.subscription_plan_id.in_(free_plan_ids)).with_entities(CompanyDB.id).distinct().all()
+        for cid in legacy_free_companies:
+            free_plan_company_ids.add(cid[0])
+
+    # 3) Active companies with NO subscription record at all → treat as free
+    all_active_company_ids = set(
+        cid[0] for cid in db.query(CompanyDB).filter(
+            CompanyDB.status.in_([CompanyStatus.ACTIVE, CompanyStatus.PENDING_REVIEW])
+        ).with_entities(CompanyDB.id).all()
+    )
+    companies_with_any_sub = set(
+        cid[0] for cid in db.query(CompanySubscriptionDB).with_entities(CompanySubscriptionDB.company_id).distinct().all()
+    )
+    no_plan_companies = all_active_company_ids - companies_with_any_sub
+    free_plan_company_ids.update(no_plan_companies)
+
+    free_tier = len(free_plan_company_ids)
+
+    # Paid tier users - similar logic for company_subscriptions with price_monthly > 0
+    paid_plan_company_ids = set()
+    paid_plan_subs = db.query(CompanySubscriptionDB).join(SubscriptionPlanDB).filter(
+        SubscriptionPlanDB.price_monthly > 0.0,
+        CompanySubscriptionDB.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL])
+    ).with_entities(CompanySubscriptionDB.company_id).distinct().all()
+    for cid in paid_plan_subs:
+        paid_plan_company_ids.add(cid[0])
+
+    # Legacy companies with subscription_plan_id pointing to paid plans
+    paid_plan_ids = [p[0] for p in db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.price_monthly > 0.0).with_entities(SubscriptionPlanDB.id).all()]
+    if paid_plan_ids:
+        legacy_paid_companies = db.query(CompanyDB).filter(CompanyDB.subscription_plan_id.in_(paid_plan_ids)).with_entities(CompanyDB.id).distinct().all()
+        for cid in legacy_paid_companies:
+            paid_plan_company_ids.add(cid[0])
+
+    paid_tier = len(paid_plan_company_ids)
 
     return PlatformStatsOut(total_companies=total_companies,
                             active_companies=active_companies,
