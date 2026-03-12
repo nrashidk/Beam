@@ -1,7 +1,14 @@
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useRef,
+} from "react";
 import { authAPI, mfaAPI } from "../lib/api";
 
 const AuthContext = createContext(null);
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 // Helper function to decode JWT and check expiration
 const isTokenExpired = (token) => {
@@ -22,6 +29,7 @@ export const AuthProvider = ({ children }) => {
   const [tempToken, setTempToken] = useState(null);
   const [mfaMethod, setMfaMethod] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
+  const inactivityTimerRef = useRef(null);
 
   useEffect(() => {
     const checkAndRefreshToken = async () => {
@@ -156,6 +164,50 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     authAPI.logout().catch(() => {});
   };
+
+  useEffect(() => {
+    if (!user) {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+      return;
+    }
+
+    const resetInactivityTimer = () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+      }
+      inactivityTimerRef.current = setTimeout(() => {
+        logout();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const activityEvents = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetInactivityTimer);
+    });
+
+    resetInactivityTimer();
+
+    return () => {
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer);
+      });
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
+    };
+  }, [user]);
 
   const value = {
     user,
