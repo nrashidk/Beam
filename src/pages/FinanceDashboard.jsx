@@ -165,7 +165,7 @@ export default function FinanceDashboard() {
       setFinancialData({
         summary: {
           totalRevenue: summary.revenue?.total || 0,
-          totalExpenses: summary.expenses?.total || 0,
+          totalExpenses: summary.summary?.total_costs || 0,
           netProfit: summary.summary?.net_income || 0,
           profitMargin: summary.summary?.profit_margin_percent || 0,
           invoicesSent: summary.revenue?.invoice_count || 0,

@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   FileText,
   Inbox,
@@ -16,8 +16,9 @@ import {
   CheckCircle,
   FileSpreadsheet,
   LineChart,
-  Building2
-} from 'lucide-react';
+  Receipt,
+  Building2,
+} from "lucide-react";
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -25,21 +26,30 @@ export default function Sidebar() {
 
   // Navigation items in alphabetical order
   const navItems = [
-    { path: '/analytics', icon: LineChart, label: 'Advanced Analytics' },
-    { path: '/ap/inbox', icon: Inbox, label: 'AP Inbox' },
-    { path: '/billing', icon: CreditCard, label: 'Billing' },
-    { path: '/settings/branding', icon: Palette, label: 'Branding' },
-    { path: '/bulk-import', icon: Upload, label: 'Bulk Import' },
-    { path: '/finance', icon: BarChart3, label: 'Finance' },
-    { path: '/audit-files', icon: FileCheck, label: 'FTA Audit' },
-    { path: '/invoices', icon: FileText, label: 'Invoices' },
-    { path: '/payment-verification', icon: CheckCircle, label: 'Payment Verification' },
-    { path: '/settings/peppol', icon: Network, label: 'PEPPOL' },
-    { path: '/ap/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
-    { path: '/reconciliation', icon: FileSpreadsheet, label: 'Reconciliation' },
-    { path: '/settings/security', icon: Shield, label: 'Security' },
-    { path: '/settings/team', icon: Users, label: 'Team' },
-    { path: '/settings/vat', icon: Percent, label: 'VAT Settings' },
+    { path: "/analytics", icon: LineChart, label: "Advanced Analytics" },
+    { path: "/ap/inbox", icon: Inbox, label: "AP Inbox" },
+    { path: "/billing", icon: CreditCard, label: "Billing" },
+    { path: "/settings/branding", icon: Palette, label: "Branding" },
+    { path: "/bulk-import", icon: Upload, label: "Bulk Import" },
+    { path: "/expense-tracker", icon: Receipt, label: "Expense Tracker" },
+    { path: "/finance", icon: BarChart3, label: "Finance" },
+    { path: "/audit-files", icon: FileCheck, label: "FTA Audit" },
+    { path: "/invoices", icon: FileText, label: "Invoices" },
+    {
+      path: "/payment-verification",
+      icon: CheckCircle,
+      label: "Payment Verification",
+    },
+    { path: "/settings/peppol", icon: Network, label: "PEPPOL" },
+    {
+      path: "/ap/purchase-orders",
+      icon: ShoppingCart,
+      label: "Purchase Orders",
+    },
+    { path: "/reconciliation", icon: FileSpreadsheet, label: "Reconciliation" },
+    { path: "/settings/security", icon: Shield, label: "Security" },
+    { path: "/settings/team", icon: Users, label: "Team" },
+    { path: "/settings/vat", icon: Percent, label: "VAT Settings" },
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -47,9 +57,9 @@ export default function Sidebar() {
   return (
     <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col z-40">
       {/* Logo */}
-      <div 
+      <div
         className="p-6 border-b border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors"
-        onClick={() => navigate('/dashboard')}
+        onClick={() => navigate("/dashboard")}
       >
         <div className="flex items-center gap-2">
           <TrendingUp className="h-8 w-8 text-indigo-600" />
@@ -65,16 +75,17 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.path);
-            
+
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all
-                  ${active 
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-indigo-600'
+                  ${
+                    active
+                      ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                      : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
                   }
                 `}
               >
@@ -89,12 +100,13 @@ export default function Sidebar() {
       {/* Dashboard Link at Bottom */}
       <div className="p-4 border-t border-gray-200">
         <button
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate("/dashboard")}
           className={`
             w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all
-            ${location.pathname === '/dashboard'
-              ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-              : 'text-gray-700 hover:bg-gray-50 hover:text-indigo-600'
+            ${
+              location.pathname === "/dashboard"
+                ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
             }
           `}
         >
