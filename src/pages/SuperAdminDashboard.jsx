@@ -377,8 +377,7 @@ export default function SuperAdminDashboard() {
         <Section title="Platform Statistics (Privacy-Focused)" action={
           <Badge variant="secondary" className="text-xs">Aggregated Data Only</Badge>
         }>
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
-            <Stat 
+<div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">            <Stat 
               label="Total Companies" 
               value={platformLoading ? '—' : platformStats?.total_companies?.toLocaleString() ?? '—'} 
               onClick={() => {
@@ -386,19 +385,6 @@ export default function SuperAdminDashboard() {
                 setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
               }}
             />
-            {/* <Stat 
-              label="Active Companies" 
-              value={platformLoading ? '—' : platformStats?.active_companies?.toLocaleString() ?? '—'} 
-              onClick={() => {
-                setStatus('active');
-                setTimeout(() => document.querySelector('#company-explorer')?.scrollIntoView({ behavior: 'smooth' }), 100);
-              }}
-            /> */}
-            {/* <Stat 
-              label="Pending Approvals" 
-              value={platformLoading ? '—' : platformStats?.pending_companies?.toLocaleString() ?? '—'} 
-              onClick={() => navigate('/admin/approvals?status=pending')}
-            /> */}
               <Stat 
               label="Active Subscriptions" 
               value={platformLoading ? '—' : platformStats?.active_subscriptions?.toLocaleString() ?? '—'} 
@@ -452,13 +438,8 @@ export default function SuperAdminDashboard() {
             value={loading ? '—' : stats?.registrations.approved ?? '—'}
             onClick={() => navigate('/admin/companies/approved')}
           />
-          </div>
-        </Section>
 
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-4">
-          
-         
-          <Stat 
+                    <Stat 
             label="Rejected registrations" 
             value={loading ? '—' : stats?.registrations.rejected ?? '—'}
             onClick={() => navigate('/admin/companies/rejected')}
@@ -478,8 +459,8 @@ export default function SuperAdminDashboard() {
             value={loading ? '—' : stats?.companies.suspended ?? '—'} 
             onClick={() => navigate('/admin/companies/suspended')}
           />
-
-        </div>
+          </div>
+        </Section>
 
         <div>
           <Card className="rounded-2xl shadow-sm">
@@ -562,7 +543,7 @@ export default function SuperAdminDashboard() {
                   <th className="px-4 py-3 font-medium">Company</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Plan</th>
-                  <th className="px-4 py-3 font-medium">ARPU</th>
+                  {/* <th className="px-4 py-3 font-medium">ARPU</th> */}
                   <th className="px-4 py-3 font-medium">Invoices (MTD)</th>
                   <th className="px-4 py-3 font-medium">VAT</th>
                   <th className="px-4 py-3 font-medium">Manage</th>
@@ -576,7 +557,7 @@ export default function SuperAdminDashboard() {
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === 'active' ? 'bg-emerald-50 text-emerald-700' : c.status?.toLowerCase() === 'suspended' ? 'bg-orange-50 text-orange-700' : 'bg-slate-100 text-slate-600'}`}>{c.status}</span>
                     </td>
                     <td className="px-4 py-3">{c.plan || '—'}</td>
-                    <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td>
+                    {/* <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td> */}
                     <td className="px-4 py-3">{c.invoicesThisMonth.toLocaleString()}</td>
                     <td className="px-4 py-3">{c.vatCompliant ? <Badge className="bg-emerald-600">Compliant</Badge> : <Badge variant="secondary">Review</Badge>}</td>
                     <td className="px-4 py-3">
