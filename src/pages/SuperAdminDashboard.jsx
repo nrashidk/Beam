@@ -357,7 +357,9 @@ export default function SuperAdminDashboard() {
     const list = stats?.companies.all || [];
     const ql = q.trim().toLowerCase();
     return list.filter((c) => {
-      if (plan !== "all" && c.plan !== plan) return false;
+      if (plan === "Paid" && (!c.plan || c.plan === "Free")) return false;
+      else if (plan !== "all" && plan !== "Paid" && c.plan !== plan)
+        return false;
       // Convert backend uppercase status to lowercase for comparison
       if (status !== "all" && c.status?.toLowerCase() !== status) return false;
       if (ql && !`${c.name}`.toLowerCase().includes(ql)) return false;
@@ -552,7 +554,7 @@ export default function SuperAdminDashboard() {
                   : (platformStats?.paid_tier_users?.toLocaleString() ?? "—")
               }
               onClick={() => {
-                setPlan("Enterprise");
+                setPlan("Paid");
                 setTimeout(
                   () =>
                     document
@@ -719,6 +721,7 @@ export default function SuperAdminDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All plans</SelectItem>
+                  <SelectItem value="Paid">Paid plans</SelectItem>
                   <SelectItem value="Enterprise">Enterprise</SelectItem>
                   <SelectItem value="Professional">Professional</SelectItem>
                   <SelectItem value="Starter">Starter</SelectItem>
