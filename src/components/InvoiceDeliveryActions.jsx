@@ -20,6 +20,8 @@ export default function InvoiceDeliveryActions({ invoice }) {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [qrSrc, setQrSrc] = useState(null);
+  const [shareUrl, setShareUrl] = useState("");
+  const [copyToast, setCopyToast] = useState("");
 
   const [emailAddress, setEmailAddress] = useState(
     invoice.customer_email || "",
@@ -34,20 +36,25 @@ export default function InvoiceDeliveryActions({ invoice }) {
     setError("");
     setSuccess("");
     setQrSrc(null);
+    setShareUrl("");
     setShowQRModal(true);
 
     try {
-      // If share_token exists on the invoice, use it; otherwise request backend to create one
-      let publicUrl = null;
-      if (invoice.share_token) {
-        publicUrl = `${window.location.origin}/invoices/view/${invoice.share_token}`;
-      } else {
+      let shareToken = invoice.share_token || "";
+
+      if (!shareToken) {
         setLoading(true);
         const resp = await apiClient.post(`/invoices/${invoice.id}/share`);
-        publicUrl = resp.data.public_url || resp.data.publicUrl || resp.data.public_url;
+        shareToken = resp?.data?.share_token || "";
       }
 
+      // Use a frontend-only route to avoid opening raw API JSON when scanned directly.
+      const publicUrl = shareToken
+        ? `${window.location.origin}/invoice-view/${shareToken}`
+        : null;
+
       if (publicUrl) {
+        setShareUrl(publicUrl);
         const qrImage = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(publicUrl)}`;
         setQrSrc(qrImage);
       } else {
@@ -58,6 +65,47 @@ export default function InvoiceDeliveryActions({ invoice }) {
       setError(err.response?.data?.detail || 'Failed to generate share link');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const copyShareLink = async () => {
+    if (!shareUrl) {
+      setError("Share link is not available yet");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setSuccess("Invoice link copied to clipboard");
+      setCopyToast("Invoice link copied to clipboard");
+      setTimeout(() => {
+        setSuccess("");
+        setCopyToast("");
+      }, 2000);
+    } catch {
+      setError("Failed to copy link");
+    }
+  };
+
+  const downloadQRCode = async () => {
+    if (!qrSrc) {
+      setError("QR code is not available");
+      return;
+    }
+
+    try {
+      const response = await fetch(qrSrc);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `invoice-${invoice.invoice_number}-qr.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      window.open(qrSrc, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -236,30 +284,21 @@ export default function InvoiceDeliveryActions({ invoice }) {
               {qrSrc && (
                 <div className="flex gap-2 justify-center mt-4">
                   <button
-                    onClick={() => {
-                      const link = `${window.location.origin}/invoices/view/${invoice.share_token}`;
-                      navigator.clipboard.writeText(link);
-                      setSuccess('Link copied to clipboard');
-                      setTimeout(() => setSuccess(''), 2000);
-                    }}
+                    onClick={copyShareLink}
                     className="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg"
                   >
                     Copy Link
                   </button>
                   <button
-                    onClick={() => {
-                      const a = document.createElement('a');
-                      a.href = qrSrc;
-                      a.download = `invoice-${invoice.invoice_number}-qr.png`;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                    }}
+                    onClick={downloadQRCode}
                     className="px-3 py-2 bg-indigo-600 text-white rounded-lg"
                   >
                     Download
                   </button>
                 </div>
+              )}
+              {shareUrl && (
+                <p className="text-xs text-blue-700 mt-3 break-all">{shareUrl}</p>
               )}
               <p className="text-sm text-gray-600 mt-4">
                 Customer can scan this QR code to view the invoice
@@ -466,6 +505,12 @@ export default function InvoiceDeliveryActions({ invoice }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {copyToast && (
+        <div className="fixed bottom-4 right-4 z-[60] bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium">
+          {copyToast}
         </div>
       )}
     </>
