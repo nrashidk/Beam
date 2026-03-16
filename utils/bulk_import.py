@@ -11,7 +11,6 @@ class BulkImportValidator:
     def generate_invoice_template() -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
         template_data = {
-            'invoice_number': ['', '', '', ''],  # Optional - auto-generated if not provided
             'issue_date': ['2025-01-15', '2025-01-16', '2025-01-17', '2025-01-18'],
             'due_date': ['2025-02-15', '2025-02-16', '2025-02-17', '2025-02-18'],
             'invoice_type': ['COMMERCIAL', 'COMMERCIAL', 'CREDIT_NOTE', 'COMMERCIAL'],
@@ -85,13 +84,6 @@ class BulkImportValidator:
                     # Safely get invoice_type
                     invoice_type_raw = row.get('invoice_type', 'COMMERCIAL') if 'invoice_type' in row else 'COMMERCIAL'
                     invoice_type = str(invoice_type_raw).upper().strip() if not pd.isna(invoice_type_raw) else 'COMMERCIAL'
-                    
-                    # Invoice number: required for credit notes, optional for others (auto-generated)
-                    if invoice_type == 'CREDIT_NOTE':
-                        invoice_num_raw = row.get('invoice_number', '') if 'invoice_number' in row else ''
-                        invoice_num = str(invoice_num_raw).strip() if invoice_num_raw and not pd.isna(invoice_num_raw) else ''
-                        if not invoice_num:
-                            row_errors.append(f"Row {row_num}: Invoice number is required for credit notes")
                     
                     # TRN: optional but if provided must be valid 15 digits
                     trn_raw = row.get('customer_trn', '') if 'customer_trn' in row else ''
