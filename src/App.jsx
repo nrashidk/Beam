@@ -36,6 +36,7 @@ import DailyReconciliation from "./pages/DailyReconciliation";
 import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import CompanyManagement from "./pages/CompanyManagement";
 import CompanySettings from "./pages/CompanySettings";
+import ExpenseTracker from "./pages/ExpenseTracker";
 
 function ProtectedRoute({ children }) {
   try {
@@ -359,6 +360,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AdminMFASettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/expense-tracker"
+              element={
+                <ProtectedRoute>
+                  <ExpenseTracker />
                 </ProtectedRoute>
               }
             />
