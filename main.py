@@ -3690,12 +3690,19 @@ def get_all_companies(
     # Use invoices table as source of truth for generated invoice count.
     # This avoids stale counters in companies.invoices_generated.
     invoice_counts = {}
+    companies_with_logos = set()
     if companies:
         company_ids = [c.id for c in companies]
         invoice_counts = dict(
             db.query(InvoiceDB.company_id, func.count(InvoiceDB.id)).filter(
                 InvoiceDB.company_id.in_(company_ids)).group_by(
                     InvoiceDB.company_id).all())
+        companies_with_logos = set(
+            cid for (cid,) in db.query(CompanyBrandingDB.company_id).filter(
+                CompanyBrandingDB.company_id.in_(company_ids),
+                CompanyBrandingDB.logo_file_path.isnot(None)
+            ).all()
+        )
 
     return [{
         "id": c.id,
@@ -3712,7 +3719,8 @@ def get_all_companies(
         "free_plan_type": c.free_plan_type,
         "free_plan_invoice_limit": c.free_plan_invoice_limit,
         "free_plan_duration_months": c.free_plan_duration_months,
-        "free_plan_start_date": c.free_plan_start_date.isoformat() if c.free_plan_start_date else None
+        "free_plan_start_date": c.free_plan_start_date.isoformat() if c.free_plan_start_date else None,
+        "has_logo": c.id in companies_with_logos
     } for c in companies]
 
 

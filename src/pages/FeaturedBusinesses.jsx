@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { ArrowLeft, Plus, Trash2, RefreshCcw, Search, Edit } from 'lucide-react';
-import api from '../lib/api';
+import api, { getApiBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import AdminLayout from '../components/AdminLayout';
 
@@ -246,7 +246,14 @@ export default function FeaturedBusinesses() {
                   <label className="block text-sm font-medium mb-2">Select Company</label>
                   <select
                     value={newFeatured.company_id}
-                    onChange={(e) => setNewFeatured({ ...newFeatured, company_id: e.target.value })}
+                    onChange={(e) => {
+                      const companyId = e.target.value;
+                      const selectedCompany = availableCompanies.find(c => c.id === companyId);
+                      const logoUrl = selectedCompany?.has_logo
+                        ? `${getApiBaseUrl()}/companies/${companyId}/branding/logo`
+                        : '';
+                      setNewFeatured({ ...newFeatured, company_id: companyId, logo_url: logoUrl });
+                    }}
                     className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">-- Select a company --</option>
@@ -276,6 +283,16 @@ export default function FeaturedBusinesses() {
                   <label className="block text-sm font-medium mb-2">
                     Logo URL (Optional)
                   </label>
+                  {/* {newFeatured.logo_url && (
+                    <div className="mb-2 flex items-center gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                      <img
+                        src={newFeatured.logo_url}
+                        alt="Company logo preview"
+                        className="w-10 h-10 rounded object-contain bg-white border border-gray-200"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )} */}
                   <Input
                     value={newFeatured.logo_url}
                     onChange={(e) => setNewFeatured({ ...newFeatured, logo_url: e.target.value })}
