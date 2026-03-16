@@ -214,14 +214,15 @@ export default function SuperAdminDashboard() {
   }
 
   async function handleResetTrial() {
-    if (!confirm('Reset this company\'s trial to start fresh from today? This will:\n\n• Reset trial_start_date to NOW\n• Set trial_invoice_count to 0\n• Mark trial as ACTIVE\n\nContinue?')) {
+    if (!confirm('Reset this company\'s trial to start fresh from today? This will:\n\n• Reset trial_start_date to NOW\n• Set trial_invoice_count to 0\n• Set invoices_generated to 0\n• Delete all invoices created by this company\n• Mark trial as ACTIVE\n\nThis action cannot be undone. Continue?')) {
       return;
     }
     
     try {
       setResetting(true);
-      await adminAPI.resetTrial(editingCompany.id);
-      alert('Trial reset successfully! Trial now starts from today.');
+      const response = await adminAPI.resetTrial(editingCompany.id);
+      const deletedCount = response.data?.deleted_invoices || 0;
+      alert(`Trial reset successfully! Deleted ${deletedCount} invoices and started trial from today.`);
       
       // Refresh company data
       const updatedCompany = await adminAPI.getCompany(editingCompany.id);

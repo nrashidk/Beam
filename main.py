@@ -3904,10 +3904,44 @@ def reset_company_trial(
     if not company:
         raise HTTPException(404, "Company not found")
 
+    # Delete all outbound invoices for this company as requested by super admin.
+    invoices_to_delete = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == company_id).all()
+    invoice_ids = [inv.id for inv in invoices_to_delete]
+
+    # Keep PEPPOL usage rows but detach deleted invoices to avoid FK issues.
+    if invoice_ids:
+        db.query(PeppolUsageDB).filter(
+            PeppolUsageDB.company_id == company_id,
+            PeppolUsageDB.invoice_id.in_(invoice_ids)).update(
+                {PeppolUsageDB.invoice_id: None}, synchronize_session=False)
+
+    deleted_invoices = len(invoices_to_delete)
+    deleted_xml_files = 0
+    deleted_pdf_files = 0
+
+    for invoice in invoices_to_delete:
+        if invoice.xml_file_path and os.path.exists(invoice.xml_file_path):
+            try:
+                os.remove(invoice.xml_file_path)
+                deleted_xml_files += 1
+            except Exception:
+                pass
+
+        if invoice.pdf_file_path and os.path.exists(invoice.pdf_file_path):
+            try:
+                os.remove(invoice.pdf_file_path)
+                deleted_pdf_files += 1
+            except Exception:
+                pass
+
+        db.delete(invoice)
+
     # Reset trial data
     company.trial_status = "ACTIVE"
     company.trial_start_date = datetime.utcnow()
     company.trial_invoice_count = 0
+    company.invoices_generated = 0
     company.trial_ended_at = None
     
     db.commit()
@@ -3919,12 +3953,15 @@ def reset_company_trial(
     return {
         "success": True,
         "company_id": company_id,
-        "message": "Trial reset successfully",
+        "message": "Trial reset successfully and company invoices cleared",
         "trial_status": company.trial_status,
         "trial_start_date": company.trial_start_date.isoformat(),
         "free_plan_type": company.free_plan_type,
         "days_remaining": trial_duration_days,
-        "invoices_remaining": invoice_limit
+        "invoices_remaining": invoice_limit,
+        "deleted_invoices": deleted_invoices,
+        "deleted_xml_files": deleted_xml_files,
+        "deleted_pdf_files": deleted_pdf_files
     }
 
 
