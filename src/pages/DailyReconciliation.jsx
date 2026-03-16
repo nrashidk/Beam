@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -8,6 +8,13 @@ import {
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { Badge } from "../components/ui/badge";
 import {
   Download,
@@ -15,17 +22,29 @@ import {
   TrendingUp,
   AlertTriangle,
   Calendar,
+  Search,
 } from "lucide-react";
 import { format } from "date-fns";
 import api from "../lib/api";
 import Sidebar from "../components/Sidebar";
 import PageLoader from "../components/PageLoader";
 
+const PAYMENT_METHOD_OPTIONS = [
+  "Cash",
+  "Card",
+  "POS",
+  "Bank Transfer",
+  "Cheque",
+  "Digital Wallet",
+];
+
 export default function DailyReconciliation() {
   const navigate = useNavigate();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("all");
   const [dateRange, setDateRange] = useState({
     start_date: new Date().toISOString().split("T")[0],
     end_date: new Date().toISOString().split("T")[0],
@@ -88,10 +107,10 @@ export default function DailyReconciliation() {
 
     csv += "\n\nDETAILED TRANSACTIONS\n";
     csv +=
-      "Payment Method,Invoice Number,Customer Name,Amount,Reference,Date\n";
+      "Payment Group,Invoice Number,Customer Name,Amount,Payment Method,Date\n";
     paymentBreakdown.forEach((method) => {
       method.invoices.forEach((inv) => {
-        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_reference || "N/A"},${inv.payment_date}\n`;
+        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_method || method.payment_method},${inv.payment_date}\n`;
       });
     });
 
@@ -142,6 +161,76 @@ export default function DailyReconciliation() {
   const outstandingInvoices = Array.isArray(report?.outstanding_invoices)
     ? report.outstanding_invoices
     : [];
+
+  const paymentMethodOptions = useMemo(() => {
+    const discoveredMethods = paymentBreakdown
+      .map((method) => method.payment_method)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+
+    const merged = [...PAYMENT_METHOD_OPTIONS];
+    discoveredMethods.forEach((methodName) => {
+      if (!merged.includes(methodName)) {
+        merged.push(methodName);
+      }
+    });
+
+    return merged;
+  }, [paymentBreakdown]);
+
+  const filteredPaymentBreakdown = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    return paymentBreakdown
+      .filter((method) => {
+        if (paymentMethodFilter === "all") return true;
+        return method.payment_method === paymentMethodFilter;
+      })
+      .map((method) => {
+        const filteredInvoices = (method.invoices || []).filter((inv) => {
+          if (!q) return true;
+          const customer = (inv.customer_name || "").toLowerCase();
+          const invoiceNumber = (inv.invoice_number || "").toLowerCase();
+          const methodName = (
+            inv.payment_method ||
+            method.payment_method ||
+            ""
+          ).toLowerCase();
+          return (
+            customer.includes(q) ||
+            invoiceNumber.includes(q) ||
+            methodName.includes(q)
+          );
+        });
+
+        const filteredTotal = filteredInvoices.reduce(
+          (sum, inv) => sum + (inv.amount || 0),
+          0,
+        );
+
+        return {
+          ...method,
+          count: filteredInvoices.length,
+          total_amount: filteredTotal,
+          invoices: filteredInvoices,
+        };
+      })
+      .filter((method) => method.count > 0);
+  }, [paymentBreakdown, paymentMethodFilter, searchQuery]);
+
+  const totalTransactions = useMemo(() => {
+    return paymentBreakdown.reduce(
+      (sum, method) => sum + ((method.invoices || []).length || 0),
+      0,
+    );
+  }, [paymentBreakdown]);
+
+  const filteredTransactions = useMemo(() => {
+    return filteredPaymentBreakdown.reduce(
+      (sum, method) => sum + ((method.invoices || []).length || 0),
+      0,
+    );
+  }, [filteredPaymentBreakdown]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
@@ -289,20 +378,52 @@ export default function DailyReconciliation() {
               {/* Payment Breakdown */}
               <Card className="mb-6">
                 <CardHeader>
-                  <CardTitle>Payment Method Breakdown</CardTitle>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <CardTitle>Payment Method Breakdown</CardTitle>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="relative">
+                        <Search
+                          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+                          size={14}
+                        />
+                        <Input
+                          className="pl-8 w-[220px] h-9 text-sm"
+                          placeholder="Search customer or method"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                      </div>
+                      <Select
+                        value={paymentMethodFilter}
+                        onValueChange={setPaymentMethodFilter}
+                      >
+                        <SelectTrigger className="w-[220px] h-9 text-sm">
+                          <SelectValue placeholder="All methods" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All methods</SelectItem>
+                          {paymentMethodOptions.map((methodName) => (
+                            <SelectItem key={methodName} value={methodName}>
+                              {methodName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  {paymentBreakdown.length === 0 ? (
+                  {filteredPaymentBreakdown.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
                       <DollarSign
                         size={48}
                         className="mx-auto mb-4 opacity-50"
                       />
-                      <p>No payments recorded for this period</p>
+                      <p>No matching payments found</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {paymentBreakdown.map((method, index) => (
+                      {filteredPaymentBreakdown.map((method, index) => (
                         <div key={index} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
@@ -338,7 +459,7 @@ export default function DailyReconciliation() {
                                       Customer
                                     </th>
                                     <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Reference
+                                      Payment Method
                                     </th>
                                     <th className="text-left py-2 px-3 font-medium text-gray-700">
                                       Date
@@ -358,7 +479,9 @@ export default function DailyReconciliation() {
                                         {inv.customer_name}
                                       </td>
                                       <td className="py-2 px-3 text-gray-600">
-                                        {inv.payment_reference || "—"}
+                                        {inv.payment_method ||
+                                          method.payment_method ||
+                                          "—"}
                                       </td>
                                       <td className="py-2 px-3 text-gray-600">
                                         {inv.payment_date
@@ -384,6 +507,10 @@ export default function DailyReconciliation() {
                       ))}
                     </div>
                   )}
+                  <p className="text-xs text-gray-500 mt-4">
+                    Showing {filteredTransactions} of {totalTransactions}{" "}
+                    transactions
+                  </p>
                 </CardContent>
               </Card>
 
