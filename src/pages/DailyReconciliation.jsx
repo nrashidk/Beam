@@ -88,10 +88,10 @@ export default function DailyReconciliation() {
 
     csv += "\n\nDETAILED TRANSACTIONS\n";
     csv +=
-      "Payment Method,Invoice Number,Customer Name,Amount,Reference,Date\n";
+      "Payment Group,Invoice Number,Customer Name,Amount,Payment Method,Date\n";
     paymentBreakdown.forEach((method) => {
       method.invoices.forEach((inv) => {
-        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_reference || "N/A"},${inv.payment_date}\n`;
+        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_method || method.payment_method},${inv.payment_date}\n`;
       });
     });
 
@@ -338,7 +338,7 @@ export default function DailyReconciliation() {
                                       Customer
                                     </th>
                                     <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Reference
+                                      Payment Method
                                     </th>
                                     <th className="text-left py-2 px-3 font-medium text-gray-700">
                                       Date
@@ -358,7 +358,7 @@ export default function DailyReconciliation() {
                                         {inv.customer_name}
                                       </td>
                                       <td className="py-2 px-3 text-gray-600">
-                                        {inv.payment_reference || "—"}
+                                        {inv.payment_method || method.payment_method || "—"}
                                       </td>
                                       <td className="py-2 px-3 text-gray-600">
                                         {inv.payment_date

@@ -5911,6 +5911,13 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
     total_collected = 0.0
 
     for inv in paid_invoices:
+        signed_amount = inv.total_amount or 0.0
+        if inv.invoice_type in [
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+        ]:
+            signed_amount = -signed_amount
+
         method = inv.payment_method or 'Unknown'
         if method not in payment_breakdown:
             payment_breakdown[method] = {
@@ -5919,20 +5926,22 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
                 'invoices': []
             }
         payment_breakdown[method]['count'] += 1
-        payment_breakdown[method]['total_amount'] += inv.total_amount or 0.0
+        payment_breakdown[method]['total_amount'] += signed_amount
         payment_breakdown[method]['invoices'].append({
             'invoice_number':
             inv.invoice_number,
             'customer_name':
             inv.customer_name,
             'amount':
-            inv.total_amount,
+            signed_amount,
+            'payment_method':
+            method,
             'payment_reference':
             inv.invoice_notes if getattr(inv, 'invoice_notes', None) else None,
             'payment_date':
             inv.paid_at.isoformat() if inv.paid_at else None
         })
-        total_collected += inv.total_amount or 0.0
+        total_collected += signed_amount
 
     # Get outstanding invoices (overdue)
     outstanding_invoices = db.query(InvoiceDB).filter(
