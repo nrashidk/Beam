@@ -3716,6 +3716,45 @@ def get_all_companies(
     } for c in companies]
 
 
+@app.get("/admin/companies/{company_id}", tags=["Admin"])
+def get_company_by_id(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Get a single company by id (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    invoices_generated = db.query(func.count(InvoiceDB.id)).filter(
+        InvoiceDB.company_id == company.id).scalar() or 0
+
+    return {
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "email": company.email,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "status": company.status.value,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+        "approved_at": company.approved_at.isoformat() if company.approved_at else None,
+        "rejected_at": company.rejected_at.isoformat() if company.rejected_at else None,
+        "subscription_plan": company.subscription_plan_id,
+        "invoices_generated": invoices_generated,
+        "free_plan_type": company.free_plan_type,
+        "free_plan_invoice_limit": company.free_plan_invoice_limit,
+        "free_plan_duration_months": company.free_plan_duration_months,
+        "free_plan_start_date": company.free_plan_start_date.isoformat() if company.free_plan_start_date else None,
+        "trial_status": company.trial_status,
+        "trial_start_date": company.trial_start_date.isoformat() if company.trial_start_date else None,
+        "trial_invoice_count": company.trial_invoice_count,
+        "trial_ended_at": company.trial_ended_at.isoformat() if company.trial_ended_at else None
+    }
+
+
 class CompanyApprovalConfig(BaseModel):
     free_plan_type: str = "INVOICE_COUNT"  # "DURATION" or "INVOICE_COUNT"
     free_plan_duration_months: Optional[int] = None  # For duration-based
