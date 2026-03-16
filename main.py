@@ -5099,34 +5099,55 @@ def create_invoice(
             "Company TRN is required to issue VAT invoices. Please enable VAT in settings first.",
         )
 
-    # Check trial limits (100 invoices OR 30 days, whichever comes first)
-    if company.trial_status == "ACTIVE" and company.trial_start_date:
+    # Check trial eligibility using configured free-plan settings
+    # (keep consistent with /billing/trial logic).
+    if company.trial_start_date and company.trial_status in ["ACTIVE", "EXPIRED"]:
+        trial_duration_days = (company.free_plan_duration_months or 1) * 30
+        invoice_limit = company.free_plan_invoice_limit or 100
         days_elapsed = (datetime.utcnow() - company.trial_start_date).days
-        trial_days_remaining = max(0, 30 - days_elapsed)
-        trial_invoices_remaining = max(0, 100 - company.trial_invoice_count)
+        trial_days_remaining = max(0, trial_duration_days - days_elapsed)
+        trial_invoices_remaining = max(
+            0, invoice_limit - (company.trial_invoice_count or 0)
+        )
 
-        # Check if trial expired
-        if trial_days_remaining == 0:
+        if company.free_plan_type == "DURATION":
+            trial_expired_now = trial_days_remaining == 0
+            expired_message = f"Free trial expired ({trial_duration_days} days). Please subscribe to continue creating invoices."
+        elif company.free_plan_type == "INVOICE_COUNT":
+            trial_expired_now = trial_invoices_remaining == 0
+            expired_message = f"Free trial expired ({invoice_limit} invoices used). Please subscribe to continue creating invoices."
+        else:
+            trial_expired_now = (
+                trial_days_remaining == 0 or trial_invoices_remaining == 0
+            )
+            expired_message = (
+                "Free trial expired. Please subscribe to continue creating invoices."
+            )
+
+        if trial_expired_now:
             company.trial_status = "EXPIRED"
             company.trial_ended_at = datetime.utcnow()
             db.commit()
-            raise HTTPException(
-                403,
-                "Free trial expired (30 days). Please subscribe to continue creating invoices.",
+
+            active_subscription = (
+                db.query(SubscriptionDB)
+                .filter(
+                    SubscriptionDB.company_id == company.id,
+                    SubscriptionDB.status == "ACTIVE",
+                )
+                .first()
             )
 
-        if trial_invoices_remaining == 0:
-            company.trial_status = "EXPIRED"
-            company.trial_ended_at = datetime.utcnow()
+            if not active_subscription:
+                raise HTTPException(403, expired_message)
+        elif company.trial_status == "EXPIRED":
+            # Recover stale EXPIRED status from old rules when still eligible.
+            company.trial_status = "ACTIVE"
+            company.trial_ended_at = None
             db.commit()
-            raise HTTPException(
-                403,
-                "Free trial expired (100 invoices used). Please subscribe to continue creating invoices.",
-            )
 
-    # Check if trial already expired
+    # Fallback: if still marked EXPIRED and no active subscription, block invoice creation.
     if company.trial_status == "EXPIRED":
-        # Check if they have an active subscription
         active_subscription = (
             db.query(SubscriptionDB)
             .filter(
