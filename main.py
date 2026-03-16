@@ -10533,6 +10533,60 @@ async def bulk_import_invoices(
                 share_token=f"share_{uuid4().hex[:16]}",
                 created_at=datetime.utcnow())
             db.add(new_invoice)
+
+            # Create one line item per imported row so invoice detail can render item/qty/tax.
+            raw_tax_category = str(invoice_data.get('tax_category') or 'S').upper()
+            if company.vat_enabled:
+                tax_category_map = {
+                    'S': TaxCategory.STANDARD,
+                    'STANDARD': TaxCategory.STANDARD,
+                    'Z': TaxCategory.ZERO,
+                    'ZERO': TaxCategory.ZERO,
+                    'E': TaxCategory.EXEMPT,
+                    'EXEMPT': TaxCategory.EXEMPT,
+                    'O': TaxCategory.OUT_OF_SCOPE,
+                    'OUT_OF_SCOPE': TaxCategory.OUT_OF_SCOPE,
+                }
+                effective_tax_category = tax_category_map.get(
+                    raw_tax_category, TaxCategory.STANDARD)
+                effective_tax_percent = float(invoice_data.get('tax_percent') or 0.0)
+                effective_tax_code = invoice_data.get('tax_code') or 'SR'
+                effective_tax_amount = float(tax_amount_calc)
+            else:
+                effective_tax_category = TaxCategory.OUT_OF_SCOPE
+                effective_tax_percent = 0.0
+                effective_tax_code = 'OP'
+                effective_tax_amount = 0.0
+
+            line_item = InvoiceLineItemDB(
+                id=f"line_{uuid4().hex[:12]}",
+                invoice_id=new_invoice.id,
+                line_number=1,
+                item_name=invoice_data.get('item_name') or 'Item',
+                item_description=invoice_data.get('item_description'),
+                quantity=float(invoice_data.get('quantity') or 0.0),
+                unit_code=invoice_data.get('unit_name') or 'C62',
+                unit_price=float(invoice_data.get('unit_price') or 0.0),
+                line_extension_amount=float(taxable_amount),
+                tax_category=effective_tax_category,
+                tax_percent=effective_tax_percent,
+                tax_code=effective_tax_code,
+                tax_amount=effective_tax_amount,
+                line_total_amount=float(total_amount_calc)
+            )
+            db.add(line_item)
+
+            if company.vat_enabled:
+                tax_breakdown = InvoiceTaxBreakdownDB(
+                    id=f"tax_{uuid4().hex[:12]}",
+                    invoice_id=new_invoice.id,
+                    tax_category=effective_tax_category,
+                    taxable_amount=float(taxable_amount),
+                    tax_percent=effective_tax_percent,
+                    tax_amount=effective_tax_amount
+                )
+                db.add(tax_breakdown)
+
             created_count += 1
 
         # Update trial invoice count if on trial
