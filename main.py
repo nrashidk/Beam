@@ -4031,6 +4031,8 @@ def get_admin_stats(
         invoices_this_month = db.query(InvoiceDB).filter(
             InvoiceDB.company_id == company.id, InvoiceDB.created_at
             >= month_start).count()
+        invoices_used_total = db.query(InvoiceDB).filter(
+            InvoiceDB.company_id == company.id).count()
 
         all_companies_list.append({
             "id":
@@ -4041,8 +4043,12 @@ def get_admin_stats(
             "active" if company.status == CompanyStatus.ACTIVE else ("suspended" if company.status == CompanyStatus.SUSPENDED else "inactive"),
             "invoicesThisMonth":
             invoices_this_month,
+            "invoicesUsed":
+            invoices_used_total,
             "invoicesLimit":
             company.free_plan_invoice_limit,
+            "free_plan_type":
+            company.free_plan_type,
             "plan":
             plan,
             "arpu":

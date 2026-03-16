@@ -75,13 +75,13 @@ function csvEscape(val) {
 }
 
 function buildCompaniesCsv(rows) {
-  const header = ['Company', 'Status', 'Plan', 'ARPU', 'InvoicesMTD', 'Region', 'VATCompliant'];
+  const header = ['Company', 'Status', 'Plan', 'ARPU', 'InvoicesUsedLimit', 'Region', 'VATCompliant'];
   const lines = rows.map((r) => [
     csvEscape(r.name),
     csvEscape(r.status),
     csvEscape(r.plan || ''),
     csvEscape(r.arpu ?? ''),
-    csvEscape(r.invoicesThisMonth),
+    csvEscape(`${r.invoicesUsed || 0}/${r.invoicesLimit || 0}`),
     csvEscape(r.region || ''),
     csvEscape(r.vatCompliant ? 'Yes' : 'No'),
   ].join(','));
@@ -558,7 +558,7 @@ export default function SuperAdminDashboard() {
                     </td>
                     <td className="px-4 py-3">{c.plan || '—'}</td>
                     {/* <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td> */}
-                    <td className="px-4 py-3">{c.invoicesThisMonth.toLocaleString()}</td>
+                    <td className="px-4 py-3">{`${c.invoicesUsed || 0}/${c.invoicesLimit || 0}`}</td>
                     <td className="px-4 py-3">{c.vatCompliant ? <Badge className="bg-emerald-600">Compliant</Badge> : <Badge variant="secondary">Review</Badge>}</td>
                     <td className="px-4 py-3">
                       <Button 
