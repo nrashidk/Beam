@@ -125,6 +125,10 @@ function App() {
               element={<PublicInvoiceView />}
             />
             <Route
+              path="/invoice-view/:shareToken"
+              element={<PublicInvoiceView />}
+            />
+            <Route
               path="/login"
               element={
                 <PublicRoute>

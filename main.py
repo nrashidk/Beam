@@ -3,6 +3,7 @@ UAE e-Invoicing Platform with Registration Wizard
 ==================================================
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
+
 import os, enum, hashlib, secrets, json, logging
 from uuid import uuid4
 from typing import List, Optional
@@ -11,19 +12,42 @@ from decimal import Decimal
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response, Header, Cookie
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    HTTPException,
+    Depends,
+    Form,
+    Response,
+    Header,
+    Cookie,
+)
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # SQLAlchemy
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func
+from sqlalchemy import (
+    create_engine,
+    Column,
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Date,
+    DateTime,
+    Enum as SQLEnum,
+    ForeignKey,
+    Text,
+    func,
+)
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
 # Password & JWT
@@ -34,12 +58,19 @@ from jose import JWTError, jwt
 # Legacy UBL generator removed - using utils/ubl_xml_generator.py instead
 
 # Exception handling
-from utils.exceptions import (InvoLinksException, ValidationError,
-                              InvoiceValidationError, CryptoError,
-                              SigningError, CertificateError,
-                              XMLGenerationError, PeppolError,
-                              PeppolProviderError, ConfigurationError,
-                              exception_to_http_response)
+from utils.exceptions import (
+    InvoLinksException,
+    ValidationError,
+    InvoiceValidationError,
+    CryptoError,
+    SigningError,
+    CertificateError,
+    XMLGenerationError,
+    PeppolError,
+    PeppolProviderError,
+    ConfigurationError,
+    exception_to_http_response,
+)
 
 # MFA (Multi-Factor Authentication)
 from utils.mfa_utils import MFAManager, EmailOTPManager
@@ -53,8 +84,13 @@ import pandas as pd
 from io import BytesIO
 
 # VAT Utilities (Phase 1)
-from utils.vat_utils import (is_valid_trn, format_trn, classify_invoice_type,
-                             is_valid_tax_code, UAE_TAX_CODES)
+from utils.vat_utils import (
+    is_valid_trn,
+    format_trn,
+    classify_invoice_type,
+    is_valid_tax_code,
+    UAE_TAX_CODES,
+)
 
 # Stripe payment processing
 import stripe
@@ -66,8 +102,7 @@ os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
 # JWT settings
-SECRET_KEY = os.getenv("JWT_SECRET_KEY",
-                       "involinks-secret-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 REFRESH_TOKEN_EXPIRE_DAYS = 1
@@ -81,11 +116,9 @@ engine = create_engine(
     pool_pre_ping=True,  # Verify connections before using them
     pool_recycle=3600,  # Recycle connections after 1 hour
     pool_size=5,
-    max_overflow=10)
-SessionLocal = sessionmaker(autocommit=False,
-                            autoflush=False,
-                            bind=engine,
-                            future=True)
+    max_overflow=10,
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, future=True)
 Base = declarative_base()
 
 
@@ -196,11 +229,11 @@ class UserDB(Base):
     password_hash = Column(String, nullable=True)
     role = Column(SQLEnum(Role), nullable=False)
     company_id = Column(String, ForeignKey("companies.id"), nullable=True)
-    is_owner = Column(Boolean,
-                      default=False)  # First user who registered the company
+    is_owner = Column(Boolean, default=False)  # First user who registered the company
     full_name = Column(String, nullable=True)
-    invited_by = Column(String, ForeignKey("users.id"),
-                        nullable=True)  # Who invited this user
+    invited_by = Column(
+        String, ForeignKey("users.id"), nullable=True
+    )  # Who invited this user
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
@@ -208,8 +241,7 @@ class UserDB(Base):
     mfa_enabled = Column(Boolean, default=False)
     mfa_method = Column(String, nullable=True)  # 'totp', 'email', or None
     mfa_secret = Column(String, nullable=True)  # Base32 encoded TOTP secret
-    mfa_backup_codes = Column(
-        Text, nullable=True)  # JSON array of hashed backup codes
+    mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed backup codes
     mfa_enrolled_at = Column(DateTime, nullable=True)
     mfa_last_verified_at = Column(DateTime, nullable=True)
 
@@ -219,23 +251,23 @@ class CompanyDB(Base):
     id = Column(String, primary_key=True)
     legal_name = Column(String, nullable=True)
     country = Column(String, default="AE")
-    status = Column(SQLEnum(CompanyStatus),
-                    default=CompanyStatus.PENDING_REVIEW)
+    status = Column(SQLEnum(CompanyStatus), default=CompanyStatus.PENDING_REVIEW)
     trn = Column(String, nullable=True)
 
     # VAT Registration (Opt-In Model - Phase 1)
     vat_enabled = Column(Boolean, default=False)  # Toggle for VAT registration
     vat_registration_date = Column(
-        Date, nullable=True)  # When business became VAT-registered
+        Date, nullable=True
+    )  # When business became VAT-registered
     vat_certificate_path = Column(
-        String, nullable=True)  # Path to uploaded VAT certificate PDF
+        String, nullable=True
+    )  # Path to uploaded VAT certificate PDF
 
     # MFA (Multi-Factor Authentication) fields - Article 9.1 compliance
     mfa_enabled = Column(Boolean, default=False)
     mfa_method = Column(String, nullable=True)  # 'totp' or 'email'
     mfa_secret = Column(String, nullable=True)  # Base32 TOTP secret
-    mfa_backup_codes = Column(Text,
-                              nullable=True)  # JSON array of hashed codes
+    mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed codes
     mfa_enrolled_at = Column(DateTime, nullable=True)
     mfa_last_verified_at = Column(DateTime, nullable=True)
 
@@ -272,27 +304,21 @@ class CompanyDB(Base):
     password_reset_expires = Column(DateTime, nullable=True)
 
     # Free plan configuration (DEPRECATED - moved to trial system)
-    free_plan_type = Column(String,
-                            nullable=True)  # "DURATION" or "INVOICE_COUNT"
-    free_plan_duration_months = Column(Integer,
-                                       nullable=True)  # If duration-based
-    free_plan_invoice_limit = Column(Integer,
-                                     nullable=True)  # If invoice count-based
-    free_plan_start_date = Column(DateTime,
-                                  nullable=True)  # When free plan started
+    free_plan_type = Column(String, nullable=True)  # "DURATION" or "INVOICE_COUNT"
+    free_plan_duration_months = Column(Integer, nullable=True)  # If duration-based
+    free_plan_invoice_limit = Column(Integer, nullable=True)  # If invoice count-based
+    free_plan_start_date = Column(DateTime, nullable=True)  # When free plan started
     invoices_generated = Column(Integer, default=0)  # Total lifetime invoices
 
     # Subscription tracking (DEPRECATED - moved to subscriptions table)
-    subscription_plan_id = Column(String,
-                                  ForeignKey("subscription_plans.id"),
-                                  nullable=True)
+    subscription_plan_id = Column(
+        String, ForeignKey("subscription_plans.id"), nullable=True
+    )
 
     # Free Trial System
-    trial_status = Column(String,
-                          default="ACTIVE")  # ACTIVE, EXPIRED, CONVERTED
+    trial_status = Column(String, default="ACTIVE")  # ACTIVE, EXPIRED, CONVERTED
     trial_start_date = Column(DateTime, nullable=True)
-    trial_invoice_count = Column(Integer,
-                                 default=0)  # Invoices sent during trial
+    trial_invoice_count = Column(Integer, default=0)  # Invoices sent during trial
     trial_ended_at = Column(DateTime, nullable=True)
 
     # Stripe Integration
@@ -300,14 +326,14 @@ class CompanyDB(Base):
 
     # PEPPOL Configuration
     peppol_enabled = Column(Boolean, default=False)
-    peppol_provider = Column(String,
-                             nullable=True)  # 'tradeshift', 'basware', 'mock'
+    peppol_provider = Column(String, nullable=True)  # 'tradeshift', 'basware', 'mock'
     peppol_participant_id = Column(
         String, nullable=True
     )  # Company's PEPPOL participant ID (e.g., "0190:123456789012345")
     peppol_base_url = Column(String, nullable=True)  # Provider API base URL
     peppol_api_key = Column(
-        Text, nullable=True)  # Provider API key (encrypted in production)
+        Text, nullable=True
+    )  # Provider API key (encrypted in production)
     peppol_configured_at = Column(DateTime, nullable=True)
     peppol_last_tested_at = Column(DateTime, nullable=True)
 
@@ -326,9 +352,11 @@ class SubscriptionPlanDB(Base):
     max_invoices_per_month = Column(Integer, nullable=True)
     max_users = Column(Integer, default=1)  # Total users allowed
     max_business_admins = Column(
-        Integer, default=0)  # Phase 2: Max Business Admins per tier
+        Integer, default=0
+    )  # Phase 2: Max Business Admins per tier
     max_finance_users = Column(
-        Integer, default=1)  # Phase 2: Max Finance Users per tier
+        Integer, default=1
+    )  # Phase 2: Max Finance Users per tier
     max_pos_devices = Column(Integer, default=0)
     allow_api_access = Column(Boolean, default=True)
     allow_branding = Column(Boolean, default=False)
@@ -341,15 +369,9 @@ class SubscriptionPlanDB(Base):
 class CompanySubscriptionDB(Base):
     __tablename__ = "company_subscriptions"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
-    plan_id = Column(String,
-                     ForeignKey("subscription_plans.id"),
-                     nullable=False)
-    status = Column(SQLEnum(SubscriptionStatus),
-                    default=SubscriptionStatus.TRIAL)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    plan_id = Column(String, ForeignKey("subscription_plans.id"), nullable=False)
+    status = Column(SQLEnum(SubscriptionStatus), default=SubscriptionStatus.TRIAL)
     billing_cycle = Column(String, default="monthly")
     current_period_start = Column(Date, nullable=False)
     current_period_end = Column(Date, nullable=False)
@@ -363,17 +385,13 @@ class CompanySubscriptionDB(Base):
 class CompanyDocumentDB(Base):
     __tablename__ = "company_documents"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
     document_type = Column(SQLEnum(DocumentType), nullable=False)
     file_name = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
     file_size = Column(Integer)
     mime_type = Column(String)
-    status = Column(SQLEnum(DocumentStatus),
-                    default=DocumentStatus.PENDING_REVIEW)
+    status = Column(SQLEnum(DocumentStatus), default=DocumentStatus.PENDING_REVIEW)
     issue_date = Column(Date, nullable=True)
     expiry_date = Column(Date, nullable=True)
     document_number = Column(String, nullable=True)
@@ -385,11 +403,9 @@ class CompanyDocumentDB(Base):
 class CompanyBrandingDB(Base):
     __tablename__ = "company_branding"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        unique=True,
-                        nullable=False,
-                        index=True)
+    company_id = Column(
+        String, ForeignKey("companies.id"), unique=True, nullable=False, index=True
+    )
 
     # Logo
     logo_file_name = Column(String, nullable=True)
@@ -411,9 +427,7 @@ class CompanyBrandingDB(Base):
     font_family = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = relationship("CompanyDB", backref="branding")
 
@@ -421,10 +435,7 @@ class CompanyBrandingDB(Base):
 class RegistrationProgressDB(Base):
     __tablename__ = "registration_progress"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        unique=True,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), unique=True, index=True)
     current_step = Column(Integer, default=1)
     step_company_info = Column(Boolean, default=False)
     step_business_details = Column(Boolean, default=False)
@@ -439,41 +450,36 @@ class RegistrationProgressDB(Base):
 
 class ContentBlockDB(Base):
     """Content Management System - Editable text blocks for UI"""
+
     __tablename__ = "content_blocks"
     id = Column(String, primary_key=True)
-    key = Column(String, unique=True, nullable=False,
-                 index=True)  # e.g., "homepage_hero_title"
+    key = Column(
+        String, unique=True, nullable=False, index=True
+    )  # e.g., "homepage_hero_title"
     value = Column(Text, nullable=False)  # The actual text content
     description = Column(String, nullable=True)  # What this controls
     section = Column(
-        String, nullable=True,
-        index=True)  # Group by page: "homepage", "feature_boxes", etc.
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
-    updated_by = Column(String,
-                        nullable=True)  # Admin email who made the change
+        String, nullable=True, index=True
+    )  # Group by page: "homepage", "feature_boxes", etc.
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String, nullable=True)  # Admin email who made the change
 
 
 class FeaturedBusinessDB(Base):
     """Featured businesses for homepage moving bar - Phase 2"""
+
     __tablename__ = "featured_businesses"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
-    display_name = Column(String,
-                          nullable=True)  # Override company name if needed
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    display_name = Column(String, nullable=True)  # Override company name if needed
     logo_url = Column(String, nullable=True)  # Company logo path
     is_active = Column(Boolean, default=True)  # Show/hide from moving bar
     display_order = Column(Integer, default=0)  # Sort order in moving bar
-    added_by_user_id = Column(String, ForeignKey("users.id"),
-                              nullable=True)  # SuperAdmin who added it
+    added_by_user_id = Column(
+        String, ForeignKey("users.id"), nullable=True
+    )  # SuperAdmin who added it
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="featured_entries")
@@ -482,10 +488,7 @@ class FeaturedBusinessDB(Base):
 class InvoiceDB(Base):
     __tablename__ = "invoices"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # UBL/PINT-AE Core Fields
     invoice_number = Column(String, nullable=False, index=True)
@@ -496,8 +499,7 @@ class InvoiceDB(Base):
     currency_code = Column(String, default="AED")
 
     # Supplier (Issuer) - Company issuing the invoice
-    supplier_trn = Column(String,
-                          nullable=True)  # Optional when VAT not enabled
+    supplier_trn = Column(String, nullable=True)  # Optional when VAT not enabled
     supplier_name = Column(String, nullable=False)
     supplier_address = Column(Text, nullable=True)
     supplier_city = Column(String, nullable=True)
@@ -514,9 +516,10 @@ class InvoiceDB(Base):
     customer_peppol_id = Column(String, nullable=True)
 
     # VAT Compliance (Phase 1)
-    tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP
+    tax_code = Column(String, default="SR")  # UAE tax code: SR, ZR, ES, RC, OP
     invoice_classification = Column(
-        String, default='standard')  # 'full', 'simplified', 'standard'
+        String, default="standard"
+    )  # 'full', 'simplified', 'standard'
 
     # Monetary Totals (PINT-AE mandatory)
     subtotal_amount = Column(Float, default=0.0)  # Line extension total
@@ -534,13 +537,12 @@ class InvoiceDB(Base):
     # Notes & References
     invoice_notes = Column(Text, nullable=True)
     reference_number = Column(String, nullable=True)  # PO number, etc.
-    preceding_invoice_id = Column(String,
-                                  ForeignKey("invoices.id"),
-                                  nullable=True)  # For credit notes
+    preceding_invoice_id = Column(
+        String, ForeignKey("invoices.id"), nullable=True
+    )  # For credit notes
 
     # Credit Note specific
-    credit_note_reason = Column(String,
-                                nullable=True)  # Mandatory for credit notes
+    credit_note_reason = Column(String, nullable=True)  # Mandatory for credit notes
 
     # Document Management
     xml_file_path = Column(String, nullable=True)  # UBL XML storage path
@@ -549,69 +551,61 @@ class InvoiceDB(Base):
 
     # Digital Signature & Hash Chain (UAE FTA Compliance)
     prev_invoice_hash = Column(
-        String, nullable=True,
-        index=True)  # Links to previous invoice in chain
-    signature_b64 = Column(Text,
-                           nullable=True)  # Base64 encoded digital signature
+        String, nullable=True, index=True
+    )  # Links to previous invoice in chain
+    signature_b64 = Column(Text, nullable=True)  # Base64 encoded digital signature
     signing_cert_serial = Column(
-        String, nullable=True)  # Certificate serial number for audit trail
+        String, nullable=True
+    )  # Certificate serial number for audit trail
     signing_timestamp = Column(
-        DateTime, nullable=True)  # When invoice was digitally signed
+        DateTime, nullable=True
+    )  # When invoice was digitally signed
 
     # PEPPOL Transmission Tracking
-    peppol_message_id = Column(String, nullable=True,
-                               index=True)  # Provider's message ID
-    peppol_status = Column(String,
-                           nullable=True)  # SENT, DELIVERED, REJECTED, etc.
-    peppol_provider = Column(String,
-                             nullable=True)  # e.g., "tradeshift", "basware"
+    peppol_message_id = Column(
+        String, nullable=True, index=True
+    )  # Provider's message ID
+    peppol_status = Column(String, nullable=True)  # SENT, DELIVERED, REJECTED, etc.
+    peppol_provider = Column(String, nullable=True)  # e.g., "tradeshift", "basware"
     peppol_sent_at = Column(DateTime, nullable=True)  # Transmission timestamp
-    peppol_response = Column(Text,
-                             nullable=True)  # Provider API response (JSON)
+    peppol_response = Column(Text, nullable=True)  # Provider API response (JSON)
 
     # Sharing & Transmission
-    share_token = Column(String, nullable=True,
-                         index=True)  # Public share link token
+    share_token = Column(String, nullable=True, index=True)  # Public share link token
     sent_at = Column(DateTime, nullable=True)
     viewed_at = Column(DateTime, nullable=True)
     paid_at = Column(DateTime, nullable=True)
 
     # User Tracking (Phase 2)
-    created_by_user_id = Column(String,
-                                ForeignKey("users.id"),
-                                nullable=True,
-                                index=True)  # Who created the invoice
-    payment_verified_by_user_id = Column(String,
-                                         ForeignKey("users.id"),
-                                         nullable=True)  # Who verified payment
-    payment_verified_at = Column(DateTime,
-                                 nullable=True)  # When payment was verified
+    created_by_user_id = Column(
+        String, ForeignKey("users.id"), nullable=True, index=True
+    )  # Who created the invoice
+    payment_verified_by_user_id = Column(
+        String, ForeignKey("users.id"), nullable=True
+    )  # Who verified payment
+    payment_verified_at = Column(DateTime, nullable=True)  # When payment was verified
     payment_method = Column(
-        String, nullable=True)  # Phase 2: Cash, POS, Bank Transfer, etc.
+        String, nullable=True
+    )  # Phase 2: Cash, POS, Bank Transfer, etc.
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="invoices")
-    line_items = relationship("InvoiceLineItemDB",
-                              backref="invoice",
-                              cascade="all, delete-orphan")
-    tax_breakdowns = relationship("InvoiceTaxBreakdownDB",
-                                  backref="invoice",
-                                  cascade="all, delete-orphan")
+    line_items = relationship(
+        "InvoiceLineItemDB", backref="invoice", cascade="all, delete-orphan"
+    )
+    tax_breakdowns = relationship(
+        "InvoiceTaxBreakdownDB", backref="invoice", cascade="all, delete-orphan"
+    )
 
 
 class InvoiceLineItemDB(Base):
     __tablename__ = "invoice_line_items"
     id = Column(String, primary_key=True)
-    invoice_id = Column(String,
-                        ForeignKey("invoices.id"),
-                        nullable=False,
-                        index=True)
+    invoice_id = Column(String, ForeignKey("invoices.id"), nullable=False, index=True)
     line_number = Column(Integer, nullable=False)  # Sequential line number
 
     # Product/Service Details
@@ -621,20 +615,19 @@ class InvoiceLineItemDB(Base):
 
     # Quantity & Unit
     quantity = Column(Float, nullable=False)
-    unit_code = Column(String,
-                       default="C62")  # UN/ECE unit codes (C62 = piece)
+    unit_code = Column(String, default="C62")  # UN/ECE unit codes (C62 = piece)
 
     # Pricing
     unit_price = Column(Float, nullable=False)
-    line_extension_amount = Column(Float,
-                                   nullable=False)  # quantity * unit_price
+    line_extension_amount = Column(Float, nullable=False)  # quantity * unit_price
 
     # Tax
     tax_category = Column(SQLEnum(TaxCategory), nullable=False)
     tax_percent = Column(Float, default=0.0)  # 5% for standard rate in UAE
     tax_amount = Column(Float, default=0.0)
     tax_code = Column(
-        String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP (Phase 1)
+        String, default="SR"
+    )  # UAE tax code: SR, ZR, ES, RC, OP (Phase 1)
 
     # Total
     line_total_amount = Column(Float, nullable=False)  # Including tax
@@ -645,10 +638,7 @@ class InvoiceLineItemDB(Base):
 class InvoiceTaxBreakdownDB(Base):
     __tablename__ = "invoice_tax_breakdowns"
     id = Column(String, primary_key=True)
-    invoice_id = Column(String,
-                        ForeignKey("invoices.id"),
-                        nullable=False,
-                        index=True)
+    invoice_id = Column(String, ForeignKey("invoices.id"), nullable=False, index=True)
 
     # Tax Category Breakdown (required for UBL)
     tax_category = Column(SQLEnum(TaxCategory), nullable=False)
@@ -664,22 +654,21 @@ class InvoiceTaxBreakdownDB(Base):
 
 class PurchaseOrderDB(Base):
     """Purchase Orders - Track expected invoices from suppliers"""
+
     __tablename__ = "purchase_orders"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # PO Identification
-    po_number = Column(String, nullable=False,
-                       index=True)  # Unique PO number per company
-    status = Column(SQLEnum(PurchaseOrderStatus),
-                    default=PurchaseOrderStatus.DRAFT)
+    po_number = Column(
+        String, nullable=False, index=True
+    )  # Unique PO number per company
+    status = Column(SQLEnum(PurchaseOrderStatus), default=PurchaseOrderStatus.DRAFT)
 
     # Supplier Information
     supplier_trn = Column(
-        String, nullable=True)  # Optional for non-VAT-registered suppliers
+        String, nullable=True
+    )  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_contact_email = Column(String, nullable=True)
     supplier_address = Column(Text, nullable=True)
@@ -697,12 +686,10 @@ class PurchaseOrderDB(Base):
     expected_total = Column(Float, nullable=False)
 
     # Matching & Fulfillment
-    received_invoice_count = Column(Integer,
-                                    default=0)  # How many invoices received
+    received_invoice_count = Column(Integer, default=0)  # How many invoices received
     matched_invoice_count = Column(Integer, default=0)  # How many matched
     received_amount_total = Column(Float, default=0.0)  # Total invoiced amount
-    variance_amount = Column(Float,
-                             default=0.0)  # Difference (expected - actual)
+    variance_amount = Column(Float, default=0.0)  # Difference (expected - actual)
 
     # References
     reference_number = Column(String, nullable=True)  # Internal reference
@@ -714,28 +701,26 @@ class PurchaseOrderDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="purchase_orders")
-    line_items = relationship("PurchaseOrderLineItemDB",
-                              backref="purchase_order",
-                              cascade="all, delete-orphan")
-    goods_receipts = relationship("GoodsReceiptDB",
-                                  backref="purchase_order",
-                                  cascade="all, delete-orphan")
+    line_items = relationship(
+        "PurchaseOrderLineItemDB",
+        backref="purchase_order",
+        cascade="all, delete-orphan",
+    )
+    goods_receipts = relationship(
+        "GoodsReceiptDB", backref="purchase_order", cascade="all, delete-orphan"
+    )
 
 
 class PurchaseOrderLineItemDB(Base):
     """Line items for Purchase Orders"""
+
     __tablename__ = "purchase_order_line_items"
     id = Column(String, primary_key=True)
-    po_id = Column(String,
-                   ForeignKey("purchase_orders.id"),
-                   nullable=False,
-                   index=True)
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=False, index=True)
     line_number = Column(Integer, nullable=False)
 
     # Product/Service
@@ -761,21 +746,15 @@ class PurchaseOrderLineItemDB(Base):
 
 class GoodsReceiptDB(Base):
     """Goods Receipt Notes (GRN) - Track physical delivery"""
+
     __tablename__ = "goods_receipts"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
-    po_id = Column(String,
-                   ForeignKey("purchase_orders.id"),
-                   nullable=True,
-                   index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=True, index=True)
 
     # GRN Identification
     grn_number = Column(String, nullable=False, index=True)
-    status = Column(SQLEnum(GoodsReceiptStatus),
-                    default=GoodsReceiptStatus.PENDING)
+    status = Column(SQLEnum(GoodsReceiptStatus), default=GoodsReceiptStatus.PENDING)
 
     # Receipt Details
     receipt_date = Column(Date, nullable=False)
@@ -783,10 +762,12 @@ class GoodsReceiptDB(Base):
 
     # Supplier
     supplier_trn = Column(
-        String, nullable=True)  # Optional for non-VAT-registered suppliers
+        String, nullable=True
+    )  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_delivery_note = Column(
-        String, nullable=True)  # Supplier's delivery note number
+        String, nullable=True
+    )  # Supplier's delivery note number
 
     # Quantities
     total_items_received = Column(Integer, default=0)
@@ -802,28 +783,24 @@ class GoodsReceiptDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="goods_receipts")
-    line_items = relationship("GoodsReceiptLineItemDB",
-                              backref="goods_receipt",
-                              cascade="all, delete-orphan")
+    line_items = relationship(
+        "GoodsReceiptLineItemDB", backref="goods_receipt", cascade="all, delete-orphan"
+    )
 
 
 class GoodsReceiptLineItemDB(Base):
     """Line items for Goods Receipt Notes"""
+
     __tablename__ = "goods_receipt_line_items"
     id = Column(String, primary_key=True)
-    grn_id = Column(String,
-                    ForeignKey("goods_receipts.id"),
-                    nullable=False,
-                    index=True)
-    po_line_item_id = Column(String,
-                             ForeignKey("purchase_order_line_items.id"),
-                             nullable=True)
+    grn_id = Column(String, ForeignKey("goods_receipts.id"), nullable=False, index=True)
+    po_line_item_id = Column(
+        String, ForeignKey("purchase_order_line_items.id"), nullable=True
+    )
 
     line_number = Column(Integer, nullable=False)
 
@@ -846,19 +823,15 @@ class GoodsReceiptLineItemDB(Base):
 
 class InwardInvoiceDB(Base):
     """Inward Invoices - Received from suppliers via PEPPOL (Corner 4)"""
+
     __tablename__ = "inward_invoices"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Invoice Identification
     supplier_invoice_number = Column(String, nullable=False, index=True)
-    invoice_type = Column(SQLEnum(InvoiceType),
-                          default=InvoiceType.TAX_INVOICE)
-    status = Column(SQLEnum(InwardInvoiceStatus),
-                    default=InwardInvoiceStatus.RECEIVED)
+    invoice_type = Column(SQLEnum(InvoiceType), default=InvoiceType.TAX_INVOICE)
+    status = Column(SQLEnum(InwardInvoiceStatus), default=InwardInvoiceStatus.RECEIVED)
 
     # Dates
     invoice_date = Column(Date, nullable=False)
@@ -867,17 +840,19 @@ class InwardInvoiceDB(Base):
 
     # Supplier (Invoice Issuer)
     supplier_trn = Column(
-        String, nullable=True)  # Optional for non-VAT-registered suppliers
+        String, nullable=True
+    )  # Optional for non-VAT-registered suppliers
     supplier_name = Column(String, nullable=False)
     supplier_address = Column(Text, nullable=True)
     supplier_peppol_id = Column(String, nullable=True)
-    supplier_company_id = Column(String,
-                                 ForeignKey("companies.id"),
-                                 nullable=True)  # If supplier uses InvoLinks
+    supplier_company_id = Column(
+        String, ForeignKey("companies.id"), nullable=True
+    )  # If supplier uses InvoLinks
 
     # Customer (Our company - the buyer)
     customer_trn = Column(
-        String, nullable=True)  # Optional for non-VAT-registered customers
+        String, nullable=True
+    )  # Optional for non-VAT-registered customers
     customer_name = Column(String, nullable=False)
 
     # Financial
@@ -899,16 +874,11 @@ class InwardInvoiceDB(Base):
     peppol_received_at = Column(DateTime, nullable=True)
 
     # Matching & Approval
-    po_id = Column(String,
-                   ForeignKey("purchase_orders.id"),
-                   nullable=True,
-                   index=True)
-    grn_id = Column(String,
-                    ForeignKey("goods_receipts.id"),
-                    nullable=True,
-                    index=True)
-    matching_status = Column(SQLEnum(MatchingStatus),
-                             default=MatchingStatus.NOT_MATCHED)
+    po_id = Column(String, ForeignKey("purchase_orders.id"), nullable=True, index=True)
+    grn_id = Column(String, ForeignKey("goods_receipts.id"), nullable=True, index=True)
+    matching_status = Column(
+        SQLEnum(MatchingStatus), default=MatchingStatus.NOT_MATCHED
+    )
 
     # 3-Way Matching Results
     po_match_score = Column(Float, default=0.0)  # 0-100% match with PO
@@ -924,8 +894,7 @@ class InwardInvoiceDB(Base):
     rejection_reason = Column(Text, nullable=True)
 
     # Payment Tracking
-    payment_status = Column(String,
-                            nullable=True)  # "PENDING", "SCHEDULED", "PAID"
+    payment_status = Column(String, nullable=True)  # "PENDING", "SCHEDULED", "PAID"
     payment_method = Column(String, nullable=True)
     paid_amount = Column(Float, default=0.0)
     paid_at = Column(DateTime, nullable=True)
@@ -942,29 +911,29 @@ class InwardInvoiceDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    company = relationship("CompanyDB",
-                           foreign_keys=[company_id],
-                           backref="inward_invoices")
+    company = relationship(
+        "CompanyDB", foreign_keys=[company_id], backref="inward_invoices"
+    )
     purchase_order = relationship("PurchaseOrderDB", backref="inward_invoices")
     goods_receipt = relationship("GoodsReceiptDB", backref="inward_invoices")
-    line_items = relationship("InwardInvoiceLineItemDB",
-                              backref="inward_invoice",
-                              cascade="all, delete-orphan")
+    line_items = relationship(
+        "InwardInvoiceLineItemDB",
+        backref="inward_invoice",
+        cascade="all, delete-orphan",
+    )
 
 
 class InwardInvoiceLineItemDB(Base):
     """Line items for Inward Invoices"""
+
     __tablename__ = "inward_invoice_line_items"
     id = Column(String, primary_key=True)
-    inward_invoice_id = Column(String,
-                               ForeignKey("inward_invoices.id"),
-                               nullable=False,
-                               index=True)
+    inward_invoice_id = Column(
+        String, ForeignKey("inward_invoices.id"), nullable=False, index=True
+    )
     line_number = Column(Integer, nullable=False)
 
     # Product/Service
@@ -989,26 +958,23 @@ class InwardInvoiceLineItemDB(Base):
     line_total_amount = Column(Float, nullable=False)
 
     # Matching
-    po_line_item_id = Column(String,
-                             ForeignKey("purchase_order_line_items.id"),
-                             nullable=True)
-    grn_line_item_id = Column(String,
-                              ForeignKey("goods_receipt_line_items.id"),
-                              nullable=True)
-    match_status = Column(String,
-                          nullable=True)  # "MATCHED", "VARIANCE", "NO_PO"
+    po_line_item_id = Column(
+        String, ForeignKey("purchase_order_line_items.id"), nullable=True
+    )
+    grn_line_item_id = Column(
+        String, ForeignKey("goods_receipt_line_items.id"), nullable=True
+    )
+    match_status = Column(String, nullable=True)  # "MATCHED", "VARIANCE", "NO_PO"
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class AuditFileDB(Base):
     """FTA Audit Files (FAF) - UAE Federal Tax Authority Audit File"""
+
     __tablename__ = "audit_files"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # File Information
     file_name = Column(String, nullable=False)
@@ -1021,11 +987,8 @@ class AuditFileDB(Base):
     period_end_date = Column(Date, nullable=False)
 
     # Generation Details
-    status = Column(SQLEnum(AuditFileStatus),
-                    default=AuditFileStatus.GENERATING)
-    generated_by_user_id = Column(String,
-                                  ForeignKey("users.id"),
-                                  nullable=False)
+    status = Column(SQLEnum(AuditFileStatus), default=AuditFileStatus.GENERATING)
+    generated_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
     generated_at = Column(DateTime, default=datetime.utcnow)
 
     # Statistics
@@ -1046,12 +1009,10 @@ class AuditFileDB(Base):
 
 class PaymentMethodDB(Base):
     """Customer payment methods (credit cards via Stripe)"""
+
     __tablename__ = "payment_methods"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Stripe details
     stripe_payment_method_id = Column(String, nullable=False, unique=True)
@@ -1078,12 +1039,10 @@ class PaymentMethodDB(Base):
 
 class SubscriptionDB(Base):
     """Company subscriptions (Stripe-based)"""
+
     __tablename__ = "subscriptions"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Subscription details
     tier = Column(String, nullable=False)  # FREE, BASIC, PRO, ENTERPRISE
@@ -1092,8 +1051,7 @@ class SubscriptionDB(Base):
     discount_percent = Column(Float, default=0.0)
 
     # Status
-    status = Column(String,
-                    default="ACTIVE")  # ACTIVE, CANCELLED, PAST_DUE, TRIAL
+    status = Column(String, default="ACTIVE")  # ACTIVE, CANCELLED, PAST_DUE, TRIAL
 
     # Stripe details
     stripe_subscription_id = Column(String, nullable=True, unique=True)
@@ -1105,9 +1063,7 @@ class SubscriptionDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     cancelled_at = Column(DateTime, nullable=True)
 
     # Relationships
@@ -1116,12 +1072,10 @@ class SubscriptionDB(Base):
 
 class PeppolUsageDB(Base):
     """PEPPOL transmission tracking for usage-based billing"""
+
     __tablename__ = "peppol_usage"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
     invoice_id = Column(String, ForeignKey("invoices.id"), nullable=True)
 
     # Transmission details
@@ -1130,8 +1084,7 @@ class PeppolUsageDB(Base):
 
     # Billing
     fee_amount = Column(Float, default=1.0)  # AED per transmission
-    month_year = Column(String, nullable=False,
-                        index=True)  # "2025-10" for aggregation
+    month_year = Column(String, nullable=False, index=True)  # "2025-10" for aggregation
     billed = Column(Boolean, default=False)
 
     # Timestamps
@@ -1143,12 +1096,10 @@ class PeppolUsageDB(Base):
 
 class BillingInvoiceDB(Base):
     """Monthly billing invoices (subscription + PEPPOL usage)"""
+
     __tablename__ = "billing_invoices"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Invoice details
     invoice_number = Column(String, unique=True, nullable=False)
@@ -1164,17 +1115,14 @@ class BillingInvoiceDB(Base):
     total_amount = Column(Float, nullable=False)
 
     # Status
-    status = Column(String,
-                    default="DRAFT")  # DRAFT, SENT, PAID, OVERDUE, CANCELLED
+    status = Column(String, default="DRAFT")  # DRAFT, SENT, PAID, OVERDUE, CANCELLED
 
     # Stripe details
     stripe_invoice_id = Column(String, nullable=True, unique=True)
 
     # Payment
     paid_at = Column(DateTime, nullable=True)
-    payment_method_id = Column(String,
-                               ForeignKey("payment_methods.id"),
-                               nullable=True)
+    payment_method_id = Column(String, ForeignKey("payment_methods.id"), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -1186,12 +1134,10 @@ class BillingInvoiceDB(Base):
 
 class ExpenseCategoryDB(Base):
     """Custom expense categories - user-defined"""
+
     __tablename__ = "expense_categories"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     is_default = Column(Boolean, default=False)  # System-provided categories
@@ -1201,12 +1147,10 @@ class ExpenseCategoryDB(Base):
 
 class ExpenseDB(Base):
     """Simple expense tracking - rent, utilities, salaries, materials, etc."""
+
     __tablename__ = "expenses"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Expense details
     expense_date = Column(Date, nullable=False, index=True)
@@ -1225,22 +1169,19 @@ class ExpenseDB(Base):
     notes = Column(Text, nullable=True)
 
     # VAT Compliance (Phase 1)
-    tax_code = Column(String, default='SR')  # UAE tax code: SR, ZR, ES, RC, OP
+    tax_code = Column(String, default="SR")  # UAE tax code: SR, ZR, ES, RC, OP
     vendor_id = Column(
-        String,
-        nullable=True)  # Link to vendor (will add vendors table in Phase 2)
+        String, nullable=True
+    )  # Link to vendor (will add vendors table in Phase 2)
 
     # User Tracking (Phase 2)
-    created_by_user_id = Column(String,
-                                ForeignKey("users.id"),
-                                nullable=True,
-                                index=True)  # Who recorded the expense
+    created_by_user_id = Column(
+        String, ForeignKey("users.id"), nullable=True, index=True
+    )  # Who recorded the expense
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="expenses")
@@ -1248,12 +1189,10 @@ class ExpenseDB(Base):
 
 class InventoryItemDB(Base):
     """Simple inventory tracking"""
+
     __tablename__ = "inventory_items"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
 
     # Item details
     item_name = Column(String, nullable=False)
@@ -1270,9 +1209,7 @@ class InventoryItemDB(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime,
-                        default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     company = relationship("CompanyDB", backref="inventory_items")
@@ -1280,23 +1217,21 @@ class InventoryItemDB(Base):
 
 class InventoryTransactionDB(Base):
     """Track inventory movements (purchases, sales, adjustments)"""
+
     __tablename__ = "inventory_transactions"
     id = Column(String, primary_key=True)
-    company_id = Column(String,
-                        ForeignKey("companies.id"),
-                        nullable=False,
-                        index=True)
-    inventory_item_id = Column(String,
-                               ForeignKey("inventory_items.id"),
-                               nullable=False,
-                               index=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    inventory_item_id = Column(
+        String, ForeignKey("inventory_items.id"), nullable=False, index=True
+    )
 
     # Transaction details
     transaction_type = Column(
-        String, nullable=False)  # PURCHASE, SALE, ADJUSTMENT, SERVICE_USAGE
+        String, nullable=False
+    )  # PURCHASE, SALE, ADJUSTMENT, SERVICE_USAGE
     quantity = Column(
-        Float,
-        nullable=False)  # Positive for additions, negative for reductions
+        Float, nullable=False
+    )  # Positive for additions, negative for reductions
     transaction_date = Column(Date, nullable=False)
 
     # References
@@ -1336,8 +1271,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(
-            minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -1359,17 +1293,17 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify password against hash"""
     if not hashed_password:
         return False
-    password_bytes = plain_password.encode('utf-8')[:72]  # bcrypt max 72 bytes
-    hashed_bytes = hashed_password.encode('utf-8')
+    password_bytes = plain_password.encode("utf-8")[:72]  # bcrypt max 72 bytes
+    hashed_bytes = hashed_password.encode("utf-8")
     return bcrypt.checkpw(password_bytes, hashed_bytes)
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
-    password_bytes = password.encode('utf-8')[:72]  # bcrypt max 72 bytes
+    password_bytes = password.encode("utf-8")[:72]  # bcrypt max 72 bytes
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(password_bytes, salt)
-    return hashed.decode('utf-8')
+    return hashed.decode("utf-8")
 
 
 def generate_temp_password(length: int = 16) -> str:
@@ -1383,19 +1317,18 @@ def generate_temp_password(length: int = 16) -> str:
     uppercase = secrets.choice(string.ascii_uppercase)
     lowercase = secrets.choice(string.ascii_lowercase)
     digit = secrets.choice(string.digits)
-    special = secrets.choice('!@#$%^&*')
+    special = secrets.choice("!@#$%^&*")
 
     # Fill the rest with random characters from all types
     remaining_length = max(length - 4, 4)
-    all_chars = string.ascii_letters + string.digits + '!@#$%^&*'
-    remaining = ''.join(
-        secrets.choice(all_chars) for _ in range(remaining_length))
+    all_chars = string.ascii_letters + string.digits + "!@#$%^&*"
+    remaining = "".join(secrets.choice(all_chars) for _ in range(remaining_length))
 
     # Combine and shuffle
     password_list = list(uppercase + lowercase + digit + special + remaining)
     secrets.SystemRandom().shuffle(password_list)
 
-    return ''.join(password_list)
+    return "".join(password_list)
 
 
 def authenticate_user(email: str, password: str, db: Session):
@@ -1435,8 +1368,9 @@ def get_current_company(token: str, db: Session):
         return None
 
 
-def get_current_user_from_header(authorization: str = Header(None),
-                                 db: Session = Depends(get_db)) -> UserDB:
+def get_current_user_from_header(
+    authorization: str = Header(None), db: Session = Depends(get_db)
+) -> UserDB:
     """Extract and validate user from Authorization header"""
     if not authorization:
         raise HTTPException(401, "Not authenticated")
@@ -1459,13 +1393,11 @@ def get_current_user_from_header(authorization: str = Header(None),
         if mfa_challenge:
             print("[DEBUG] Token is MFA challenge token, rejecting.")
             raise HTTPException(
-                401,
-                "MFA verification required. Please complete MFA login flow.")
+                401, "MFA verification required. Please complete MFA login flow."
+            )
 
         if user_id is None or token_type != "user":
-            print(
-                f"[DEBUG] Invalid token: user_id={user_id}, token_type={token_type}"
-            )
+            print(f"[DEBUG] Invalid token: user_id={user_id}, token_type={token_type}")
             raise HTTPException(401, "Invalid token")
 
         user = db.get(UserDB, user_id)
@@ -1508,7 +1440,8 @@ def seed_plans(db: Session):
             allow_api_access=True,
             allow_branding=False,
             allow_multi_currency=False,
-            priority_support=False),
+            priority_support=False,
+        ),
         SubscriptionPlanDB(
             id="plan_starter",
             name="Starter",
@@ -1521,7 +1454,8 @@ def seed_plans(db: Session):
             max_finance_users=2,  # Phase 2: Up to 2 finance users
             max_pos_devices=1,
             allow_api_access=True,
-            allow_branding=False),
+            allow_branding=False,
+        ),
         SubscriptionPlanDB(
             id="plan_professional",
             name="Professional",
@@ -1535,7 +1469,8 @@ def seed_plans(db: Session):
             max_pos_devices=3,
             allow_api_access=True,
             allow_branding=True,
-            allow_multi_currency=True),
+            allow_multi_currency=True,
+        ),
         SubscriptionPlanDB(
             id="plan_enterprise",
             name="Enterprise",
@@ -1550,7 +1485,8 @@ def seed_plans(db: Session):
             allow_api_access=True,
             allow_branding=True,
             allow_multi_currency=True,
-            priority_support=True)
+            priority_support=True,
+        ),
     ]
 
     for plan in plans:
@@ -1565,143 +1501,168 @@ def seed_content(db: Session):
 
     content_blocks = [
         # Homepage Hero
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="homepage_hero_title",
-                       value="Simple, Compliant\nDigital Invoicing for UAE",
-                       description="Homepage main heading",
-                       section="homepage",
-                       updated_by="system"),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="homepage_hero_title",
+            value="Simple, Compliant\nDigital Invoicing for UAE",
+            description="Homepage main heading",
+            section="homepage",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="homepage_hero_subtitle",
             value="Automated invoicing in structured electronic formats.",
             description="Homepage subheading",
             section="homepage",
-            updated_by="system"),
-
+            updated_by="system",
+        ),
         # Feature Boxes
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_1_title",
-                       value="Government-Approved Invoices",
-                       description="First feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_1_title",
+            value="Government-Approved Invoices",
+            description="First feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_1_description",
-            value=
-            "Create professional invoices that meet all UAE government requirements. Every invoice is automatically secured and properly formatted.",
+            value="Create professional invoices that meet all UAE government requirements. Every invoice is automatically secured and properly formatted.",
             description="First feature box description",
             section="feature_boxes",
-            updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_2_title",
-                       value="Manage Your Purchases",
-                       description="Second feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_2_title",
+            value="Manage Your Purchases",
+            description="Second feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_2_description",
-            value=
-            "Create purchase orders, receive supplier invoices, and keep track of all your expenses in one organized place.",
+            value="Create purchase orders, receive supplier invoices, and keep track of all your expenses in one organized place.",
             description="Second feature box description",
             section="feature_boxes",
-            updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_3_title",
-                       value="Extra Security",
-                       description="Third feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_3_title",
+            value="Extra Security",
+            description="Third feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_3_description",
-            value=
-            "Extra protection for your account. Use your phone or email to confirm it's really you when logging in.",
+            value="Extra protection for your account. Use your phone or email to confirm it's really you when logging in.",
             description="Third feature box description",
             section="feature_boxes",
-            updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_4_title",
-                       value="Team Collaboration",
-                       description="Fourth feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_4_title",
+            value="Team Collaboration",
+            description="Fourth feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_4_description",
-            value=
-            "Work together with your team. Add unlimited members and control who can view or edit invoices.",
+            value="Work together with your team. Add unlimited members and control who can view or edit invoices.",
             description="Fourth feature box description",
             section="feature_boxes",
-            updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_5_title",
-                       value="Electronic Delivery",
-                       description="Fifth feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_5_title",
+            value="Electronic Delivery",
+            description="Fifth feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_5_description",
-            value=
-            "Send invoices electronically to your customers through trusted partners, making delivery fast and secure.",
+            value="Send invoices electronically to your customers through trusted partners, making delivery fast and secure.",
             description="Fifth feature box description",
             section="feature_boxes",
-            updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="feature_box_6_title",
-                       value="Flexible Subscriptions",
-                       description="Sixth feature box title",
-                       section="feature_boxes",
-                       updated_by="system"),
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="feature_box_6_title",
+            value="Flexible Subscriptions",
+            description="Sixth feature box title",
+            section="feature_boxes",
+            updated_by="system",
+        ),
         ContentBlockDB(
             id=f"cb_{uuid4().hex[:12]}",
             key="feature_box_6_description",
-            value=
-            "Start free with 10 invoices per month. Upgrade anytime as your business grows to send unlimited invoices.",
+            value="Start free with 10 invoices per month. Upgrade anytime as your business grows to send unlimited invoices.",
             description="Sixth feature box description",
             section="feature_boxes",
-            updated_by="system"),
-
+            updated_by="system",
+        ),
         # Footer Content
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_company_name",
-                       value="InvoLinks",
-                       description="Footer company name",
-                       section="footer",
-                       updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_company_description",
-                       value="Simple, Compliant Digital Invoicing for UAE",
-                       description="Footer company description",
-                       section="footer",
-                       updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_address",
-                       value="Dubai, United Arab Emirates",
-                       description="Footer company address",
-                       section="footer",
-                       updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_email",
-                       value="support@involinks.ae",
-                       description="Footer contact email",
-                       section="footer",
-                       updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_phone",
-                       value="+971 4 123 4567",
-                       description="Footer contact phone",
-                       section="footer",
-                       updated_by="system"),
-        ContentBlockDB(id=f"cb_{uuid4().hex[:12]}",
-                       key="footer_copyright",
-                       value="© 2025 InvoLinks. All rights reserved.",
-                       description="Footer copyright text",
-                       section="footer",
-                       updated_by="system"),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_company_name",
+            value="InvoLinks",
+            description="Footer company name",
+            section="footer",
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_company_description",
+            value="Simple, Compliant Digital Invoicing for UAE",
+            description="Footer company description",
+            section="footer",
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_address",
+            value="Dubai, United Arab Emirates",
+            description="Footer company address",
+            section="footer",
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_email",
+            value="support@involinks.ae",
+            description="Footer contact email",
+            section="footer",
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_phone",
+            value="+971 4 123 4567",
+            description="Footer contact phone",
+            section="footer",
+            updated_by="system",
+        ),
+        ContentBlockDB(
+            id=f"cb_{uuid4().hex[:12]}",
+            key="footer_copyright",
+            value="© 2025 InvoLinks. All rights reserved.",
+            description="Footer copyright text",
+            section="footer",
+            updated_by="system",
+        ),
     ]
 
     for block in content_blocks:
@@ -1716,9 +1677,7 @@ class CompanyInfoCreate(BaseModel):
     registration_number: Optional[str] = None
     registration_date: Optional[date] = None
     email: str
-    password: str = Field(...,
-                          min_length=8,
-                          description="Password (min 8 characters)")
+    password: str = Field(..., min_length=8, description="Password (min 8 characters)")
     phone: Optional[str] = None
     website: Optional[str] = None
 
@@ -1806,8 +1765,9 @@ class InvoiceLineItemCreate(BaseModel):
     unit_price: float
     tax_category: TaxCategory
     tax_percent: float = 5.0  # UAE standard VAT rate
-    tax_code: Optional[
-        str] = None  # UAE tax code (SR, ZR, ES, RC, OP) - Required for VAT-registered businesses
+    tax_code: Optional[str] = (
+        None  # UAE tax code (SR, ZR, ES, RC, OP) - Required for VAT-registered businesses
+    )
 
 
 class InvoiceCreate(BaseModel):
@@ -1938,29 +1898,32 @@ class PurchaseOrderLineItemCreate(BaseModel):
     tax_category: TaxCategory = TaxCategory.STANDARD
     tax_percent: float = 5.0
 
-    @validator('item_description', 'item_code', pre=True)
+    @validator("item_description", "item_code", pre=True)
     def empty_str_to_none(cls, v):
         if v == "":
             return None
         return v
 
-    @validator('tax_category', pre=True)
+    @validator("tax_category", pre=True)
     def tax_category_enum_flexible(cls, v):
         if v == "":
             return TaxCategory.STANDARD
         if isinstance(v, TaxCategory):
             return v
-        if v in ("STANDARD", "S"): return TaxCategory.STANDARD
-        if v in ("ZERO", "Z"): return TaxCategory.ZERO
-        if v in ("EXEMPT", "E"): return TaxCategory.EXEMPT
-        if v in ("OUT_OF_SCOPE", "O"): return TaxCategory.OUT_OF_SCOPE
+        if v in ("STANDARD", "S"):
+            return TaxCategory.STANDARD
+        if v in ("ZERO", "Z"):
+            return TaxCategory.ZERO
+        if v in ("EXEMPT", "E"):
+            return TaxCategory.EXEMPT
+        if v in ("OUT_OF_SCOPE", "O"):
+            return TaxCategory.OUT_OF_SCOPE
         raise ValueError(f"Invalid tax_category: {v}")
 
 
 class PurchaseOrderCreate(BaseModel):
     po_number: str
-    supplier_trn: Optional[
-        str] = None  # Optional for non-VAT-registered suppliers
+    supplier_trn: Optional[str] = None  # Optional for non-VAT-registered suppliers
     supplier_name: str
     supplier_contact_email: Optional[str] = None
     supplier_address: Optional[str] = None
@@ -1973,15 +1936,17 @@ class PurchaseOrderCreate(BaseModel):
     notes: Optional[str] = None
     line_items: List[PurchaseOrderLineItemCreate]
 
-    @validator('supplier_trn',
-               'supplier_contact_email',
-               'supplier_address',
-               'supplier_peppol_id',
-               'expected_delivery_date',
-               'delivery_address',
-               'reference_number',
-               'notes',
-               pre=True)
+    @validator(
+        "supplier_trn",
+        "supplier_contact_email",
+        "supplier_address",
+        "supplier_peppol_id",
+        "expected_delivery_date",
+        "delivery_address",
+        "reference_number",
+        "notes",
+        pre=True,
+    )
     def empty_str_to_none(cls, v):
         if v == "":
             return None
@@ -2035,6 +2000,7 @@ class PurchaseOrderOut(BaseModel):
 
 class InwardInvoiceReceive(BaseModel):
     """Model for receiving an inward invoice via PEPPOL"""
+
     supplier_invoice_number: str
     invoice_date: str  # YYYY-MM-DD
     due_date: Optional[str] = None
@@ -2178,7 +2144,7 @@ class CompanyBrandingOut(BaseModel):
 app = FastAPI(
     title="InvoLinks E-Invoicing API",
     version="2.0",
-    description="Multi-tenant UAE e-invoicing platform with registration wizard"
+    description="Multi-tenant UAE e-invoicing platform with registration wizard",
 )
 
 app.add_middleware(
@@ -2195,8 +2161,7 @@ app.add_middleware(
 async def involinks_exception_handler(request, exc: InvoLinksException):
     """Convert domain exceptions to HTTP responses with structured error format"""
     response = exception_to_http_response(exc)
-    return JSONResponse(status_code=response["status_code"],
-                        content=response["detail"])
+    return JSONResponse(status_code=response["status_code"], content=response["detail"])
 
 
 # Serve React app (production) or fallback to development API
@@ -2213,31 +2178,27 @@ else:
 def startup_event():
     """Seed plans on startup and validate environment"""
     # Check if running in production mode
-    production_mode = os.getenv('PRODUCTION_MODE', 'false').lower() == 'true'
+    production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
 
     # Validate cryptographic environment
     from utils.crypto_utils import validate_environment_keys
+
     try:
-        validation_result = validate_environment_keys(
-            fail_on_missing=production_mode)
+        validation_result = validate_environment_keys(fail_on_missing=production_mode)
 
         if production_mode:
-            logger.info(
-                "🔒 PRODUCTION MODE: All cryptographic validations passed")
+            logger.info("🔒 PRODUCTION MODE: All cryptographic validations passed")
         else:
-            logger.info(
-                "🔧 DEVELOPMENT MODE: Running with permissive validation")
+            logger.info("🔧 DEVELOPMENT MODE: Running with permissive validation")
             if validation_result.get("warnings"):
                 for warning in validation_result["warnings"]:
                     logger.warning(f"Startup Warning: {warning}")
-                logger.warning(
-                    "Set PRODUCTION_MODE=true to enforce strict validation")
+                logger.warning("Set PRODUCTION_MODE=true to enforce strict validation")
 
     except ConfigurationError as e:
         logger.error(f"Startup Error: {e.message}")
         if production_mode:
-            logger.critical(
-                "PRODUCTION MODE: Cannot start without valid signing keys")
+            logger.critical("PRODUCTION MODE: Cannot start without valid signing keys")
             raise  # Fail hard in production mode
         else:
             logger.warning("Continuing with mock keys - NOT PRODUCTION READY")
@@ -2251,8 +2212,9 @@ def startup_event():
     super_admin_email = os.getenv("SUPER_ADMIN_EMAIL", "nrashidk@gmail.com")
     super_admin_password = os.getenv("SUPER_ADMIN_PASSWORD", "AbuDhabi@123")
 
-    existing_super_admin = db.query(UserDB).filter(
-        UserDB.role == Role.SUPER_ADMIN).first()
+    existing_super_admin = (
+        db.query(UserDB).filter(UserDB.role == Role.SUPER_ADMIN).first()
+    )
 
     if not existing_super_admin:
         super_admin = UserDB(
@@ -2262,13 +2224,13 @@ def startup_event():
             role=Role.SUPER_ADMIN,
             company_id=None,
             is_owner=False,
-            full_name="Super Admin")
+            full_name="Super Admin",
+        )
         db.add(super_admin)
         db.commit()
         logger.info(f"Super Admin created: {super_admin_email}")
     else:
-        logger.info(
-            f"Super Admin already exists: {existing_super_admin.email}")
+        logger.info(f"Super Admin already exists: {existing_super_admin.email}")
 
     db.close()
 
@@ -2295,21 +2257,20 @@ class QuickRegisterCreate(BaseModel):
 
 
 @app.post("/register/quick", tags=["Registration"])
-def quick_register(payload: QuickRegisterCreate,
-                   db: Session = Depends(get_db)):
+def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
     """Quick registration - submit all data in one request"""
 
     # Check if email belongs to a SUPER_ADMIN (protect from accidental override)
-    existing_super_admin = db.query(UserDB).filter(
-        UserDB.email == payload.email,
-        UserDB.role == Role.SUPER_ADMIN).first()
+    existing_super_admin = (
+        db.query(UserDB)
+        .filter(UserDB.email == payload.email, UserDB.role == Role.SUPER_ADMIN)
+        .first()
+    )
     if existing_super_admin:
-        raise HTTPException(
-            403, "This email is reserved for system administration")
+        raise HTTPException(403, "This email is reserved for system administration")
 
     # Check if email already exists
-    existing = db.query(CompanyDB).filter(
-        CompanyDB.email == payload.email).first()
+    existing = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
     if existing:
         raise HTTPException(400, "Email already registered")
 
@@ -2317,29 +2278,33 @@ def quick_register(payload: QuickRegisterCreate,
 
     try:
         # Create company with all registration data
-        company = CompanyDB(id=company_id,
-                            legal_name=payload.company_name,
-                            email=payload.email,
-                            business_type=payload.business_type,
-                            phone=payload.phone,
-                            website=payload.website,
-                            password_hash=get_password_hash(payload.password),
-                            address_line1=payload.address_line1,
-                            address_line2=payload.address_line2,
-                            city=payload.city,
-                            emirate=payload.emirate,
-                            po_box=payload.po_box,
-                            trn=payload.trn,
-                            status=CompanyStatus.PENDING_REVIEW,
-                            country="AE",
-                            email_verified=False)
+        company = CompanyDB(
+            id=company_id,
+            legal_name=payload.company_name,
+            email=payload.email,
+            business_type=payload.business_type,
+            phone=payload.phone,
+            website=payload.website,
+            password_hash=get_password_hash(payload.password),
+            address_line1=payload.address_line1,
+            address_line2=payload.address_line2,
+            city=payload.city,
+            emirate=payload.emirate,
+            po_box=payload.po_box,
+            trn=payload.trn,
+            status=CompanyStatus.PENDING_REVIEW,
+            country="AE",
+            email_verified=False,
+        )
         db.add(company)
 
         # Create progress tracker
-        progress = RegistrationProgressDB(id=f"prog_{uuid4().hex[:8]}",
-                                          company_id=company_id,
-                                          current_step=1,
-                                          step_company_info=True)
+        progress = RegistrationProgressDB(
+            id=f"prog_{uuid4().hex[:8]}",
+            company_id=company_id,
+            current_step=1,
+            step_company_info=True,
+        )
         db.add(progress)
 
         # Create user account (owner)
@@ -2350,7 +2315,7 @@ def quick_register(payload: QuickRegisterCreate,
             role=Role.COMPANY_ADMIN,
             company_id=company_id,
             is_owner=True,
-            full_name=payload.company_name  # Use company name as default
+            full_name=payload.company_name,  # Use company name as default
         )
         db.add(user)
 
@@ -2374,16 +2339,15 @@ def quick_register(payload: QuickRegisterCreate,
         #     verification_url=verification_url)
         email_result = {
             "success": False,
-            "note": "Email sending skipped (temporarily disabled)"
+            "note": "Email sending skipped (temporarily disabled)",
         }
 
         return {
             "success": True,
             "company_id": company_id,
-            "message":
-            "Registration successful! Please check your email to verify your account.",
+            "message": "Registration successful! Please check your email to verify your account.",
             "status": company.status,
-            "email_sent": email_result.get("success", False)
+            "email_sent": email_result.get("success", False),
         }
     except Exception as e:
         db.rollback()
@@ -2396,21 +2360,21 @@ def init_registration(db: Session = Depends(get_db)):
     company_id = f"co_{uuid4().hex[:8]}"
 
     try:
-        company = CompanyDB(id=company_id,
-                            status=CompanyStatus.PENDING_REVIEW,
-                            country="AE")
+        company = CompanyDB(
+            id=company_id, status=CompanyStatus.PENDING_REVIEW, country="AE"
+        )
         db.add(company)
 
-        progress = RegistrationProgressDB(id=f"prog_{uuid4().hex[:8]}",
-                                          company_id=company_id,
-                                          current_step=1)
+        progress = RegistrationProgressDB(
+            id=f"prog_{uuid4().hex[:8]}", company_id=company_id, current_step=1
+        )
         db.add(progress)
         db.commit()
 
         return {
             "company_id": company_id,
             "current_step": 1,
-            "message": "Registration session initialized"
+            "message": "Registration session initialized",
         }
     except Exception as e:
         db.rollback()
@@ -2418,17 +2382,20 @@ def init_registration(db: Session = Depends(get_db)):
 
 
 @app.post("/register/{company_id}/step1", tags=["Registration"])
-def register_step1(company_id: str,
-                   payload: CompanyInfoCreate,
-                   db: Session = Depends(get_db)):
+def register_step1(
+    company_id: str, payload: CompanyInfoCreate, db: Session = Depends(get_db)
+):
     """Step 1: Company Information"""
     company = db.get(CompanyDB, company_id)
     if not company:
         raise HTTPException(404, "Registration session not found")
 
     # Check if email already exists
-    existing = db.query(CompanyDB).filter(CompanyDB.email == payload.email,
-                                          CompanyDB.id != company_id).first()
+    existing = (
+        db.query(CompanyDB)
+        .filter(CompanyDB.email == payload.email, CompanyDB.id != company_id)
+        .first()
+    )
     if existing:
         raise HTTPException(400, "Email already registered")
 
@@ -2438,12 +2405,12 @@ def register_step1(company_id: str,
     company.registration_date = payload.registration_date
     company.email = payload.email
     company.password_hash = get_password_hash(
-        payload.password)  # Hash password (max 72 bytes)
+        payload.password
+    )  # Hash password (max 72 bytes)
     company.phone = payload.phone
     company.website = payload.website
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     progress.step_company_info = True
     progress.current_step = 2
 
@@ -2452,9 +2419,9 @@ def register_step1(company_id: str,
 
 
 @app.post("/register/{company_id}/step2", tags=["Registration"])
-def register_step2(company_id: str,
-                   payload: BusinessDetailsCreate,
-                   db: Session = Depends(get_db)):
+def register_step2(
+    company_id: str, payload: BusinessDetailsCreate, db: Session = Depends(get_db)
+):
     """Step 2: Business Details & Address"""
     company = db.get(CompanyDB, company_id)
     if not company:
@@ -2487,8 +2454,7 @@ def register_step2(company_id: str,
     company.authorized_person_email = payload.authorized_person_email
     company.authorized_person_phone = payload.authorized_person_phone
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     progress.step_business_details = True
     progress.current_step = 3
     db.commit()
@@ -2496,16 +2462,20 @@ def register_step2(company_id: str,
     return {"message": "Step 2 completed", "next_step": 3}
 
 
-@app.post("/register/{company_id}/documents",
-          response_model=DocumentUploadResponse,
-          tags=["Registration"])
-async def upload_document(company_id: str,
-                          document_type: DocumentType = Form(...),
-                          file: UploadFile = File(...),
-                          issue_date: Optional[str] = Form(None),
-                          expiry_date: Optional[str] = Form(None),
-                          document_number: Optional[str] = Form(None),
-                          db: Session = Depends(get_db)):
+@app.post(
+    "/register/{company_id}/documents",
+    response_model=DocumentUploadResponse,
+    tags=["Registration"],
+)
+async def upload_document(
+    company_id: str,
+    document_type: DocumentType = Form(...),
+    file: UploadFile = File(...),
+    issue_date: Optional[str] = Form(None),
+    expiry_date: Optional[str] = Form(None),
+    document_number: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
     """Upload a document (Step 3)"""
     company = db.get(CompanyDB, company_id)
     if not company:
@@ -2523,14 +2493,13 @@ async def upload_document(company_id: str,
 
     # Save file
     file_id = uuid4().hex[:12]
-    file_extension = file.filename.split(
-        '.')[-1] if '.' in file.filename else 'pdf'
+    file_extension = file.filename.split(".")[-1] if "." in file.filename else "pdf"
     file_name = f"{file_id}_{document_type.value}.{file_extension}"
     file_dir = os.path.join(ARTIFACT_ROOT, "documents", company_id)
     os.makedirs(file_dir, exist_ok=True)
     file_path = os.path.join(file_dir, file_name)
 
-    with open(file_path, 'wb') as f:
+    with open(file_path, "wb") as f:
         f.write(contents)
 
     # Create document record
@@ -2545,41 +2514,48 @@ async def upload_document(company_id: str,
         issue_date=date.fromisoformat(issue_date) if issue_date else None,
         expiry_date=date.fromisoformat(expiry_date) if expiry_date else None,
         document_number=document_number,
-        status=DocumentStatus.PENDING_REVIEW)
+        status=DocumentStatus.PENDING_REVIEW,
+    )
     db.add(doc)
     db.commit()
 
-    return DocumentUploadResponse(id=doc.id,
-                                  document_type=doc.document_type,
-                                  file_name=doc.file_name,
-                                  file_size=doc.file_size,
-                                  status=doc.status,
-                                  uploaded_at=doc.uploaded_at)
+    return DocumentUploadResponse(
+        id=doc.id,
+        document_type=doc.document_type,
+        file_name=doc.file_name,
+        file_size=doc.file_size,
+        status=doc.status,
+        uploaded_at=doc.uploaded_at,
+    )
 
 
-@app.get("/register/{company_id}/documents",
-         response_model=List[DocumentUploadResponse],
-         tags=["Registration"])
+@app.get(
+    "/register/{company_id}/documents",
+    response_model=List[DocumentUploadResponse],
+    tags=["Registration"],
+)
 def list_documents(company_id: str, db: Session = Depends(get_db)):
     """List all uploaded documents"""
     docs = db.query(CompanyDocumentDB).filter_by(company_id=company_id).all()
     return [
-        DocumentUploadResponse(id=d.id,
-                               document_type=d.document_type,
-                               file_name=d.file_name,
-                               file_size=d.file_size,
-                               status=d.status,
-                               uploaded_at=d.uploaded_at) for d in docs
+        DocumentUploadResponse(
+            id=d.id,
+            document_type=d.document_type,
+            file_name=d.file_name,
+            file_size=d.file_size,
+            status=d.status,
+            uploaded_at=d.uploaded_at,
+        )
+        for d in docs
     ]
 
 
 @app.delete("/register/{company_id}/documents/{doc_id}", tags=["Registration"])
-def delete_document(company_id: str,
-                    doc_id: str,
-                    db: Session = Depends(get_db)):
+def delete_document(company_id: str, doc_id: str, db: Session = Depends(get_db)):
     """Delete an uploaded document"""
-    doc = db.query(CompanyDocumentDB).filter_by(id=doc_id,
-                                                company_id=company_id).first()
+    doc = (
+        db.query(CompanyDocumentDB).filter_by(id=doc_id, company_id=company_id).first()
+    )
     if not doc:
         raise HTTPException(404, "Document not found")
 
@@ -2597,20 +2573,16 @@ def register_step3(company_id: str, db: Session = Depends(get_db)):
     """Complete Step 3: Verify required documents uploaded"""
     docs = db.query(CompanyDocumentDB).filter_by(company_id=company_id).all()
 
-    required_docs = [
-        DocumentType.BUSINESS_LICENSE, DocumentType.TRN_CERTIFICATE
-    ]
+    required_docs = [DocumentType.BUSINESS_LICENSE, DocumentType.TRN_CERTIFICATE]
     uploaded_types = [doc.document_type for doc in docs]
     missing = [dt for dt in required_docs if dt not in uploaded_types]
 
     if missing:
         raise HTTPException(
-            400,
-            f"Required documents missing: {', '.join([m.value for m in missing])}"
+            400, f"Required documents missing: {', '.join([m.value for m in missing])}"
         )
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     progress.step_documents = True
     progress.current_step = 4
     db.commit()
@@ -2619,10 +2591,12 @@ def register_step3(company_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/register/{company_id}/step4", tags=["Registration"])
-def register_step4(company_id: str,
-                   plan_id: str = Form(...),
-                   billing_cycle: str = Form("monthly"),
-                   db: Session = Depends(get_db)):
+def register_step4(
+    company_id: str,
+    plan_id: str = Form(...),
+    billing_cycle: str = Form("monthly"),
+    db: Session = Depends(get_db),
+):
     """Step 4: Select Subscription Plan"""
     company = db.get(CompanyDB, company_id)
     if not company:
@@ -2633,18 +2607,18 @@ def register_step4(company_id: str,
         raise HTTPException(404, "Plan not found or inactive")
 
     # Create subscription (trial for 14 days)
-    subscription = CompanySubscriptionDB(id=f"sub_{uuid4().hex[:8]}",
-                                         company_id=company_id,
-                                         plan_id=plan_id,
-                                         status=SubscriptionStatus.TRIAL,
-                                         billing_cycle=billing_cycle,
-                                         current_period_start=date.today(),
-                                         current_period_end=date.today() +
-                                         timedelta(days=14))
+    subscription = CompanySubscriptionDB(
+        id=f"sub_{uuid4().hex[:8]}",
+        company_id=company_id,
+        plan_id=plan_id,
+        status=SubscriptionStatus.TRIAL,
+        billing_cycle=billing_cycle,
+        current_period_start=date.today(),
+        current_period_end=date.today() + timedelta(days=14),
+    )
     db.add(subscription)
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     progress.step_plan_selection = True
     progress.current_step = 5
     db.commit()
@@ -2659,18 +2633,16 @@ def finalize_registration(company_id: str, db: Session = Depends(get_db)):
     if not company:
         raise HTTPException(404, "Company not found")
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     if progress:
         progress.step_review = True
     progress.completed = True
     db.commit()
 
     return {
-        "message":
-        "Registration submitted successfully! Your application is pending admin review.",
+        "message": "Registration submitted successfully! Your application is pending admin review.",
         "company_id": company_id,
-        "status": "PENDING_REVIEW"
+        "status": "PENDING_REVIEW",
     }
 
 
@@ -2698,16 +2670,13 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
     #     to_email=company.email,
     #     company_name=company.legal_name or company.email,
     #     verification_url=verification_url)
-    result = {
-        "success": False,
-        "note": "Email sending skipped (temporarily disabled)"
-    }
+    result = {"success": False, "note": "Email sending skipped (temporarily disabled)"}
 
     return {
         "message": "Verification email skipped",
         "email": company.email,
         "email_status": "skipped",
-        "note": result.get("note", "Email sending skipped")
+        "note": result.get("note", "Email sending skipped"),
     }
 
 
@@ -2728,8 +2697,7 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     company.verification_token = None
     company.status = CompanyStatus.PENDING_REVIEW
 
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company.id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company.id).first()
     if progress:
         progress.completed = True
 
@@ -2742,23 +2710,26 @@ def verify_email(token: str, db: Session = Depends(get_db)):
     return {
         "success": True,
         "email": company.email,
-        "message": "Email verified! Your application is now under review."
+        "message": "Email verified! Your application is now under review.",
     }
 
 
-@app.get("/register/{company_id}/progress",
-         response_model=RegistrationProgressOut,
-         tags=["Registration"])
+@app.get(
+    "/register/{company_id}/progress",
+    response_model=RegistrationProgressOut,
+    tags=["Registration"],
+)
 def get_registration_progress(company_id: str, db: Session = Depends(get_db)):
     """Get current registration progress"""
-    progress = db.query(RegistrationProgressDB).filter_by(
-        company_id=company_id).first()
+    progress = db.query(RegistrationProgressDB).filter_by(company_id=company_id).first()
     if not progress:
         raise HTTPException(404, "Registration not found")
 
-    return RegistrationProgressOut(company_id=company_id,
-                                   current_step=progress.current_step,
-                                   completed=progress.completed)
+    return RegistrationProgressOut(
+        company_id=company_id,
+        current_step=progress.current_step,
+        completed=progress.completed,
+    )
 
 
 # ==================== PLAN MANAGEMENT ====================
@@ -2769,15 +2740,18 @@ def list_plans(db: Session = Depends(get_db)):
     """List all active subscription plans (public endpoint)"""
     plans = db.query(SubscriptionPlanDB).filter_by(active=True).all()
     return [
-        PlanOut(id=p.id,
-                name=p.name,
-                description=p.description,
-                price_monthly=p.price_monthly,
-                price_yearly=p.price_yearly,
-                max_invoices_per_month=p.max_invoices_per_month,
-                max_users=p.max_users,
-                allow_branding=p.allow_branding,
-                allow_api_access=p.allow_api_access) for p in plans
+        PlanOut(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            price_monthly=p.price_monthly,
+            price_yearly=p.price_yearly,
+            max_invoices_per_month=p.max_invoices_per_month,
+            max_users=p.max_users,
+            allow_branding=p.allow_branding,
+            allow_api_access=p.allow_api_access,
+        )
+        for p in plans
     ]
 
 
@@ -2788,15 +2762,17 @@ def get_plan(plan_id: str, db: Session = Depends(get_db)):
     if not plan:
         raise HTTPException(404, "Plan not found")
 
-    return PlanOut(id=plan.id,
-                   name=plan.name,
-                   description=plan.description,
-                   price_monthly=plan.price_monthly,
-                   price_yearly=plan.price_yearly,
-                   max_invoices_per_month=plan.max_invoices_per_month,
-                   max_users=plan.max_users,
-                   allow_branding=plan.allow_branding,
-                   allow_api_access=plan.allow_api_access)
+    return PlanOut(
+        id=plan.id,
+        name=plan.name,
+        description=plan.description,
+        price_monthly=plan.price_monthly,
+        price_yearly=plan.price_yearly,
+        max_invoices_per_month=plan.max_invoices_per_month,
+        max_users=plan.max_users,
+        allow_branding=plan.allow_branding,
+        allow_api_access=plan.allow_api_access,
+    )
 
 
 # ==================== AUTH ENDPOINTS ====================
@@ -2862,9 +2838,7 @@ class MFALoginResponse(BaseModel):
 
 
 @app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
-def login(payload: LoginRequest,
-          response: Response,
-          db: Session = Depends(get_db)):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """
     Login endpoint - supports MFA (Multi-Factor Authentication)
 
@@ -2882,87 +2856,80 @@ def login(payload: LoginRequest,
             if company and company.status != CompanyStatus.ACTIVE:
                 raise HTTPException(
                     403,
-                    f"Company not approved. Status: {company.status.value}. Please wait for admin approval."
+                    f"Company not approved. Status: {company.status.value}. Please wait for admin approval.",
                 )
 
         # Check if MFA is enabled
         if user.mfa_enabled:
             # Create temporary token (5 minutes expiry) for MFA verification
             temp_token = create_access_token(
-                data={
-                    "sub": user.id,
-                    "type": "user",
-                    "mfa_challenge": True
-                },
-                expires_delta=timedelta(minutes=5))
-            return MFALoginResponse(mfa_required=True,
-                                    mfa_method=user.mfa_method,
-                                    temp_token=temp_token,
-                                    access_token=None,
-                                    user_id=user.id,
-                                    company_id=user.company_id,
-                                    role=user.role.value)
+                data={"sub": user.id, "type": "user", "mfa_challenge": True},
+                expires_delta=timedelta(minutes=5),
+            )
+            return MFALoginResponse(
+                mfa_required=True,
+                mfa_method=user.mfa_method,
+                temp_token=temp_token,
+                access_token=None,
+                user_id=user.id,
+                company_id=user.company_id,
+                role=user.role.value,
+            )
         # No MFA - return access and refresh tokens directly
-        access_token = create_access_token(data={
-            "sub": user.id,
-            "type": "user"
-        })
-        refresh_token = create_refresh_token(data={
-            "sub": user.id,
-            "type": "user"
-        })
+        access_token = create_access_token(data={"sub": user.id, "type": "user"})
+        refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
         # Update last login
         user.last_login = datetime.utcnow()
         db.commit()
-        return MFALoginResponse(mfa_required=False,
-                                mfa_method=None,
-                                temp_token=None,
-                                access_token=access_token,
-                                refresh_token=refresh_token,
-                                token_type="bearer",
-                                user_id=user.id,
-                                company_id=user.company_id,
-                                role=user.role.value)
+        return MFALoginResponse(
+            mfa_required=False,
+            mfa_method=None,
+            temp_token=None,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            user_id=user.id,
+            company_id=user.company_id,
+            role=user.role.value,
+        )
 
     # Try company authentication (with MFA support)
     company = authenticate_company(payload.email, payload.password, db)
     if company:
         if company.status != CompanyStatus.ACTIVE:
             raise HTTPException(
-                403, f"Account not active. Status: {company.status.value}")
+                403, f"Account not active. Status: {company.status.value}"
+            )
         # Check if MFA is enabled for company
         if company.mfa_enabled:
             # Create temporary token (5 minutes expiry) for MFA verification
             temp_token = create_access_token(
-                data={
-                    "sub": company.id,
-                    "type": "company",
-                    "mfa_challenge": True
-                },
-                expires_delta=timedelta(minutes=5))
-            return MFALoginResponse(mfa_required=True,
-                                    mfa_method=company.mfa_method,
-                                    temp_token=temp_token,
-                                    access_token=None,
-                                    company_id=company.id,
-                                    role="COMPANY")
+                data={"sub": company.id, "type": "company", "mfa_challenge": True},
+                expires_delta=timedelta(minutes=5),
+            )
+            return MFALoginResponse(
+                mfa_required=True,
+                mfa_method=company.mfa_method,
+                temp_token=temp_token,
+                access_token=None,
+                company_id=company.id,
+                role="COMPANY",
+            )
         # No MFA - return access and refresh tokens directly
-        access_token = create_access_token(data={
-            "sub": company.id,
-            "type": "company"
-        })
-        refresh_token = create_refresh_token(data={
-            "sub": company.id,
-            "type": "company"
-        })
-        return MFALoginResponse(mfa_required=False,
-                                mfa_method=None,
-                                temp_token=None,
-                                access_token=access_token,
-                                refresh_token=refresh_token,
-                                token_type="bearer",
-                                company_id=company.id,
-                                role="COMPANY")
+        access_token = create_access_token(data={"sub": company.id, "type": "company"})
+        refresh_token = create_refresh_token(
+            data={"sub": company.id, "type": "company"}
+        )
+        return MFALoginResponse(
+            mfa_required=False,
+            mfa_method=None,
+            temp_token=None,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+            company_id=company.id,
+            role="COMPANY",
+        )
 
     # If neither user nor company authentication succeeded
     raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -2977,8 +2944,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 @app.post("/auth/refresh")
-def refresh_token_endpoint(payload: RefreshTokenRequest,
-                           db: Session = Depends(get_db)):
+def refresh_token_endpoint(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
     """Issue new access token using refresh token (from request body)"""
     refresh_token = payload.refresh_token
     if not refresh_token:
@@ -2992,26 +2958,24 @@ def refresh_token_endpoint(payload: RefreshTokenRequest,
             raise HTTPException(401, "Invalid refresh token")
         # Determine if this is a user or company token
         # Try to find user first
-        user = db.query(UserDB).filter(
-            UserDB.id == user_id).first() if 'UserDB' in globals() else None
+        user = (
+            db.query(UserDB).filter(UserDB.id == user_id).first()
+            if "UserDB" in globals()
+            else None
+        )
         if user:
-            access_token = create_access_token({
-                "sub": user_id,
-                "type": "user"
-            })
+            access_token = create_access_token({"sub": user_id, "type": "user"})
         else:
             # Try company
-            company = db.query(CompanyDB).filter(
-                CompanyDB.id ==
-                user_id).first() if 'CompanyDB' in globals() else None
+            company = (
+                db.query(CompanyDB).filter(CompanyDB.id == user_id).first()
+                if "CompanyDB" in globals()
+                else None
+            )
             if company:
-                access_token = create_access_token({
-                    "sub": user_id,
-                    "type": "company"
-                })
+                access_token = create_access_token({"sub": user_id, "type": "company"})
             else:
-                raise HTTPException(
-                    401, "Invalid refresh token: subject not found")
+                raise HTTPException(401, "Invalid refresh token: subject not found")
         return {"access_token": access_token, "token_type": "bearer"}
     except JWTError:
         raise HTTPException(401, "Invalid or expired refresh token")
@@ -3026,12 +2990,11 @@ def logout():
 # ==================== MFA (MULTI-FACTOR AUTHENTICATION) ENDPOINTS ====================
 
 
-@app.post("/auth/mfa/enroll/totp",
-          response_model=MFAEnrollTOTPResponse,
-          tags=["MFA"])
+@app.post("/auth/mfa/enroll/totp", response_model=MFAEnrollTOTPResponse, tags=["MFA"])
 def enroll_totp_mfa(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """
     Enroll in TOTP-based MFA (Google Authenticator, Authy, etc.)
 
@@ -3042,7 +3005,8 @@ def enroll_totp_mfa(
     """
     if current_user.mfa_enabled:
         raise HTTPException(
-            400, "MFA is already enabled. Disable it first to re-enroll.")
+            400, "MFA is already enabled. Disable it first to re-enroll."
+        )
 
     # Generate TOTP secret
     secret = MFAManager.generate_totp_secret()
@@ -3059,16 +3023,17 @@ def enroll_totp_mfa(
     current_user.mfa_backup_codes = json.dumps(backup_codes_hashed)
     db.commit()
 
-    return MFAEnrollTOTPResponse(secret=secret,
-                                 qr_code=qr_code,
-                                 backup_codes=backup_codes_plain)
+    return MFAEnrollTOTPResponse(
+        secret=secret, qr_code=qr_code, backup_codes=backup_codes_plain
+    )
 
 
 @app.post("/auth/mfa/enroll/verify", tags=["MFA"])
 def verify_mfa_enrollment(
     payload: MFAVerifyRequest,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Verify and complete MFA enrollment
 
@@ -3079,8 +3044,8 @@ def verify_mfa_enrollment(
 
     if not current_user.mfa_secret:
         raise HTTPException(
-            400,
-            "MFA enrollment not started. Call /auth/mfa/enroll/totp first")
+            400, "MFA enrollment not started. Call /auth/mfa/enroll/totp first"
+        )
 
     # Verify the TOTP code
     if not MFAManager.verify_totp(current_user.mfa_secret, payload.code):
@@ -3097,13 +3062,12 @@ def verify_mfa_enrollment(
         "success": True,
         "message": "MFA enabled successfully",
         "method": "totp",
-        "enrolled_at": current_user.mfa_enrolled_at.isoformat()
+        "enrolled_at": current_user.mfa_enrolled_at.isoformat(),
     }
 
 
 @app.post("/auth/mfa/verify", response_model=MFALoginResponse, tags=["MFA"])
-def verify_mfa_login(payload: MFALoginVerifyRequest,
-                     db: Session = Depends(get_db)):
+def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_db)):
     """
     Verify MFA code during login
 
@@ -3114,9 +3078,7 @@ def verify_mfa_login(payload: MFALoginVerifyRequest,
     """
     # Decode temp token
     try:
-        token_data = jwt.decode(payload.temp_token,
-                                SECRET_KEY,
-                                algorithms=[ALGORITHM])
+        token_data = jwt.decode(payload.temp_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = token_data.get("sub")
         mfa_challenge = token_data.get("mfa_challenge")
 
@@ -3144,7 +3106,8 @@ def verify_mfa_login(payload: MFALoginVerifyRequest,
             raise HTTPException(400, "No backup codes available")
 
         verified, updated_codes = MFAManager.verify_backup_code(
-            payload.code, user.mfa_backup_codes)
+            payload.code, user.mfa_backup_codes
+        )
 
         if verified:
             # Remove used backup code
@@ -3162,35 +3125,43 @@ def verify_mfa_login(payload: MFALoginVerifyRequest,
     access_token = create_access_token(data={"sub": user.id, "type": "user"})
     refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
 
-    return MFALoginResponse(mfa_required=False,
-                            mfa_method=None,
-                            temp_token=None,
-                            access_token=access_token,
-                            refresh_token=refresh_token,
-                            token_type="bearer",
-                            user_id=user.id,
-                            company_id=user.company_id,
-                            role=user.role.value)
+    return MFALoginResponse(
+        mfa_required=False,
+        mfa_method=None,
+        temp_token=None,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        user_id=user.id,
+        company_id=user.company_id,
+        role=user.role.value,
+    )
 
 
 @app.get("/auth/mfa/status", response_model=MFAStatusResponse, tags=["MFA"])
 def get_mfa_status(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get current MFA status for the user"""
     return MFAStatusResponse(
         enabled=current_user.mfa_enabled,
         method=current_user.mfa_method,
         enrolled_at=current_user.mfa_enrolled_at.isoformat()
-        if current_user.mfa_enrolled_at else None,
+        if current_user.mfa_enrolled_at
+        else None,
         last_verified_at=current_user.mfa_last_verified_at.isoformat()
-        if current_user.mfa_last_verified_at else None)
+        if current_user.mfa_last_verified_at
+        else None,
+    )
 
 
 @app.post("/auth/mfa/disable", tags=["MFA"])
-def disable_mfa(payload: MFAVerifyRequest,
-                current_user: UserDB = Depends(get_current_user_from_header),
-                db: Session = Depends(get_db)):
+def disable_mfa(
+    payload: MFAVerifyRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """
     Disable MFA (requires current MFA code for security)
     """
@@ -3215,7 +3186,8 @@ def disable_mfa(payload: MFAVerifyRequest,
 def regenerate_backup_codes(
     payload: MFAVerifyRequest,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Regenerate backup codes (requires current MFA code for security)
 
@@ -3239,7 +3211,7 @@ def regenerate_backup_codes(
     return {
         "success": True,
         "message": "Backup codes regenerated",
-        "backup_codes": backup_codes_plain
+        "backup_codes": backup_codes_plain,
     }
 
 
@@ -3261,45 +3233,41 @@ def send_email_otp(user_email: str, db: Session = Depends(get_db)):
 
     # Check rate limiting
     if not EmailOTPManager.can_send(user_email):
-        raise HTTPException(429,
-                            "Too many OTP requests. Please try again later.")
+        raise HTTPException(429, "Too many OTP requests. Please try again later.")
 
     # Generate and store OTP
     otp = EmailOTPManager.generate_and_store(user_email)
 
     # Send MFA OTP email via AWS SES
-    result = email_service.send_mfa_otp_email(to_email=user_email,
-                                              user_name=user.full_name
-                                              or "User",
-                                              otp_code=otp)
+    result = email_service.send_mfa_otp_email(
+        to_email=user_email, user_name=user.full_name or "User", otp_code=otp
+    )
 
     return {
         "success": True,
         "message": "Verification code sent to your email",
         "expires_in_minutes": 10,
-        "email_status": "sent" if result.get("success") else "simulated"
+        "email_status": "sent" if result.get("success") else "simulated",
     }
 
 
 @app.post("/auth/forgot-password", tags=["Auth"])
-def forgot_password(payload: PasswordResetRequest,
-                    db: Session = Depends(get_db)):
+def forgot_password(payload: PasswordResetRequest, db: Session = Depends(get_db)):
     """Request password reset - sends reset token via email"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.email == payload.email).first()
+    company = db.query(CompanyDB).filter(CompanyDB.email == payload.email).first()
 
     if not company:
         # Don't reveal if email exists
         return {
-            "message":
-            "If your email is registered, you will receive a password reset link"
+            "message": "If your email is registered, you will receive a password reset link"
         }
 
     # Generate reset token
     reset_token = f"reset_{secrets.token_hex(16)}"
     company.password_reset_token = reset_token
     company.password_reset_expires = datetime.utcnow() + timedelta(
-        hours=1)  # 1 hour expiry
+        hours=1
+    )  # 1 hour expiry
 
     db.commit()
 
@@ -3309,47 +3277,43 @@ def forgot_password(payload: PasswordResetRequest,
     print("║" + " " * 25 + "EMAIL WOULD BE SENT" + " " * 24 + "║")
     print("╠" + "=" * 68 + "╣")
     print(f"║  To: {payload.email:<60} ║")
-    print(f"║  Subject: Reset Your Password - InvoLinks E-Invoicing{' '*13} ║")
+    print(f"║  Subject: Reset Your Password - InvoLinks E-Invoicing{' ' * 13} ║")
     print("║" + " " * 68 + "║")
     print(f"║  Hi {(company.legal_name or 'User'):<60} ║")
     print("║" + " " * 68 + "║")
-    print(
-        "║  You requested to reset your password. Click the link below:    ║")
+    print("║  You requested to reset your password. Click the link below:    ║")
     print("║" + " " * 68 + "║")
-    print(
-        f"║  http://your-app-url.com/reset-password?token={reset_token[:20]:<22} ║"
-    )
+    print(f"║  http://your-app-url.com/reset-password?token={reset_token[:20]:<22} ║")
     print("║" + " " * 68 + "║")
-    print(
-        "║  This link will expire in 1 hour.                               ║")
+    print("║  This link will expire in 1 hour.                               ║")
     print("║" + " " * 68 + "║")
-    print(
-        "║  If you didn't request this, please ignore this email.          ║")
+    print("║  If you didn't request this, please ignore this email.          ║")
     print("║" + " " * 68 + "║")
-    print(
-        "║  Best regards,                                                   ║")
-    print(
-        "║  InvoLinks E-Invoicing Team                                      ║")
+    print("║  Best regards,                                                   ║")
+    print("║  InvoLinks E-Invoicing Team                                      ║")
     print("╚" + "=" * 68 + "╝")
     print("=" * 70 + "\n")
 
     return {
-        "message":
-        "If your email is registered, you will receive a password reset link"
+        "message": "If your email is registered, you will receive a password reset link"
     }
 
 
 @app.post("/auth/reset-password", tags=["Auth"])
-def reset_password(payload: PasswordResetConfirm,
-                   db: Session = Depends(get_db)):
+def reset_password(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
     """Reset password using token"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.password_reset_token == payload.token).first()
+    company = (
+        db.query(CompanyDB)
+        .filter(CompanyDB.password_reset_token == payload.token)
+        .first()
+    )
 
     if not company:
         raise HTTPException(400, "Invalid or expired reset token")
 
-    if not company.password_reset_expires or company.password_reset_expires < datetime.utcnow(
+    if (
+        not company.password_reset_expires
+        or company.password_reset_expires < datetime.utcnow()
     ):
         raise HTTPException(400, "Reset token has expired")
 
@@ -3361,8 +3325,7 @@ def reset_password(payload: PasswordResetConfirm,
     db.commit()
 
     return {
-        "message":
-        "Password reset successfully. You can now login with your new password."
+        "message": "Password reset successfully. You can now login with your new password."
     }
 
 
@@ -3377,26 +3340,22 @@ def get_current_user(token: str, db: Session = Depends(get_db)):
         "company_id": company.id,
         "company_name": company.legal_name,
         "email": company.email,
-        "status": company.status.value
+        "status": company.status.value,
     }
 
 
 # ==================== ADMIN ENDPOINTS ====================
 
 
-@app.get("/admin/companies/pending",
-         response_model=List[CompanyOut],
-         tags=["Admin"])
+@app.get("/admin/companies/pending", response_model=List[CompanyOut], tags=["Admin"])
 def list_pending_companies(db: Session = Depends(get_db)):
     """List all companies pending review (Admin only)"""
-    companies = db.query(CompanyDB).filter_by(
-        status=CompanyStatus.PENDING_REVIEW).all()
+    companies = db.query(CompanyDB).filter_by(status=CompanyStatus.PENDING_REVIEW).all()
     return [
-        CompanyOut(id=c.id,
-                   legal_name=c.legal_name,
-                   status=c.status,
-                   email=c.email,
-                   trn=c.trn) for c in companies
+        CompanyOut(
+            id=c.id, legal_name=c.legal_name, status=c.status, email=c.email, trn=c.trn
+        )
+        for c in companies
     ]
 
 
@@ -3405,18 +3364,20 @@ def list_pending_companies(db: Session = Depends(get_db)):
 
 @app.get("/me", tags=["Auth"])
 def get_current_user_info(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get current user and associated company information"""
     # Get company associated with the user
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
 
     response = {
         "user_id": current_user.id,
         "email": current_user.email,
         "role": current_user.role.value,
-        "company": None
+        "company": None,
     }
 
     if company:
@@ -3428,7 +3389,7 @@ def get_current_user_info(
             "invoices_generated": company.invoices_generated or 0,
             "free_plan_type": company.free_plan_type,
             "free_plan_invoice_limit": company.free_plan_invoice_limit,
-            "free_plan_duration_months": company.free_plan_duration_months
+            "free_plan_duration_months": company.free_plan_duration_months,
         }
 
     return response
@@ -3442,36 +3403,21 @@ def get_company(company_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Company not found")
 
     return {
-        "id":
-        company.id,
-        "legal_name":
-        company.legal_name,
-        "status":
-        company.status,
-        "email":
-        company.email,
-        "trn":
-        company.trn,
-        "business_type":
-        company.business_type,
-        "phone":
-        company.phone,
-        "website":
-        company.website,
-        "address_line1":
-        company.address_line1,
-        "address_line2":
-        company.address_line2,
-        "city":
-        company.city,
-        "emirate":
-        company.emirate,
-        "po_box":
-        company.po_box,
-        "email_verified":
-        company.email_verified,
-        "created_at":
-        company.created_at.isoformat() if company.created_at else None
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "status": company.status,
+        "email": company.email,
+        "trn": company.trn,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "website": company.website,
+        "address_line1": company.address_line1,
+        "address_line2": company.address_line2,
+        "city": company.city,
+        "emirate": company.emirate,
+        "po_box": company.po_box,
+        "email_verified": company.email_verified,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
     }
 
 
@@ -3490,11 +3436,11 @@ class CompanyProfileUpdateRequest(BaseModel):
 def update_company_profile(
     payload: CompanyProfileUpdateRequest,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update company profile (Company Admin only)"""
     if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403,
-                            "Only company admins can update company profile")
+        raise HTTPException(403, "Only company admins can update company profile")
 
     if not current_user.company_id:
         raise HTTPException(400, "User is not associated with a company")
@@ -3538,8 +3484,8 @@ def update_company_profile(
             "address_line2": company.address_line2,
             "city": company.city,
             "emirate": company.emirate,
-            "po_box": company.po_box
-        }
+            "po_box": company.po_box,
+        },
     }
 
 
@@ -3551,44 +3497,35 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
     if not company:
         raise HTTPException(404, "Company not found")
 
-    sub = db.query(CompanySubscriptionDB).filter_by(
-        company_id=company_id).first()
+    sub = db.query(CompanySubscriptionDB).filter_by(company_id=company_id).first()
     if not sub:
         # No subscription record — default to Free plan
-        free_plan = db.query(SubscriptionPlanDB).filter_by(
-            id="plan_free").first()
+        free_plan = db.query(SubscriptionPlanDB).filter_by(id="plan_free").first()
         return {
             "subscription_id": None,
             "plan": {
-                "id":
-                free_plan.id if free_plan else "plan_free",
-                "name":
-                free_plan.name if free_plan else "Free",
-                "price_monthly":
-                free_plan.price_monthly if free_plan else 0,
-                "max_invoices_per_month":
-                free_plan.max_invoices_per_month if free_plan else 100,
-                "max_users":
-                free_plan.max_users if free_plan else 1,
-                "allow_api_access":
-                free_plan.allow_api_access if free_plan else True,
-                "allow_branding":
-                free_plan.allow_branding if free_plan else False,
-                "allow_multi_currency":
-                free_plan.allow_multi_currency if free_plan else False,
-                "priority_support":
-                free_plan.priority_support if free_plan else False,
-            } if free_plan else {
-                "id": "plan_free",
-                "name": "Free",
-                "price_monthly": 0
-            },
+                "id": free_plan.id if free_plan else "plan_free",
+                "name": free_plan.name if free_plan else "Free",
+                "price_monthly": free_plan.price_monthly if free_plan else 0,
+                "max_invoices_per_month": free_plan.max_invoices_per_month
+                if free_plan
+                else 100,
+                "max_users": free_plan.max_users if free_plan else 1,
+                "allow_api_access": free_plan.allow_api_access if free_plan else True,
+                "allow_branding": free_plan.allow_branding if free_plan else False,
+                "allow_multi_currency": free_plan.allow_multi_currency
+                if free_plan
+                else False,
+                "priority_support": free_plan.priority_support if free_plan else False,
+            }
+            if free_plan
+            else {"id": "plan_free", "name": "Free", "price_monthly": 0},
             "status": "ACTIVE",
             "billing_cycle": "monthly",
             "current_period_start": None,
             "current_period_end": None,
             "invoices_this_period": 0,
-            "message": "No subscription record — defaulting to Free plan"
+            "message": "No subscription record — defaulting to Free plan",
         }
 
     return {
@@ -3596,24 +3533,28 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
         "plan": {
             "id": sub.plan.id,
             "name": sub.plan.name,
-            "price_monthly": sub.plan.price_monthly
+            "price_monthly": sub.plan.price_monthly,
         },
         "status": sub.status.value,
         "billing_cycle": sub.billing_cycle,
         "current_period_start": sub.current_period_start.isoformat(),
         "current_period_end": sub.current_period_end.isoformat(),
-        "invoices_this_period": sub.invoices_this_period
+        "invoices_this_period": sub.invoices_this_period,
     }
 
 
-@app.get("/companies/{company_id}/invoices",
-         tags=["Companies"],
-         response_model=List[InvoiceListOut])
-def get_company_invoices(company_id: str,
-                         db: Session = Depends(get_db),
-                         status: Optional[str] = None,
-                         limit: int = 50,
-                         offset: int = 0):
+@app.get(
+    "/companies/{company_id}/invoices",
+    tags=["Companies"],
+    response_model=List[InvoiceListOut],
+)
+def get_company_invoices(
+    company_id: str,
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
     """Get all invoices for a specific company (excludes CANCELLED invoices for recent listing)"""
     # Verify company exists
     company = db.get(CompanyDB, company_id)
@@ -3622,8 +3563,7 @@ def get_company_invoices(company_id: str,
 
     query = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == company_id,
-        InvoiceDB.status
-        != InvoiceStatus.CANCELLED  # Exclude cancelled invoices
+        InvoiceDB.status != InvoiceStatus.CANCELLED,  # Exclude cancelled invoices
     )
 
     if status:
@@ -3637,15 +3577,17 @@ def get_company_invoices(company_id: str,
     invoices = query.offset(offset).limit(limit).all()
 
     return [
-        InvoiceListOut(id=inv.id,
-                       invoice_number=inv.invoice_number,
-                       invoice_type=inv.invoice_type,
-                       status=inv.status,
-                       issue_date=inv.issue_date.isoformat(),
-                       customer_name=inv.customer_name,
-                       total_amount=inv.total_amount,
-                       currency_code=inv.currency_code,
-                       created_at=inv.created_at.isoformat())
+        InvoiceListOut(
+            id=inv.id,
+            invoice_number=inv.invoice_number,
+            invoice_type=inv.invoice_type,
+            status=inv.status,
+            issue_date=inv.issue_date.isoformat(),
+            customer_name=inv.customer_name,
+            total_amount=inv.total_amount,
+            currency_code=inv.currency_code,
+            created_at=inv.created_at.isoformat(),
+        )
         for inv in invoices
     ]
 
@@ -3660,15 +3602,19 @@ class CompanyApprovalRequest(BaseModel):
 
 @app.get("/admin/companies/pending", tags=["Admin"])
 def get_pending_companies(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get all companies pending approval (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
 
-    pending = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.PENDING_REVIEW).order_by(
-            CompanyDB.created_at.desc()).all()
+    pending = (
+        db.query(CompanyDB)
+        .filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+        .order_by(CompanyDB.created_at.desc())
+        .all()
+    )
 
     return [
         {
@@ -3679,9 +3625,9 @@ def get_pending_companies(
             "phone": c.phone,
             "created_at": c.created_at.isoformat(),
             "status": c.status.value,
-            "invoices_generated":
-            0  # Pending companies haven't generated invoices yet
-        } for c in pending
+            "invoices_generated": 0,  # Pending companies haven't generated invoices yet
+        }
+        for c in pending
     ]
 
 
@@ -3689,7 +3635,8 @@ def get_pending_companies(
 def get_all_companies(
     status: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get all companies with optional status filter (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
@@ -3710,42 +3657,84 @@ def get_all_companies(
     if companies:
         company_ids = [c.id for c in companies]
         invoice_counts = dict(
-            db.query(InvoiceDB.company_id, func.count(InvoiceDB.id)).filter(
-                InvoiceDB.company_id.in_(company_ids)).group_by(
-                    InvoiceDB.company_id).all())
+            db.query(InvoiceDB.company_id, func.count(InvoiceDB.id))
+            .filter(InvoiceDB.company_id.in_(company_ids))
+            .group_by(InvoiceDB.company_id)
+            .all()
+        )
 
-    return [{
-        "id":
-        c.id,
-        "legal_name":
-        c.legal_name,
-        "email":
-        c.email,
-        "business_type":
-        c.business_type,
-        "phone":
-        c.phone,
-        "status":
-        c.status.value,
-        "created_at":
-        c.created_at.isoformat() if c.created_at else None,
-        "approved_at":
-        c.approved_at.isoformat() if c.approved_at else None,
-        "rejected_at":
-        c.rejected_at.isoformat() if c.rejected_at else None,
-        "subscription_plan":
-        c.subscription_plan_id,
-        "invoices_generated":
-        invoice_counts.get(c.id, 0),
-        "free_plan_type":
-        c.free_plan_type,
-        "free_plan_invoice_limit":
-        c.free_plan_invoice_limit,
-        "free_plan_duration_months":
-        c.free_plan_duration_months,
-        "free_plan_start_date":
-        c.free_plan_start_date.isoformat() if c.free_plan_start_date else None
-    } for c in companies]
+    return [
+        {
+            "id": c.id,
+            "legal_name": c.legal_name,
+            "email": c.email,
+            "business_type": c.business_type,
+            "phone": c.phone,
+            "status": c.status.value,
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "approved_at": c.approved_at.isoformat() if c.approved_at else None,
+            "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
+            "subscription_plan": c.subscription_plan_id,
+            "invoices_generated": invoice_counts.get(c.id, 0),
+            "free_plan_type": c.free_plan_type,
+            "free_plan_invoice_limit": c.free_plan_invoice_limit,
+            "free_plan_duration_months": c.free_plan_duration_months,
+            "free_plan_start_date": c.free_plan_start_date.isoformat()
+            if c.free_plan_start_date
+            else None,
+        }
+        for c in companies
+    ]
+
+
+@app.get("/admin/companies/{company_id}", tags=["Admin"])
+def get_company_by_id(
+    company_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Get a single company by id (Super Admin only)"""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Insufficient permissions")
+
+    company = db.get(CompanyDB, company_id)
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    invoices_generated = (
+        db.query(func.count(InvoiceDB.id))
+        .filter(InvoiceDB.company_id == company.id)
+        .scalar()
+        or 0
+    )
+
+    return {
+        "id": company.id,
+        "legal_name": company.legal_name,
+        "email": company.email,
+        "business_type": company.business_type,
+        "phone": company.phone,
+        "status": company.status.value,
+        "created_at": company.created_at.isoformat() if company.created_at else None,
+        "approved_at": company.approved_at.isoformat() if company.approved_at else None,
+        "rejected_at": company.rejected_at.isoformat() if company.rejected_at else None,
+        "subscription_plan": company.subscription_plan_id,
+        "invoices_generated": invoices_generated,
+        "free_plan_type": company.free_plan_type,
+        "free_plan_invoice_limit": company.free_plan_invoice_limit,
+        "free_plan_duration_months": company.free_plan_duration_months,
+        "free_plan_start_date": company.free_plan_start_date.isoformat()
+        if company.free_plan_start_date
+        else None,
+        "trial_status": company.trial_status,
+        "trial_start_date": company.trial_start_date.isoformat()
+        if company.trial_start_date
+        else None,
+        "trial_invoice_count": company.trial_invoice_count,
+        "trial_ended_at": company.trial_ended_at.isoformat()
+        if company.trial_ended_at
+        else None,
+    }
 
 
 class CompanyApprovalConfig(BaseModel):
@@ -3759,7 +3748,8 @@ def approve_company(
     company_id: str,
     config: CompanyApprovalConfig = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Approve a pending company registration with configurable free plan (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
@@ -3771,7 +3761,7 @@ def approve_company(
     if company.status != CompanyStatus.PENDING_REVIEW:
         raise HTTPException(
             400,
-            f"Company is not pending review. Current status: {company.status.value}"
+            f"Company is not pending review. Current status: {company.status.value}",
         )
 
     # Use default config if none provided
@@ -3784,11 +3774,11 @@ def approve_company(
 
     # Configure free plan settings
     company.free_plan_type = config.free_plan_type
-    company.trial_start_date = datetime.utcnow(
+    company.trial_start_date = (
+        datetime.utcnow()
     )  # Use trial_start_date for billing tracking
     company.trial_status = "ACTIVE"  # Ensure trial is active
-    company.free_plan_start_date = datetime.utcnow(
-    )  # Keep for backwards compatibility
+    company.free_plan_start_date = datetime.utcnow()  # Keep for backwards compatibility
 
     if config.free_plan_type == "DURATION":
         company.free_plan_duration_months = config.free_plan_duration_months or 1
@@ -3812,7 +3802,7 @@ def approve_company(
     #     status="APPROVED")
     email_result = {
         "success": False,
-        "note": "Email sending skipped (temporarily disabled)"
+        "note": "Email sending skipped (temporarily disabled)",
     }
 
     return {
@@ -3823,7 +3813,7 @@ def approve_company(
         "free_plan_config": plan_description,
         "message": "Company approved successfully",
         "email_sent": email_result.get("success", False),
-        "email_status": "skipped"
+        "email_status": "skipped",
     }
 
 
@@ -3836,7 +3826,8 @@ def reject_company(
     company_id: str,
     payload: RejectCompanyRequest = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Reject a pending company registration (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
@@ -3848,7 +3839,7 @@ def reject_company(
     if company.status != CompanyStatus.PENDING_REVIEW:
         raise HTTPException(
             400,
-            f"Company is not pending review. Current status: {company.status.value}"
+            f"Company is not pending review. Current status: {company.status.value}",
         )
 
     notes = payload.notes if payload else None
@@ -3866,7 +3857,7 @@ def reject_company(
     #     admin_message=notes)
     email_result = {
         "success": False,
-        "note": "Email sending skipped (temporarily disabled)"
+        "note": "Email sending skipped (temporarily disabled)",
     }
 
     return {
@@ -3874,7 +3865,7 @@ def reject_company(
         "company_id": company_id,
         "status": company.status.value,
         "message": "Company rejected",
-        "email_sent": email_result.get("success", False)
+        "email_sent": email_result.get("success", False),
     }
 
 
@@ -3882,7 +3873,8 @@ def reject_company(
 def reset_company_trial(
     company_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Reset company trial to start fresh (Super Admin only - for testing)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
@@ -3911,7 +3903,7 @@ def reset_company_trial(
         "trial_start_date": company.trial_start_date.isoformat(),
         "free_plan_type": company.free_plan_type,
         "days_remaining": trial_duration_days,
-        "invoices_remaining": invoice_limit
+        "invoices_remaining": invoice_limit,
     }
 
 
@@ -3930,7 +3922,8 @@ def update_company(
     company_id: str,
     payload: CompanyUpdateRequest,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update company details (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
@@ -3955,8 +3948,8 @@ def update_company(
     if payload.status is not None:
         # Map string status to enum
         status_map = {
-            'active': CompanyStatus.ACTIVE,
-            'suspended': CompanyStatus.SUSPENDED
+            "active": CompanyStatus.ACTIVE,
+            "suspended": CompanyStatus.SUSPENDED,
         }
         if payload.status.lower() in status_map:
             company.status = status_map[payload.status.lower()]
@@ -3970,7 +3963,7 @@ def update_company(
         "message": "Company updated successfully",
         "invoices_generated": company.invoices_generated,
         "free_plan_invoice_limit": company.free_plan_invoice_limit,
-        "free_plan_duration_months": company.free_plan_duration_months
+        "free_plan_duration_months": company.free_plan_duration_months,
     }
 
 
@@ -3979,25 +3972,38 @@ def get_admin_stats(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get comprehensive dashboard statistics for SuperAdmin (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
 
     # Count companies by status
-    pending = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.PENDING_REVIEW).count()
-    approved = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE).count()
-    rejected = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.REJECTED).count()
-    active_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE).count()
-    suspended_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.SUSPENDED).count()
-    inactive_companies = db.query(CompanyDB).filter(
-        (CompanyDB.status == CompanyStatus.PENDING_REVIEW)
-        | (CompanyDB.status == CompanyStatus.REJECTED)).count()
+    pending = (
+        db.query(CompanyDB)
+        .filter(CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+        .count()
+    )
+    approved = (
+        db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    )
+    rejected = (
+        db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.REJECTED).count()
+    )
+    active_companies = (
+        db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    )
+    suspended_companies = (
+        db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.SUSPENDED).count()
+    )
+    inactive_companies = (
+        db.query(CompanyDB)
+        .filter(
+            (CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+            | (CompanyDB.status == CompanyStatus.REJECTED)
+        )
+        .count()
+    )
 
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
@@ -4007,9 +4013,12 @@ def get_admin_stats(
         plan = None
         arpu = 0
         # Check for latest company subscription
-        latest_sub = db.query(CompanySubscriptionDB).filter(
-            CompanySubscriptionDB.company_id == company.id).order_by(
-                CompanySubscriptionDB.created_at.desc()).first()
+        latest_sub = (
+            db.query(CompanySubscriptionDB)
+            .filter(CompanySubscriptionDB.company_id == company.id)
+            .order_by(CompanySubscriptionDB.created_at.desc())
+            .first()
+        )
         if latest_sub and latest_sub.plan:
             plan = latest_sub.plan.name
             arpu = latest_sub.plan.price_monthly or 0
@@ -4026,93 +4035,106 @@ def get_admin_stats(
         # Get invoice count for this month
         now = datetime.utcnow()
         month_start = datetime(now.year, now.month, 1)
-        invoices_this_month = db.query(InvoiceDB).filter(
-            InvoiceDB.company_id == company.id, InvoiceDB.created_at
-            >= month_start).count()
+        invoices_this_month = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.company_id == company.id, InvoiceDB.created_at >= month_start
+            )
+            .count()
+        )
 
-        all_companies_list.append({
-            "id":
-            company.id,
-            "name":
-            company.legal_name or "Unnamed Company",
-            "status":
-            "active" if company.status == CompanyStatus.ACTIVE else
-            ("suspended"
-             if company.status == CompanyStatus.SUSPENDED else "inactive"),
-            "invoicesThisMonth":
-            invoices_this_month,
-            "invoicesLimit":
-            company.free_plan_invoice_limit,
-            "plan":
-            plan,
-            "arpu":
-            arpu,
-            "region":
-            company.emirate,
-            "vatCompliant":
-            bool(company.trn)
-        })
+        all_companies_list.append(
+            {
+                "id": company.id,
+                "name": company.legal_name or "Unnamed Company",
+                "status": "active"
+                if company.status == CompanyStatus.ACTIVE
+                else (
+                    "suspended"
+                    if company.status == CompanyStatus.SUSPENDED
+                    else "inactive"
+                ),
+                "invoicesThisMonth": invoices_this_month,
+                "invoicesLimit": company.free_plan_invoice_limit,
+                "plan": plan,
+                "arpu": arpu,
+                "region": company.emirate,
+                "vatCompliant": bool(company.trn),
+            }
+        )
 
     # Invoice statistics
     now = datetime.utcnow()
     month_start = datetime(now.year, now.month, 1)
     last_month_start = (month_start - timedelta(days=1)).replace(day=1)
 
-    invoices_mtd = db.query(InvoiceDB).filter(
-        InvoiceDB.created_at >= month_start).count()
-    invoices_last_month = db.query(InvoiceDB).filter(
-        InvoiceDB.created_at >= last_month_start, InvoiceDB.created_at
-        < month_start).count()
+    invoices_mtd = (
+        db.query(InvoiceDB).filter(InvoiceDB.created_at >= month_start).count()
+    )
+    invoices_last_month = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.created_at >= last_month_start, InvoiceDB.created_at < month_start
+        )
+        .count()
+    )
 
     # Revenue calculations by tier
     tiers_data = []
-    all_plans = db.query(SubscriptionPlanDB).filter(
-        SubscriptionPlanDB.active == True).all()
+    all_plans = (
+        db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
+    )
     total_mrr = 0
 
     for plan in all_plans:
-        active_on_plan = db.query(CompanyDB).filter(
-            CompanyDB.subscription_plan_id == plan.id,
-            CompanyDB.status == CompanyStatus.ACTIVE).count()
+        active_on_plan = (
+            db.query(CompanyDB)
+            .filter(
+                CompanyDB.subscription_plan_id == plan.id,
+                CompanyDB.status == CompanyStatus.ACTIVE,
+            )
+            .count()
+        )
 
         mrr = active_on_plan * plan.price_monthly
         total_mrr += mrr
 
-        tiers_data.append({
-            "plan": plan.name,
-            "activeCompanies": active_on_plan,
-            "pricePerCompany": plan.price_monthly,
-            "mrr": mrr,
-            "arr": mrr * 12,
-            "newActivations": 0  # Could track this with created_at filters
-        })
+        tiers_data.append(
+            {
+                "plan": plan.name,
+                "activeCompanies": active_on_plan,
+                "pricePerCompany": plan.price_monthly,
+                "mrr": mrr,
+                "arr": mrr * 12,
+                "newActivations": 0,  # Could track this with created_at filters
+            }
+        )
 
     return {
-        "asOf":
-        datetime.utcnow().isoformat(),
+        "asOf": datetime.utcnow().isoformat(),
         "registrations": {
             "pending": pending,
             "approved": approved,
-            "rejected": rejected
+            "rejected": rejected,
         },
         "companies": {
             "active": active_companies,
             "inactive": inactive_companies,
             "suspended": suspended_companies,
-            "all": all_companies_list
+            "all": all_companies_list,
         },
-        "invoices": {
-            "monthToDate": invoices_mtd,
-            "lastMonth": invoices_last_month
-        },
+        "invoices": {"monthToDate": invoices_mtd, "lastMonth": invoices_last_month},
         "revenue": {
             "mrr": total_mrr,
             "arr": total_mrr * 12,
             "deltaPctVsLastMonth": 0,  # Could calculate from historical data
-            "tiers": tiers_data
+            "tiers": tiers_data,
         },
-        "total_companies":
-        pending + approved + rejected + active_companies + inactive_companies
+        "total_companies": pending
+        + approved
+        + rejected
+        + active_companies
+        + inactive_companies,
     }
 
 
@@ -4122,7 +4144,8 @@ def get_admin_analytics(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Alias for /admin/stats - Get comprehensive dashboard analytics (Super Admin only)"""
     return get_admin_stats(from_date, to_date, current_user, db)
 
@@ -4130,17 +4153,17 @@ def get_admin_analytics(
 # ==================== CONTENT MANAGEMENT ENDPOINTS ====================
 
 
-@app.get("/admin/content",
-         response_model=List[ContentBlockOut],
-         tags=["Admin", "Content"])
+@app.get(
+    "/admin/content", response_model=List[ContentBlockOut], tags=["Admin", "Content"]
+)
 def get_all_content(
     section: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get all content blocks (Super Admin only). Optionally filter by section."""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403,
-                            "Only Super Admins can access content management")
+        raise HTTPException(403, "Only Super Admins can access content management")
 
     query = db.query(ContentBlockDB)
     if section:
@@ -4149,24 +4172,28 @@ def get_all_content(
     blocks = query.order_by(ContentBlockDB.section, ContentBlockDB.key).all()
 
     return [
-        ContentBlockOut(id=b.id,
-                        key=b.key,
-                        value=b.value,
-                        description=b.description,
-                        section=b.section,
-                        updated_at=b.updated_at,
-                        updated_by=b.updated_by) for b in blocks
+        ContentBlockOut(
+            id=b.id,
+            key=b.key,
+            value=b.value,
+            description=b.description,
+            section=b.section,
+            updated_at=b.updated_at,
+            updated_by=b.updated_by,
+        )
+        for b in blocks
     ]
 
 
-@app.put("/admin/content/{key}",
-         response_model=ContentBlockOut,
-         tags=["Admin", "Content"])
+@app.put(
+    "/admin/content/{key}", response_model=ContentBlockOut, tags=["Admin", "Content"]
+)
 def update_content(
     key: str,
     payload: ContentBlockUpdate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update a content block by key (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Only Super Admins can edit content")
@@ -4182,39 +4209,44 @@ def update_content(
     db.commit()
     db.refresh(block)
 
-    return ContentBlockOut(id=block.id,
-                           key=block.key,
-                           value=block.value,
-                           description=block.description,
-                           section=block.section,
-                           updated_at=block.updated_at,
-                           updated_by=block.updated_by)
+    return ContentBlockOut(
+        id=block.id,
+        key=block.key,
+        value=block.value,
+        description=block.description,
+        section=block.section,
+        updated_at=block.updated_at,
+        updated_by=block.updated_by,
+    )
 
 
-@app.get("/content/public",
-         response_model=List[ContentBlockOut],
-         tags=["Content"])
+@app.get("/content/public", response_model=List[ContentBlockOut], tags=["Content"])
 def get_public_content(db: Session = Depends(get_db)):
     """Get all content blocks for public consumption (no auth required)"""
-    blocks = db.query(ContentBlockDB).order_by(ContentBlockDB.section,
-                                               ContentBlockDB.key).all()
+    blocks = (
+        db.query(ContentBlockDB)
+        .order_by(ContentBlockDB.section, ContentBlockDB.key)
+        .all()
+    )
 
     return [
-        ContentBlockOut(id=b.id,
-                        key=b.key,
-                        value=b.value,
-                        description=b.description,
-                        section=b.section,
-                        updated_at=b.updated_at,
-                        updated_by=b.updated_by) for b in blocks
+        ContentBlockOut(
+            id=b.id,
+            key=b.key,
+            value=b.value,
+            description=b.description,
+            section=b.section,
+            updated_at=b.updated_at,
+            updated_by=b.updated_by,
+        )
+        for b in blocks
     ]
 
 
 @app.get("/content/footer", tags=["Content"])
 def get_footer_content(db: Session = Depends(get_db)):
     """Get footer content blocks formatted as a single object (no auth required)"""
-    blocks = db.query(ContentBlockDB).filter(
-        ContentBlockDB.section == "footer").all()
+    blocks = db.query(ContentBlockDB).filter(ContentBlockDB.section == "footer").all()
 
     # Convert blocks to a dictionary
     footer_data = {}
@@ -4300,54 +4332,61 @@ class FeaturedBusinessUpdate(BaseModel):
     display_order: Optional[int] = None
 
 
-@app.get("/admin/subscription-plans",
-         response_model=List[SubscriptionPlanOut],
-         tags=["Admin", "Tier Management"])
+@app.get(
+    "/admin/subscription-plans",
+    response_model=List[SubscriptionPlanOut],
+    tags=["Admin", "Tier Management"],
+)
 def get_all_subscription_plans(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get all subscription plans (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403,
-                            "Only Super Admins can manage subscription plans")
+        raise HTTPException(403, "Only Super Admins can manage subscription plans")
 
-    plans = db.query(SubscriptionPlanDB).order_by(
-        SubscriptionPlanDB.price_monthly).all()
+    plans = (
+        db.query(SubscriptionPlanDB).order_by(SubscriptionPlanDB.price_monthly).all()
+    )
 
     return [
-        SubscriptionPlanOut(id=p.id,
-                            name=p.name,
-                            description=p.description,
-                            price_monthly=p.price_monthly,
-                            price_yearly=p.price_yearly,
-                            max_invoices_per_month=p.max_invoices_per_month,
-                            max_users=p.max_users,
-                            max_business_admins=p.max_business_admins,
-                            max_finance_users=p.max_finance_users,
-                            max_pos_devices=p.max_pos_devices,
-                            allow_api_access=p.allow_api_access,
-                            allow_branding=p.allow_branding,
-                            allow_multi_currency=p.allow_multi_currency,
-                            priority_support=p.priority_support,
-                            active=p.active) for p in plans
+        SubscriptionPlanOut(
+            id=p.id,
+            name=p.name,
+            description=p.description,
+            price_monthly=p.price_monthly,
+            price_yearly=p.price_yearly,
+            max_invoices_per_month=p.max_invoices_per_month,
+            max_users=p.max_users,
+            max_business_admins=p.max_business_admins,
+            max_finance_users=p.max_finance_users,
+            max_pos_devices=p.max_pos_devices,
+            allow_api_access=p.allow_api_access,
+            allow_branding=p.allow_branding,
+            allow_multi_currency=p.allow_multi_currency,
+            priority_support=p.priority_support,
+            active=p.active,
+        )
+        for p in plans
     ]
 
 
-@app.put("/admin/subscription-plans/{plan_id}",
-         response_model=SubscriptionPlanOut,
-         tags=["Admin", "Tier Management"])
+@app.put(
+    "/admin/subscription-plans/{plan_id}",
+    response_model=SubscriptionPlanOut,
+    tags=["Admin", "Tier Management"],
+)
 def update_subscription_plan(
     plan_id: str,
     payload: SubscriptionPlanUpdate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update subscription plan tier limits and features (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403,
-                            "Only Super Admins can modify subscription plans")
+        raise HTTPException(403, "Only Super Admins can modify subscription plans")
 
-    plan = db.query(SubscriptionPlanDB).filter(
-        SubscriptionPlanDB.id == plan_id).first()
+    plan = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.id == plan_id).first()
     if not plan:
         raise HTTPException(404, f"Subscription plan {plan_id} not found")
 
@@ -4399,34 +4438,39 @@ def update_subscription_plan(
         allow_branding=plan.allow_branding,
         allow_multi_currency=plan.allow_multi_currency,
         priority_support=plan.priority_support,
-        active=plan.active)
+        active=plan.active,
+    )
 
 
-@app.get("/admin/platform-stats",
-         response_model=PlatformStatsOut,
-         tags=["Admin", "Platform Stats"])
-def get_platform_statistics(current_user: UserDB = Depends(
-    get_current_user_from_header),
-                            db: Session = Depends(get_db),
-                            from_date: Optional[str] = None,
-                            to_date: Optional[str] = None):
+@app.get(
+    "/admin/platform-stats",
+    response_model=PlatformStatsOut,
+    tags=["Admin", "Platform Stats"],
+)
+def get_platform_statistics(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+):
     """Get aggregated platform statistics (Super Admin only) - Privacy-focused: Only aggregated data, no individual business details"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(
-            403, "Only Super Admins can access platform statistics")
+        raise HTTPException(403, "Only Super Admins can access platform statistics")
 
     from_dt = None
     to_dt = None
     if from_date:
         try:
-            from_dt = datetime.fromisoformat(from_date.replace(
-                'Z', '+00:00')).replace(tzinfo=None)
+            from_dt = datetime.fromisoformat(from_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except Exception:
             pass
     if to_date:
         try:
-            to_dt = datetime.fromisoformat(to_date.replace(
-                'Z', '+00:00')).replace(tzinfo=None)
+            to_dt = datetime.fromisoformat(to_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
         except Exception:
             pass
 
@@ -4438,8 +4482,7 @@ def get_platform_statistics(current_user: UserDB = Depends(
         company_query = company_query.filter(CompanyDB.created_at <= to_dt)
     total_companies = company_query.count()
 
-    active_query = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE)
+    active_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE)
     if from_dt:
         active_query = active_query.filter(CompanyDB.created_at >= from_dt)
     if to_dt:
@@ -4447,7 +4490,8 @@ def get_platform_statistics(current_user: UserDB = Depends(
     active_companies = active_query.count()
 
     pending_query = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.PENDING_REVIEW)
+        CompanyDB.status == CompanyStatus.PENDING_REVIEW
+    )
     if from_dt:
         pending_query = pending_query.filter(CompanyDB.created_at >= from_dt)
     if to_dt:
@@ -4465,57 +4509,85 @@ def get_platform_statistics(current_user: UserDB = Depends(
     # Total revenue (filtered) - subtract credit notes from revenue
     invoice_list_query = db.query(InvoiceDB)
     if from_dt:
-        invoice_list_query = invoice_list_query.filter(
-            InvoiceDB.created_at >= from_dt)
+        invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at >= from_dt)
     if to_dt:
-        invoice_list_query = invoice_list_query.filter(
-            InvoiceDB.created_at <= to_dt)
+        invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at <= to_dt)
 
     invoices_for_revenue = invoice_list_query.all()
     total_revenue = sum(
-        (inv.total_amount or 0.0) *
-        (-1 if inv.invoice_type in
-         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
-          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in invoices_for_revenue)
+        (inv.total_amount or 0.0)
+        * (
+            -1
+            if inv.invoice_type
+            in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+            else 1
+        )
+        for inv in invoices_for_revenue
+    )
 
     # Active subscriptions (company_subscriptions table)
-    active_subscriptions = db.query(CompanySubscriptionDB).filter(
-        CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE).count()
+    active_subscriptions = (
+        db.query(CompanySubscriptionDB)
+        .filter(CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE)
+        .count()
+    )
 
     # Free vs paid tier users - consider company_subscriptions (company_subscriptions.plan -> subscription_plans)
     # and legacy Company.subscription_plan_id
     # 1) companies with a company_subscription whose plan has price_monthly == 0 and status in (TRIAL, ACTIVE)
     free_plan_company_ids = set()
-    free_plan_subs = db.query(CompanySubscriptionDB).join(
-        SubscriptionPlanDB).filter(
+    free_plan_subs = (
+        db.query(CompanySubscriptionDB)
+        .join(SubscriptionPlanDB)
+        .filter(
             SubscriptionPlanDB.price_monthly == 0.0,
             CompanySubscriptionDB.status.in_(
-                [SubscriptionStatus.ACTIVE,
-                 SubscriptionStatus.TRIAL])).with_entities(
-                     CompanySubscriptionDB.company_id).distinct().all()
+                [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+            ),
+        )
+        .with_entities(CompanySubscriptionDB.company_id)
+        .distinct()
+        .all()
+    )
     for cid in free_plan_subs:
         free_plan_company_ids.add(cid[0])
 
     # 2) companies with legacy subscription_plan_id pointing to a free plan
-    free_plans = db.query(SubscriptionPlanDB).filter(
-        SubscriptionPlanDB.price_monthly == 0.0).with_entities(
-            SubscriptionPlanDB.id).all()
+    free_plans = (
+        db.query(SubscriptionPlanDB)
+        .filter(SubscriptionPlanDB.price_monthly == 0.0)
+        .with_entities(SubscriptionPlanDB.id)
+        .all()
+    )
     free_plan_ids = [p[0] for p in free_plans]
     if free_plan_ids:
-        legacy_free_companies = db.query(CompanyDB).filter(
-            CompanyDB.subscription_plan_id.in_(free_plan_ids)).with_entities(
-                CompanyDB.id).distinct().all()
+        legacy_free_companies = (
+            db.query(CompanyDB)
+            .filter(CompanyDB.subscription_plan_id.in_(free_plan_ids))
+            .with_entities(CompanyDB.id)
+            .distinct()
+            .all()
+        )
         for cid in legacy_free_companies:
             free_plan_company_ids.add(cid[0])
 
     # 3) Active companies with NO subscription record at all → treat as free
-    all_active_company_ids = set(cid[0] for cid in db.query(CompanyDB).filter(
-        CompanyDB.status.in_([
-            CompanyStatus.ACTIVE, CompanyStatus.PENDING_REVIEW
-        ])).with_entities(CompanyDB.id).all())
+    all_active_company_ids = set(
+        cid[0]
+        for cid in db.query(CompanyDB)
+        .filter(
+            CompanyDB.status.in_([CompanyStatus.ACTIVE, CompanyStatus.PENDING_REVIEW])
+        )
+        .with_entities(CompanyDB.id)
+        .all()
+    )
     companies_with_any_sub = set(
-        cid[0] for cid in db.query(CompanySubscriptionDB).with_entities(
-            CompanySubscriptionDB.company_id).distinct().all())
+        cid[0]
+        for cid in db.query(CompanySubscriptionDB)
+        .with_entities(CompanySubscriptionDB.company_id)
+        .distinct()
+        .all()
+    )
     no_plan_companies = all_active_company_ids - companies_with_any_sub
     free_plan_company_ids.update(no_plan_companies)
 
@@ -4523,56 +4595,76 @@ def get_platform_statistics(current_user: UserDB = Depends(
 
     # Paid tier users - similar logic for company_subscriptions with price_monthly > 0
     paid_plan_company_ids = set()
-    paid_plan_subs = db.query(CompanySubscriptionDB).join(
-        SubscriptionPlanDB).filter(
+    paid_plan_subs = (
+        db.query(CompanySubscriptionDB)
+        .join(SubscriptionPlanDB)
+        .filter(
             SubscriptionPlanDB.price_monthly > 0.0,
             CompanySubscriptionDB.status.in_(
-                [SubscriptionStatus.ACTIVE,
-                 SubscriptionStatus.TRIAL])).with_entities(
-                     CompanySubscriptionDB.company_id).distinct().all()
+                [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+            ),
+        )
+        .with_entities(CompanySubscriptionDB.company_id)
+        .distinct()
+        .all()
+    )
     for cid in paid_plan_subs:
         paid_plan_company_ids.add(cid[0])
 
     # Legacy companies with subscription_plan_id pointing to paid plans
     paid_plan_ids = [
-        p[0] for p in db.query(SubscriptionPlanDB).filter(
-            SubscriptionPlanDB.price_monthly > 0.0).with_entities(
-                SubscriptionPlanDB.id).all()
+        p[0]
+        for p in db.query(SubscriptionPlanDB)
+        .filter(SubscriptionPlanDB.price_monthly > 0.0)
+        .with_entities(SubscriptionPlanDB.id)
+        .all()
     ]
     if paid_plan_ids:
-        legacy_paid_companies = db.query(CompanyDB).filter(
-            CompanyDB.subscription_plan_id.in_(paid_plan_ids)).with_entities(
-                CompanyDB.id).distinct().all()
+        legacy_paid_companies = (
+            db.query(CompanyDB)
+            .filter(CompanyDB.subscription_plan_id.in_(paid_plan_ids))
+            .with_entities(CompanyDB.id)
+            .distinct()
+            .all()
+        )
         for cid in legacy_paid_companies:
             paid_plan_company_ids.add(cid[0])
 
     paid_tier = len(paid_plan_company_ids)
 
-    return PlatformStatsOut(total_companies=total_companies,
-                            active_companies=active_companies,
-                            pending_companies=pending_companies,
-                            total_invoices=total_invoices,
-                            total_revenue_aed=total_revenue,
-                            active_subscriptions=active_subscriptions,
-                            free_tier_users=free_tier,
-                            paid_tier_users=paid_tier)
+    return PlatformStatsOut(
+        total_companies=total_companies,
+        active_companies=active_companies,
+        pending_companies=pending_companies,
+        total_invoices=total_invoices,
+        total_revenue_aed=total_revenue,
+        active_subscriptions=active_subscriptions,
+        free_tier_users=free_tier,
+        paid_tier_users=paid_tier,
+    )
 
 
-@app.get("/admin/featured-businesses",
-         response_model=List[FeaturedBusinessOut],
-         tags=["Admin", "Featured Businesses"])
+@app.get(
+    "/admin/featured-businesses",
+    response_model=List[FeaturedBusinessOut],
+    tags=["Admin", "Featured Businesses"],
+)
 def get_featured_businesses(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get all featured businesses for homepage moving bar (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(
-            403, "Only Super Admins can manage featured businesses")
+        raise HTTPException(403, "Only Super Admins can manage featured businesses")
 
     try:
         # Use outerjoin to handle cases where company might be deleted
-        featured = db.query(FeaturedBusinessDB).outerjoin(CompanyDB).order_by(
-            FeaturedBusinessDB.display_order).all()
+        featured = (
+            db.query(FeaturedBusinessDB)
+            .outerjoin(CompanyDB)
+            .order_by(FeaturedBusinessDB.display_order)
+            .all()
+        )
 
         result = []
         for f in featured:
@@ -4585,84 +4677,90 @@ def get_featured_businesses(
                 company_name = f"Company {f.company_id}"
 
             result.append(
-                FeaturedBusinessOut(id=f.id,
-                                    company_id=f.company_id,
-                                    company_name=company_name,
-                                    display_name=f.display_name or "",
-                                    logo_url=f.logo_url or "",
-                                    is_active=f.is_active,
-                                    display_order=f.display_order,
-                                    created_at=f.created_at.isoformat()))
+                FeaturedBusinessOut(
+                    id=f.id,
+                    company_id=f.company_id,
+                    company_name=company_name,
+                    display_name=f.display_name or "",
+                    logo_url=f.logo_url or "",
+                    is_active=f.is_active,
+                    display_order=f.display_order,
+                    created_at=f.created_at.isoformat(),
+                )
+            )
 
         return result
     except Exception as e:
         logger.error(f"Error fetching featured businesses: {str(e)}")
-        raise HTTPException(500,
-                            f"Failed to fetch featured businesses: {str(e)}")
+        raise HTTPException(500, f"Failed to fetch featured businesses: {str(e)}")
 
 
 @app.post("/admin/featured-businesses", tags=["Admin", "Featured Businesses"])
 def add_featured_business(
     payload: FeaturedBusinessCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Add a company to the featured businesses list (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403,
-                            "Only Super Admins can add featured businesses")
+        raise HTTPException(403, "Only Super Admins can add featured businesses")
 
     # Verify company exists
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == payload.company_id).first()
+    company = db.query(CompanyDB).filter(CompanyDB.id == payload.company_id).first()
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Check if already featured
-    existing = db.query(FeaturedBusinessDB).filter(
-        FeaturedBusinessDB.company_id == payload.company_id).first()
+    existing = (
+        db.query(FeaturedBusinessDB)
+        .filter(FeaturedBusinessDB.company_id == payload.company_id)
+        .first()
+    )
     if existing:
         raise HTTPException(400, "Company is already featured")
 
     # Auto-calculate next display_order if not provided
     if payload.display_order is None:
-        max_order = db.query(func.max(
-            FeaturedBusinessDB.display_order)).scalar()
+        max_order = db.query(func.max(FeaturedBusinessDB.display_order)).scalar()
         display_order = 0 if max_order is None else max_order + 1
     else:
         display_order = payload.display_order
 
-    new_featured = FeaturedBusinessDB(id=f"fb_{uuid4().hex[:12]}",
-                                      company_id=payload.company_id,
-                                      display_name=payload.display_name,
-                                      logo_url=payload.logo_url,
-                                      is_active=True,
-                                      display_order=display_order,
-                                      added_by_user_id=current_user.id)
+    new_featured = FeaturedBusinessDB(
+        id=f"fb_{uuid4().hex[:12]}",
+        company_id=payload.company_id,
+        display_name=payload.display_name,
+        logo_url=payload.logo_url,
+        is_active=True,
+        display_order=display_order,
+        added_by_user_id=current_user.id,
+    )
 
     db.add(new_featured)
     db.commit()
     db.refresh(new_featured)
 
-    return {
-        "message": "Business added to featured list",
-        "id": new_featured.id
-    }
+    return {"message": "Business added to featured list", "id": new_featured.id}
 
 
-@app.put("/admin/featured-businesses/{featured_id}",
-         tags=["Admin", "Featured Businesses"])
+@app.put(
+    "/admin/featured-businesses/{featured_id}", tags=["Admin", "Featured Businesses"]
+)
 def update_featured_business(
     featured_id: str,
     payload: FeaturedBusinessUpdate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update a featured business (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(
-            403, "Only Super Admins can update featured businesses")
+        raise HTTPException(403, "Only Super Admins can update featured businesses")
 
-    featured = db.query(FeaturedBusinessDB).filter(
-        FeaturedBusinessDB.id == featured_id).first()
+    featured = (
+        db.query(FeaturedBusinessDB)
+        .filter(FeaturedBusinessDB.id == featured_id)
+        .first()
+    )
     if not featured:
         raise HTTPException(404, "Featured business not found")
 
@@ -4682,19 +4780,23 @@ def update_featured_business(
     return {"message": "Featured business updated successfully"}
 
 
-@app.delete("/admin/featured-businesses/{featured_id}",
-            tags=["Admin", "Featured Businesses"])
+@app.delete(
+    "/admin/featured-businesses/{featured_id}", tags=["Admin", "Featured Businesses"]
+)
 def remove_featured_business(
     featured_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Remove a company from the featured businesses list (Super Admin only)"""
     if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(
-            403, "Only Super Admins can remove featured businesses")
+        raise HTTPException(403, "Only Super Admins can remove featured businesses")
 
-    featured = db.query(FeaturedBusinessDB).filter(
-        FeaturedBusinessDB.id == featured_id).first()
+    featured = (
+        db.query(FeaturedBusinessDB)
+        .filter(FeaturedBusinessDB.id == featured_id)
+        .first()
+    )
     if not featured:
         raise HTTPException(404, "Featured business not found")
 
@@ -4704,16 +4806,22 @@ def remove_featured_business(
     return {"message": "Business removed from featured list"}
 
 
-@app.get("/public/featured-businesses",
-         response_model=List[FeaturedBusinessOut],
-         tags=["Public"])
+@app.get(
+    "/public/featured-businesses",
+    response_model=List[FeaturedBusinessOut],
+    tags=["Public"],
+)
 def get_public_featured_businesses(db: Session = Depends(get_db)):
     """Get active featured businesses for homepage (public, no auth required)"""
     try:
         # Use outerjoin to handle cases where company might be deleted
-        featured = db.query(FeaturedBusinessDB).outerjoin(CompanyDB).filter(
-            FeaturedBusinessDB.is_active == True).order_by(
-                FeaturedBusinessDB.display_order).all()
+        featured = (
+            db.query(FeaturedBusinessDB)
+            .outerjoin(CompanyDB)
+            .filter(FeaturedBusinessDB.is_active == True)
+            .order_by(FeaturedBusinessDB.display_order)
+            .all()
+        )
 
         result = []
         for f in featured:
@@ -4722,18 +4830,23 @@ def get_public_featured_businesses(db: Session = Depends(get_db)):
                 continue
 
             # Ensure we have valid strings
-            company_name = f.company.legal_name or f.company.email or f"Company {f.company_id}"
+            company_name = (
+                f.company.legal_name or f.company.email or f"Company {f.company_id}"
+            )
             display_name = f.display_name or company_name
 
             result.append(
-                FeaturedBusinessOut(id=f.id,
-                                    company_id=f.company_id,
-                                    company_name=company_name,
-                                    display_name=display_name,
-                                    logo_url=f.logo_url or "",
-                                    is_active=f.is_active,
-                                    display_order=f.display_order,
-                                    created_at=f.created_at.isoformat()))
+                FeaturedBusinessOut(
+                    id=f.id,
+                    company_id=f.company_id,
+                    company_name=company_name,
+                    display_name=display_name,
+                    logo_url=f.logo_url or "",
+                    is_active=f.is_active,
+                    display_order=f.display_order,
+                    created_at=f.created_at.isoformat(),
+                )
+            )
 
         return result
     except Exception as e:
@@ -4763,17 +4876,18 @@ class UserOut(BaseModel):
 
 @app.post("/users/invite", tags=["Users"])
 @app.post("/company/users/invite", tags=["Users"])
-def invite_user(payload: UserInvite,
-                current_user: UserDB = Depends(get_current_user_from_header),
-                db: Session = Depends(get_db)):
+def invite_user(
+    payload: UserInvite,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Invite a team member to the company (Company Admin only)"""
     # Only company admins or owners can invite users
     if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
         raise HTTPException(403, "Only admins can invite users")
 
     if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(400,
-                            "User must belong to a company to invite others")
+        raise HTTPException(400, "User must belong to a company to invite others")
 
     # Check if email already exists
     existing = db.query(UserDB).filter(UserDB.email == payload.email).first()
@@ -4785,14 +4899,16 @@ def invite_user(payload: UserInvite,
     temp_password = generate_temp_password(16)
     password_hash = get_password_hash(temp_password)
 
-    new_user = UserDB(id=user_id,
-                      email=payload.email,
-                      full_name=payload.full_name,
-                      password_hash=password_hash,
-                      role=payload.role,
-                      company_id=current_user.company_id,
-                      is_owner=False,
-                      invited_by=current_user.id)
+    new_user = UserDB(
+        id=user_id,
+        email=payload.email,
+        full_name=payload.full_name,
+        password_hash=password_hash,
+        role=payload.role,
+        company_id=current_user.company_id,
+        is_owner=False,
+        invited_by=current_user.id,
+    )
 
     db.add(new_user)
     db.commit()
@@ -4814,37 +4930,33 @@ def invite_user(payload: UserInvite,
         "user_id": user_id,
         "email": payload.email,
         "temporary_password": temp_password,
-        "message": "User invited successfully"
+        "message": "User invited successfully",
     }
 
 
 @app.get("/users/teams", response_model=List[UserOut], tags=["Users"])
 def get_team_members(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get all team members for the current user's company"""
     if not current_user.company_id:
         return []
 
-    users = db.query(UserDB).filter(
-        UserDB.company_id == current_user.company_id).all()
+    users = db.query(UserDB).filter(UserDB.company_id == current_user.company_id).all()
 
-    return [{
-        "id":
-        user.id,
-        "email":
-        user.email,
-        "full_name":
-        user.full_name,
-        "role":
-        user.role.value,
-        "is_owner":
-        user.is_owner,
-        "created_at":
-        user.created_at.isoformat() if user.created_at else None,
-        "last_login":
-        user.last_login.isoformat() if user.last_login else None
-    } for user in users]
+    return [
+        {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "is_owner": user.is_owner,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+        }
+        for user in users
+    ]
 
 
 @app.delete("/users/{user_id}", tags=["Users"])
@@ -4852,7 +4964,8 @@ def get_team_members(
 def remove_team_member(
     user_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Remove a team member (Company Admin only)"""
     # Only company admins can remove users
     if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
@@ -4863,7 +4976,10 @@ def remove_team_member(
         raise HTTPException(404, "User not found")
 
     # Can't remove users from other companies
-    if user_to_remove.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+    if (
+        user_to_remove.company_id != current_user.company_id
+        and current_user.role != Role.SUPER_ADMIN
+    ):
         raise HTTPException(403, "Cannot remove users from other companies")
 
     # Can't remove the owner
@@ -4883,20 +4999,20 @@ def remove_team_member(
 # ==================== INVOICE ENDPOINTS ====================
 
 
-def generate_invoice_number(company_id: str,
-                            db: Session,
-                            invoice_type: str = "380") -> str:
+def generate_invoice_number(
+    company_id: str, db: Session, invoice_type: str = "380"
+) -> str:
     """Generate sequential invoice number for company with type-specific prefix"""
     # Map invoice type to prefix
     prefix_map = {
         "380": "TI",  # Tax Invoice
         "381": "TCN",  # Tax Credit Note
         "480": "CI",  # Commercial Invoice
-        "81": "CN"  # Credit Note
+        "81": "CN",  # Credit Note
     }
 
     # Handle both enum and string types
-    if hasattr(invoice_type, 'value'):
+    if hasattr(invoice_type, "value"):
         invoice_type_value = invoice_type.value  # Extract enum value
     else:
         invoice_type_value = str(invoice_type)
@@ -4905,17 +5021,22 @@ def generate_invoice_number(company_id: str,
     prefix = prefix_map.get(invoice_type_value, "TI")
 
     # Count existing invoices of this type for this company
-    count = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company_id,
-        InvoiceDB.invoice_type == invoice_type).count()
+    count = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == company_id, InvoiceDB.invoice_type == invoice_type
+        )
+        .count()
+    )
     next_num = count + 1
 
     # Format: PREFIX-XXXXX (e.g., TI-00001, CN-00001)
     return f"{prefix}-{next_num:05d}"
 
 
-def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
-                               vat_enabled: bool) -> dict:
+def calculate_line_item_totals(
+    line_item: InvoiceLineItemCreate, vat_enabled: bool
+) -> dict:
     """Calculate tax and totals for a line item"""
     line_extension = line_item.quantity * line_item.unit_price
     if vat_enabled and line_item.tax_category == TaxCategory.STANDARD:
@@ -4927,7 +5048,7 @@ def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
     return {
         "line_extension_amount": round(line_extension, 2),
         "tax_amount": round(tax_amount, 2),
-        "line_total_amount": round(line_total, 2)
+        "line_total_amount": round(line_total, 2),
     }
 
 
@@ -4935,36 +5056,47 @@ def calculate_line_item_totals(line_item: InvoiceLineItemCreate,
 def create_invoice(
     payload: InvoiceCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Create a new invoice"""
     # Get company
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Enforce Super Admin configured free plan invoice limits (invoice-count based)
-    if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit is not None:
-        active_paid_subscription = db.query(SubscriptionDB).filter(
-            SubscriptionDB.company_id == company.id,
-            SubscriptionDB.status == "ACTIVE", SubscriptionDB.tier
-            != "FREE").first()
+    if (
+        company.free_plan_type == "INVOICE_COUNT"
+        and company.free_plan_invoice_limit is not None
+    ):
+        active_paid_subscription = (
+            db.query(SubscriptionDB)
+            .filter(
+                SubscriptionDB.company_id == company.id,
+                SubscriptionDB.status == "ACTIVE",
+                SubscriptionDB.tier != "FREE",
+            )
+            .first()
+        )
 
         if not active_paid_subscription:
-            used_invoice_count = db.query(InvoiceDB).filter(
-                InvoiceDB.company_id == company.id).count()
+            used_invoice_count = (
+                db.query(InvoiceDB).filter(InvoiceDB.company_id == company.id).count()
+            )
 
             if used_invoice_count >= company.free_plan_invoice_limit:
                 raise HTTPException(
                     403,
-                    f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin."
+                    f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin.",
                 )
 
     # Only require TRN when VAT is enabled
     if company.vat_enabled and not company.trn:
         raise HTTPException(
             400,
-            "Company TRN is required to issue VAT invoices. Please enable VAT in settings first."
+            "Company TRN is required to issue VAT invoices. Please enable VAT in settings first.",
         )
 
     # Check trial limits (100 invoices OR 30 days, whichever comes first)
@@ -4980,7 +5112,7 @@ def create_invoice(
             db.commit()
             raise HTTPException(
                 403,
-                "Free trial expired (30 days). Please subscribe to continue creating invoices."
+                "Free trial expired (30 days). Please subscribe to continue creating invoices.",
             )
 
         if trial_invoices_remaining == 0:
@@ -4989,20 +5121,25 @@ def create_invoice(
             db.commit()
             raise HTTPException(
                 403,
-                "Free trial expired (100 invoices used). Please subscribe to continue creating invoices."
+                "Free trial expired (100 invoices used). Please subscribe to continue creating invoices.",
             )
 
     # Check if trial already expired
     if company.trial_status == "EXPIRED":
         # Check if they have an active subscription
-        active_subscription = db.query(SubscriptionDB).filter(
-            SubscriptionDB.company_id == company.id,
-            SubscriptionDB.status == "ACTIVE").first()
+        active_subscription = (
+            db.query(SubscriptionDB)
+            .filter(
+                SubscriptionDB.company_id == company.id,
+                SubscriptionDB.status == "ACTIVE",
+            )
+            .first()
+        )
 
         if not active_subscription:
             raise HTTPException(
                 403,
-                "Free trial expired. Please subscribe to continue creating invoices."
+                "Free trial expired. Please subscribe to continue creating invoices.",
             )
 
     # Initialize trial if this is the first invoice
@@ -5014,8 +5151,7 @@ def create_invoice(
 
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
-    invoice_number = generate_invoice_number(company.id, db,
-                                             payload.invoice_type)
+    invoice_number = generate_invoice_number(company.id, db, payload.invoice_type)
 
     # Calculate totals
     subtotal = 0.0
@@ -5024,9 +5160,9 @@ def create_invoice(
 
     # Parse dates
     from datetime import datetime as dt
+
     issue_date = dt.fromisoformat(payload.issue_date).date()
-    due_date = dt.fromisoformat(
-        payload.due_date).date() if payload.due_date else None
+    due_date = dt.fromisoformat(payload.due_date).date() if payload.due_date else None
 
     # Create invoice
     invoice = InvoiceDB(
@@ -5038,18 +5174,16 @@ def create_invoice(
         issue_date=issue_date,
         due_date=due_date,
         currency_code=payload.currency_code,
-
         # Supplier (from company)
         supplier_trn=company.trn,
         supplier_name=company.legal_name or company.email,
-        supplier_address=
-        f"{company.address_line1 or ''} {company.address_line2 or ''}".strip()
+        supplier_address=f"{company.address_line1 or ''} {company.address_line2 or ''}".strip()
         or None,
         supplier_city=company.city,
         supplier_country="AE",
         supplier_peppol_id=company.trn[:10]
-        if company.trn else None,  # First 10 digits of TRN as TIN
-
+        if company.trn
+        else None,  # First 10 digits of TRN as TIN
         # Customer
         customer_trn=payload.customer_trn,
         customer_name=payload.customer_name,
@@ -5063,9 +5197,11 @@ def create_invoice(
         invoice_notes=payload.invoice_notes,
         reference_number=payload.reference_number,
         preceding_invoice_id=payload.preceding_invoice_id
-        if payload.preceding_invoice_id else None,
+        if payload.preceding_invoice_id
+        else None,
         credit_note_reason=payload.credit_note_reason,
-        share_token=f"share_{uuid4().hex[:16]}")
+        share_token=f"share_{uuid4().hex[:16]}",
+    )
 
     db.add(invoice)
     db.flush()  # Get invoice ID
@@ -5098,7 +5234,8 @@ def create_invoice(
             tax_percent=effective_tax_percent,
             tax_code=effective_tax_code,  # Save UAE tax code
             tax_amount=totals["tax_amount"],
-            line_total_amount=totals["line_total_amount"])
+            line_total_amount=totals["line_total_amount"],
+        )
         db.add(line_db)
 
         subtotal += totals["line_extension_amount"]
@@ -5121,7 +5258,8 @@ def create_invoice(
                 tax_category=category,
                 taxable_amount=round(amounts["taxable"], 2),
                 tax_percent=percent,
-                tax_amount=round(amounts["tax"], 2))
+                tax_amount=round(amounts["tax"], 2),
+            )
             db.add(tax_breakdown)
 
     # Update invoice totals
@@ -5134,42 +5272,50 @@ def create_invoice(
 
     # Credit note validation: must reference matching invoice and not exceed original total
     if invoice.invoice_type in [
-            InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
     ]:
         if not invoice.preceding_invoice_id:
-            raise HTTPException(
-                400, "Credit notes must reference an existing invoice.")
+            raise HTTPException(400, "Credit notes must reference an existing invoice.")
 
-        original_invoice = db.query(InvoiceDB).filter(
-            InvoiceDB.id == invoice.preceding_invoice_id,
-            InvoiceDB.company_id == company.id).first()
+        original_invoice = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.id == invoice.preceding_invoice_id,
+                InvoiceDB.company_id == company.id,
+            )
+            .first()
+        )
 
         if not original_invoice:
             raise HTTPException(400, "Referenced invoice not found.")
 
-        if (invoice.invoice_type == InvoiceType.TAX_CREDIT_NOTE
-                and original_invoice.invoice_type != InvoiceType.TAX_INVOICE):
-            raise HTTPException(
-                400, "Tax credit notes must reference a tax invoice.")
+        if (
+            invoice.invoice_type == InvoiceType.TAX_CREDIT_NOTE
+            and original_invoice.invoice_type != InvoiceType.TAX_INVOICE
+        ):
+            raise HTTPException(400, "Tax credit notes must reference a tax invoice.")
 
-        if (invoice.invoice_type == InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
-                and original_invoice.invoice_type
-                != InvoiceType.COMMERCIAL_INVOICE):
+        if (
+            invoice.invoice_type == InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+            and original_invoice.invoice_type != InvoiceType.COMMERCIAL_INVOICE
+        ):
             raise HTTPException(
-                400,
-                "Out-of-scope credit notes must reference a commercial invoice."
+                400, "Out-of-scope credit notes must reference a commercial invoice."
             )
 
         if Decimal(str(invoice.total_amount)) > Decimal(
-                str(original_invoice.total_amount)):
+            str(original_invoice.total_amount)
+        ):
             raise HTTPException(
-                400,
-                "Credit note total cannot exceed the original invoice total.")
+                400, "Credit note total cannot exceed the original invoice total."
+            )
 
         # Deduct credit note amount from original invoice's amount_due
         new_amount_due = float(
-            Decimal(str(original_invoice.amount_due)) -
-            Decimal(str(invoice.total_amount)))
+            Decimal(str(original_invoice.amount_due))
+            - Decimal(str(invoice.total_amount))
+        )
         # Ensure amount_due doesn't go below 0
         original_invoice.amount_due = max(0.0, new_amount_due)
         db.add(original_invoice)  # Explicitly mark for update
@@ -5177,7 +5323,8 @@ def create_invoice(
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
         total_amount=Decimal(str(invoice.total_amount)),
-        vat_enabled=company.vat_enabled or False)
+        vat_enabled=company.vat_enabled or False,
+    )
 
     # Increment trial invoice count if in trial
     if company.trial_status == "ACTIVE":
@@ -5222,35 +5369,41 @@ def create_invoice(
         sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
         viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
         line_items=[
-            InvoiceLineItemOut(id=li.id,
-                               line_number=li.line_number,
-                               item_name=li.item_name,
-                               item_description=li.item_description,
-                               quantity=li.quantity,
-                               unit_code=li.unit_code,
-                               unit_price=li.unit_price,
-                               line_extension_amount=li.line_extension_amount,
-                               tax_category=li.tax_category,
-                               tax_percent=li.tax_percent,
-                               tax_amount=li.tax_amount,
-                               line_total_amount=li.line_total_amount)
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+            )
             for li in invoice.line_items
         ],
         tax_breakdowns=[
-            InvoiceTaxBreakdownOut(id=tb.id,
-                                   tax_category=tb.tax_category,
-                                   taxable_amount=tb.taxable_amount,
-                                   tax_percent=tb.tax_percent,
-                                   tax_amount=tb.tax_amount)
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount,
+            )
             for tb in invoice.tax_breakdowns
-        ])
+        ],
+    )
 
 
 @app.post("/invoices/{invoice_id}/transmit-peppol", tags=["Invoices"])
 def transmit_invoice_via_peppol(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Transmit invoice via PEPPOL network to recipient
 
@@ -5272,40 +5425,36 @@ def transmit_invoice_via_peppol(
     # Validate invoice status
     if invoice.status == InvoiceStatus.DRAFT:
         raise HTTPException(
-            400,
-            "Cannot transmit draft invoice. Update status to VALIDATED first.")
+            400, "Cannot transmit draft invoice. Update status to VALIDATED first."
+        )
 
     # Check if XML exists
     if not invoice.xml_file_path or not os.path.exists(invoice.xml_file_path):
         raise HTTPException(
-            400, "Invoice XML not found. Please regenerate the invoice.")
+            400, "Invoice XML not found. Please regenerate the invoice."
+        )
 
     # Check if already transmitted
-    if invoice.peppol_status in ['SENT', 'DELIVERED']:
+    if invoice.peppol_status in ["SENT", "DELIVERED"]:
         return {
-            "success":
-            False,
-            "message":
-            f"Invoice already transmitted. Status: {invoice.peppol_status}",
-            "message_id":
-            invoice.peppol_message_id,
-            "sent_at":
-            invoice.peppol_sent_at.isoformat()
-            if invoice.peppol_sent_at else None
+            "success": False,
+            "message": f"Invoice already transmitted. Status: {invoice.peppol_status}",
+            "message_id": invoice.peppol_message_id,
+            "sent_at": invoice.peppol_sent_at.isoformat()
+            if invoice.peppol_sent_at
+            else None,
         }
 
     # Validate PEPPOL participant IDs
     if not invoice.supplier_peppol_id:
-        raise HTTPException(400,
-                            "Supplier PEPPOL ID is required for transmission")
+        raise HTTPException(400, "Supplier PEPPOL ID is required for transmission")
 
     if not invoice.customer_peppol_id:
-        raise HTTPException(400,
-                            "Customer PEPPOL ID is required for transmission")
+        raise HTTPException(400, "Customer PEPPOL ID is required for transmission")
 
     # Load XML content
     try:
-        with open(invoice.xml_file_path, 'r', encoding='utf-8') as f:
+        with open(invoice.xml_file_path, "r", encoding="utf-8") as f:
             xml_content = f.read()
     except Exception as e:
         raise HTTPException(500, f"Failed to read XML file: {str(e)}")
@@ -5316,25 +5465,27 @@ def transmit_invoice_via_peppol(
 
     # For now, use MOCK provider (replace with real provider in production)
     # Set PEPPOL_PROVIDER, PEPPOL_BASE_URL, PEPPOL_API_KEY in environment variables
-    provider_name = os.getenv('PEPPOL_PROVIDER', 'mock')
-    provider_url = os.getenv('PEPPOL_BASE_URL')
-    provider_key = os.getenv('PEPPOL_API_KEY')
+    provider_name = os.getenv("PEPPOL_PROVIDER", "mock")
+    provider_url = os.getenv("PEPPOL_BASE_URL")
+    provider_key = os.getenv("PEPPOL_API_KEY")
 
-    result = send_invoice_via_peppol(invoice_xml=xml_content,
-                                     invoice_number=invoice.invoice_number,
-                                     sender_id=invoice.supplier_peppol_id,
-                                     receiver_id=invoice.customer_peppol_id,
-                                     provider_name=provider_name,
-                                     base_url=provider_url,
-                                     api_key=provider_key)
+    result = send_invoice_via_peppol(
+        invoice_xml=xml_content,
+        invoice_number=invoice.invoice_number,
+        sender_id=invoice.supplier_peppol_id,
+        receiver_id=invoice.customer_peppol_id,
+        provider_name=provider_name,
+        base_url=provider_url,
+        api_key=provider_key,
+    )
 
     # Update invoice with transmission result
-    if result.get('success'):
-        invoice.peppol_message_id = result.get('message_id')
-        invoice.peppol_status = result.get('status')
-        invoice.peppol_provider = result.get('provider')
+    if result.get("success"):
+        invoice.peppol_message_id = result.get("message_id")
+        invoice.peppol_status = result.get("status")
+        invoice.peppol_provider = result.get("provider")
         invoice.peppol_sent_at = datetime.utcnow()
-        invoice.peppol_response = json.dumps(result.get('response', {}))
+        invoice.peppol_response = json.dumps(result.get("response", {}))
         invoice.status = InvoiceStatus.SENT  # Update invoice status
 
         db.commit()
@@ -5348,23 +5499,23 @@ def transmit_invoice_via_peppol(
             "status": invoice.peppol_status,
             "provider": invoice.peppol_provider,
             "sent_at": invoice.peppol_sent_at.isoformat(),
-            "recipient_id": invoice.customer_peppol_id
+            "recipient_id": invoice.customer_peppol_id,
         }
     else:
         # Save error response
-        invoice.peppol_status = 'FAILED'
-        invoice.peppol_response = json.dumps({'error': result.get('error')})
+        invoice.peppol_status = "FAILED"
+        invoice.peppol_response = json.dumps({"error": result.get("error")})
         db.commit()
 
-        raise HTTPException(
-            500, f"PEPPOL transmission failed: {result.get('error')}")
+        raise HTTPException(500, f"PEPPOL transmission failed: {result.get('error')}")
 
 
 @app.get("/invoices/{invoice_id}/peppol-status", tags=["Invoices"])
 def get_peppol_transmission_status(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Check PEPPOL transmission status for an invoice"""
     # Get invoice
     invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
@@ -5378,7 +5529,7 @@ def get_peppol_transmission_status(
     if not invoice.peppol_message_id:
         return {
             "transmitted": False,
-            "message": "Invoice has not been transmitted via PEPPOL"
+            "message": "Invoice has not been transmitted via PEPPOL",
         }
 
     # Query provider for latest status (if needed)
@@ -5386,72 +5537,60 @@ def get_peppol_transmission_status(
     import json
 
     try:
-        provider_name = invoice.peppol_provider or os.getenv(
-            'PEPPOL_PROVIDER', 'mock')
+        provider_name = invoice.peppol_provider or os.getenv("PEPPOL_PROVIDER", "mock")
         provider = PeppolProviderFactory.create_provider(
             provider_name=provider_name,
-            base_url=os.getenv('PEPPOL_BASE_URL'),
-            api_key=os.getenv('PEPPOL_API_KEY'))
+            base_url=os.getenv("PEPPOL_BASE_URL"),
+            api_key=os.getenv("PEPPOL_API_KEY"),
+        )
 
         status_result = provider.get_status(invoice.peppol_message_id)
 
         # Update invoice status if changed
-        if status_result.get('success') and status_result.get('status'):
-            new_status = status_result['status']
+        if status_result.get("success") and status_result.get("status"):
+            new_status = status_result["status"]
             if new_status != invoice.peppol_status:
                 invoice.peppol_status = new_status
-                invoice.peppol_response = json.dumps(
-                    status_result.get('details', {}))
+                invoice.peppol_response = json.dumps(status_result.get("details", {}))
                 db.commit()
 
         return {
-            "transmitted":
-            True,
-            "invoice_number":
-            invoice.invoice_number,
-            "message_id":
-            invoice.peppol_message_id,
-            "status":
-            invoice.peppol_status,
-            "provider":
-            invoice.peppol_provider,
-            "sent_at":
-            invoice.peppol_sent_at.isoformat()
-            if invoice.peppol_sent_at else None,
-            "latest_check":
-            status_result if status_result.get('success') else None
+            "transmitted": True,
+            "invoice_number": invoice.invoice_number,
+            "message_id": invoice.peppol_message_id,
+            "status": invoice.peppol_status,
+            "provider": invoice.peppol_provider,
+            "sent_at": invoice.peppol_sent_at.isoformat()
+            if invoice.peppol_sent_at
+            else None,
+            "latest_check": status_result if status_result.get("success") else None,
         }
 
     except Exception as e:
         return {
-            "transmitted":
-            True,
-            "invoice_number":
-            invoice.invoice_number,
-            "message_id":
-            invoice.peppol_message_id,
-            "status":
-            invoice.peppol_status,
-            "provider":
-            invoice.peppol_provider,
-            "sent_at":
-            invoice.peppol_sent_at.isoformat()
-            if invoice.peppol_sent_at else None,
-            "error":
-            f"Status check failed: {str(e)}"
+            "transmitted": True,
+            "invoice_number": invoice.invoice_number,
+            "message_id": invoice.peppol_message_id,
+            "status": invoice.peppol_status,
+            "provider": invoice.peppol_provider,
+            "sent_at": invoice.peppol_sent_at.isoformat()
+            if invoice.peppol_sent_at
+            else None,
+            "error": f"Status check failed: {str(e)}",
         }
 
 
 @app.get("/invoices", tags=["Invoices"], response_model=List[InvoiceListOut])
-def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
-                  db: Session = Depends(get_db),
-                  status: Optional[str] = None,
-                  invoice_type: Optional[str] = None,
-                  limit: int = 50,
-                  offset: int = 0):
+def list_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    status: Optional[str] = None,
+    invoice_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
     """List invoices for the current company"""
-    query = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id)
+    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == current_user.company_id)
 
     if status:
         try:
@@ -5471,24 +5610,27 @@ def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
     invoices = query.offset(offset).limit(limit).all()
 
     return [
-        InvoiceListOut(id=inv.id,
-                       invoice_number=inv.invoice_number,
-                       invoice_type=inv.invoice_type,
-                       status=inv.status,
-                       issue_date=inv.issue_date.isoformat(),
-                       customer_name=inv.customer_name,
-                       total_amount=inv.total_amount,
-                       currency_code=inv.currency_code,
-                       created_at=inv.created_at.isoformat())
+        InvoiceListOut(
+            id=inv.id,
+            invoice_number=inv.invoice_number,
+            invoice_type=inv.invoice_type,
+            status=inv.status,
+            issue_date=inv.issue_date.isoformat(),
+            customer_name=inv.customer_name,
+            total_amount=inv.total_amount,
+            currency_code=inv.currency_code,
+            created_at=inv.created_at.isoformat(),
+        )
         for inv in invoices
     ]
 
 
 @app.get("/invoices/pending-payment", tags=["Invoices"])
 def get_pending_payment_invoices(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db),
-        limit: int = 100):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+):
     """
     Get list of invoices awaiting payment
 
@@ -5497,55 +5639,58 @@ def get_pending_payment_invoices(
     """
     # Check role-based permissions
     if current_user.role not in [
-            Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
     ]:
-        raise HTTPException(
-            403, "Insufficient permissions to view pending payments")
+        raise HTTPException(403, "Insufficient permissions to view pending payments")
 
-    invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status.notin_([
-            InvoiceStatus.PAID, InvoiceStatus.CANCELLED
-        ])).order_by(InvoiceDB.due_date.asc()).limit(limit).all()
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        )
+        .order_by(InvoiceDB.due_date.asc())
+        .limit(limit)
+        .all()
+    )
 
-    return [{
-        "id":
-        inv.id,
-        "invoice_number":
-        inv.invoice_number,
-        "customer_name":
-        inv.customer_name,
-        "customer_email":
-        inv.customer_email,
-        "issue_date":
-        inv.issue_date.isoformat(),
-        "due_date":
-        inv.due_date.isoformat() if inv.due_date else None,
-        "total_amount":
-        inv.total_amount,
-        "amount_due":
-        inv.amount_due,
-        "currency_code":
-        inv.currency_code,
-        "status":
-        inv.status.value,
-        "payment_terms":
-        inv.payment_terms,
-        "days_overdue": (datetime.utcnow().date() - inv.due_date).days
-        if inv.due_date and datetime.utcnow().date() > inv.due_date else 0
-    } for inv in invoices]
+    return [
+        {
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "customer_name": inv.customer_name,
+            "customer_email": inv.customer_email,
+            "issue_date": inv.issue_date.isoformat(),
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "total_amount": inv.total_amount,
+            "amount_due": inv.amount_due,
+            "currency_code": inv.currency_code,
+            "status": inv.status.value,
+            "payment_terms": inv.payment_terms,
+            "days_overdue": (datetime.utcnow().date() - inv.due_date).days
+            if inv.due_date and datetime.utcnow().date() > inv.due_date
+            else 0,
+        }
+        for inv in invoices
+    ]
 
 
-@app.get("/invoices/{invoice_id}",
-         tags=["Invoices"],
-         response_model=InvoiceOut)
-def get_invoice(invoice_id: str,
-                current_user: UserDB = Depends(get_current_user_from_header),
-                db: Session = Depends(get_db)):
+@app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
+def get_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get a specific invoice"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -5581,42 +5726,50 @@ def get_invoice(invoice_id: str,
         sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
         viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
         line_items=[
-            InvoiceLineItemOut(id=li.id,
-                               line_number=li.line_number,
-                               item_name=li.item_name,
-                               item_description=li.item_description,
-                               quantity=li.quantity,
-                               unit_code=li.unit_code,
-                               unit_price=li.unit_price,
-                               line_extension_amount=li.line_extension_amount,
-                               tax_category=li.tax_category,
-                               tax_percent=li.tax_percent,
-                               tax_amount=li.tax_amount,
-                               line_total_amount=li.line_total_amount)
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+            )
             for li in invoice.line_items
         ],
         tax_breakdowns=[
-            InvoiceTaxBreakdownOut(id=tb.id,
-                                   tax_category=tb.tax_category,
-                                   taxable_amount=tb.taxable_amount,
-                                   tax_percent=tb.tax_percent,
-                                   tax_amount=tb.tax_amount)
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount,
+            )
             for tb in invoice.tax_breakdowns
-        ])
+        ],
+    )
 
 
-@app.put("/invoices/{invoice_id}",
-         tags=["Invoices"],
-         response_model=InvoiceOut)
+@app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def update_invoice(
     invoice_id: str,
     data: InvoiceCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update a DRAFT invoice (only DRAFT invoices can be edited)"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -5624,15 +5777,16 @@ def update_invoice(
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(
             403,
-            f"Cannot edit invoice. Only DRAFT invoices can be edited. Current status: {invoice.status.value}"
+            f"Cannot edit invoice. Only DRAFT invoices can be edited. Current status: {invoice.status.value}",
         )
 
     try:
         # Update basic invoice details
         invoice.invoice_type = data.invoice_type
         invoice.issue_date = datetime.fromisoformat(data.issue_date)
-        invoice.due_date = datetime.fromisoformat(
-            data.due_date) if data.due_date else None
+        invoice.due_date = (
+            datetime.fromisoformat(data.due_date) if data.due_date else None
+        )
         invoice.currency_code = data.currency_code
 
         # Update customer details
@@ -5652,7 +5806,8 @@ def update_invoice(
 
         # Clear existing line items
         db.query(InvoiceLineItemDB).filter(
-            InvoiceLineItemDB.invoice_id == invoice_id).delete()
+            InvoiceLineItemDB.invoice_id == invoice_id
+        ).delete()
         db.flush()
 
         # Add updated line items
@@ -5663,13 +5818,15 @@ def update_invoice(
 
         for item_data in data.line_items:
             line_extension_amount = Decimal(str(item_data.quantity)) * Decimal(
-                str(item_data.unit_price))
+                str(item_data.unit_price)
+            )
 
             # Calculate tax
             tax_amount = Decimal("0")
             if item_data.tax_category == "S":
                 tax_amount = line_extension_amount * (
-                    Decimal(str(item_data.tax_percent)) / Decimal("100"))
+                    Decimal(str(item_data.tax_percent)) / Decimal("100")
+                )
 
             line_total = line_extension_amount + tax_amount
 
@@ -5698,10 +5855,7 @@ def update_invoice(
             # Track tax by category for breakdowns
             cat = item_data.tax_category  # Already a string
             if cat not in tax_by_category:
-                tax_by_category[cat] = {
-                    "taxable": Decimal("0"),
-                    "tax": Decimal("0")
-                }
+                tax_by_category[cat] = {"taxable": Decimal("0"), "tax": Decimal("0")}
             tax_by_category[cat]["taxable"] += line_extension_amount
             tax_by_category[cat]["tax"] += tax_amount
 
@@ -5715,7 +5869,8 @@ def update_invoice(
 
         # Clear and rebuild tax breakdowns
         db.query(InvoiceTaxBreakdownDB).filter(
-            InvoiceTaxBreakdownDB.invoice_id == invoice_id).delete()
+            InvoiceTaxBreakdownDB.invoice_id == invoice_id
+        ).delete()
         db.flush()
 
         for tax_category, amounts in tax_by_category.items():
@@ -5739,8 +5894,7 @@ def update_invoice(
             invoice_type=invoice.invoice_type,
             status=invoice.status,
             issue_date=invoice.issue_date.isoformat(),
-            due_date=invoice.due_date.isoformat()
-            if invoice.due_date else None,
+            due_date=invoice.due_date.isoformat() if invoice.due_date else None,
             currency_code=invoice.currency_code,
             supplier_trn=invoice.supplier_trn,
             supplier_name=invoice.supplier_name,
@@ -5762,8 +5916,7 @@ def update_invoice(
             share_token=invoice.share_token,
             created_at=invoice.created_at.isoformat(),
             sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
-            viewed_at=invoice.viewed_at.isoformat()
-            if invoice.viewed_at else None,
+            viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
             line_items=[
                 InvoiceLineItemOut(
                     id=li.id,
@@ -5777,17 +5930,21 @@ def update_invoice(
                     tax_category=li.tax_category,
                     tax_percent=li.tax_percent,
                     tax_amount=li.tax_amount,
-                    line_total_amount=li.line_total_amount)
+                    line_total_amount=li.line_total_amount,
+                )
                 for li in invoice.line_items
             ],
             tax_breakdowns=[
-                InvoiceTaxBreakdownOut(id=tb.id,
-                                       tax_category=tb.tax_category,
-                                       taxable_amount=tb.taxable_amount,
-                                       tax_percent=tb.tax_percent,
-                                       tax_amount=tb.tax_amount)
+                InvoiceTaxBreakdownOut(
+                    id=tb.id,
+                    tax_category=tb.tax_category,
+                    taxable_amount=tb.taxable_amount,
+                    tax_percent=tb.tax_percent,
+                    tax_amount=tb.tax_amount,
+                )
                 for tb in invoice.tax_breakdowns
-            ])
+            ],
+        )
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to update invoice: {str(e)}")
@@ -5808,7 +5965,8 @@ def verify_invoice_payment(
     invoice_id: str,
     payment: PaymentVerificationRequest,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Verify and record payment for an invoice (offline payments: Cash, POS, Bank Transfer)
 
@@ -5816,14 +5974,20 @@ def verify_invoice_payment(
     """
     # Check role-based permissions
     if current_user.role not in [
-            Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
     ]:
         raise HTTPException(403, "Insufficient permissions to verify payments")
 
     # Get invoice
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -5832,7 +5996,7 @@ def verify_invoice_payment(
     if invoice.status == InvoiceStatus.DRAFT:
         raise HTTPException(
             400,
-            "Cannot verify payment for a DRAFT invoice. Please issue the invoice first."
+            "Cannot verify payment for a DRAFT invoice. Please issue the invoice first.",
         )
 
     if invoice.status == InvoiceStatus.PAID:
@@ -5840,14 +6004,16 @@ def verify_invoice_payment(
 
     # Parse payment date
     from datetime import datetime
+
     if payment.payment_date:
         try:
             payment_dt = datetime.fromisoformat(
-                payment.payment_date.replace('Z', '+00:00'))
+                payment.payment_date.replace("Z", "+00:00")
+            )
         except ValueError:
             raise HTTPException(
-                400,
-                "Invalid payment_date format. Use ISO format (YYYY-MM-DD)")
+                400, "Invalid payment_date format. Use ISO format (YYYY-MM-DD)"
+            )
     else:
         payment_dt = datetime.utcnow()
 
@@ -5886,16 +6052,17 @@ def verify_invoice_payment(
         "paid_at": invoice.paid_at.isoformat() if invoice.paid_at else None,
         "total_amount": invoice.total_amount,
         "verified_by": current_user.email,
-        "verified_at": invoice.payment_verified_at.isoformat()
+        "verified_at": invoice.payment_verified_at.isoformat(),
     }
 
 
 @app.get("/reports/daily-reconciliation", tags=["Reports"])
-def get_daily_reconciliation_report(current_user: UserDB = Depends(
-    get_current_user_from_header),
-                                    db: Session = Depends(get_db),
-                                    start_date: Optional[str] = None,
-                                    end_date: Optional[str] = None):
+def get_daily_reconciliation_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
     """
     Generate daily reconciliation report showing payments by method
 
@@ -5906,18 +6073,20 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
 
     # Check role-based permissions
     if current_user.role not in [
-            Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
     ]:
         raise HTTPException(
-            403, "Insufficient permissions to view reconciliation reports")
+            403, "Insufficient permissions to view reconciliation reports"
+        )
 
     # Parse date range
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date).date()
         except ValueError:
-            raise HTTPException(400,
-                                "Invalid start_date format. Use YYYY-MM-DD")
+            raise HTTPException(400, "Invalid start_date format. Use YYYY-MM-DD")
     else:
         start_dt = datetime.utcnow().date()  # Today by default
 
@@ -5930,79 +6099,89 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
         end_dt = start_dt  # Same day by default
 
     # Query paid invoices within date range
-    paid_invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.PAID,
-        func.date(InvoiceDB.paid_at) >= start_dt,
-        func.date(InvoiceDB.paid_at) <= end_dt).all()
+    paid_invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.PAID,
+            func.date(InvoiceDB.paid_at) >= start_dt,
+            func.date(InvoiceDB.paid_at) <= end_dt,
+        )
+        .all()
+    )
 
     # Group by payment method
     payment_breakdown = {}
     total_collected = 0.0
 
     for inv in paid_invoices:
-        method = inv.payment_method or 'Unknown'
+        method = inv.payment_method or "Unknown"
         if method not in payment_breakdown:
             payment_breakdown[method] = {
-                'count': 0,
-                'total_amount': 0.0,
-                'invoices': []
+                "count": 0,
+                "total_amount": 0.0,
+                "invoices": [],
             }
-        payment_breakdown[method]['count'] += 1
-        payment_breakdown[method]['total_amount'] += inv.total_amount or 0.0
-        payment_breakdown[method]['invoices'].append({
-            'invoice_number':
-            inv.invoice_number,
-            'customer_name':
-            inv.customer_name,
-            'amount':
-            inv.total_amount,
-            'payment_reference':
-            inv.invoice_notes if getattr(inv, 'invoice_notes', None) else None,
-            'payment_date':
-            inv.paid_at.isoformat() if inv.paid_at else None
-        })
+        payment_breakdown[method]["count"] += 1
+        payment_breakdown[method]["total_amount"] += inv.total_amount or 0.0
+        payment_breakdown[method]["invoices"].append(
+            {
+                "invoice_number": inv.invoice_number,
+                "customer_name": inv.customer_name,
+                "amount": inv.total_amount,
+                "payment_reference": inv.invoice_notes
+                if getattr(inv, "invoice_notes", None)
+                else None,
+                "payment_date": inv.paid_at.isoformat() if inv.paid_at else None,
+            }
+        )
         total_collected += inv.total_amount or 0.0
 
     # Get outstanding invoices (overdue)
-    outstanding_invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id, InvoiceDB.status
-        != InvoiceStatus.PAID, InvoiceDB.due_date < datetime.utcnow()).all()
+    outstanding_invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status != InvoiceStatus.PAID,
+            InvoiceDB.due_date < datetime.utcnow(),
+        )
+        .all()
+    )
 
-    outstanding_total = sum(inv.amount_due or 0.0
-                            for inv in outstanding_invoices)
+    outstanding_total = sum(inv.amount_due or 0.0 for inv in outstanding_invoices)
 
     return {
         "report_period": {
             "start_date": start_dt.isoformat(),
-            "end_date": end_dt.isoformat()
+            "end_date": end_dt.isoformat(),
         },
         "summary": {
             "total_collected": total_collected,
             "total_transactions": len(paid_invoices),
             "outstanding_amount": outstanding_total,
-            "outstanding_count": len(outstanding_invoices)
+            "outstanding_count": len(outstanding_invoices),
         },
-        "payment_breakdown": [{
-            "payment_method": method,
-            "count": data['count'],
-            "total_amount": data['total_amount'],
-            "invoices": data['invoices']
-        } for method, data in payment_breakdown.items()],
+        "payment_breakdown": [
+            {
+                "payment_method": method,
+                "count": data["count"],
+                "total_amount": data["total_amount"],
+                "invoices": data["invoices"],
+            }
+            for method, data in payment_breakdown.items()
+        ],
         "outstanding_invoices": [
             {
-                "invoice_number":
-                inv.invoice_number,
-                "customer_name":
-                inv.customer_name,
-                "amount_due":
-                inv.amount_due,
-                "due_date":
-                inv.due_date.isoformat() if inv.due_date else None,
-                "days_overdue": (datetime.utcnow().date() -
-                                 inv.due_date).days if inv.due_date else 0
-            } for inv in outstanding_invoices[:10]  # Limit to 10 most overdue
-        ]
+                "invoice_number": inv.invoice_number,
+                "customer_name": inv.customer_name,
+                "amount_due": inv.amount_due,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "days_overdue": (datetime.utcnow().date() - inv.due_date).days
+                if inv.due_date
+                else 0,
+            }
+            for inv in outstanding_invoices[:10]  # Limit to 10 most overdue
+        ],
     }
 
 
@@ -6011,10 +6190,11 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
 
 @app.get("/analytics/revenue", tags=["Analytics"])
 def get_revenue_analytics(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db),
-        period: str = "month",  # month, quarter, year
-        months: int = 12):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period: str = "month",  # month, quarter, year
+    months: int = 12,
+):
     """
     Get revenue analytics with trends and growth rates
 
@@ -6029,79 +6209,87 @@ def get_revenue_analytics(
     start_date = end_date - relativedelta(months=months)
 
     # Get paid invoices within date range
-    invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.PAID, InvoiceDB.paid_at
-        >= start_date, InvoiceDB.paid_at <= end_date).all()
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.PAID,
+            InvoiceDB.paid_at >= start_date,
+            InvoiceDB.paid_at <= end_date,
+        )
+        .all()
+    )
 
     # Group by month
     monthly_revenue = {}
     for inv in invoices:
         if inv.paid_at:
-            month_key = inv.paid_at.strftime('%Y-%m')
+            month_key = inv.paid_at.strftime("%Y-%m")
             if month_key not in monthly_revenue:
-                monthly_revenue[month_key] = {'revenue': 0.0, 'count': 0}
+                monthly_revenue[month_key] = {"revenue": 0.0, "count": 0}
             # Credit notes should be subtracted from revenue, not added
             if inv.invoice_type in [
-                    InvoiceType.TAX_CREDIT_NOTE,
-                    InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
             ]:
-                monthly_revenue[month_key][
-                    'revenue'] -= inv.total_amount or 0.0
+                monthly_revenue[month_key]["revenue"] -= inv.total_amount or 0.0
             else:
-                monthly_revenue[month_key][
-                    'revenue'] += inv.total_amount or 0.0
-            monthly_revenue[month_key]['count'] += 1
+                monthly_revenue[month_key]["revenue"] += inv.total_amount or 0.0
+            monthly_revenue[month_key]["count"] += 1
 
     # Calculate growth rate
     revenue_trend = []
     prev_revenue = None
     for i in range(months):
         date = end_date - relativedelta(months=months - i - 1)
-        month_key = date.strftime('%Y-%m')
-        revenue = monthly_revenue.get(month_key, {
-            'revenue': 0.0,
-            'count': 0
-        })['revenue']
-        count = monthly_revenue.get(month_key, {
-            'revenue': 0.0,
-            'count': 0
-        })['count']
+        month_key = date.strftime("%Y-%m")
+        revenue = monthly_revenue.get(month_key, {"revenue": 0.0, "count": 0})[
+            "revenue"
+        ]
+        count = monthly_revenue.get(month_key, {"revenue": 0.0, "count": 0})["count"]
 
         growth_rate = 0.0
         if prev_revenue and prev_revenue > 0:
             growth_rate = ((revenue - prev_revenue) / prev_revenue) * 100
 
-        revenue_trend.append({
-            'month': month_key,
-            'revenue': revenue,
-            'invoice_count': count,
-            'growth_rate': growth_rate
-        })
+        revenue_trend.append(
+            {
+                "month": month_key,
+                "revenue": revenue,
+                "invoice_count": count,
+                "growth_rate": growth_rate,
+            }
+        )
         prev_revenue = revenue if revenue > 0 else prev_revenue
 
     # Calculate totals - subtract credit notes from revenue
     total_revenue = sum(
-        (inv.total_amount or 0.0) *
-        (-1 if inv.invoice_type in
-         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
-          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in invoices)
+        (inv.total_amount or 0.0)
+        * (
+            -1
+            if inv.invoice_type
+            in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+            else 1
+        )
+        for inv in invoices
+    )
     avg_monthly = total_revenue / months if months > 0 else 0
 
     return {
-        'period': period,
-        'months_analyzed': months,
-        'total_revenue': total_revenue,
-        'average_monthly_revenue': avg_monthly,
-        'revenue_trend': revenue_trend
+        "period": period,
+        "months_analyzed": months,
+        "total_revenue": total_revenue,
+        "average_monthly_revenue": avg_monthly,
+        "revenue_trend": revenue_trend,
     }
 
 
 @app.get("/analytics/customers", tags=["Analytics"])
 def get_customer_analytics(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db),
-        limit: int = 10):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 10,
+):
     """
     Get customer analytics including top customers and payment patterns
 
@@ -6110,9 +6298,14 @@ def get_customer_analytics(
     from sqlalchemy import func
 
     # Get all paid invoices
-    invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.PAID).all()
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.PAID,
+        )
+        .all()
+    )
 
     # Aggregate by customer
     customer_data = {}
@@ -6120,59 +6313,66 @@ def get_customer_analytics(
         customer = inv.customer_name
         if customer not in customer_data:
             customer_data[customer] = {
-                'customer_name': customer,
-                'customer_email': inv.customer_email,
-                'total_revenue': 0.0,
-                'invoice_count': 0,
-                'average_invoice_value': 0.0,
-                'last_payment_date': None
+                "customer_name": customer,
+                "customer_email": inv.customer_email,
+                "total_revenue": 0.0,
+                "invoice_count": 0,
+                "average_invoice_value": 0.0,
+                "last_payment_date": None,
             }
-        customer_data[customer]['total_revenue'] += (
-            inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
-                InvoiceType.TAX_CREDIT_NOTE,
-                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
-            ] else 1)
-        customer_data[customer]['invoice_count'] += 1
+        customer_data[customer]["total_revenue"] += (inv.total_amount or 0.0) * (
+            -1
+            if inv.invoice_type
+            in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+            else 1
+        )
+        customer_data[customer]["invoice_count"] += 1
         if inv.paid_at:
-            if not customer_data[customer][
-                    'last_payment_date'] or inv.paid_at > customer_data[
-                        customer]['last_payment_date']:
-                customer_data[customer]['last_payment_date'] = inv.paid_at
+            if (
+                not customer_data[customer]["last_payment_date"]
+                or inv.paid_at > customer_data[customer]["last_payment_date"]
+            ):
+                customer_data[customer]["last_payment_date"] = inv.paid_at
 
     # Calculate averages and sort
     top_customers = []
     for customer, data in customer_data.items():
-        data['average_invoice_value'] = data['total_revenue'] / data[
-            'invoice_count'] if data['invoice_count'] > 0 else 0
+        data["average_invoice_value"] = (
+            data["total_revenue"] / data["invoice_count"]
+            if data["invoice_count"] > 0
+            else 0
+        )
         top_customers.append(data)
 
-    top_customers.sort(key=lambda x: x['total_revenue'], reverse=True)
+    top_customers.sort(key=lambda x: x["total_revenue"], reverse=True)
 
     # Calculate summary stats
     total_customers = len(customer_data)
-    total_revenue = sum(d['total_revenue'] for d in customer_data.values())
+    total_revenue = sum(d["total_revenue"] for d in customer_data.values())
     avg_customer_value = total_revenue / total_customers if total_customers > 0 else 0
 
     return {
-        'total_customers':
-        total_customers,
-        'total_revenue':
-        total_revenue,
-        'average_customer_lifetime_value':
-        avg_customer_value,
-        'top_customers': [{
-            **cust, 'last_payment_date':
-            cust['last_payment_date'].isoformat()
-            if cust['last_payment_date'] else None
-        } for cust in top_customers[:limit]]
+        "total_customers": total_customers,
+        "total_revenue": total_revenue,
+        "average_customer_lifetime_value": avg_customer_value,
+        "top_customers": [
+            {
+                **cust,
+                "last_payment_date": cust["last_payment_date"].isoformat()
+                if cust["last_payment_date"]
+                else None,
+            }
+            for cust in top_customers[:limit]
+        ],
     }
 
 
 @app.get("/analytics/profitability", tags=["Analytics"])
 def get_profitability_metrics(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db),
-        months: int = 12):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    months: int = 12,
+):
     """
     Get profitability metrics including gross profit, net profit, and margins
 
@@ -6186,79 +6386,99 @@ def get_profitability_metrics(
     start_date = end_date - relativedelta(months=months)
 
     # Get revenue (paid invoices) - subtract credit notes
-    revenue_invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.PAID, InvoiceDB.paid_at
-        >= start_date, InvoiceDB.paid_at <= end_date).all()
+    revenue_invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.PAID,
+            InvoiceDB.paid_at >= start_date,
+            InvoiceDB.paid_at <= end_date,
+        )
+        .all()
+    )
 
     total_revenue = sum(
-        (inv.total_amount or 0.0) *
-        (-1 if inv.invoice_type in
-         [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
-          CREDIT_NOTE_OUT_OF_SCOPE] else 1) for inv in revenue_invoices)
+        (inv.total_amount or 0.0)
+        * (
+            -1
+            if inv.invoice_type
+            in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+            else 1
+        )
+        for inv in revenue_invoices
+    )
 
     # Get expenses
-    expenses = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == current_user.company_id, ExpenseDB.expense_date
-        >= start_date, ExpenseDB.expense_date <= end_date).all()
+    expenses = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.expense_date >= start_date,
+            ExpenseDB.expense_date <= end_date,
+        )
+        .all()
+    )
 
     total_expenses = sum(exp.amount for exp in expenses)
 
     # Calculate profitability
     gross_profit = total_revenue - total_expenses
-    gross_margin = (gross_profit / total_revenue *
-                    100) if total_revenue > 0 else 0
+    gross_margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
 
     # Monthly breakdown
     monthly_profit = []
     for i in range(months):
         date = end_date - relativedelta(months=months - i - 1)
-        month_start = date.replace(day=1,
-                                   hour=0,
-                                   minute=0,
-                                   second=0,
-                                   microsecond=0)
-        month_end = (month_start +
-                     relativedelta(months=1)) - timedelta(seconds=1)
+        month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
 
         month_revenue = sum(
-            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
-                InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
-                CREDIT_NOTE_OUT_OF_SCOPE
-            ] else 1) for inv in revenue_invoices
-            if inv.paid_at and month_start <= inv.paid_at <= month_end)
+            (inv.total_amount or 0.0)
+            * (
+                -1
+                if inv.invoice_type
+                in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+                else 1
+            )
+            for inv in revenue_invoices
+            if inv.paid_at and month_start <= inv.paid_at <= month_end
+        )
 
         month_expenses = sum(
-            exp.amount for exp in expenses
-            if month_start.date() <= exp.expense_date <= month_end.date())
+            exp.amount
+            for exp in expenses
+            if month_start.date() <= exp.expense_date <= month_end.date()
+        )
 
         month_profit = month_revenue - month_expenses
-        month_margin = (month_profit / month_revenue *
-                        100) if month_revenue > 0 else 0
+        month_margin = (month_profit / month_revenue * 100) if month_revenue > 0 else 0
 
-        monthly_profit.append({
-            'month': date.strftime('%Y-%m'),
-            'revenue': month_revenue,
-            'expenses': month_expenses,
-            'profit': month_profit,
-            'margin': month_margin
-        })
+        monthly_profit.append(
+            {
+                "month": date.strftime("%Y-%m"),
+                "revenue": month_revenue,
+                "expenses": month_expenses,
+                "profit": month_profit,
+                "margin": month_margin,
+            }
+        )
 
     return {
-        'period_months': months,
-        'total_revenue': total_revenue,
-        'total_expenses': total_expenses,
-        'gross_profit': gross_profit,
-        'gross_margin': gross_margin,
-        'monthly_breakdown': monthly_profit
+        "period_months": months,
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "gross_profit": gross_profit,
+        "gross_margin": gross_margin,
+        "monthly_breakdown": monthly_profit,
     }
 
 
 @app.get("/analytics/cash-flow", tags=["Analytics"])
 def get_cash_flow_analytics(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db),
-        months: int = 6):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    months: int = 6,
+):
     """
     Get cash flow analysis with inflows and outflows
 
@@ -6272,66 +6492,84 @@ def get_cash_flow_analytics(
     start_date = end_date - relativedelta(months=months)
 
     # Get inflows (paid invoices)
-    inflows = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.status == InvoiceStatus.PAID, InvoiceDB.paid_at
-        >= start_date, InvoiceDB.paid_at <= end_date).all()
+    inflows = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.PAID,
+            InvoiceDB.paid_at >= start_date,
+            InvoiceDB.paid_at <= end_date,
+        )
+        .all()
+    )
 
     # Get outflows (expenses)
-    outflows = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == current_user.company_id, ExpenseDB.expense_date
-        >= start_date, ExpenseDB.expense_date <= end_date).all()
+    outflows = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.expense_date >= start_date,
+            ExpenseDB.expense_date <= end_date,
+        )
+        .all()
+    )
 
     # Monthly breakdown
     monthly_cash_flow = []
     for i in range(months):
         date = end_date - relativedelta(months=months - i - 1)
-        month_start = date.replace(day=1,
-                                   hour=0,
-                                   minute=0,
-                                   second=0,
-                                   microsecond=0)
-        month_end = (month_start +
-                     relativedelta(months=1)) - timedelta(seconds=1)
+        month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_end = (month_start + relativedelta(months=1)) - timedelta(seconds=1)
 
         month_inflows = sum(
-            (inv.total_amount or 0.0) * (-1 if inv.invoice_type in [
-                InvoiceType.TAX_CREDIT_NOTE, InvoiceType.
-                CREDIT_NOTE_OUT_OF_SCOPE
-            ] else 1) for inv in inflows
-            if inv.paid_at and month_start <= inv.paid_at <= month_end)
+            (inv.total_amount or 0.0)
+            * (
+                -1
+                if inv.invoice_type
+                in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE]
+                else 1
+            )
+            for inv in inflows
+            if inv.paid_at and month_start <= inv.paid_at <= month_end
+        )
 
         month_outflows = sum(
-            exp.amount for exp in outflows
-            if month_start.date() <= exp.expense_date <= month_end.date())
+            exp.amount
+            for exp in outflows
+            if month_start.date() <= exp.expense_date <= month_end.date()
+        )
 
         net_cash_flow = month_inflows - month_outflows
 
-        monthly_cash_flow.append({
-            'month': date.strftime('%Y-%m'),
-            'inflows': month_inflows,
-            'outflows': month_outflows,
-            'net_cash_flow': net_cash_flow
-        })
+        monthly_cash_flow.append(
+            {
+                "month": date.strftime("%Y-%m"),
+                "inflows": month_inflows,
+                "outflows": month_outflows,
+                "net_cash_flow": net_cash_flow,
+            }
+        )
 
     # Calculate totals
-    total_inflows = sum(m['inflows'] for m in monthly_cash_flow)
-    total_outflows = sum(m['outflows'] for m in monthly_cash_flow)
+    total_inflows = sum(m["inflows"] for m in monthly_cash_flow)
+    total_outflows = sum(m["outflows"] for m in monthly_cash_flow)
     net_position = total_inflows - total_outflows
 
     return {
-        'period_months': months,
-        'total_inflows': total_inflows,
-        'total_outflows': total_outflows,
-        'net_cash_position': net_position,
-        'monthly_cash_flow': monthly_cash_flow
+        "period_months": months,
+        "total_inflows": total_inflows,
+        "total_outflows": total_outflows,
+        "net_cash_position": net_position,
+        "monthly_cash_flow": monthly_cash_flow,
     }
 
 
 @app.post("/invoices/{invoice_id}/issue", tags=["Invoices"])
-def issue_invoice(invoice_id: str,
-                  current_user: UserDB = Depends(get_current_user_from_header),
-                  db: Session = Depends(get_db)):
+def issue_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """
     Issue a draft invoice - generates UBL XML with digital signature and hash chain
 
@@ -6342,39 +6580,69 @@ def issue_invoice(invoice_id: str,
     - Saves XML to file system
     - Updates status to ISSUED
     """
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(
-            400,
-            f"Can only issue draft invoices. Current status: {invoice.status}")
+            400, f"Can only issue draft invoices. Current status: {invoice.status}"
+        )
 
     # Auto-fill supplier TRN from company if missing
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
-    if (not invoice.supplier_trn or
-        (isinstance(invoice.supplier_trn, str)
-         and invoice.supplier_trn.strip() == "")) and company and company.trn:
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
+    if (
+        (
+            not invoice.supplier_trn
+            or (
+                isinstance(invoice.supplier_trn, str)
+                and invoice.supplier_trn.strip() == ""
+            )
+        )
+        and company
+        and company.trn
+    ):
         invoice.supplier_trn = company.trn
 
     # Auto-calculate monetary totals from line items if missing
     try:
-        subtotal_calc = sum([(li.line_extension_amount
-                              if li.line_extension_amount is not None else
-                              (li.quantity * li.unit_price))
-                             for li in invoice.line_items])
+        subtotal_calc = sum(
+            [
+                (
+                    li.line_extension_amount
+                    if li.line_extension_amount is not None
+                    else (li.quantity * li.unit_price)
+                )
+                for li in invoice.line_items
+            ]
+        )
         tax_calc = sum([(li.tax_amount or 0.0) for li in invoice.line_items])
-        total_calc = sum([
-            (li.line_total_amount if li.line_total_amount is not None else
-             ((li.line_extension_amount if li.line_extension_amount is not None
-               else (li.quantity * li.unit_price)) + (li.tax_amount or 0.0)))
-            for li in invoice.line_items
-        ])
+        total_calc = sum(
+            [
+                (
+                    li.line_total_amount
+                    if li.line_total_amount is not None
+                    else (
+                        (
+                            li.line_extension_amount
+                            if li.line_extension_amount is not None
+                            else (li.quantity * li.unit_price)
+                        )
+                        + (li.tax_amount or 0.0)
+                    )
+                )
+                for li in invoice.line_items
+            ]
+        )
     except Exception:
         subtotal_calc = tax_calc = total_calc = 0.0
 
@@ -6391,47 +6659,52 @@ def issue_invoice(invoice_id: str,
     import json
 
     # Get previous invoice hash for chain
-    prev_invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.id != invoice.id  # Exclude current invoice
-    ).order_by(InvoiceDB.created_at.desc()).first()
+    prev_invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.id != invoice.id,  # Exclude current invoice
+        )
+        .order_by(InvoiceDB.created_at.desc())
+        .first()
+    )
 
     if prev_invoice and prev_invoice.xml_hash:
         invoice.prev_invoice_hash = prev_invoice.xml_hash
 
     # Prepare invoice data for XML generation
     invoice_data = {
-        'invoice_number': invoice.invoice_number,
-        'issue_date': invoice.issue_date,
-        'due_date': invoice.due_date,
-        'invoice_type': invoice.invoice_type.value,
-        'currency_code': invoice.currency_code,
-        'supplier_trn': invoice.supplier_trn,
-        'supplier_name': invoice.supplier_name,
-        'supplier_address': invoice.supplier_address,
-        'supplier_city': invoice.supplier_city,
-        'supplier_country': invoice.supplier_country,
-        'supplier_peppol_id': invoice.supplier_peppol_id,
-        'customer_trn': invoice.customer_trn,
-        'customer_name': invoice.customer_name,
-        'customer_email': invoice.customer_email,
-        'customer_address': invoice.customer_address,
-        'customer_city': invoice.customer_city,
-        'customer_country': invoice.customer_country,
-        'customer_peppol_id': invoice.customer_peppol_id,
-        'subtotal_amount': invoice.subtotal_amount,
-        'tax_amount': invoice.tax_amount,
-        'total_amount': invoice.total_amount,
-        'amount_due': invoice.amount_due,
-        'payment_terms': invoice.payment_terms,
-        'invoice_notes': invoice.invoice_notes,
-        'reference_number': invoice.reference_number,
-        'preceding_invoice_id': invoice.preceding_invoice_id,
-        'prev_invoice_hash': invoice.prev_invoice_hash
+        "invoice_number": invoice.invoice_number,
+        "issue_date": invoice.issue_date,
+        "due_date": invoice.due_date,
+        "invoice_type": invoice.invoice_type.value,
+        "currency_code": invoice.currency_code,
+        "supplier_trn": invoice.supplier_trn,
+        "supplier_name": invoice.supplier_name,
+        "supplier_address": invoice.supplier_address,
+        "supplier_city": invoice.supplier_city,
+        "supplier_country": invoice.supplier_country,
+        "supplier_peppol_id": invoice.supplier_peppol_id,
+        "customer_trn": invoice.customer_trn,
+        "customer_name": invoice.customer_name,
+        "customer_email": invoice.customer_email,
+        "customer_address": invoice.customer_address,
+        "customer_city": invoice.customer_city,
+        "customer_country": invoice.customer_country,
+        "customer_peppol_id": invoice.customer_peppol_id,
+        "subtotal_amount": invoice.subtotal_amount,
+        "tax_amount": invoice.tax_amount,
+        "total_amount": invoice.total_amount,
+        "amount_due": invoice.amount_due,
+        "payment_terms": invoice.payment_terms,
+        "invoice_notes": invoice.invoice_notes,
+        "reference_number": invoice.reference_number,
+        "preceding_invoice_id": invoice.preceding_invoice_id,
+        "prev_invoice_hash": invoice.prev_invoice_hash,
     }
     # Validate required fields before XML generation (TRN is optional for non-VAT parties)
     missing_fields = []
-    for f in ['subtotal_amount', 'tax_amount', 'total_amount']:
+    for f in ["subtotal_amount", "tax_amount", "total_amount"]:
         val = invoice_data.get(f)
         # Allow 0 values - only check for None
         if val is None:
@@ -6439,30 +6712,31 @@ def issue_invoice(invoice_id: str,
 
     if missing_fields:
         raise HTTPException(
-            400,
-            f"Missing required fields for XML generation: {missing_fields}")
+            400, f"Missing required fields for XML generation: {missing_fields}"
+        )
 
     # Get line items for XML
     line_items_data = []
     for line in invoice.line_items:
-        line_items_data.append({
-            'line_number': line.line_number,
-            'item_name': line.item_name,
-            'item_description': line.item_description,
-            'item_code': line.item_code,
-            'quantity': line.quantity,
-            'unit_code': line.unit_code,
-            'unit_price': line.unit_price,
-            'line_extension_amount': line.line_extension_amount,
-            'tax_category': line.tax_category.value,
-            'tax_percent': line.tax_percent,
-            'tax_amount': line.tax_amount,
-            'line_total_amount': line.line_total_amount
-        })
+        line_items_data.append(
+            {
+                "line_number": line.line_number,
+                "item_name": line.item_name,
+                "item_description": line.item_description,
+                "item_code": line.item_code,
+                "quantity": line.quantity,
+                "unit_code": line.unit_code,
+                "unit_price": line.unit_price,
+                "line_extension_amount": line.line_extension_amount,
+                "tax_category": line.tax_category.value,
+                "tax_percent": line.tax_percent,
+                "tax_amount": line.tax_amount,
+                "line_total_amount": line.line_total_amount,
+            }
+        )
 
     # Generate UBL 2.1 XML
-    success, xml_content, errors = generate_invoice_xml(
-        invoice_data, line_items_data)
+    success, xml_content, errors = generate_invoice_xml(invoice_data, line_items_data)
 
     if not success or not xml_content:
         raise HTTPException(500, f"XML generation failed: {errors}")
@@ -6473,7 +6747,7 @@ def issue_invoice(invoice_id: str,
     xml_filename = f"{invoice.invoice_number.replace('/', '_')}.xml"
     xml_path = os.path.join(xml_dir, xml_filename)
 
-    with open(xml_path, 'w', encoding='utf-8') as f:
+    with open(xml_path, "w", encoding="utf-8") as f:
         f.write(xml_content)
 
     invoice.xml_file_path = xml_path
@@ -6496,9 +6770,9 @@ def issue_invoice(invoice_id: str,
     db.commit()
     db.refresh(invoice)
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"✅ INVOICE ISSUED: {invoice.invoice_number}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Invoice Hash: {invoice_hash[:32]}...")
     print(f"XML Hash: {invoice.xml_hash[:32]}...")
     print(f"XML File: {xml_path}")
@@ -6506,16 +6780,13 @@ def issue_invoice(invoice_id: str,
     print(
         f"Previous Hash: {invoice.prev_invoice_hash[:32] if invoice.prev_invoice_hash else 'None (first invoice)'}"
     )
-    print(
-        f"Hash Chain: {'✓ Linked' if invoice.prev_invoice_hash else '✓ Chain Start'}"
-    )
+    print(f"Hash Chain: {'✓ Linked' if invoice.prev_invoice_hash else '✓ Chain Start'}")
     print(f"Status: {invoice.status}")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
     return {
         "success": True,
-        "message":
-        "Invoice issued successfully with digital signature and hash chain",
+        "message": "Invoice issued successfully with digital signature and hash chain",
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
         "status": invoice.status,
@@ -6523,7 +6794,7 @@ def issue_invoice(invoice_id: str,
         "xml_hash": invoice.xml_hash,
         "signature_generated": signature is not None,
         "hash_chain_linked": invoice.prev_invoice_hash is not None,
-        "compliance": "UAE PINT-AE UBL 2.1"
+        "compliance": "UAE PINT-AE UBL 2.1",
     }
 
 
@@ -6531,26 +6802,29 @@ def issue_invoice(invoice_id: str,
 async def send_invoice(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Send invoice to customer via email and update status to SENT"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
     if invoice.status == InvoiceStatus.DRAFT:
-        raise HTTPException(
-            400, "Cannot send draft invoice. Please issue it first.")
+        raise HTTPException(400, "Cannot send draft invoice. Please issue it first.")
 
     if invoice.status == InvoiceStatus.CANCELLED:
         raise HTTPException(400, "Cannot send cancelled invoice")
 
     # Validate email exists
     if not invoice.customer_email:
-        raise HTTPException(
-            400, "Cannot send invoice: Customer email is required.")
+        raise HTTPException(400, "Cannot send invoice: Customer email is required.")
 
     # Update status
     invoice.status = InvoiceStatus.SENT
@@ -6560,7 +6834,11 @@ async def send_invoice(
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
@@ -6577,7 +6855,8 @@ async def send_invoice(
         company_name=invoice.supplier_name,
         company_email=company_email,
         amount=invoice.total_amount,
-        currency="AED")
+        currency="AED",
+    )
 
     return {
         "message": "Invoice sent successfully",
@@ -6586,7 +6865,7 @@ async def send_invoice(
         "sent_to": invoice.customer_email,
         "share_link": f"/invoices/view/{invoice.share_token}",
         "email_status": "sent" if email_result.get("success") else "simulated",
-        "sent_at": invoice.sent_at.isoformat()
+        "sent_at": invoice.sent_at.isoformat(),
     }
 
 
@@ -6594,7 +6873,8 @@ async def send_invoice(
 def download_invoice_pdf(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Download invoice as PDF
 
@@ -6609,121 +6889,107 @@ def download_invoice_pdf(
     from utils.pdf_invoice_generator import generate_invoice_pdf
 
     # Get invoice
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
     # Get line items
-    line_items = db.query(InvoiceLineItemDB).filter(
-        InvoiceLineItemDB.invoice_id == invoice.id).order_by(
-            InvoiceLineItemDB.line_number).all()
+    line_items = (
+        db.query(InvoiceLineItemDB)
+        .filter(InvoiceLineItemDB.invoice_id == invoice.id)
+        .order_by(InvoiceLineItemDB.line_number)
+        .all()
+    )
 
     # Prepare invoice data for PDF
     invoice_data = {
-        'invoice_number':
-        invoice.invoice_number,
-        'invoice_type':
-        invoice.invoice_type.value,
-        'status':
-        invoice.status.value,
-        'issue_date':
-        invoice.issue_date.isoformat() if invoice.issue_date else '',
-        'due_date':
-        invoice.due_date.isoformat() if invoice.due_date else None,
-        'currency_code':
-        invoice.currency_code,
-
+        "invoice_number": invoice.invoice_number,
+        "invoice_type": invoice.invoice_type.value,
+        "status": invoice.status.value,
+        "issue_date": invoice.issue_date.isoformat() if invoice.issue_date else "",
+        "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
+        "currency_code": invoice.currency_code,
         # Supplier
-        'supplier_trn':
-        invoice.supplier_trn,
-        'supplier_name':
-        invoice.supplier_name,
-        'supplier_address':
-        invoice.supplier_address,
-        'supplier_city':
-        invoice.supplier_city,
-        'supplier_country':
-        invoice.supplier_country,
-
+        "supplier_trn": invoice.supplier_trn,
+        "supplier_name": invoice.supplier_name,
+        "supplier_address": invoice.supplier_address,
+        "supplier_city": invoice.supplier_city,
+        "supplier_country": invoice.supplier_country,
         # Customer
-        'customer_trn':
-        invoice.customer_trn,
-        'customer_name':
-        invoice.customer_name,
-        'customer_address':
-        invoice.customer_address,
-        'customer_city':
-        invoice.customer_city,
-        'customer_country':
-        invoice.customer_country,
-
+        "customer_trn": invoice.customer_trn,
+        "customer_name": invoice.customer_name,
+        "customer_address": invoice.customer_address,
+        "customer_city": invoice.customer_city,
+        "customer_country": invoice.customer_country,
         # Amounts
-        'subtotal_amount':
-        invoice.subtotal_amount,
-        'tax_amount':
-        invoice.tax_amount,
-        'total_amount':
-        invoice.total_amount,
-        'amount_due':
-        invoice.amount_due,
-
+        "subtotal_amount": invoice.subtotal_amount,
+        "tax_amount": invoice.tax_amount,
+        "total_amount": invoice.total_amount,
+        "amount_due": invoice.amount_due,
         # Additional info
-        'payment_terms':
-        invoice.payment_terms,
-        'notes':
-        invoice.invoice_notes,
-
+        "payment_terms": invoice.payment_terms,
+        "notes": invoice.invoice_notes,
         # Compliance
-        'signature_b64':
-        invoice.signature_b64,
-        'signing_cert_serial':
-        invoice.signing_cert_serial,
-        'signing_timestamp':
-        invoice.signing_timestamp.isoformat()
-        if invoice.signing_timestamp else None
+        "signature_b64": invoice.signature_b64,
+        "signing_cert_serial": invoice.signing_cert_serial,
+        "signing_timestamp": invoice.signing_timestamp.isoformat()
+        if invoice.signing_timestamp
+        else None,
     }
 
     # Prepare line items
     line_items_data = []
     for line in line_items:
-        line_items_data.append({
-            'line_number': line.line_number,
-            'item_name': line.item_name,
-            'item_description': line.item_description,
-            'quantity': line.quantity,
-            'unit_price': line.unit_price,
-            'tax_percent': line.tax_percent,
-            'line_total_amount': line.line_total_amount,
-            'currency_code': invoice.currency_code
-        })
+        line_items_data.append(
+            {
+                "line_number": line.line_number,
+                "item_name": line.item_name,
+                "item_description": line.item_description,
+                "quantity": line.quantity,
+                "unit_price": line.unit_price,
+                "tax_percent": line.tax_percent,
+                "line_total_amount": line.line_total_amount,
+                "currency_code": invoice.currency_code,
+            }
+        )
 
     # Generate public URL for QR code
     platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
-    public_url = f"{platform_url}/invoices/view/{invoice.share_token}" if invoice.share_token else None
+    public_url = (
+        f"{platform_url}/invoices/view/{invoice.share_token}"
+        if invoice.share_token
+        else None
+    )
 
     # Generate PDF
     try:
-        pdf_bytes = generate_invoice_pdf(invoice_data=invoice_data,
-                                         line_items=line_items_data,
-                                         public_url=public_url)
+        pdf_bytes = generate_invoice_pdf(
+            invoice_data=invoice_data, line_items=line_items_data, public_url=public_url
+        )
 
         # Return PDF as download
         filename = f"{invoice.invoice_number.replace('/', '_')}.pdf"
 
-        return StreamingResponse(io.BytesIO(pdf_bytes),
-                                 media_type="application/pdf",
-                                 headers={
-                                     "Content-Disposition":
-                                     f"attachment; filename={filename}",
-                                     "Content-Type": "application/pdf"
-                                 })
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": "application/pdf",
+            },
+        )
 
     except Exception as e:
         print(f"❌ PDF generation error: {str(e)}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(500, f"PDF generation failed: {str(e)}")
 
@@ -6732,36 +6998,48 @@ def download_invoice_pdf(
 def cancel_invoice(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Cancel an invoice"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
     if invoice.status in [InvoiceStatus.PAID, InvoiceStatus.CANCELLED]:
-        raise HTTPException(
-            400, f"Cannot cancel invoice with status: {invoice.status}")
+        raise HTTPException(400, f"Cannot cancel invoice with status: {invoice.status}")
 
     # If cancelling a credit note, restore the original invoice's amount_due
     if invoice.invoice_type in [
-            InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
     ]:
         if invoice.preceding_invoice_id:
-            original_invoice = db.query(InvoiceDB).filter(
-                InvoiceDB.id == invoice.preceding_invoice_id,
-                InvoiceDB.company_id == current_user.company_id).first()
+            original_invoice = (
+                db.query(InvoiceDB)
+                .filter(
+                    InvoiceDB.id == invoice.preceding_invoice_id,
+                    InvoiceDB.company_id == current_user.company_id,
+                )
+                .first()
+            )
 
             if original_invoice:
                 # Add back the credit note amount to the original invoice's amount_due
                 new_amount_due = float(
-                    Decimal(str(original_invoice.amount_due)) +
-                    Decimal(str(invoice.total_amount)))
+                    Decimal(str(original_invoice.amount_due))
+                    + Decimal(str(invoice.total_amount))
+                )
                 # Ensure we don't exceed the original total_amount
                 original_invoice.amount_due = min(
-                    original_invoice.total_amount, new_amount_due)
+                    original_invoice.total_amount, new_amount_due
+                )
                 db.add(original_invoice)
 
     invoice.status = InvoiceStatus.CANCELLED
@@ -6770,7 +7048,7 @@ def cancel_invoice(
     return {
         "message": "Invoice cancelled",
         "invoice_id": invoice.id,
-        "invoice_number": invoice.invoice_number
+        "invoice_number": invoice.invoice_number,
     }
 
 
@@ -6778,15 +7056,20 @@ def cancel_invoice(
 def get_invoice_qr_code(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Generate QR code for invoice share link"""
     import qrcode
     from io import BytesIO
     from fastapi.responses import StreamingResponse
 
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -6794,7 +7077,11 @@ def get_invoice_qr_code(
     # Get the base URL from environment or use default
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     # Create the full share URL
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
@@ -6813,7 +7100,7 @@ def get_invoice_qr_code(
 
     # Convert to bytes
     buf = BytesIO()
-    img.save(buf, format='PNG')
+    img.save(buf, format="PNG")
     buf.seek(0)
 
     return StreamingResponse(buf, media_type="image/png")
@@ -6823,11 +7110,16 @@ def get_invoice_qr_code(
 def ensure_invoice_share_link(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Ensure an invoice has a public share token and return the public URL."""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -6838,10 +7130,17 @@ def ensure_invoice_share_link(
         db.commit()
 
     # Build public URL using same logic as other endpoints
-    base_url = os.getenv("REPLIT_DOMAINS", None) or os.getenv(
-        "PLATFORM_URL", None) or "https://involinks.replit.app"
+    base_url = (
+        os.getenv("REPLIT_DOMAINS", None)
+        or os.getenv("PLATFORM_URL", None)
+        or "https://involinks.replit.app"
+    )
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     public_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
@@ -6849,7 +7148,7 @@ def ensure_invoice_share_link(
         "invoice_id": invoice.id,
         "share_token": invoice.share_token,
         "share_link": f"/invoices/view/{invoice.share_token}",
-        "public_url": public_url
+        "public_url": public_url,
     }
 
 
@@ -6858,11 +7157,16 @@ async def email_invoice(
     invoice_id: str,
     recipient_email: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Send invoice to customer via email with PDF attachment"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -6881,7 +7185,11 @@ async def email_invoice(
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
@@ -6901,7 +7209,7 @@ async def email_invoice(
     #     currency="AED")
     email_result = {
         "success": False,
-        "note": "Email sending skipped (temporarily disabled)"
+        "note": "Email sending skipped (temporarily disabled)",
     }
 
     return {
@@ -6910,7 +7218,7 @@ async def email_invoice(
         "invoice_id": invoice.id,
         "email_status": "sent" if email_result.get("success") else "simulated",
         "share_url": share_url,
-        "note": email_result.get("note", "Email delivered")
+        "note": email_result.get("note", "Email delivered"),
     }
 
 
@@ -6919,11 +7227,16 @@ async def sms_invoice(
     invoice_id: str,
     phone_number: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Send invoice link to customer via SMS"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -6931,7 +7244,11 @@ async def sms_invoice(
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
@@ -6939,9 +7256,8 @@ async def sms_invoice(
     # For now, simulate SMS sending
     sms_content = {
         "to": phone_number,
-        "message":
-        f"Invoice {invoice.invoice_number} from {invoice.supplier_name} - AED {invoice.total_amount:,.2f}. View: {share_url}",
-        "share_link": share_url
+        "message": f"Invoice {invoice.invoice_number} from {invoice.supplier_name} - AED {invoice.total_amount:,.2f}. View: {share_url}",
+        "share_link": share_url,
     }
 
     return {
@@ -6949,7 +7265,7 @@ async def sms_invoice(
         "sent_to": phone_number,
         "invoice_id": invoice.id,
         "sms_status": "sent",
-        "sms_content": sms_content
+        "sms_content": sms_content,
     }
 
 
@@ -6958,11 +7274,16 @@ async def whatsapp_invoice(
     invoice_id: str,
     phone_number: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Send invoice link to customer via WhatsApp"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.id == invoice_id,
-        InvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id, InvoiceDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -6970,7 +7291,11 @@ async def whatsapp_invoice(
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
-        base_url = f"https://{base_url.split(',')[0]}" if ',' in base_url else f"https://{base_url}"
+        base_url = (
+            f"https://{base_url.split(',')[0]}"
+            if "," in base_url
+            else f"https://{base_url}"
+        )
 
     share_url = f"{base_url}/invoices/view/{invoice.share_token}"
 
@@ -6978,9 +7303,8 @@ async def whatsapp_invoice(
     # For now, simulate WhatsApp sending
     whatsapp_content = {
         "to": phone_number,
-        "message":
-        f"📄 *Invoice {invoice.invoice_number}*\n\nFrom: {invoice.supplier_name}\nAmount: AED {invoice.total_amount:,.2f}\n\nView invoice: {share_url}",
-        "share_link": share_url
+        "message": f"📄 *Invoice {invoice.invoice_number}*\n\nFrom: {invoice.supplier_name}\nAmount: AED {invoice.total_amount:,.2f}\n\nView invoice: {share_url}",
+        "share_link": share_url,
     }
 
     return {
@@ -6988,18 +7312,15 @@ async def whatsapp_invoice(
         "sent_to": phone_number,
         "invoice_id": invoice.id,
         "whatsapp_status": "sent",
-        "whatsapp_content": whatsapp_content
+        "whatsapp_content": whatsapp_content,
     }
 
 
 # Public invoice viewing (no authentication required)
-@app.get("/invoices/view/{share_token}",
-         tags=["Public"],
-         response_model=InvoiceOut)
+@app.get("/invoices/view/{share_token}", tags=["Public"], response_model=InvoiceOut)
 def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
     """View invoice via public share link (customer portal)"""
-    invoice = db.query(InvoiceDB).filter(
-        InvoiceDB.share_token == share_token).first()
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.share_token == share_token).first()
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
@@ -7040,28 +7361,33 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
         viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
         line_items=[
-            InvoiceLineItemOut(id=li.id,
-                               line_number=li.line_number,
-                               item_name=li.item_name,
-                               item_description=li.item_description,
-                               quantity=li.quantity,
-                               unit_code=li.unit_code,
-                               unit_price=li.unit_price,
-                               line_extension_amount=li.line_extension_amount,
-                               tax_category=li.tax_category,
-                               tax_percent=li.tax_percent,
-                               tax_amount=li.tax_amount,
-                               line_total_amount=li.line_total_amount)
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+            )
             for li in invoice.line_items
         ],
         tax_breakdowns=[
-            InvoiceTaxBreakdownOut(id=tb.id,
-                                   tax_category=tb.tax_category,
-                                   taxable_amount=tb.taxable_amount,
-                                   tax_percent=tb.tax_percent,
-                                   tax_amount=tb.tax_amount)
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount,
+            )
             for tb in invoice.tax_breakdowns
-        ])
+        ],
+    )
 
 
 # ==================== EXPENSE TRACKING (SIMPLE FINANCIAL MANAGEMENT) ====================
@@ -7072,25 +7398,33 @@ def create_expense_category(
     name: str,
     description: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Create a custom expense category"""
     from uuid import uuid4
 
     # Check if category already exists
-    existing = db.query(ExpenseCategoryDB).filter(
-        ExpenseCategoryDB.company_id == current_user.company_id,
-        ExpenseCategoryDB.name == name).first()
+    existing = (
+        db.query(ExpenseCategoryDB)
+        .filter(
+            ExpenseCategoryDB.company_id == current_user.company_id,
+            ExpenseCategoryDB.name == name,
+        )
+        .first()
+    )
 
     if existing:
         raise HTTPException(400, f"Category '{name}' already exists")
 
     category_id = f"expcat_{uuid4().hex[:12]}"
 
-    category = ExpenseCategoryDB(id=category_id,
-                                 company_id=current_user.company_id,
-                                 name=name,
-                                 description=description,
-                                 is_default=False)
+    category = ExpenseCategoryDB(
+        id=category_id,
+        company_id=current_user.company_id,
+        name=name,
+        description=description,
+        is_default=False,
+    )
 
     db.add(category)
     db.commit()
@@ -7101,76 +7435,74 @@ def create_expense_category(
         "name": category.name,
         "description": category.description,
         "is_default": category.is_default,
-        "created_at": category.created_at.isoformat()
+        "created_at": category.created_at.isoformat(),
     }
 
 
 @app.get("/expense-categories", tags=["Expense Categories"])
 def list_expense_categories(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """
     List all expense categories (default + custom)
 
     Returns system defaults + user-created categories
     """
-    categories = db.query(ExpenseCategoryDB).filter(
-        ExpenseCategoryDB.company_id == current_user.company_id).order_by(
-            ExpenseCategoryDB.name).all()
+    categories = (
+        db.query(ExpenseCategoryDB)
+        .filter(ExpenseCategoryDB.company_id == current_user.company_id)
+        .order_by(ExpenseCategoryDB.name)
+        .all()
+    )
 
     # If no categories, seed defaults
     if not categories:
         from uuid import uuid4
-        default_categories = [{
-            "name": "Rent",
-            "description": "Office or warehouse rent"
-        }, {
-            "name": "Utilities",
-            "description": "Electricity, water, internet"
-        }, {
-            "name": "Salaries",
-            "description": "Employee wages and benefits"
-        }, {
-            "name": "Raw Materials",
-            "description": "Business supplies and inventory"
-        }, {
-            "name": "Marketing",
-            "description": "Advertising and promotions"
-        }, {
-            "name": "Equipment",
-            "description": "Machinery and tools"
-        }, {
-            "name": "Maintenance",
-            "description": "Repairs and upkeep"
-        }, {
-            "name": "Other",
-            "description": "Miscellaneous expenses"
-        }]
+
+        default_categories = [
+            {"name": "Rent", "description": "Office or warehouse rent"},
+            {"name": "Utilities", "description": "Electricity, water, internet"},
+            {"name": "Salaries", "description": "Employee wages and benefits"},
+            {"name": "Raw Materials", "description": "Business supplies and inventory"},
+            {"name": "Marketing", "description": "Advertising and promotions"},
+            {"name": "Equipment", "description": "Machinery and tools"},
+            {"name": "Maintenance", "description": "Repairs and upkeep"},
+            {"name": "Other", "description": "Miscellaneous expenses"},
+        ]
 
         for cat_data in default_categories:
             cat_id = f"expcat_{uuid4().hex[:12]}"
-            category = ExpenseCategoryDB(id=cat_id,
-                                         company_id=current_user.company_id,
-                                         name=cat_data["name"],
-                                         description=cat_data["description"],
-                                         is_default=True)
+            category = ExpenseCategoryDB(
+                id=cat_id,
+                company_id=current_user.company_id,
+                name=cat_data["name"],
+                description=cat_data["description"],
+                is_default=True,
+            )
             db.add(category)
 
         db.commit()
 
         # Re-fetch categories
-        categories = db.query(ExpenseCategoryDB).filter(
-            ExpenseCategoryDB.company_id == current_user.company_id).order_by(
-                ExpenseCategoryDB.name).all()
+        categories = (
+            db.query(ExpenseCategoryDB)
+            .filter(ExpenseCategoryDB.company_id == current_user.company_id)
+            .order_by(ExpenseCategoryDB.name)
+            .all()
+        )
 
     return {
-        "categories": [{
-            "id": cat.id,
-            "name": cat.name,
-            "description": cat.description,
-            "is_default": cat.is_default,
-            "created_at": cat.created_at.isoformat()
-        } for cat in categories]
+        "categories": [
+            {
+                "id": cat.id,
+                "name": cat.name,
+                "description": cat.description,
+                "is_default": cat.is_default,
+                "created_at": cat.created_at.isoformat(),
+            }
+            for cat in categories
+        ]
     }
 
 
@@ -7178,11 +7510,17 @@ def list_expense_categories(
 def delete_expense_category(
     category_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Delete a custom expense category (cannot delete defaults)"""
-    category = db.query(ExpenseCategoryDB).filter(
-        ExpenseCategoryDB.id == category_id,
-        ExpenseCategoryDB.company_id == current_user.company_id).first()
+    category = (
+        db.query(ExpenseCategoryDB)
+        .filter(
+            ExpenseCategoryDB.id == category_id,
+            ExpenseCategoryDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not category:
         raise HTTPException(404, "Category not found")
@@ -7191,23 +7529,25 @@ def delete_expense_category(
         raise HTTPException(400, "Cannot delete default categories")
 
     # Check if any expenses use this category
-    expense_count = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == current_user.company_id,
-        ExpenseDB.category == category.name).count()
+    expense_count = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.category == category.name,
+        )
+        .count()
+    )
 
     if expense_count > 0:
         raise HTTPException(
             400,
-            f"Cannot delete category with {expense_count} expense(s). Reassign them first."
+            f"Cannot delete category with {expense_count} expense(s). Reassign them first.",
         )
 
     db.delete(category)
     db.commit()
 
-    return {
-        "message": "Category deleted successfully",
-        "category_id": category_id
-    }
+    return {"message": "Category deleted successfully", "category_id": category_id}
 
 
 @app.post("/expenses", tags=["Expenses"])
@@ -7221,7 +7561,8 @@ def create_expense(
     reference_number: str = None,
     notes: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Create a simple expense record
 
@@ -7241,8 +7582,7 @@ def create_expense(
     try:
         expense_date_obj = parser.parse(expense_date).date()
     except:
-        raise HTTPException(
-            400, "Invalid date format. Use YYYY-MM-DD or ISO format")
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD or ISO format")
 
     # Calculate total
     total_amount = amount + vat_amount
@@ -7250,17 +7590,19 @@ def create_expense(
     # Create expense
     expense_id = f"exp_{uuid4().hex[:12]}"
 
-    expense = ExpenseDB(id=expense_id,
-                        company_id=current_user.company_id,
-                        expense_date=expense_date_obj,
-                        category=category.upper(),
-                        description=description,
-                        amount=amount,
-                        vat_amount=vat_amount,
-                        total_amount=total_amount,
-                        supplier_name=supplier_name,
-                        reference_number=reference_number,
-                        notes=notes)
+    expense = ExpenseDB(
+        id=expense_id,
+        company_id=current_user.company_id,
+        expense_date=expense_date_obj,
+        category=category.upper(),
+        description=description,
+        amount=amount,
+        vat_amount=vat_amount,
+        total_amount=total_amount,
+        supplier_name=supplier_name,
+        reference_number=reference_number,
+        notes=notes,
+    )
 
     db.add(expense)
     db.commit()
@@ -7276,7 +7618,7 @@ def create_expense(
         "total_amount": expense.total_amount,
         "supplier_name": expense.supplier_name,
         "reference_number": expense.reference_number,
-        "created_at": expense.created_at.isoformat()
+        "created_at": expense.created_at.isoformat(),
     }
 
 
@@ -7285,7 +7627,8 @@ def list_expenses(
     month: str = None,  # "2025-10" for October 2025
     category: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     List all expenses with optional filters
 
@@ -7293,14 +7636,14 @@ def list_expenses(
     - month: "2025-10" for October 2025
     - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
     """
-    query = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == current_user.company_id)
+    query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
 
     # Filter by month
     if month:
         try:
-            year, month_num = map(int, month.split('-'))
+            year, month_num = map(int, month.split("-"))
             from datetime import date
+
             start_date = date(year, month_num, 1)
             # Calculate end date (last day of month)
             if month_num == 12:
@@ -7308,8 +7651,9 @@ def list_expenses(
             else:
                 end_date = date(year, month_num + 1, 1)
 
-            query = query.filter(ExpenseDB.expense_date >= start_date,
-                                 ExpenseDB.expense_date < end_date)
+            query = query.filter(
+                ExpenseDB.expense_date >= start_date, ExpenseDB.expense_date < end_date
+            )
         except:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
 
@@ -7321,21 +7665,23 @@ def list_expenses(
     expenses = query.order_by(ExpenseDB.expense_date.desc()).all()
 
     return {
-        "expenses": [{
-            "id": exp.id,
-            "expense_date": exp.expense_date.isoformat(),
-            "category": exp.category,
-            "description": exp.description,
-            "amount": exp.amount,
-            "vat_amount": exp.vat_amount,
-            "total_amount": exp.total_amount,
-            "supplier_name": exp.supplier_name,
-            "reference_number": exp.reference_number,
-            "notes": exp.notes,
-            "created_at": exp.created_at.isoformat()
-        } for exp in expenses],
-        "total_count":
-        len(expenses)
+        "expenses": [
+            {
+                "id": exp.id,
+                "expense_date": exp.expense_date.isoformat(),
+                "category": exp.category,
+                "description": exp.description,
+                "amount": exp.amount,
+                "vat_amount": exp.vat_amount,
+                "total_amount": exp.total_amount,
+                "supplier_name": exp.supplier_name,
+                "reference_number": exp.reference_number,
+                "notes": exp.notes,
+                "created_at": exp.created_at.isoformat(),
+            }
+            for exp in expenses
+        ],
+        "total_count": len(expenses),
     }
 
 
@@ -7343,7 +7689,8 @@ def list_expenses(
 def get_financial_summary(
     month: str = None,  # "2025-10" for October 2025
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Get financial summary: Net Income and Net VAT
 
@@ -7370,7 +7717,7 @@ def get_financial_summary(
     # Parse month filter
     if month:
         try:
-            year, month_num = map(int, month.split('-'))
+            year, month_num = map(int, month.split("-"))
             start_date = date(year, month_num, 1)
             if month_num == 12:
                 end_date = date(year + 1, 1, 1)
@@ -7381,6 +7728,7 @@ def get_financial_summary(
     else:
         # Default to current month
         from datetime import datetime
+
         now = datetime.now()
         start_date = date(now.year, now.month, 1)
         if now.month == 12:
@@ -7392,8 +7740,11 @@ def get_financial_summary(
     revenue_query = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == current_user.company_id,
         InvoiceDB.status.in_(
-            [InvoiceStatus.ISSUED, InvoiceStatus.SENT, InvoiceStatus.PAID]),
-        InvoiceDB.issue_date >= start_date, InvoiceDB.issue_date < end_date)
+            [InvoiceStatus.ISSUED, InvoiceStatus.SENT, InvoiceStatus.PAID]
+        ),
+        InvoiceDB.issue_date >= start_date,
+        InvoiceDB.issue_date < end_date,
+    )
 
     total_revenue = 0.0
     output_vat = 0.0
@@ -7402,8 +7753,8 @@ def get_financial_summary(
     for invoice in revenue_query.all():
         # Credit notes should be subtracted from revenue, not added
         if invoice.invoice_type in [
-                InvoiceType.TAX_CREDIT_NOTE,
-                InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+            InvoiceType.TAX_CREDIT_NOTE,
+            InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
         ]:
             total_revenue -= invoice.subtotal_amount or 0.0
             output_vat -= invoice.tax_amount or 0.0
@@ -7414,8 +7765,10 @@ def get_financial_summary(
 
     # ========== EXPENSES (from expense records) ==========
     expense_query = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == current_user.company_id, ExpenseDB.expense_date
-        >= start_date, ExpenseDB.expense_date < end_date)
+        ExpenseDB.company_id == current_user.company_id,
+        ExpenseDB.expense_date >= start_date,
+        ExpenseDB.expense_date < end_date,
+    )
 
     total_expenses = 0.0
     input_vat = 0.0
@@ -7443,12 +7796,12 @@ def get_financial_summary(
         "period": {
             "start_date": start_date.isoformat(),
             "end_date": (end_date - timedelta(days=1)).isoformat(),
-            "month": f"{start_date.year}-{start_date.month:02d}"
+            "month": f"{start_date.year}-{start_date.month:02d}",
         },
         "revenue": {
             "total": round(total_revenue, 2),
             "invoice_count": invoice_count,
-            "vat_collected": round(output_vat, 2)
+            "vat_collected": round(output_vat, 2),
         },
         "expenses": {
             "total": round(total_expenses, 2),
@@ -7458,35 +7811,30 @@ def get_financial_summary(
                 cat: {
                     "amount": round(data["amount"], 2),
                     "vat": round(data["vat"], 2),
-                    "count": data["count"]
+                    "count": data["count"],
                 }
                 for cat, data in expense_breakdown.items()
-            }
+            },
         },
         "summary": {
-            "net_income":
-            round(net_income, 2),
-            "net_vat_payable":
-            round(net_vat_payable, 2),
-            "gross_revenue":
-            round(total_revenue + output_vat, 2),
-            "total_costs":
-            round(total_expenses + input_vat, 2),
-            "profit_margin_percent":
-            round((net_income / total_revenue *
-                   100), 2) if total_revenue > 0 else 0
+            "net_income": round(net_income, 2),
+            "net_vat_payable": round(net_vat_payable, 2),
+            "gross_revenue": round(total_revenue + output_vat, 2),
+            "total_costs": round(total_expenses + input_vat, 2),
+            "profit_margin_percent": round((net_income / total_revenue * 100), 2)
+            if total_revenue > 0
+            else 0,
         },
         "vat_details": {
-            "output_vat":
-            round(output_vat, 2),
-            "input_vat":
-            round(input_vat, 2),
-            "net_vat":
-            round(net_vat_payable, 2),
-            "vat_status":
-            "PAYABLE" if net_vat_payable > 0 else
-            "REFUND" if net_vat_payable < 0 else "NEUTRAL"
-        }
+            "output_vat": round(output_vat, 2),
+            "input_vat": round(input_vat, 2),
+            "net_vat": round(net_vat_payable, 2),
+            "vat_status": "PAYABLE"
+            if net_vat_payable > 0
+            else "REFUND"
+            if net_vat_payable < 0
+            else "NEUTRAL",
+        },
     }
 
 
@@ -7494,11 +7842,16 @@ def get_financial_summary(
 def delete_expense(
     expense_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Delete an expense record"""
-    expense = db.query(ExpenseDB).filter(
-        ExpenseDB.id == expense_id,
-        ExpenseDB.company_id == current_user.company_id).first()
+    expense = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.id == expense_id, ExpenseDB.company_id == current_user.company_id
+        )
+        .first()
+    )
 
     if not expense:
         raise HTTPException(404, "Expense not found")
@@ -7506,10 +7859,7 @@ def delete_expense(
     db.delete(expense)
     db.commit()
 
-    return {
-        "message": "Expense deleted successfully",
-        "expense_id": expense_id
-    }
+    return {"message": "Expense deleted successfully", "expense_id": expense_id}
 
 
 # ==================== SIMPLE INVENTORY TRACKING ====================
@@ -7525,21 +7875,24 @@ def create_inventory_item(
     min_stock_level: float = 0,
     unit_cost: float = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Create inventory item (e.g., Shampoo Bottles, Mani Kits)"""
     from uuid import uuid4
 
     item_id = f"inv_{uuid4().hex[:12]}"
 
-    item = InventoryItemDB(id=item_id,
-                           company_id=current_user.company_id,
-                           item_name=item_name,
-                           item_code=item_code,
-                           description=description,
-                           unit=unit,
-                           current_stock=current_stock,
-                           min_stock_level=min_stock_level,
-                           unit_cost=unit_cost)
+    item = InventoryItemDB(
+        id=item_id,
+        company_id=current_user.company_id,
+        item_name=item_name,
+        item_code=item_code,
+        description=description,
+        unit=unit,
+        current_stock=current_stock,
+        min_stock_level=min_stock_level,
+        unit_cost=unit_cost,
+    )
 
     db.add(item)
     db.commit()
@@ -7553,7 +7906,7 @@ def create_inventory_item(
         "unit": item.unit,
         "min_stock_level": item.min_stock_level,
         "low_stock": item.current_stock <= item.min_stock_level,
-        "created_at": item.created_at.isoformat()
+        "created_at": item.created_at.isoformat(),
     }
 
 
@@ -7561,10 +7914,12 @@ def create_inventory_item(
 def list_inventory(
     low_stock_only: bool = False,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """List all inventory items with stock levels"""
     query = db.query(InventoryItemDB).filter(
-        InventoryItemDB.company_id == current_user.company_id)
+        InventoryItemDB.company_id == current_user.company_id
+    )
 
     items = query.order_by(InventoryItemDB.item_name).all()
 
@@ -7575,28 +7930,22 @@ def list_inventory(
         if low_stock_only and not is_low:
             continue
 
-        result.append({
-            "id":
-            item.id,
-            "item_name":
-            item.item_name,
-            "item_code":
-            item.item_code,
-            "description":
-            item.description,
-            "current_stock":
-            item.current_stock,
-            "unit":
-            item.unit,
-            "min_stock_level":
-            item.min_stock_level,
-            "low_stock":
-            is_low,
-            "unit_cost":
-            item.unit_cost,
-            "stock_value":
-            (item.current_stock * item.unit_cost) if item.unit_cost else None
-        })
+        result.append(
+            {
+                "id": item.id,
+                "item_name": item.item_name,
+                "item_code": item.item_code,
+                "description": item.description,
+                "current_stock": item.current_stock,
+                "unit": item.unit,
+                "min_stock_level": item.min_stock_level,
+                "low_stock": is_low,
+                "unit_cost": item.unit_cost,
+                "stock_value": (item.current_stock * item.unit_cost)
+                if item.unit_cost
+                else None,
+            }
+        )
 
     return {"inventory": result, "total_items": len(result)}
 
@@ -7608,7 +7957,8 @@ def adjust_inventory(
     transaction_type: str,
     notes: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Adjust inventory stock
 
@@ -7623,9 +7973,14 @@ def adjust_inventory(
     from uuid import uuid4
     from datetime import date
 
-    item = db.query(InventoryItemDB).filter(
-        InventoryItemDB.id == item_id,
-        InventoryItemDB.company_id == current_user.company_id).first()
+    item = (
+        db.query(InventoryItemDB)
+        .filter(
+            InventoryItemDB.id == item_id,
+            InventoryItemDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not item:
         raise HTTPException(404, "Inventory item not found")
@@ -7636,20 +7991,22 @@ def adjust_inventory(
     if new_stock < 0:
         raise HTTPException(
             400,
-            f"Insufficient stock. Current: {item.current_stock}, Requested: {abs(quantity)}"
+            f"Insufficient stock. Current: {item.current_stock}, Requested: {abs(quantity)}",
         )
 
     # Record transaction
     trans_id = f"invtx_{uuid4().hex[:12]}"
-    transaction = InventoryTransactionDB(id=trans_id,
-                                         company_id=current_user.company_id,
-                                         inventory_item_id=item.id,
-                                         transaction_type=transaction_type,
-                                         quantity=quantity,
-                                         transaction_date=date.today(),
-                                         notes=notes,
-                                         stock_after=new_stock,
-                                         reference_type="MANUAL")
+    transaction = InventoryTransactionDB(
+        id=trans_id,
+        company_id=current_user.company_id,
+        inventory_item_id=item.id,
+        transaction_type=transaction_type,
+        quantity=quantity,
+        transaction_date=date.today(),
+        notes=notes,
+        stock_after=new_stock,
+        reference_type="MANUAL",
+    )
 
     db.add(transaction)
 
@@ -7665,7 +8022,7 @@ def adjust_inventory(
         "previous_stock": item.current_stock - quantity,
         "adjustment": quantity,
         "new_stock": item.current_stock,
-        "low_stock": item.current_stock <= item.min_stock_level
+        "low_stock": item.current_stock <= item.min_stock_level,
     }
 
 
@@ -7673,47 +8030,59 @@ def adjust_inventory(
 def get_inventory_history(
     item_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get transaction history for an inventory item"""
-    item = db.query(InventoryItemDB).filter(
-        InventoryItemDB.id == item_id,
-        InventoryItemDB.company_id == current_user.company_id).first()
+    item = (
+        db.query(InventoryItemDB)
+        .filter(
+            InventoryItemDB.id == item_id,
+            InventoryItemDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not item:
         raise HTTPException(404, "Inventory item not found")
 
-    transactions = db.query(InventoryTransactionDB).filter(
-        InventoryTransactionDB.inventory_item_id == item_id).order_by(
-            InventoryTransactionDB.transaction_date.desc()).limit(50).all()
+    transactions = (
+        db.query(InventoryTransactionDB)
+        .filter(InventoryTransactionDB.inventory_item_id == item_id)
+        .order_by(InventoryTransactionDB.transaction_date.desc())
+        .limit(50)
+        .all()
+    )
 
     return {
-        "item_name":
-        item.item_name,
-        "current_stock":
-        item.current_stock,
-        "history": [{
-            "id": tx.id,
-            "transaction_type": tx.transaction_type,
-            "quantity": tx.quantity,
-            "transaction_date": tx.transaction_date.isoformat(),
-            "stock_after": tx.stock_after,
-            "notes": tx.notes,
-            "reference_type": tx.reference_type,
-            "reference_id": tx.reference_id
-        } for tx in transactions]
+        "item_name": item.item_name,
+        "current_stock": item.current_stock,
+        "history": [
+            {
+                "id": tx.id,
+                "transaction_type": tx.transaction_type,
+                "quantity": tx.quantity,
+                "transaction_date": tx.transaction_date.isoformat(),
+                "stock_after": tx.stock_after,
+                "notes": tx.notes,
+                "reference_type": tx.reference_type,
+                "reference_id": tx.reference_id,
+            }
+            for tx in transactions
+        ],
     }
 
 
 # ==================== CORNER 4: AP MANAGEMENT (INWARD INVOICES) ====================
 
 
-@app.post("/inward-invoices/receive",
-          tags=["AP Management"],
-          response_model=InwardInvoiceOut)
+@app.post(
+    "/inward-invoices/receive", tags=["AP Management"], response_model=InwardInvoiceOut
+)
 def receive_inward_invoice(
     invoice_data: InwardInvoiceReceive,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Receive inward invoice from supplier (via PEPPOL or manual entry)
 
@@ -7724,8 +8093,9 @@ def receive_inward_invoice(
     4. Creates line items
     5. Attempts automatic PO matching if supplier TRN matches
     """
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
@@ -7733,20 +8103,25 @@ def receive_inward_invoice(
     if invoice_data.customer_trn != company.trn:
         raise HTTPException(
             400,
-            f"Invoice customer TRN ({invoice_data.customer_trn}) does not match your company TRN ({company.trn})"
+            f"Invoice customer TRN ({invoice_data.customer_trn}) does not match your company TRN ({company.trn})",
         )
 
     # Check for duplicate invoice number from this supplier
-    existing = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.company_id == current_user.company_id,
-        InwardInvoiceDB.supplier_trn == invoice_data.supplier_trn,
-        InwardInvoiceDB.supplier_invoice_number ==
-        invoice_data.supplier_invoice_number).first()
+    existing = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.company_id == current_user.company_id,
+            InwardInvoiceDB.supplier_trn == invoice_data.supplier_trn,
+            InwardInvoiceDB.supplier_invoice_number
+            == invoice_data.supplier_invoice_number,
+        )
+        .first()
+    )
 
     if existing:
         raise HTTPException(
             409,
-            f"Invoice {invoice_data.supplier_invoice_number} from supplier {invoice_data.supplier_name} already exists"
+            f"Invoice {invoice_data.supplier_invoice_number} from supplier {invoice_data.supplier_name} already exists",
         )
 
     # Create inward invoice
@@ -7754,33 +8129,43 @@ def receive_inward_invoice(
 
     # Parse dates
     from datetime import datetime as dt
+
     invoice_date = dt.fromisoformat(invoice_data.invoice_date)
-    due_date = dt.fromisoformat(
-        invoice_data.due_date) if invoice_data.due_date else None
+    due_date = (
+        dt.fromisoformat(invoice_data.due_date) if invoice_data.due_date else None
+    )
 
     # Save XML file if provided
     xml_file_path = None
     xml_hash_value = None
     if invoice_data.xml_content:
-        xml_dir = os.path.join(ARTIFACT_ROOT, "inward_invoices",
-                               current_user.company_id)
+        xml_dir = os.path.join(
+            ARTIFACT_ROOT, "inward_invoices", current_user.company_id
+        )
         os.makedirs(xml_dir, exist_ok=True)
         xml_file_path = os.path.join(xml_dir, f"{inward_invoice_id}.xml")
 
-        with open(xml_file_path, 'w', encoding='utf-8') as f:
+        with open(xml_file_path, "w", encoding="utf-8") as f:
             f.write(invoice_data.xml_content)
 
         # Calculate hash
         from utils.crypto_utils import hash_data
+
         xml_hash_value = hash_data(invoice_data.xml_content)
 
     # Attempt to find matching PO by supplier TRN
-    matching_po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.company_id == current_user.company_id,
-        PurchaseOrderDB.supplier_trn == invoice_data.supplier_trn,
-        PurchaseOrderDB.status.in_([
-            PurchaseOrderStatus.SENT, PurchaseOrderStatus.ACKNOWLEDGED
-        ])).order_by(PurchaseOrderDB.order_date.desc()).first()
+    matching_po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.company_id == current_user.company_id,
+            PurchaseOrderDB.supplier_trn == invoice_data.supplier_trn,
+            PurchaseOrderDB.status.in_(
+                [PurchaseOrderStatus.SENT, PurchaseOrderStatus.ACKNOWLEDGED]
+            ),
+        )
+        .order_by(PurchaseOrderDB.order_date.desc())
+        .first()
+    )
 
     po_id = matching_po.id if matching_po else None
     matching_status = MatchingStatus.NOT_MATCHED
@@ -7791,8 +8176,7 @@ def receive_inward_invoice(
         amount_variance = invoice_data.total_amount - matching_po.expected_total
         if abs(amount_variance) < 0.01:  # Within 1 cent
             matching_status = MatchingStatus.FULL_MATCH
-        elif abs(amount_variance) < (matching_po.expected_total *
-                                     0.05):  # Within 5%
+        elif abs(amount_variance) < (matching_po.expected_total * 0.05):  # Within 5%
             matching_status = MatchingStatus.VARIANCE_DETECTED
         else:
             matching_status = MatchingStatus.PARTIAL_MATCH
@@ -7824,11 +8208,13 @@ def receive_inward_invoice(
         peppol_sender_id=invoice_data.peppol_sender_id,
         peppol_provider=invoice_data.peppol_provider,
         peppol_received_at=datetime.utcnow()
-        if invoice_data.peppol_message_id else None,
+        if invoice_data.peppol_message_id
+        else None,
         po_id=po_id,
         matching_status=matching_status,
         amount_variance=amount_variance,
-        payment_status="PENDING")
+        payment_status="PENDING",
+    )
 
     db.add(new_invoice)
 
@@ -7839,25 +8225,27 @@ def receive_inward_invoice(
                 id=str(uuid4()),
                 inward_invoice_id=inward_invoice_id,
                 line_number=idx + 1,
-                item_name=item_data.get('item_name', 'Item'),
-                item_description=item_data.get('item_description'),
-                item_code=item_data.get('item_code'),
-                quantity=float(item_data.get('quantity', 1)),
-                unit_code=item_data.get('unit_code', 'C62'),
-                unit_price=float(item_data.get('unit_price', 0)),
-                line_extension_amount=float(
-                    item_data.get('line_extension_amount', 0)),
-                tax_category=TaxCategory(item_data.get('tax_category', 'S')),
-                tax_percent=float(item_data.get('tax_percent', 5.0)),
-                tax_amount=float(item_data.get('tax_amount', 0)),
-                line_total_amount=float(item_data.get('line_total_amount', 0)))
+                item_name=item_data.get("item_name", "Item"),
+                item_description=item_data.get("item_description"),
+                item_code=item_data.get("item_code"),
+                quantity=float(item_data.get("quantity", 1)),
+                unit_code=item_data.get("unit_code", "C62"),
+                unit_price=float(item_data.get("unit_price", 0)),
+                line_extension_amount=float(item_data.get("line_extension_amount", 0)),
+                tax_category=TaxCategory(item_data.get("tax_category", "S")),
+                tax_percent=float(item_data.get("tax_percent", 5.0)),
+                tax_amount=float(item_data.get("tax_amount", 0)),
+                line_total_amount=float(item_data.get("line_total_amount", 0)),
+            )
             db.add(line_item)
 
     # Update PO if matched
     if matching_po:
         matching_po.received_invoice_count += 1
         matching_po.received_amount_total += invoice_data.total_amount
-        matching_po.variance_amount = matching_po.expected_total - matching_po.received_amount_total
+        matching_po.variance_amount = (
+            matching_po.expected_total - matching_po.received_amount_total
+        )
 
     db.commit()
     db.refresh(new_invoice)
@@ -7870,8 +8258,7 @@ def receive_inward_invoice(
         invoice_type=new_invoice.invoice_type,
         status=new_invoice.status,
         invoice_date=new_invoice.invoice_date.isoformat(),
-        due_date=new_invoice.due_date.isoformat()
-        if new_invoice.due_date else None,
+        due_date=new_invoice.due_date.isoformat() if new_invoice.due_date else None,
         received_at=new_invoice.received_at.isoformat(),
         supplier_trn=new_invoice.supplier_trn,
         supplier_name=new_invoice.supplier_name,
@@ -7892,7 +8279,8 @@ def receive_inward_invoice(
         peppol_sender_id=new_invoice.peppol_sender_id,
         peppol_provider=new_invoice.peppol_provider,
         peppol_received_at=new_invoice.peppol_received_at.isoformat()
-        if new_invoice.peppol_received_at else None,
+        if new_invoice.peppol_received_at
+        else None,
         po_id=new_invoice.po_id,
         grn_id=new_invoice.grn_id,
         matching_status=new_invoice.matching_status,
@@ -7902,22 +8290,25 @@ def receive_inward_invoice(
         quantity_variance=new_invoice.quantity_variance,
         reviewed_by_user_id=new_invoice.reviewed_by_user_id,
         reviewed_at=new_invoice.reviewed_at.isoformat()
-        if new_invoice.reviewed_at else None,
+        if new_invoice.reviewed_at
+        else None,
         approved_by_user_id=new_invoice.approved_by_user_id,
         approved_at=new_invoice.approved_at.isoformat()
-        if new_invoice.approved_at else None,
+        if new_invoice.approved_at
+        else None,
         rejection_reason=new_invoice.rejection_reason,
         payment_status=new_invoice.payment_status,
         payment_method=new_invoice.payment_method,
         paid_amount=new_invoice.paid_amount,
-        paid_at=new_invoice.paid_at.isoformat()
-        if new_invoice.paid_at else None,
+        paid_at=new_invoice.paid_at.isoformat() if new_invoice.paid_at else None,
         payment_reference=new_invoice.payment_reference,
         disputed_at=new_invoice.disputed_at.isoformat()
-        if new_invoice.disputed_at else None,
+        if new_invoice.disputed_at
+        else None,
         dispute_reason=new_invoice.dispute_reason,
         dispute_resolved_at=new_invoice.dispute_resolved_at.isoformat()
-        if new_invoice.dispute_resolved_at else None,
+        if new_invoice.dispute_resolved_at
+        else None,
         notes=new_invoice.notes,
         reference_number=new_invoice.reference_number,
         created_at=new_invoice.created_at.isoformat(),
@@ -7939,19 +8330,25 @@ def receive_inward_invoice(
                 line_total_amount=li.line_total_amount,
                 po_line_item_id=li.po_line_item_id,
                 grn_line_item_id=li.grn_line_item_id,
-                match_status=li.match_status) for li in new_invoice.line_items
-        ])
+                match_status=li.match_status,
+            )
+            for li in new_invoice.line_items
+        ],
+    )
 
 
-@app.get("/inward-invoices",
-         tags=["AP Management"],
-         response_model=List[InwardInvoiceListOut])
+@app.get(
+    "/inward-invoices",
+    tags=["AP Management"],
+    response_model=List[InwardInvoiceListOut],
+)
 def list_inward_invoices(
     status: Optional[str] = None,
     supplier_trn: Optional[str] = None,
     matching_status: Optional[str] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     List all inward invoices (AP Inbox)
 
@@ -7961,7 +8358,8 @@ def list_inward_invoices(
     - matching_status: Filter by PO matching status
     """
     query = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.company_id == current_user.company_id)
+        InwardInvoiceDB.company_id == current_user.company_id
+    )
 
     if status:
         query = query.filter(InwardInvoiceDB.status == status)
@@ -7970,8 +8368,7 @@ def list_inward_invoices(
         query = query.filter(InwardInvoiceDB.supplier_trn == supplier_trn)
 
     if matching_status:
-        query = query.filter(
-            InwardInvoiceDB.matching_status == matching_status)
+        query = query.filter(InwardInvoiceDB.matching_status == matching_status)
 
     invoices = query.order_by(InwardInvoiceDB.received_at.desc()).all()
 
@@ -7986,21 +8383,31 @@ def list_inward_invoices(
             invoice_date=inv.invoice_date.isoformat(),
             received_at=inv.received_at.isoformat(),
             matching_status=inv.matching_status,
-            po_id=inv.po_id) for inv in invoices
+            po_id=inv.po_id,
+        )
+        for inv in invoices
     ]
 
 
-@app.get("/inward-invoices/{invoice_id}",
-         tags=["AP Management"],
-         response_model=InwardInvoiceOut)
+@app.get(
+    "/inward-invoices/{invoice_id}",
+    tags=["AP Management"],
+    response_model=InwardInvoiceOut,
+)
 def get_inward_invoice(
     invoice_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get details of a specific inward invoice"""
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.id == invoice_id,
+            InwardInvoiceDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
@@ -8033,7 +8440,8 @@ def get_inward_invoice(
         peppol_sender_id=invoice.peppol_sender_id,
         peppol_provider=invoice.peppol_provider,
         peppol_received_at=invoice.peppol_received_at.isoformat()
-        if invoice.peppol_received_at else None,
+        if invoice.peppol_received_at
+        else None,
         po_id=invoice.po_id,
         grn_id=invoice.grn_id,
         matching_status=invoice.matching_status,
@@ -8042,22 +8450,20 @@ def get_inward_invoice(
         amount_variance=invoice.amount_variance,
         quantity_variance=invoice.quantity_variance,
         reviewed_by_user_id=invoice.reviewed_by_user_id,
-        reviewed_at=invoice.reviewed_at.isoformat()
-        if invoice.reviewed_at else None,
+        reviewed_at=invoice.reviewed_at.isoformat() if invoice.reviewed_at else None,
         approved_by_user_id=invoice.approved_by_user_id,
-        approved_at=invoice.approved_at.isoformat()
-        if invoice.approved_at else None,
+        approved_at=invoice.approved_at.isoformat() if invoice.approved_at else None,
         rejection_reason=invoice.rejection_reason,
         payment_status=invoice.payment_status,
         payment_method=invoice.payment_method,
         paid_amount=invoice.paid_amount,
         paid_at=invoice.paid_at.isoformat() if invoice.paid_at else None,
         payment_reference=invoice.payment_reference,
-        disputed_at=invoice.disputed_at.isoformat()
-        if invoice.disputed_at else None,
+        disputed_at=invoice.disputed_at.isoformat() if invoice.disputed_at else None,
         dispute_reason=invoice.dispute_reason,
         dispute_resolved_at=invoice.dispute_resolved_at.isoformat()
-        if invoice.dispute_resolved_at else None,
+        if invoice.dispute_resolved_at
+        else None,
         notes=invoice.notes,
         reference_number=invoice.reference_number,
         created_at=invoice.created_at.isoformat(),
@@ -8079,8 +8485,11 @@ def get_inward_invoice(
                 line_total_amount=li.line_total_amount,
                 po_line_item_id=li.po_line_item_id,
                 grn_line_item_id=li.grn_line_item_id,
-                match_status=li.match_status) for li in invoice.line_items
-        ])
+                match_status=li.match_status,
+            )
+            for li in invoice.line_items
+        ],
+    )
 
 
 @app.post("/inward-invoices/{invoice_id}/approve", tags=["AP Management"])
@@ -8088,15 +8497,21 @@ def approve_inward_invoice(
     invoice_id: str,
     approval_data: InwardInvoiceApprove,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Approve inward invoice for payment
 
     This changes the status to APPROVED and records the approver
     """
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.id == invoice_id,
+            InwardInvoiceDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
@@ -8113,8 +8528,7 @@ def approve_inward_invoice(
     invoice.approved_at = datetime.utcnow()
 
     if approval_data.notes:
-        invoice.notes = (invoice.notes
-                         or "") + f"\n[Approved] {approval_data.notes}"
+        invoice.notes = (invoice.notes or "") + f"\n[Approved] {approval_data.notes}"
 
     if approval_data.payment_method:
         invoice.payment_method = approval_data.payment_method
@@ -8124,8 +8538,11 @@ def approve_inward_invoice(
 
     # Update PO if matched
     if invoice.po_id:
-        po = db.query(PurchaseOrderDB).filter(
-            PurchaseOrderDB.id == invoice.po_id).first()
+        po = (
+            db.query(PurchaseOrderDB)
+            .filter(PurchaseOrderDB.id == invoice.po_id)
+            .first()
+        )
         if po:
             po.matched_invoice_count += 1
 
@@ -8133,11 +8550,10 @@ def approve_inward_invoice(
 
     return {
         "success": True,
-        "message":
-        f"Invoice {invoice.supplier_invoice_number} approved for payment",
+        "message": f"Invoice {invoice.supplier_invoice_number} approved for payment",
         "invoice_id": invoice.id,
         "approved_by": current_user.email,
-        "approved_at": invoice.approved_at.isoformat()
+        "approved_at": invoice.approved_at.isoformat(),
     }
 
 
@@ -8146,13 +8562,19 @@ def reject_inward_invoice(
     invoice_id: str,
     rejection_data: InwardInvoiceReject,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Reject inward invoice with reason
     """
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.id == invoice_id,
+            InwardInvoiceDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
@@ -8170,8 +8592,7 @@ def reject_inward_invoice(
     invoice.rejection_reason = rejection_data.rejection_reason
 
     if rejection_data.notes:
-        invoice.notes = (invoice.notes
-                         or "") + f"\n[Rejected] {rejection_data.notes}"
+        invoice.notes = (invoice.notes or "") + f"\n[Rejected] {rejection_data.notes}"
 
     db.commit()
 
@@ -8180,7 +8601,7 @@ def reject_inward_invoice(
         "message": f"Invoice {invoice.supplier_invoice_number} rejected",
         "invoice_id": invoice.id,
         "rejected_by": current_user.email,
-        "rejection_reason": rejection_data.rejection_reason
+        "rejection_reason": rejection_data.rejection_reason,
     }
 
 
@@ -8189,22 +8610,33 @@ def match_inward_invoice_to_po(
     invoice_id: str,
     match_data: InwardInvoiceMatchPO,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Manually match inward invoice to a purchase order
 
     This updates the matching_status and calculates variances
     """
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id).first()
+    invoice = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.id == invoice_id,
+            InwardInvoiceDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
 
-    po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.id == match_data.po_id,
-        PurchaseOrderDB.company_id == current_user.company_id).first()
+    po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.id == match_data.po_id,
+            PurchaseOrderDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not po:
         raise HTTPException(404, "Purchase order not found")
@@ -8215,15 +8647,14 @@ def match_inward_invoice_to_po(
         if invoice.supplier_trn != po.supplier_trn:
             raise HTTPException(
                 400,
-                f"Supplier mismatch: Invoice supplier TRN ({invoice.supplier_trn}) does not match PO supplier TRN ({po.supplier_trn})"
+                f"Supplier mismatch: Invoice supplier TRN ({invoice.supplier_trn}) does not match PO supplier TRN ({po.supplier_trn})",
             )
     else:
         # Match by supplier name when TRN is not available for non-VAT suppliers
-        if invoice.supplier_name.strip().lower() != po.supplier_name.strip(
-        ).lower():
+        if invoice.supplier_name.strip().lower() != po.supplier_name.strip().lower():
             raise HTTPException(
                 400,
-                f"Supplier mismatch: Invoice supplier ({invoice.supplier_name}) does not match PO supplier ({po.supplier_name})"
+                f"Supplier mismatch: Invoice supplier ({invoice.supplier_name}) does not match PO supplier ({po.supplier_name})",
             )
 
     # Calculate variance
@@ -8241,9 +8672,11 @@ def match_inward_invoice_to_po(
     invoice.po_id = po.id
     invoice.matching_status = matching_status
     invoice.amount_variance = amount_variance
-    invoice.po_match_score = 100.0 - min(
-        abs(amount_variance / po.expected_total *
-            100), 100.0) if po.expected_total > 0 else 0.0
+    invoice.po_match_score = (
+        100.0 - min(abs(amount_variance / po.expected_total * 100), 100.0)
+        if po.expected_total > 0
+        else 0.0
+    )
 
     # Update PO
     po.received_invoice_count += 1
@@ -8259,20 +8692,19 @@ def match_inward_invoice_to_po(
         "po_id": po.id,
         "matching_status": matching_status.value,
         "amount_variance": amount_variance,
-        "po_match_score": invoice.po_match_score
+        "po_match_score": invoice.po_match_score,
     }
 
 
 # ==================== PURCHASE ORDER MANAGEMENT ====================
 
 
-@app.post("/purchase-orders",
-          tags=["AP Management"],
-          response_model=PurchaseOrderOut)
+@app.post("/purchase-orders", tags=["AP Management"], response_model=PurchaseOrderOut)
 def create_purchase_order(
     po_data: PurchaseOrderCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Create a new purchase order
 
@@ -8282,19 +8714,24 @@ def create_purchase_order(
     3. Creates line items
     4. Calculates expected totals
     """
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Check for duplicate PO number
-    existing_po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.company_id == current_user.company_id,
-        PurchaseOrderDB.po_number == po_data.po_number).first()
+    existing_po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.company_id == current_user.company_id,
+            PurchaseOrderDB.po_number == po_data.po_number,
+        )
+        .first()
+    )
 
     if existing_po:
-        raise HTTPException(409,
-                            f"PO number {po_data.po_number} already exists")
+        raise HTTPException(409, f"PO number {po_data.po_number} already exists")
 
     # Validate line items
     if not po_data.line_items:
@@ -8314,10 +8751,13 @@ def create_purchase_order(
 
     # Parse order date
     from datetime import datetime as dt
+
     order_date = dt.fromisoformat(po_data.order_date).date()
-    expected_delivery_date = dt.fromisoformat(
-        po_data.expected_delivery_date).date(
-        ) if po_data.expected_delivery_date else None
+    expected_delivery_date = (
+        dt.fromisoformat(po_data.expected_delivery_date).date()
+        if po_data.expected_delivery_date
+        else None
+    )
 
     # Create PO
     po_id = str(uuid4())
@@ -8339,7 +8779,8 @@ def create_purchase_order(
         expected_tax=expected_tax,
         expected_total=expected_total,
         reference_number=po_data.reference_number,
-        notes=po_data.notes)
+        notes=po_data.notes,
+    )
 
     db.add(new_po)
 
@@ -8358,7 +8799,8 @@ def create_purchase_order(
             unit_price=item_data.unit_price,
             line_total=line_total,
             tax_category=item_data.tax_category,
-            tax_percent=item_data.tax_percent)
+            tax_percent=item_data.tax_percent,
+        )
         db.add(line_item)
 
     db.commit()
@@ -8377,7 +8819,8 @@ def create_purchase_order(
         supplier_peppol_id=new_po.supplier_peppol_id,
         order_date=new_po.order_date.isoformat(),
         expected_delivery_date=new_po.expected_delivery_date.isoformat()
-        if new_po.expected_delivery_date else None,
+        if new_po.expected_delivery_date
+        else None,
         delivery_address=new_po.delivery_address,
         currency_code=new_po.currency_code,
         expected_subtotal=new_po.expected_subtotal,
@@ -8390,25 +8833,27 @@ def create_purchase_order(
         reference_number=new_po.reference_number,
         notes=new_po.notes,
         approved_by_user_id=new_po.approved_by_user_id,
-        approved_at=new_po.approved_at.isoformat()
-        if new_po.approved_at else None,
+        approved_at=new_po.approved_at.isoformat() if new_po.approved_at else None,
         created_at=new_po.created_at.isoformat(),
         updated_at=new_po.updated_at.isoformat(),
         line_items=[
-            PurchaseOrderLineItemOut(id=li.id,
-                                     line_number=li.line_number,
-                                     item_name=li.item_name,
-                                     item_description=li.item_description,
-                                     item_code=li.item_code,
-                                     quantity_ordered=li.quantity_ordered,
-                                     quantity_received=li.quantity_received,
-                                     unit_code=li.unit_code,
-                                     unit_price=li.unit_price,
-                                     line_total=li.line_total,
-                                     tax_category=li.tax_category,
-                                     tax_percent=li.tax_percent)
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+            )
             for li in new_po.line_items
-        ])
+        ],
+    )
 
 
 @app.get("/purchase-orders", tags=["AP Management"])
@@ -8419,7 +8864,8 @@ def list_purchase_orders(
     skip: int = 0,
     limit: int = 100,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     List purchase orders with optional filters
 
@@ -8429,7 +8875,8 @@ def list_purchase_orders(
     - po_number: Search by PO number (partial match)
     """
     query = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.company_id == current_user.company_id)
+        PurchaseOrderDB.company_id == current_user.company_id
+    )
 
     # Apply filters
     if status:
@@ -8440,8 +8887,7 @@ def list_purchase_orders(
             raise HTTPException(400, f"Invalid status: {status}")
 
     if supplier_name:
-        query = query.filter(
-            PurchaseOrderDB.supplier_name.ilike(f"%{supplier_name}%"))
+        query = query.filter(PurchaseOrderDB.supplier_name.ilike(f"%{supplier_name}%"))
 
     if po_number:
         query = query.filter(PurchaseOrderDB.po_number.ilike(f"%{po_number}%"))
@@ -8469,7 +8915,8 @@ def list_purchase_orders(
                 supplier_peppol_id=po.supplier_peppol_id,
                 order_date=po.order_date.isoformat(),
                 expected_delivery_date=po.expected_delivery_date.isoformat()
-                if po.expected_delivery_date else None,
+                if po.expected_delivery_date
+                else None,
                 delivery_address=po.delivery_address,
                 currency_code=po.currency_code,
                 expected_subtotal=po.expected_subtotal,
@@ -8482,8 +8929,7 @@ def list_purchase_orders(
                 reference_number=po.reference_number,
                 notes=po.notes,
                 approved_by_user_id=po.approved_by_user_id,
-                approved_at=po.approved_at.isoformat()
-                if po.approved_at else None,
+                approved_at=po.approved_at.isoformat() if po.approved_at else None,
                 created_at=po.created_at.isoformat(),
                 updated_at=po.updated_at.isoformat(),
                 line_items=[
@@ -8499,23 +8945,33 @@ def list_purchase_orders(
                         unit_price=li.unit_price,
                         line_total=li.line_total,
                         tax_category=li.tax_category,
-                        tax_percent=li.tax_percent) for li in po.line_items
-                ]))
+                        tax_percent=li.tax_percent,
+                    )
+                    for li in po.line_items
+                ],
+            )
+        )
 
     return {"total": total, "skip": skip, "limit": limit, "results": results}
 
 
-@app.get("/purchase-orders/{po_id}",
-         tags=["AP Management"],
-         response_model=PurchaseOrderOut)
+@app.get(
+    "/purchase-orders/{po_id}", tags=["AP Management"], response_model=PurchaseOrderOut
+)
 def get_purchase_order(
     po_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get purchase order details with line items"""
-    po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.id == po_id,
-        PurchaseOrderDB.company_id == current_user.company_id).first()
+    po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.id == po_id,
+            PurchaseOrderDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not po:
         raise HTTPException(404, "Purchase order not found")
@@ -8532,7 +8988,8 @@ def get_purchase_order(
         supplier_peppol_id=po.supplier_peppol_id,
         order_date=po.order_date.isoformat(),
         expected_delivery_date=po.expected_delivery_date.isoformat()
-        if po.expected_delivery_date else None,
+        if po.expected_delivery_date
+        else None,
         delivery_address=po.delivery_address,
         currency_code=po.currency_code,
         expected_subtotal=po.expected_subtotal,
@@ -8549,38 +9006,47 @@ def get_purchase_order(
         created_at=po.created_at.isoformat(),
         updated_at=po.updated_at.isoformat(),
         line_items=[
-            PurchaseOrderLineItemOut(id=li.id,
-                                     line_number=li.line_number,
-                                     item_name=li.item_name,
-                                     item_description=li.item_description,
-                                     item_code=li.item_code,
-                                     quantity_ordered=li.quantity_ordered,
-                                     quantity_received=li.quantity_received,
-                                     unit_code=li.unit_code,
-                                     unit_price=li.unit_price,
-                                     line_total=li.line_total,
-                                     tax_category=li.tax_category,
-                                     tax_percent=li.tax_percent)
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+            )
             for li in po.line_items
-        ])
+        ],
+    )
 
 
-@app.put("/purchase-orders/{po_id}",
-         tags=["AP Management"],
-         response_model=PurchaseOrderOut)
+@app.put(
+    "/purchase-orders/{po_id}", tags=["AP Management"], response_model=PurchaseOrderOut
+)
 def update_purchase_order(
     po_id: str,
     po_data: PurchaseOrderCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Update an existing purchase order
 
     Only DRAFT status POs can be updated
     """
-    po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.id == po_id,
-        PurchaseOrderDB.company_id == current_user.company_id).first()
+    po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.id == po_id,
+            PurchaseOrderDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not po:
         raise HTTPException(404, "Purchase order not found")
@@ -8606,10 +9072,13 @@ def update_purchase_order(
 
     # Parse dates
     from datetime import datetime as dt
+
     order_date = dt.fromisoformat(po_data.order_date).date()
-    expected_delivery_date = dt.fromisoformat(
-        po_data.expected_delivery_date).date(
-        ) if po_data.expected_delivery_date else None
+    expected_delivery_date = (
+        dt.fromisoformat(po_data.expected_delivery_date).date()
+        if po_data.expected_delivery_date
+        else None
+    )
 
     # Update PO fields
     po.po_number = po_data.po_number
@@ -8631,7 +9100,8 @@ def update_purchase_order(
 
     # Delete old line items
     db.query(PurchaseOrderLineItemDB).filter(
-        PurchaseOrderLineItemDB.po_id == po_id).delete()
+        PurchaseOrderLineItemDB.po_id == po_id
+    ).delete()
 
     # Create new line items
     for item_data in po_data.line_items:
@@ -8648,7 +9118,8 @@ def update_purchase_order(
             unit_price=item_data.unit_price,
             line_total=line_total,
             tax_category=item_data.tax_category,
-            tax_percent=item_data.tax_percent)
+            tax_percent=item_data.tax_percent,
+        )
         db.add(line_item)
 
     db.commit()
@@ -8666,7 +9137,8 @@ def update_purchase_order(
         supplier_peppol_id=po.supplier_peppol_id,
         order_date=po.order_date.isoformat(),
         expected_delivery_date=po.expected_delivery_date.isoformat()
-        if po.expected_delivery_date else None,
+        if po.expected_delivery_date
+        else None,
         delivery_address=po.delivery_address,
         currency_code=po.currency_code,
         expected_subtotal=po.expected_subtotal,
@@ -8683,35 +9155,44 @@ def update_purchase_order(
         created_at=po.created_at.isoformat(),
         updated_at=po.updated_at.isoformat(),
         line_items=[
-            PurchaseOrderLineItemOut(id=li.id,
-                                     line_number=li.line_number,
-                                     item_name=li.item_name,
-                                     item_description=li.item_description,
-                                     item_code=li.item_code,
-                                     quantity_ordered=li.quantity_ordered,
-                                     quantity_received=li.quantity_received,
-                                     unit_code=li.unit_code,
-                                     unit_price=li.unit_price,
-                                     line_total=li.line_total,
-                                     tax_category=li.tax_category,
-                                     tax_percent=li.tax_percent)
+            PurchaseOrderLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                item_code=li.item_code,
+                quantity_ordered=li.quantity_ordered,
+                quantity_received=li.quantity_received,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                line_total=li.line_total,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+            )
             for li in po.line_items
-        ])
+        ],
+    )
 
 
 @app.delete("/purchase-orders/{po_id}", tags=["AP Management"])
 def cancel_purchase_order(
     po_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Cancel a purchase order (soft delete)
 
     Only DRAFT and SENT status POs can be cancelled
     """
-    po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.id == po_id,
-        PurchaseOrderDB.company_id == current_user.company_id).first()
+    po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.id == po_id,
+            PurchaseOrderDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not po:
         raise HTTPException(404, "Purchase order not found")
@@ -8719,17 +9200,18 @@ def cancel_purchase_order(
     if po.status not in [PurchaseOrderStatus.DRAFT, PurchaseOrderStatus.SENT]:
         raise HTTPException(
             400,
-            f"Cannot cancel PO in {po.status.value} status. Only DRAFT and SENT POs can be cancelled."
+            f"Cannot cancel PO in {po.status.value} status. Only DRAFT and SENT POs can be cancelled.",
         )
 
     # Check if any invoices are matched to this PO
-    matched_invoices = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.po_id == po_id).count()
+    matched_invoices = (
+        db.query(InwardInvoiceDB).filter(InwardInvoiceDB.po_id == po_id).count()
+    )
 
     if matched_invoices > 0:
         raise HTTPException(
             400,
-            f"Cannot cancel PO. It has {matched_invoices} matched invoice(s). Unmatch invoices first."
+            f"Cannot cancel PO. It has {matched_invoices} matched invoice(s). Unmatch invoices first.",
         )
 
     # Cancel the PO
@@ -8742,7 +9224,7 @@ def cancel_purchase_order(
         "success": True,
         "message": f"Purchase order {po.po_number} cancelled",
         "po_id": po.id,
-        "po_number": po.po_number
+        "po_number": po.po_number,
     }
 
 
@@ -8750,15 +9232,21 @@ def cancel_purchase_order(
 def send_purchase_order(
     po_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Send purchase order to supplier (change status from DRAFT to SENT)
 
     This would integrate with email/PEPPOL sending in production
     """
-    po = db.query(PurchaseOrderDB).filter(
-        PurchaseOrderDB.id == po_id,
-        PurchaseOrderDB.company_id == current_user.company_id).first()
+    po = (
+        db.query(PurchaseOrderDB)
+        .filter(
+            PurchaseOrderDB.id == po_id,
+            PurchaseOrderDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not po:
         raise HTTPException(404, "Purchase order not found")
@@ -8782,7 +9270,7 @@ def send_purchase_order(
         "message": f"Purchase order {po.po_number} sent to {po.supplier_name}",
         "po_id": po.id,
         "po_number": po.po_number,
-        "supplier_email": po.supplier_contact_email
+        "supplier_email": po.supplier_contact_email,
     }
 
 
@@ -8794,12 +9282,12 @@ async def upload_company_logo(
     company_id: str,
     logo: UploadFile = File(...),
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Upload company logo (PNG/SVG, max 2MB)"""
     # Verify user owns this company
     if current_user.company_id != company_id:
-        raise HTTPException(403,
-                            "Not authorized to upload logo for this company")
+        raise HTTPException(403, "Not authorized to upload logo for this company")
 
     # Check if company has branding permission
     company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
@@ -8807,17 +9295,23 @@ async def upload_company_logo(
         raise HTTPException(404, "Company not found")
 
     # Get company's subscription plan
-    subscription = db.query(CompanySubscriptionDB).filter(
-        CompanySubscriptionDB.company_id == company_id).first()
+    subscription = (
+        db.query(CompanySubscriptionDB)
+        .filter(CompanySubscriptionDB.company_id == company_id)
+        .first()
+    )
 
     if subscription:
-        plan = db.query(SubscriptionPlanDB).filter(
-            SubscriptionPlanDB.id == subscription.plan_id).first()
+        plan = (
+            db.query(SubscriptionPlanDB)
+            .filter(SubscriptionPlanDB.id == subscription.plan_id)
+            .first()
+        )
 
         if plan and not plan.allow_branding:
             raise HTTPException(
                 403,
-                "Your subscription plan does not allow branding. Please upgrade to use this feature."
+                "Your subscription plan does not allow branding. Please upgrade to use this feature.",
             )
 
     # Validate file type and extension
@@ -8828,12 +9322,11 @@ async def upload_company_logo(
         raise HTTPException(400, "Only PNG and SVG files are allowed")
 
     # Additional validation: check file extension
-    file_ext = os.path.splitext(
-        logo.filename)[1].lower() if logo.filename else ""
+    file_ext = os.path.splitext(logo.filename)[1].lower() if logo.filename else ""
     if file_ext not in allowed_extensions:
         raise HTTPException(
             400,
-            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed"
+            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed",
         )
 
     # Read file content
@@ -8856,12 +9349,14 @@ async def upload_company_logo(
         f.write(content)
 
     # Get or create branding record
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding:
-        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}",
-                                     company_id=company_id)
+        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}", company_id=company_id)
         db.add(branding)
 
     # Delete old logo if exists
@@ -8881,7 +9376,7 @@ async def upload_company_logo(
         "message": "Logo uploaded successfully",
         "file_name": file_name,
         "file_size": file_size,
-        "uploaded_at": branding.logo_uploaded_at.isoformat()
+        "uploaded_at": branding.logo_uploaded_at.isoformat(),
     }
 
 
@@ -8890,12 +9385,12 @@ async def upload_company_stamp(
     company_id: str,
     stamp: UploadFile = File(...),
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Upload company stamp/seal (PNG/SVG, max 2MB)"""
     # Verify user owns this company
     if current_user.company_id != company_id:
-        raise HTTPException(403,
-                            "Not authorized to upload stamp for this company")
+        raise HTTPException(403, "Not authorized to upload stamp for this company")
 
     # Check if company has branding permission
     company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
@@ -8903,17 +9398,23 @@ async def upload_company_stamp(
         raise HTTPException(404, "Company not found")
 
     # Get company's subscription plan
-    subscription = db.query(CompanySubscriptionDB).filter(
-        CompanySubscriptionDB.company_id == company_id).first()
+    subscription = (
+        db.query(CompanySubscriptionDB)
+        .filter(CompanySubscriptionDB.company_id == company_id)
+        .first()
+    )
 
     if subscription:
-        plan = db.query(SubscriptionPlanDB).filter(
-            SubscriptionPlanDB.id == subscription.plan_id).first()
+        plan = (
+            db.query(SubscriptionPlanDB)
+            .filter(SubscriptionPlanDB.id == subscription.plan_id)
+            .first()
+        )
 
         if plan and not plan.allow_branding:
             raise HTTPException(
                 403,
-                "Your subscription plan does not allow branding. Please upgrade to use this feature."
+                "Your subscription plan does not allow branding. Please upgrade to use this feature.",
             )
 
     # Validate file type and extension
@@ -8924,12 +9425,11 @@ async def upload_company_stamp(
         raise HTTPException(400, "Only PNG and SVG files are allowed")
 
     # Additional validation: check file extension
-    file_ext = os.path.splitext(
-        stamp.filename)[1].lower() if stamp.filename else ""
+    file_ext = os.path.splitext(stamp.filename)[1].lower() if stamp.filename else ""
     if file_ext not in allowed_extensions:
         raise HTTPException(
             400,
-            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed"
+            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed",
         )
 
     # Read file content
@@ -8952,12 +9452,14 @@ async def upload_company_stamp(
         f.write(content)
 
     # Get or create branding record
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding:
-        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}",
-                                     company_id=company_id)
+        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}", company_id=company_id)
         db.add(branding)
 
     # Delete old stamp if exists
@@ -8977,7 +9479,7 @@ async def upload_company_stamp(
         "message": "Stamp uploaded successfully",
         "file_name": file_name,
         "file_size": file_size,
-        "uploaded_at": branding.stamp_uploaded_at.isoformat()
+        "uploaded_at": branding.stamp_uploaded_at.isoformat(),
     }
 
 
@@ -8985,15 +9487,18 @@ async def upload_company_stamp(
 def get_company_branding(
     company_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Get company branding information"""
     # Verify user owns this company
     if current_user.company_id != company_id:
-        raise HTTPException(
-            403, "Not authorized to view branding for this company")
+        raise HTTPException(403, "Not authorized to view branding for this company")
 
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding:
         return {
@@ -9010,46 +9515,38 @@ def get_company_branding(
             "font_family": None,
             "created_at": None,
             "updated_at": None,
-            "message": "No branding configured for this company"
+            "message": "No branding configured for this company",
         }
 
     return {
-        "id":
-        branding.id,
-        "company_id":
-        branding.company_id,
-        "logo_file_name":
-        branding.logo_file_name,
-        "logo_file_path":
-        branding.logo_file_path,
-        "logo_uploaded_at":
-        branding.logo_uploaded_at.isoformat()
-        if branding.logo_uploaded_at else None,
-        "stamp_file_name":
-        branding.stamp_file_name,
-        "stamp_file_path":
-        branding.stamp_file_path,
-        "stamp_uploaded_at":
-        branding.stamp_uploaded_at.isoformat()
-        if branding.stamp_uploaded_at else None,
-        "primary_color":
-        branding.primary_color,
-        "secondary_color":
-        branding.secondary_color,
-        "font_family":
-        branding.font_family,
-        "created_at":
-        branding.created_at.isoformat(),
-        "updated_at":
-        branding.updated_at.isoformat()
+        "id": branding.id,
+        "company_id": branding.company_id,
+        "logo_file_name": branding.logo_file_name,
+        "logo_file_path": branding.logo_file_path,
+        "logo_uploaded_at": branding.logo_uploaded_at.isoformat()
+        if branding.logo_uploaded_at
+        else None,
+        "stamp_file_name": branding.stamp_file_name,
+        "stamp_file_path": branding.stamp_file_path,
+        "stamp_uploaded_at": branding.stamp_uploaded_at.isoformat()
+        if branding.stamp_uploaded_at
+        else None,
+        "primary_color": branding.primary_color,
+        "secondary_color": branding.secondary_color,
+        "font_family": branding.font_family,
+        "created_at": branding.created_at.isoformat(),
+        "updated_at": branding.updated_at.isoformat(),
     }
 
 
 @app.get("/companies/{company_id}/branding/logo", tags=["Branding"])
 def get_company_logo(company_id: str, db: Session = Depends(get_db)):
     """Get company logo file (public endpoint for invoice display)"""
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding or not branding.logo_file_path:
         raise HTTPException(404, "Logo not found")
@@ -9057,16 +9554,21 @@ def get_company_logo(company_id: str, db: Session = Depends(get_db)):
     if not os.path.exists(branding.logo_file_path):
         raise HTTPException(404, "Logo file not found")
 
-    return FileResponse(branding.logo_file_path,
-                        media_type=branding.logo_mime_type,
-                        filename=branding.logo_file_name)
+    return FileResponse(
+        branding.logo_file_path,
+        media_type=branding.logo_mime_type,
+        filename=branding.logo_file_name,
+    )
 
 
 @app.get("/companies/{company_id}/branding/stamp", tags=["Branding"])
 def get_company_stamp(company_id: str, db: Session = Depends(get_db)):
     """Get company stamp file (public endpoint for invoice display)"""
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding or not branding.stamp_file_path:
         raise HTTPException(404, "Stamp not found")
@@ -9074,24 +9576,29 @@ def get_company_stamp(company_id: str, db: Session = Depends(get_db)):
     if not os.path.exists(branding.stamp_file_path):
         raise HTTPException(404, "Stamp file not found")
 
-    return FileResponse(branding.stamp_file_path,
-                        media_type=branding.stamp_mime_type,
-                        filename=branding.stamp_file_name)
+    return FileResponse(
+        branding.stamp_file_path,
+        media_type=branding.stamp_mime_type,
+        filename=branding.stamp_file_name,
+    )
 
 
 @app.delete("/companies/{company_id}/branding/logo", tags=["Branding"])
 def delete_company_logo(
     company_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Delete company logo"""
     # Verify user owns this company
     if current_user.company_id != company_id:
-        raise HTTPException(403,
-                            "Not authorized to delete logo for this company")
+        raise HTTPException(403, "Not authorized to delete logo for this company")
 
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding or not branding.logo_file_path:
         raise HTTPException(404, "Logo not found")
@@ -9116,15 +9623,18 @@ def delete_company_logo(
 def delete_company_stamp(
     company_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Delete company stamp"""
     # Verify user owns this company
     if current_user.company_id != company_id:
-        raise HTTPException(403,
-                            "Not authorized to delete stamp for this company")
+        raise HTTPException(403, "Not authorized to delete stamp for this company")
 
-    branding = db.query(CompanyBrandingDB).filter(
-        CompanyBrandingDB.company_id == company_id).first()
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
 
     if not branding or not branding.stamp_file_path:
         raise HTTPException(404, "Stamp not found")
@@ -9152,8 +9662,9 @@ def delete_company_stamp(
 def get_public_stats(db: Session = Depends(get_db)):
     """Get public statistics - visible to everyone"""
     # Count total active companies
-    total_companies = db.query(CompanyDB).filter(
-        CompanyDB.status == CompanyStatus.ACTIVE).count()
+    total_companies = (
+        db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE).count()
+    )
 
     # Count total invoices across all companies
     total_invoices = db.query(InvoiceDB).count()
@@ -9168,17 +9679,15 @@ def get_public_stats(db: Session = Depends(get_db)):
 def api_info():
     """API Info endpoint"""
     return {
-        "service":
-        "InvoLinks E-Invoicing API",
-        "version":
-        "2.0",
-        "status":
-        "running",
+        "service": "InvoLinks E-Invoicing API",
+        "version": "2.0",
+        "status": "running",
         "features": [
-            "Multi-step registration wizard", "Document upload system",
+            "Multi-step registration wizard",
+            "Document upload system",
             "Subscription plans (Starter, Professional, Enterprise)",
-            "Admin approval workflow"
-        ]
+            "Admin approval workflow",
+        ],
     }
 
 
@@ -9192,7 +9701,7 @@ def health_check(db: Session = Depends(get_db)):
             "status": "healthy",
             "database": "connected",
             "companies": company_count,
-            "plans": plan_count
+            "plans": plan_count,
         }
     except Exception as e:
         raise HTTPException(500, f"Health check failed: {str(e)}")
@@ -9209,19 +9718,21 @@ def restore_superadmin(db: Session = Depends(get_db)):
 
     if not user:
         # Create if doesn't exist
-        user = UserDB(id=f"user_{uuid4().hex[:8]}",
-                      email=super_admin_email,
-                      password_hash=get_password_hash(super_admin_password),
-                      role=Role.SUPER_ADMIN,
-                      company_id=None,
-                      is_owner=False,
-                      full_name="Super Admin")
+        user = UserDB(
+            id=f"user_{uuid4().hex[:8]}",
+            email=super_admin_email,
+            password_hash=get_password_hash(super_admin_password),
+            role=Role.SUPER_ADMIN,
+            company_id=None,
+            is_owner=False,
+            full_name="Super Admin",
+        )
         db.add(user)
         db.commit()
         return {
             "success": True,
             "message": "Super Admin created",
-            "email": super_admin_email
+            "email": super_admin_email,
         }
     else:
         # Restore role and password
@@ -9233,7 +9744,7 @@ def restore_superadmin(db: Session = Depends(get_db)):
         return {
             "success": True,
             "message": "Super Admin role restored",
-            "email": super_admin_email
+            "email": super_admin_email,
         }
 
 
@@ -9246,28 +9757,31 @@ def generate_fta_audit_file(
     period_end: str,  # YYYY-MM-DD
     format: str = "CSV",  # CSV or TXT
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """
     Generate FTA Audit File (FAF) for a specific period
 
     UAE Federal Tax Authority compliant audit file with invoice-level detail.
     """
     # Verify company exists and is active
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     if company.status != CompanyStatus.ACTIVE:
-        raise HTTPException(400,
-                            "Company must be ACTIVE to generate audit files")
+        raise HTTPException(400, "Company must be ACTIVE to generate audit files")
 
     if not company.trn:
         raise HTTPException(
-            400, "Company must have a valid TRN to generate audit files")
+            400, "Company must have a valid TRN to generate audit files"
+        )
 
     # Parse and validate dates
     from datetime import datetime as dt
+
     try:
         start_date = dt.strptime(period_start, "%Y-%m-%d").date()
         end_date = dt.strptime(period_end, "%Y-%m-%d").date()
@@ -9280,14 +9794,13 @@ def generate_fta_audit_file(
     # Validate date range is reasonable (not in future, not before company registration)
     today = date.today()
     if end_date > today:
-        raise HTTPException(
-            400, f"End date cannot be in the future (today is {today})")
+        raise HTTPException(400, f"End date cannot be in the future (today is {today})")
 
     if company.registration_date:
         if start_date < company.registration_date:
             raise HTTPException(
                 400,
-                f"Start date cannot be before company registration date ({company.registration_date})"
+                f"Start date cannot be before company registration date ({company.registration_date})",
             )
 
     # Validate period is not excessively long (max 5 years for single audit file)
@@ -9295,7 +9808,7 @@ def generate_fta_audit_file(
     if period_days > 365 * 5:
         raise HTTPException(
             400,
-            "Audit period cannot exceed 5 years. Please generate separate files for longer periods."
+            "Audit period cannot exceed 5 years. Please generate separate files for longer periods.",
         )
 
     # Validate format
@@ -9304,93 +9817,103 @@ def generate_fta_audit_file(
 
     # Create audit file record
     audit_file_id = f"faf_{uuid4().hex[:12]}"
-    file_name = f"FTA_Audit_File_{company.trn}_{period_start}_to_{period_end}.{format.lower()}"
-    file_path = os.path.join(ARTIFACT_ROOT, "audit_files", company.id,
-                             file_name)
+    file_name = (
+        f"FTA_Audit_File_{company.trn}_{period_start}_to_{period_end}.{format.lower()}"
+    )
+    file_path = os.path.join(ARTIFACT_ROOT, "audit_files", company.id, file_name)
 
-    audit_file = AuditFileDB(id=audit_file_id,
-                             company_id=company.id,
-                             file_name=file_name,
-                             file_path=file_path,
-                             format=format.upper(),
-                             period_start_date=start_date,
-                             period_end_date=end_date,
-                             status=AuditFileStatus.GENERATING,
-                             generated_by_user_id=current_user.id)
+    audit_file = AuditFileDB(
+        id=audit_file_id,
+        company_id=company.id,
+        file_name=file_name,
+        file_path=file_path,
+        format=format.upper(),
+        period_start_date=start_date,
+        period_end_date=end_date,
+        status=AuditFileStatus.GENERATING,
+        generated_by_user_id=current_user.id,
+    )
 
     db.add(audit_file)
     db.commit()
 
     try:
         # Get outgoing invoices (sales) for the period
-        outgoing_invoices = db.query(InvoiceDB).filter(
-            InvoiceDB.company_id == company.id,
-            InvoiceDB.issue_date >= start_date,
-            InvoiceDB.issue_date <= end_date,
-            InvoiceDB.status != InvoiceStatus.DRAFT,  # Exclude drafts
-            InvoiceDB.status != InvoiceStatus.CANCELLED  # Exclude cancelled
-        ).all()
+        outgoing_invoices = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.company_id == company.id,
+                InvoiceDB.issue_date >= start_date,
+                InvoiceDB.issue_date <= end_date,
+                InvoiceDB.status != InvoiceStatus.DRAFT,  # Exclude drafts
+                InvoiceDB.status != InvoiceStatus.CANCELLED,  # Exclude cancelled
+            )
+            .all()
+        )
 
         # Get inward invoices (purchases) for the period
-        inward_invoices = db.query(InwardInvoiceDB).filter(
-            InwardInvoiceDB.company_id == company.id,
-            InwardInvoiceDB.invoice_date >= start_date,
-            InwardInvoiceDB.invoice_date <= end_date, InwardInvoiceDB.status
-            != InwardInvoiceStatus.CANCELLED).all()
+        inward_invoices = (
+            db.query(InwardInvoiceDB)
+            .filter(
+                InwardInvoiceDB.company_id == company.id,
+                InwardInvoiceDB.invoice_date >= start_date,
+                InwardInvoiceDB.invoice_date <= end_date,
+                InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED,
+            )
+            .all()
+        )
 
         # Convert to dicts for generator
-        outgoing_data = [{
-            "invoice_number": inv.invoice_number,
-            "issue_date": inv.issue_date,
-            "invoice_type": inv.invoice_type.value,
-            "customer_trn": inv.customer_trn,
-            "customer_name": inv.customer_name,
-            "customer_country": inv.customer_country,
-            "subtotal_amount": inv.subtotal_amount,
-            "tax_amount": inv.tax_amount,
-            "total_amount": inv.total_amount,
-            "currency_code": inv.currency_code,
-            "status": inv.status.value
-        } for inv in outgoing_invoices]
+        outgoing_data = [
+            {
+                "invoice_number": inv.invoice_number,
+                "issue_date": inv.issue_date,
+                "invoice_type": inv.invoice_type.value,
+                "customer_trn": inv.customer_trn,
+                "customer_name": inv.customer_name,
+                "customer_country": inv.customer_country,
+                "subtotal_amount": inv.subtotal_amount,
+                "tax_amount": inv.tax_amount,
+                "total_amount": inv.total_amount,
+                "currency_code": inv.currency_code,
+                "status": inv.status.value,
+            }
+            for inv in outgoing_invoices
+        ]
 
-        inward_data = [{
-            "supplier_invoice_number": inv.supplier_invoice_number,
-            "invoice_date": inv.invoice_date,
-            "invoice_type": inv.invoice_type.value,
-            "supplier_trn": inv.supplier_trn,
-            "supplier_name": inv.supplier_name,
-            "subtotal_amount": inv.subtotal_amount,
-            "tax_amount": inv.tax_amount,
-            "total_amount": inv.total_amount,
-            "currency_code": inv.currency_code,
-            "status": inv.status.value
-        } for inv in inward_invoices]
+        inward_data = [
+            {
+                "supplier_invoice_number": inv.supplier_invoice_number,
+                "invoice_date": inv.invoice_date,
+                "invoice_type": inv.invoice_type.value,
+                "supplier_trn": inv.supplier_trn,
+                "supplier_name": inv.supplier_name,
+                "subtotal_amount": inv.subtotal_amount,
+                "tax_amount": inv.tax_amount,
+                "total_amount": inv.total_amount,
+                "currency_code": inv.currency_code,
+                "status": inv.status.value,
+            }
+            for inv in inward_invoices
+        ]
 
         # Generate audit file using utility
         from utils.fta_audit_generator import FTAAuditFileGenerator
 
         company_data = {
-            "trn":
-            company.trn,
-            "legal_name":
-            company.legal_name,
-            "address":
-            f"{company.address_line1 or ''} {company.address_line2 or ''}".
-            strip(),
-            "city":
-            company.city,
-            "emirate":
-            company.emirate
+            "trn": company.trn,
+            "legal_name": company.legal_name,
+            "address": f"{company.address_line1 or ''} {company.address_line2 or ''}".strip(),
+            "city": company.city,
+            "emirate": company.emirate,
         }
 
         generator = FTAAuditFileGenerator(company_data)
 
         if format.upper() == "CSV":
-            stats = generator.generate_csv(outgoing_data, inward_data,
-                                           file_path)
+            stats = generator.generate_csv(outgoing_data, inward_data, file_path)
         else:
-            stats = generator.generate_txt(outgoing_data, inward_data,
-                                           file_path)
+            stats = generator.generate_txt(outgoing_data, inward_data, file_path)
 
         # Update audit file record with stats
         audit_file.status = AuditFileStatus.COMPLETED
@@ -9416,8 +9939,8 @@ def generate_fta_audit_file(
                 "total_purchases": stats.get("total_purchases", 0),
                 "total_customers": audit_file.total_customers,
                 "total_amount": audit_file.total_amount,
-                "total_vat": audit_file.total_vat
-            }
+                "total_vat": audit_file.total_vat,
+            },
         }
 
     except Exception as e:
@@ -9431,40 +9954,37 @@ def generate_fta_audit_file(
 
 @app.get("/audit-files", tags=["FTA Audit"])
 def list_audit_files(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """List all FTA Audit Files for the company"""
-    audit_files = db.query(AuditFileDB).filter(
-        AuditFileDB.company_id == current_user.company_id).order_by(
-            AuditFileDB.created_at.desc()).all()
+    audit_files = (
+        db.query(AuditFileDB)
+        .filter(AuditFileDB.company_id == current_user.company_id)
+        .order_by(AuditFileDB.created_at.desc())
+        .all()
+    )
 
     return {
-        "audit_files": [{
-            "id":
-            af.id,
-            "file_name":
-            af.file_name,
-            "format":
-            af.format,
-            "period_start":
-            af.period_start_date.isoformat(),
-            "period_end":
-            af.period_end_date.isoformat(),
-            "status":
-            af.status.value,
-            "total_invoices":
-            af.total_invoices,
-            "total_amount":
-            af.total_amount,
-            "total_vat":
-            af.total_vat,
-            "file_size":
-            af.file_size,
-            "generated_at":
-            af.generated_at.isoformat() if af.generated_at else None,
-            "error_message":
-            af.error_message
-        } for af in audit_files]
+        "audit_files": [
+            {
+                "id": af.id,
+                "file_name": af.file_name,
+                "format": af.format,
+                "period_start": af.period_start_date.isoformat(),
+                "period_end": af.period_end_date.isoformat(),
+                "status": af.status.value,
+                "total_invoices": af.total_invoices,
+                "total_amount": af.total_amount,
+                "total_vat": af.total_vat,
+                "file_size": af.file_size,
+                "generated_at": af.generated_at.isoformat()
+                if af.generated_at
+                else None,
+                "error_message": af.error_message,
+            }
+            for af in audit_files
+        ]
     }
 
 
@@ -9472,11 +9992,17 @@ def list_audit_files(
 def download_audit_file(
     audit_file_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Download an FTA Audit File"""
-    audit_file = db.query(AuditFileDB).filter(
-        AuditFileDB.id == audit_file_id,
-        AuditFileDB.company_id == current_user.company_id).first()
+    audit_file = (
+        db.query(AuditFileDB)
+        .filter(
+            AuditFileDB.id == audit_file_id,
+            AuditFileDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not audit_file:
         raise HTTPException(404, "Audit file not found")
@@ -9484,7 +10010,7 @@ def download_audit_file(
     if audit_file.status != AuditFileStatus.COMPLETED:
         raise HTTPException(
             400,
-            f"Audit file is not ready for download. Status: {audit_file.status.value}"
+            f"Audit file is not ready for download. Status: {audit_file.status.value}",
         )
 
     if not os.path.exists(audit_file.file_path):
@@ -9493,9 +10019,9 @@ def download_audit_file(
     # Determine media type
     media_type = "text/csv" if audit_file.format == "CSV" else "text/plain"
 
-    return FileResponse(path=audit_file.file_path,
-                        media_type=media_type,
-                        filename=audit_file.file_name)
+    return FileResponse(
+        path=audit_file.file_path, media_type=media_type, filename=audit_file.file_name
+    )
 
 
 # ==================== PEPPOL SETTINGS ====================
@@ -9503,32 +10029,30 @@ def download_audit_file(
 
 @app.get("/settings/peppol", tags=["Settings"])
 def get_peppol_settings(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get PEPPOL configuration for the company"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     return {
-        "peppol_enabled":
-        company.peppol_enabled or False,
-        "peppol_provider":
-        company.peppol_provider,
-        "peppol_participant_id":
-        company.peppol_participant_id,
-        "peppol_base_url":
-        company.peppol_base_url,
-        "peppol_api_key":
-        "***" + company.peppol_api_key[-4:] if company.peppol_api_key
-        and len(company.peppol_api_key) > 4 else None,  # Masked
-        "peppol_configured_at":
-        company.peppol_configured_at.isoformat()
-        if company.peppol_configured_at else None,
-        "peppol_last_tested_at":
-        company.peppol_last_tested_at.isoformat()
-        if company.peppol_last_tested_at else None
+        "peppol_enabled": company.peppol_enabled or False,
+        "peppol_provider": company.peppol_provider,
+        "peppol_participant_id": company.peppol_participant_id,
+        "peppol_base_url": company.peppol_base_url,
+        "peppol_api_key": "***" + company.peppol_api_key[-4:]
+        if company.peppol_api_key and len(company.peppol_api_key) > 4
+        else None,  # Masked
+        "peppol_configured_at": company.peppol_configured_at.isoformat()
+        if company.peppol_configured_at
+        else None,
+        "peppol_last_tested_at": company.peppol_last_tested_at.isoformat()
+        if company.peppol_last_tested_at
+        else None,
     }
 
 
@@ -9536,32 +10060,36 @@ def get_peppol_settings(
 def update_peppol_settings(
     settings: dict,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update PEPPOL configuration for the company"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Validate provider
-    valid_providers = ['tradeshift', 'basware', 'mock']
-    if settings.get('peppol_provider'
-                    ) and settings['peppol_provider'] not in valid_providers:
+    valid_providers = ["tradeshift", "basware", "mock"]
+    if (
+        settings.get("peppol_provider")
+        and settings["peppol_provider"] not in valid_providers
+    ):
         raise HTTPException(
-            400,
-            f"Invalid provider. Must be one of: {', '.join(valid_providers)}")
+            400, f"Invalid provider. Must be one of: {', '.join(valid_providers)}"
+        )
 
     # Update settings
-    company.peppol_enabled = settings.get('peppol_enabled', False)
-    company.peppol_provider = settings.get('peppol_provider')
-    company.peppol_participant_id = settings.get('peppol_participant_id')
-    company.peppol_base_url = settings.get('peppol_base_url')
+    company.peppol_enabled = settings.get("peppol_enabled", False)
+    company.peppol_provider = settings.get("peppol_provider")
+    company.peppol_participant_id = settings.get("peppol_participant_id")
+    company.peppol_base_url = settings.get("peppol_base_url")
 
     # Only update API key if provided and not masked
     # This preserves the existing key when user updates other fields
-    if 'peppol_api_key' in settings and settings['peppol_api_key']:
-        if not settings['peppol_api_key'].startswith('***'):
-            company.peppol_api_key = settings['peppol_api_key']
+    if "peppol_api_key" in settings and settings["peppol_api_key"]:
+        if not settings["peppol_api_key"].startswith("***"):
+            company.peppol_api_key = settings["peppol_api_key"]
         # If masked, skip update to preserve existing key
 
     company.peppol_configured_at = datetime.utcnow()
@@ -9574,17 +10102,19 @@ def update_peppol_settings(
         "message": "PEPPOL settings updated successfully",
         "peppol_enabled": company.peppol_enabled,
         "peppol_provider": company.peppol_provider,
-        "peppol_participant_id": company.peppol_participant_id
+        "peppol_participant_id": company.peppol_participant_id,
     }
 
 
 @app.post("/settings/peppol/test", tags=["Settings"])
 def test_peppol_connection(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Test PEPPOL provider connection"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
@@ -9601,12 +10131,12 @@ def test_peppol_connection(
         provider = PeppolProviderFactory.create_provider(
             provider_name=company.peppol_provider,
             base_url=company.peppol_base_url,
-            api_key=company.peppol_api_key)
+            api_key=company.peppol_api_key,
+        )
 
         # Test with participant ID validation
         if company.peppol_participant_id:
-            is_valid = provider.validate_participant_id(
-                company.peppol_participant_id)
+            is_valid = provider.validate_participant_id(company.peppol_participant_id)
 
             # Update last tested timestamp
             company.peppol_last_tested_at = datetime.utcnow()
@@ -9617,7 +10147,7 @@ def test_peppol_connection(
                 "message": "PEPPOL connection test successful",
                 "provider": company.peppol_provider,
                 "participant_valid": is_valid,
-                "tested_at": company.peppol_last_tested_at.isoformat()
+                "tested_at": company.peppol_last_tested_at.isoformat(),
             }
         else:
             # Just test provider connectivity without participant validation
@@ -9626,17 +10156,16 @@ def test_peppol_connection(
 
             return {
                 "success": True,
-                "message":
-                "PEPPOL provider connection successful (no participant ID to validate)",
+                "message": "PEPPOL provider connection successful (no participant ID to validate)",
                 "provider": company.peppol_provider,
-                "tested_at": company.peppol_last_tested_at.isoformat()
+                "tested_at": company.peppol_last_tested_at.isoformat(),
             }
 
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
-            "message": "PEPPOL connection test failed"
+            "message": "PEPPOL connection test failed",
         }
 
 
@@ -9645,28 +10174,26 @@ def test_peppol_connection(
 
 @app.get("/settings/vat", tags=["Settings"])
 def get_vat_settings(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get VAT registration configuration for the company"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Always return TRN if it exists, regardless of vat_enabled status
     # This preserves TRN data if user temporarily disables VAT
     return {
-        "vat_enabled":
-        company.vat_enabled or False,
-        "tax_registration_number":
-        company.trn or '',
-        "vat_registration_date":
-        company.vat_registration_date.isoformat()
-        if company.vat_registration_date else None,
-        "formatted_trn":
-        format_trn(company.trn) if company.trn else None,
-        "vat_certificate_uploaded":
-        company.vat_certificate_path is not None
+        "vat_enabled": company.vat_enabled or False,
+        "tax_registration_number": company.trn or "",
+        "vat_registration_date": company.vat_registration_date.isoformat()
+        if company.vat_registration_date
+        else None,
+        "formatted_trn": format_trn(company.trn) if company.trn else None,
+        "vat_certificate_uploaded": company.vat_certificate_path is not None,
     }
 
 
@@ -9674,29 +10201,31 @@ def get_vat_settings(
 def update_vat_settings(
     settings: dict,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Update VAT registration configuration for the company"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Get VAT enabled status from request
-    vat_enabled = settings.get('vat_enabled', False)
+    vat_enabled = settings.get("vat_enabled", False)
 
     # If enabling VAT, validate TRN
     if vat_enabled:
-        trn = settings.get('tax_registration_number', '').strip()
+        trn = settings.get("tax_registration_number", "").strip()
 
         if not trn:
             raise HTTPException(
-                400,
-                "Tax Registration Number (TRN) is required when enabling VAT")
+                400, "Tax Registration Number (TRN) is required when enabling VAT"
+            )
 
         if not is_valid_trn(trn):
             raise HTTPException(
                 400,
-                "Invalid TRN format. Must be exactly 15 digits (e.g., 123456789012345)"
+                "Invalid TRN format. Must be exactly 15 digits (e.g., 123456789012345)",
             )
 
         # Update company with VAT details
@@ -9704,10 +10233,12 @@ def update_vat_settings(
         company.trn = trn
 
         # Set registration date if provided, otherwise use today (UTC)
-        if settings.get('vat_registration_date'):
+        if settings.get("vat_registration_date"):
             from datetime import datetime as dt
+
             company.vat_registration_date = dt.fromisoformat(
-                settings['vat_registration_date']).date()
+                settings["vat_registration_date"]
+            ).date()
         elif not company.vat_registration_date:
             # Use UTC datetime to ensure consistency across timezones
             company.vat_registration_date = datetime.utcnow().date()
@@ -9716,19 +10247,14 @@ def update_vat_settings(
         db.refresh(company)
 
         return {
-            "success":
-            True,
-            "message":
-            "VAT registration enabled successfully",
-            "vat_enabled":
-            True,
-            "tax_registration_number":
-            company.trn,
-            "formatted_trn":
-            format_trn(company.trn),
-            "vat_registration_date":
-            company.vat_registration_date.isoformat()
-            if company.vat_registration_date else None
+            "success": True,
+            "message": "VAT registration enabled successfully",
+            "vat_enabled": True,
+            "tax_registration_number": company.trn,
+            "formatted_trn": format_trn(company.trn),
+            "vat_registration_date": company.vat_registration_date.isoformat()
+            if company.vat_registration_date
+            else None,
         }
     else:
         # Disabling VAT - just set vat_enabled to False, keep TRN for records
@@ -9740,18 +10266,20 @@ def update_vat_settings(
         return {
             "success": True,
             "message": "VAT registration disabled",
-            "vat_enabled": False
+            "vat_enabled": False,
         }
 
 
 @app.post("/settings/vat/certificate", tags=["Settings"])
 async def upload_vat_certificate(
-        file: UploadFile = File(...),
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Upload VAT registration certificate (PDF only)"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
@@ -9768,8 +10296,7 @@ async def upload_vat_certificate(
 
     # Delete old certificate if exists
     if company.vat_certificate_path:
-        old_file_path = os.path.join(ARTIFACT_ROOT,
-                                     company.vat_certificate_path)
+        old_file_path = os.path.join(ARTIFACT_ROOT, company.vat_certificate_path)
         if os.path.exists(old_file_path):
             try:
                 os.remove(old_file_path)
@@ -9787,7 +10314,7 @@ async def upload_vat_certificate(
     full_path = os.path.join(ARTIFACT_ROOT, relative_path)
 
     # Save file
-    with open(full_path, 'wb') as f:
+    with open(full_path, "wb") as f:
         f.write(contents)
 
     # Update company record with relative path
@@ -9795,19 +10322,18 @@ async def upload_vat_certificate(
     db.commit()
     db.refresh(company)
 
-    return {
-        "success": True,
-        "message": "VAT certificate uploaded successfully"
-    }
+    return {"success": True, "message": "VAT certificate uploaded successfully"}
 
 
 @app.get("/settings/vat/certificate", tags=["Settings"])
 def download_vat_certificate(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Download VAT registration certificate"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
@@ -9819,9 +10345,9 @@ def download_vat_certificate(
     if not os.path.exists(file_path):
         raise HTTPException(404, "Certificate file not found")
 
-    return FileResponse(file_path,
-                        media_type="application/pdf",
-                        filename="vat_certificate.pdf")
+    return FileResponse(
+        file_path, media_type="application/pdf", filename="vat_certificate.pdf"
+    )
 
 
 # ==================== BILLING & SUBSCRIPTIONS ====================
@@ -9870,21 +10396,23 @@ class TrialStatusOut(BaseModel):
 
 @app.post("/billing/payment-methods", tags=["Billing"])
 async def add_payment_method(
-        payment_method_token: str = Form(...),
-        billing_name: str = Form(...),
-        billing_email: str = Form(...),
-        set_as_default: bool = Form(False),
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    payment_method_token: str = Form(...),
+    billing_name: str = Form(...),
+    billing_email: str = Form(...),
+    set_as_default: bool = Form(False),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Add a new payment method (credit card) via Stripe"""
     try:
         if not STRIPE_SECRET_KEY:
             raise HTTPException(
-                503,
-                "Payment processing not configured. Please contact support.")
+                503, "Payment processing not configured. Please contact support."
+            )
 
-        company = db.query(CompanyDB).filter(
-            CompanyDB.id == current_user.company_id).first()
+        company = (
+            db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+        )
         if not company:
             raise HTTPException(404, "Company not found")
 
@@ -9893,41 +10421,42 @@ async def add_payment_method(
             customer = stripe.Customer.create(
                 email=billing_email,
                 name=company.legal_name or billing_name,
-                metadata={"company_id": company.id})
+                metadata={"company_id": company.id},
+            )
             company.stripe_customer_id = customer.id
             db.commit()
 
         # Attach payment method to customer
         payment_method = stripe.PaymentMethod.attach(
-            payment_method_token, customer=company.stripe_customer_id)
+            payment_method_token, customer=company.stripe_customer_id
+        )
 
         # Set as default if requested
         if set_as_default:
             stripe.Customer.modify(
                 company.stripe_customer_id,
-                invoice_settings={"default_payment_method": payment_method.id})
+                invoice_settings={"default_payment_method": payment_method.id},
+            )
 
         # Save to database
-        pm_db = PaymentMethodDB(id=f"pm_{uuid4().hex[:12]}",
-                                company_id=company.id,
-                                stripe_payment_method_id=payment_method.id,
-                                card_brand=payment_method.card.brand
-                                if payment_method.card else None,
-                                card_last4=payment_method.card.last4
-                                if payment_method.card else None,
-                                exp_month=payment_method.card.exp_month
-                                if payment_method.card else None,
-                                exp_year=payment_method.card.exp_year
-                                if payment_method.card else None,
-                                billing_email=billing_email,
-                                billing_name=billing_name,
-                                is_default=set_as_default)
+        pm_db = PaymentMethodDB(
+            id=f"pm_{uuid4().hex[:12]}",
+            company_id=company.id,
+            stripe_payment_method_id=payment_method.id,
+            card_brand=payment_method.card.brand if payment_method.card else None,
+            card_last4=payment_method.card.last4 if payment_method.card else None,
+            exp_month=payment_method.card.exp_month if payment_method.card else None,
+            exp_year=payment_method.card.exp_year if payment_method.card else None,
+            billing_email=billing_email,
+            billing_name=billing_name,
+            is_default=set_as_default,
+        )
 
         # If setting as default, unset others
         if set_as_default:
             db.query(PaymentMethodDB).filter(
-                PaymentMethodDB.company_id == company.id, PaymentMethodDB.id
-                != pm_db.id).update({"is_default": False})
+                PaymentMethodDB.company_id == company.id, PaymentMethodDB.id != pm_db.id
+            ).update({"is_default": False})
 
         db.add(pm_db)
         db.commit()
@@ -9935,7 +10464,7 @@ async def add_payment_method(
         return {
             "message": "Payment method added successfully",
             "payment_method_id": pm_db.id,
-            "card_last4": pm_db.card_last4
+            "card_last4": pm_db.card_last4,
         }
 
     except stripe.error.CardError as e:
@@ -9946,27 +10475,32 @@ async def add_payment_method(
         raise HTTPException(500, f"Failed to add payment method: {str(e)}")
 
 
-@app.get("/billing/payment-methods",
-         tags=["Billing"],
-         response_model=List[PaymentMethodOut])
+@app.get(
+    "/billing/payment-methods", tags=["Billing"], response_model=List[PaymentMethodOut]
+)
 async def list_payment_methods(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """List all payment methods for current company"""
-    payment_methods = db.query(PaymentMethodDB).filter(
-        PaymentMethodDB.company_id == current_user.company_id).order_by(
-            PaymentMethodDB.is_default.desc(),
-            PaymentMethodDB.created_at.desc()).all()
+    payment_methods = (
+        db.query(PaymentMethodDB)
+        .filter(PaymentMethodDB.company_id == current_user.company_id)
+        .order_by(PaymentMethodDB.is_default.desc(), PaymentMethodDB.created_at.desc())
+        .all()
+    )
 
     return [
-        PaymentMethodOut(id=pm.id,
-                         card_brand=pm.card_brand or "unknown",
-                         card_last4=pm.card_last4 or "0000",
-                         exp_month=pm.exp_month or 1,
-                         exp_year=pm.exp_year or 2025,
-                         billing_name=pm.billing_name or "",
-                         is_default=pm.is_default,
-                         created_at=pm.created_at.isoformat())
+        PaymentMethodOut(
+            id=pm.id,
+            card_brand=pm.card_brand or "unknown",
+            card_last4=pm.card_last4 or "0000",
+            exp_month=pm.exp_month or 1,
+            exp_year=pm.exp_year or 2025,
+            billing_name=pm.billing_name or "",
+            is_default=pm.is_default,
+            created_at=pm.created_at.isoformat(),
+        )
         for pm in payment_methods
     ]
 
@@ -9975,11 +10509,17 @@ async def list_payment_methods(
 async def delete_payment_method(
     payment_method_id: str,
     current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+):
     """Delete a payment method"""
-    pm = db.query(PaymentMethodDB).filter(
-        PaymentMethodDB.id == payment_method_id,
-        PaymentMethodDB.company_id == current_user.company_id).first()
+    pm = (
+        db.query(PaymentMethodDB)
+        .filter(
+            PaymentMethodDB.id == payment_method_id,
+            PaymentMethodDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
 
     if not pm:
         raise HTTPException(404, "Payment method not found")
@@ -10000,12 +10540,18 @@ async def delete_payment_method(
 
 @app.get("/billing/subscription", tags=["Billing"])
 async def get_current_subscription(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get current subscription details"""
-    subscription = db.query(SubscriptionDB).filter(
-        SubscriptionDB.company_id == current_user.company_id,
-        SubscriptionDB.status == "ACTIVE").first()
+    subscription = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == current_user.company_id,
+            SubscriptionDB.status == "ACTIVE",
+        )
+        .first()
+    )
 
     if not subscription:
         return {
@@ -10018,7 +10564,7 @@ async def get_current_subscription(
             "current_period_start": None,
             "current_period_end": None,
             "created_at": None,
-            "message": "No active subscription found"
+            "message": "No active subscription found",
         }
 
     return {
@@ -10030,24 +10576,31 @@ async def get_current_subscription(
         "status": subscription.status,
         "current_period_start": subscription.current_period_start.isoformat(),
         "current_period_end": subscription.current_period_end.isoformat(),
-        "created_at": subscription.created_at.isoformat()
+        "created_at": subscription.created_at.isoformat(),
     }
 
 
 @app.get("/subscription/current", tags=["Subscriptions"])
 def get_subscription_plan_info(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get current subscription plan with tier limits"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
     # Check for active paid subscription
-    subscription = db.query(SubscriptionDB).filter(
-        SubscriptionDB.company_id == current_user.company_id,
-        SubscriptionDB.status == "ACTIVE").first()
+    subscription = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == current_user.company_id,
+            SubscriptionDB.status == "ACTIVE",
+        )
+        .first()
+    )
 
     if subscription:
         # Return paid plan details
@@ -10055,18 +10608,14 @@ def get_subscription_plan_info(
             "BASIC": {
                 "name": "Basic",
                 "max_business_admins": 2,
-                "max_finance_users": 5
+                "max_finance_users": 5,
             },
-            "PRO": {
-                "name": "Pro",
-                "max_business_admins": 5,
-                "max_finance_users": 15
-            },
+            "PRO": {"name": "Pro", "max_business_admins": 5, "max_finance_users": 15},
             "ENTERPRISE": {
                 "name": "Enterprise",
                 "max_business_admins": 999,
-                "max_finance_users": 999
-            }
+                "max_finance_users": 999,
+            },
         }
         plan_info = tier_limits.get(subscription.tier, tier_limits["BASIC"])
         return {
@@ -10074,9 +10623,9 @@ def get_subscription_plan_info(
                 "name": plan_info["name"],
                 "tier": subscription.tier,
                 "max_business_admins": plan_info["max_business_admins"],
-                "max_finance_users": plan_info["max_finance_users"]
+                "max_finance_users": plan_info["max_finance_users"],
             },
-            "status": "ACTIVE"
+            "status": "ACTIVE",
         }
     else:
         # Return free trial limits
@@ -10085,43 +10634,37 @@ def get_subscription_plan_info(
                 "name": "Free Trial",
                 "tier": "TRIAL",
                 "max_business_admins": 1,
-                "max_finance_users": 3
+                "max_finance_users": 3,
             },
-            "status": company.trial_status or "ACTIVE"
+            "status": company.trial_status or "ACTIVE",
         }
 
 
 @app.post("/billing/subscribe", tags=["Billing"])
 async def create_subscription(
-        tier: str = Form(...),  # BASIC, PRO, ENTERPRISE
-        billing_cycle_months: int = Form(1),  # 1, 3, 6
-        payment_method_id: str = Form(...),
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    tier: str = Form(...),  # BASIC, PRO, ENTERPRISE
+    billing_cycle_months: int = Form(1),  # 1, 3, 6
+    payment_method_id: str = Form(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Create new subscription after trial"""
     try:
-        company = db.query(CompanyDB).filter(
-            CompanyDB.id == current_user.company_id).first()
+        company = (
+            db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+        )
         if not company:
             raise HTTPException(404, "Company not found")
 
         # Define pricing (these should come from a pricing table in production)
         pricing = {
-            "BASIC": {
-                "monthly": 99.0,
-                "3month_discount": 5,
-                "6month_discount": 10
-            },
-            "PRO": {
-                "monthly": 299.0,
-                "3month_discount": 5,
-                "6month_discount": 10
-            },
+            "BASIC": {"monthly": 99.0, "3month_discount": 5, "6month_discount": 10},
+            "PRO": {"monthly": 299.0, "3month_discount": 5, "6month_discount": 10},
             "ENTERPRISE": {
                 "monthly": 799.0,
                 "3month_discount": 10,
-                "6month_discount": 15
-            }
+                "6month_discount": 15,
+            },
         }
 
         if tier not in pricing:
@@ -10158,9 +10701,10 @@ async def create_subscription(
             discount_percent=discount_percent,
             status="ACTIVE",
             current_period_start=datetime.utcnow(),
-            current_period_end=datetime.utcnow() +
-            timedelta(days=30 * billing_cycle_months),
-            stripe_customer_id=company.stripe_customer_id)
+            current_period_end=datetime.utcnow()
+            + timedelta(days=30 * billing_cycle_months),
+            stripe_customer_id=company.stripe_customer_id,
+        )
 
         db.add(subscription)
         db.commit()
@@ -10172,7 +10716,7 @@ async def create_subscription(
             "billing_cycle_months": billing_cycle_months,
             "total_amount": total_amount,
             "monthly_price": monthly_price,
-            "discount_percent": discount_percent
+            "discount_percent": discount_percent,
         }
 
     except Exception as e:
@@ -10181,11 +10725,13 @@ async def create_subscription(
 
 @app.get("/billing/trial", tags=["Billing"], response_model=TrialStatusOut)
 async def get_trial_status(
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Get free trial status"""
-    company = db.query(CompanyDB).filter(
-        CompanyDB.id == current_user.company_id).first()
+    company = (
+        db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    )
     if not company:
         raise HTTPException(404, "Company not found")
 
@@ -10202,8 +10748,7 @@ async def get_trial_status(
 
         # Calculate invoices remaining using actual free_plan_invoice_limit (default to 100 if not set)
         invoice_limit = company.free_plan_invoice_limit or 100
-        trial_invoices_remaining = max(
-            0, invoice_limit - company.trial_invoice_count)
+        trial_invoices_remaining = max(0, invoice_limit - company.trial_invoice_count)
 
         # Check if expired based on free_plan_type
         if company.free_plan_type == "DURATION":
@@ -10231,14 +10776,16 @@ async def get_trial_status(
     return TrialStatusOut(
         trial_status=company.trial_status,
         trial_start_date=company.trial_start_date.isoformat()
-        if company.trial_start_date else None,
+        if company.trial_start_date
+        else None,
         trial_invoice_count=company.trial_invoice_count,
         trial_days_remaining=trial_days_remaining,
         trial_invoices_remaining=trial_invoices_remaining,
         trial_expired=trial_expired,
         free_plan_type=company.free_plan_type,
         free_plan_invoice_limit=company.free_plan_invoice_limit,
-        free_plan_duration_months=company.free_plan_duration_months)
+        free_plan_duration_months=company.free_plan_duration_months,
+    )
 
 
 # ==================== BULK IMPORT ====================
@@ -10254,26 +10801,26 @@ async def download_invoice_template(format: str = "csv"):
 
         if format.lower() == "excel" or format.lower() == "xlsx":
             output = BytesIO()
-            df.to_excel(output, index=False, engine='openpyxl')
+            df.to_excel(output, index=False, engine="openpyxl")
             output.seek(0)
             return Response(
                 content=output.getvalue(),
-                media_type=
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={
-                    "Content-Disposition":
-                    "attachment; filename=invoice_template.xlsx"
-                })
+                    "Content-Disposition": "attachment; filename=invoice_template.xlsx"
+                },
+            )
         else:
             output = BytesIO()
             df.to_csv(output, index=False)
             output.seek(0)
-            return Response(content=output.getvalue(),
-                            media_type="text/csv",
-                            headers={
-                                "Content-Disposition":
-                                "attachment; filename=invoice_template.csv"
-                            })
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": "attachment; filename=invoice_template.csv"
+                },
+            )
     except Exception as e:
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
@@ -10286,26 +10833,26 @@ async def download_vendor_template(format: str = "csv"):
 
         if format.lower() == "excel" or format.lower() == "xlsx":
             output = BytesIO()
-            df.to_excel(output, index=False, engine='openpyxl')
+            df.to_excel(output, index=False, engine="openpyxl")
             output.seek(0)
             return Response(
                 content=output.getvalue(),
-                media_type=
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 headers={
-                    "Content-Disposition":
-                    "attachment; filename=vendor_template.xlsx"
-                })
+                    "Content-Disposition": "attachment; filename=vendor_template.xlsx"
+                },
+            )
         else:
             output = BytesIO()
             df.to_csv(output, index=False)
             output.seek(0)
-            return Response(content=output.getvalue(),
-                            media_type="text/csv",
-                            headers={
-                                "Content-Disposition":
-                                "attachment; filename=vendor_template.csv"
-                            })
+            return Response(
+                content=output.getvalue(),
+                media_type="text/csv",
+                headers={
+                    "Content-Disposition": "attachment; filename=vendor_template.csv"
+                },
+            )
     except Exception as e:
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
@@ -10314,9 +10861,10 @@ async def download_vendor_template(format: str = "csv"):
 @app.post("/bulk/import/invoices", tags=["Bulk Import"])
 @app.post("/api/bulk/import/invoices", tags=["Bulk Import"])
 async def bulk_import_invoices(
-        file: UploadFile = File(...),
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Upload and validate CSV/Excel file for bulk invoice creation"""
     try:
         company_id = current_user.company_id
@@ -10329,46 +10877,55 @@ async def bulk_import_invoices(
 
         file_content = await file.read()
         is_valid, parsed_invoices, errors = BulkImportValidator.validate_invoice_file(
-            file_content, file.filename)
+            file_content, file.filename
+        )
 
         if not is_valid:
             return {
                 "success": False,
                 "total_rows": 0,
                 "valid_rows": 0,
-                "errors": errors
+                "errors": errors,
             }
 
         # Enforce the same Super Admin free-plan invoice limit used by /invoices create endpoint.
-        if company.free_plan_type == "INVOICE_COUNT" and company.free_plan_invoice_limit is not None:
-            active_paid_subscription = db.query(SubscriptionDB).filter(
-                SubscriptionDB.company_id == company.id,
-                SubscriptionDB.status == "ACTIVE", SubscriptionDB.tier
-                != "FREE").first()
+        if (
+            company.free_plan_type == "INVOICE_COUNT"
+            and company.free_plan_invoice_limit is not None
+        ):
+            active_paid_subscription = (
+                db.query(SubscriptionDB)
+                .filter(
+                    SubscriptionDB.company_id == company.id,
+                    SubscriptionDB.status == "ACTIVE",
+                    SubscriptionDB.tier != "FREE",
+                )
+                .first()
+            )
 
             if not active_paid_subscription:
-                used_invoice_count = db.query(InvoiceDB).filter(
-                    InvoiceDB.company_id == company.id).count()
+                used_invoice_count = (
+                    db.query(InvoiceDB)
+                    .filter(InvoiceDB.company_id == company.id)
+                    .count()
+                )
                 available_slots = company.free_plan_invoice_limit - used_invoice_count
 
                 if available_slots <= 0:
                     raise HTTPException(
                         403,
-                        f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin."
+                        f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin.",
                     )
 
                 if len(parsed_invoices) > available_slots:
                     return {
-                        "success":
-                        False,
-                        "total_rows":
-                        len(parsed_invoices),
-                        "valid_rows":
-                        0,
+                        "success": False,
+                        "total_rows": len(parsed_invoices),
+                        "valid_rows": 0,
                         "errors": [
                             f"Invoice limit is {company.free_plan_invoice_limit}. You already used {used_invoice_count}.",
-                            f"Can only import {available_slots} more invoice(s)."
-                        ]
+                            f"Can only import {available_slots} more invoice(s).",
+                        ],
                     }
 
         from decimal import Decimal
@@ -10378,34 +10935,38 @@ async def bulk_import_invoices(
         prepared_invoices = []
 
         for invoice_data in parsed_invoices:
-            line_total = invoice_data['quantity'] * invoice_data['unit_price']
-            discount = invoice_data.get('discount_amount', 0)
+            line_total = invoice_data["quantity"] * invoice_data["unit_price"]
+            discount = invoice_data.get("discount_amount", 0)
             taxable_amount = line_total - discount
-            tax_amount_calc = (taxable_amount *
-                               invoice_data['tax_percent']) / 100
+            tax_amount_calc = (taxable_amount * invoice_data["tax_percent"]) / 100
             total_amount_calc = taxable_amount + tax_amount_calc
 
-            invoice_type_key = invoice_data['invoice_type']
-            row_num = invoice_data.get('row_num', 'Unknown')
+            invoice_type_key = invoice_data["invoice_type"]
+            row_num = invoice_data.get("row_num", "Unknown")
             preceding_invoice_id = None
 
             # Map invoice type strings to enum values
             invoice_type_mapping = {
-                'TAX_INVOICE': InvoiceType.TAX_INVOICE,
-                'COMMERCIAL': InvoiceType.COMMERCIAL_INVOICE
+                "TAX_INVOICE": InvoiceType.TAX_INVOICE,
+                "COMMERCIAL": InvoiceType.COMMERCIAL_INVOICE,
             }
 
-            if invoice_type_key == 'CREDIT_NOTE':
-                preceding_number = invoice_data.get('preceding_invoice_number')
+            if invoice_type_key == "CREDIT_NOTE":
+                preceding_number = invoice_data.get("preceding_invoice_number")
                 if not preceding_number:
                     bulk_errors.append(
                         f"Row {row_num}: preceding_invoice_number is required for credit notes"
                     )
                     continue
 
-                original_invoice = db.query(InvoiceDB).filter(
-                    InvoiceDB.company_id == company_id,
-                    InvoiceDB.invoice_number == preceding_number).first()
+                original_invoice = (
+                    db.query(InvoiceDB)
+                    .filter(
+                        InvoiceDB.company_id == company_id,
+                        InvoiceDB.invoice_number == preceding_number,
+                    )
+                    .first()
+                )
 
                 if not original_invoice:
                     bulk_errors.append(
@@ -10430,7 +10991,8 @@ async def bulk_import_invoices(
                     continue
 
                 if Decimal(str(total_amount_calc)) > Decimal(
-                        str(original_invoice.total_amount)):
+                    str(original_invoice.total_amount)
+                ):
                     bulk_errors.append(
                         f"Row {row_num}: Credit note total cannot exceed original invoice total"
                     )
@@ -10439,7 +11001,8 @@ async def bulk_import_invoices(
                 preceding_invoice_id = original_invoice.id
             else:
                 invoice_type = invoice_type_mapping.get(
-                    invoice_type_key, InvoiceType.TAX_INVOICE)
+                    invoice_type_key, InvoiceType.TAX_INVOICE
+                )
 
                 # Validate VAT requirement for Tax Invoices
                 if invoice_type == InvoiceType.TAX_INVOICE and not company.vat_enabled:
@@ -10448,27 +11011,23 @@ async def bulk_import_invoices(
                     )
                     continue
 
-            prepared_invoices.append({
-                "invoice_data":
-                invoice_data,
-                "invoice_type":
-                invoice_type,
-                "taxable_amount":
-                taxable_amount,
-                "tax_amount_calc":
-                tax_amount_calc,
-                "total_amount_calc":
-                total_amount_calc,
-                "preceding_invoice_id":
-                preceding_invoice_id
-            })
+            prepared_invoices.append(
+                {
+                    "invoice_data": invoice_data,
+                    "invoice_type": invoice_type,
+                    "taxable_amount": taxable_amount,
+                    "tax_amount_calc": tax_amount_calc,
+                    "total_amount_calc": total_amount_calc,
+                    "preceding_invoice_id": preceding_invoice_id,
+                }
+            )
 
         if bulk_errors:
             return {
                 "success": False,
                 "total_rows": len(parsed_invoices),
                 "valid_rows": 0,
-                "errors": bulk_errors
+                "errors": bulk_errors,
             }
 
         # Track invoice counts per type for this batch to avoid duplicate numbers
@@ -10482,14 +11041,19 @@ async def bulk_import_invoices(
             total_amount_calc = prepared["total_amount_calc"]
 
             # Check if invoice number is provided and already exists
-            invoice_number = invoice_data['invoice_number']
-            row_num = invoice_data.get('row_num', 'Unknown')
+            invoice_number = invoice_data["invoice_number"]
+            row_num = invoice_data.get("row_num", "Unknown")
 
             if invoice_number:
                 # Check if this invoice number already exists in database
-                existing_invoice = db.query(InvoiceDB).filter(
-                    InvoiceDB.company_id == company_id,
-                    InvoiceDB.invoice_number == invoice_number).first()
+                existing_invoice = (
+                    db.query(InvoiceDB)
+                    .filter(
+                        InvoiceDB.company_id == company_id,
+                        InvoiceDB.invoice_number == invoice_number,
+                    )
+                    .first()
+                )
                 if existing_invoice:
                     # Invoice number already exists - reject this invoice
                     bulk_errors.append(
@@ -10499,16 +11063,23 @@ async def bulk_import_invoices(
             else:
                 # No invoice number provided - auto-generate
                 # Get invoice type value for counting
-                invoice_type_value = invoice_type.value if hasattr(
-                    invoice_type, 'value') else str(invoice_type)
+                invoice_type_value = (
+                    invoice_type.value
+                    if hasattr(invoice_type, "value")
+                    else str(invoice_type)
+                )
 
                 # Initialize counter for this type if not already done
                 if invoice_type_value not in invoice_type_counts:
                     # Start with current database count for this type
-                    invoice_type_counts[invoice_type_value] = db.query(
-                        InvoiceDB).filter(
+                    invoice_type_counts[invoice_type_value] = (
+                        db.query(InvoiceDB)
+                        .filter(
                             InvoiceDB.company_id == company_id,
-                            InvoiceDB.invoice_type == invoice_type).count()
+                            InvoiceDB.invoice_type == invoice_type,
+                        )
+                        .count()
+                    )
 
                 # Increment counter for this type
                 invoice_type_counts[invoice_type_value] += 1
@@ -10518,18 +11089,27 @@ async def bulk_import_invoices(
                     "380": "TI",  # Tax Invoice
                     "381": "TCN",  # Tax Credit Note
                     "480": "CI",  # Commercial Invoice
-                    "81": "CN"  # Credit Note
+                    "81": "CN",  # Credit Note
                 }
                 prefix = prefix_map.get(invoice_type_value, "TI")
-                generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                generated_number = (
+                    f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                )
 
                 # Ensure generated number is unique (check if it conflicts with existing)
-                while db.query(InvoiceDB).filter(
+                while (
+                    db.query(InvoiceDB)
+                    .filter(
                         InvoiceDB.company_id == company_id,
-                        InvoiceDB.invoice_number == generated_number).first():
+                        InvoiceDB.invoice_number == generated_number,
+                    )
+                    .first()
+                ):
                     # Increment counter and try again
                     invoice_type_counts[invoice_type_value] += 1
-                    generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                    generated_number = (
+                        f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+                    )
 
                 invoice_number = generated_number
 
@@ -10538,65 +11118,61 @@ async def bulk_import_invoices(
                 company_id=company_id,
                 invoice_number=invoice_number,
                 invoice_type=invoice_type,
-                issue_date=datetime.strptime(invoice_data['issue_date'],
-                                             '%Y-%m-%d').date()
-                if invoice_data.get('issue_date') else date.today(),
-                due_date=datetime.strptime(invoice_data['due_date'],
-                                           '%Y-%m-%d').date()
-                if invoice_data.get('due_date') else None,
-
+                issue_date=datetime.strptime(
+                    invoice_data["issue_date"], "%Y-%m-%d"
+                ).date()
+                if invoice_data.get("issue_date")
+                else date.today(),
+                due_date=datetime.strptime(invoice_data["due_date"], "%Y-%m-%d").date()
+                if invoice_data.get("due_date")
+                else None,
                 # Supplier info from company
                 supplier_trn=company.trn,
                 supplier_name=company.legal_name or company.email,
-                supplier_address=
-                f"{company.address_line1 or ''} {company.address_line2 or ''}".
-                strip() or None,
+                supplier_address=f"{company.address_line1 or ''} {company.address_line2 or ''}".strip()
+                or None,
                 supplier_city=company.city,
                 supplier_country="AE",
-
                 # Customer info from CSV
-                customer_trn=invoice_data['customer_trn'],
-                customer_name=invoice_data['customer_name'],
-                customer_email=invoice_data.get('customer_email'),
-                customer_address=invoice_data.get('customer_address'),
-
+                customer_trn=invoice_data["customer_trn"],
+                customer_name=invoice_data["customer_name"],
+                customer_email=invoice_data.get("customer_email"),
+                customer_address=invoice_data.get("customer_address"),
                 # Amounts - use correct field names
                 subtotal_amount=float(taxable_amount),
                 tax_amount=float(tax_amount_calc),
                 total_amount=float(total_amount_calc),
                 amount_due=float(total_amount_calc),
-
                 # Credit note reference
                 preceding_invoice_id=prepared["preceding_invoice_id"],
-
                 # Status and notes - use correct field names
                 status=InvoiceStatus.DRAFT,
-                invoice_notes=invoice_data.get('notes'),
+                invoice_notes=invoice_data.get("notes"),
                 share_token=f"share_{uuid4().hex[:16]}",
-                created_at=datetime.utcnow())
+                created_at=datetime.utcnow(),
+            )
             db.add(new_invoice)
             created_count += 1
 
         # Update trial invoice count if on trial
         if company.trial_status == "ACTIVE":
-            company.trial_invoice_count = (company.trial_invoice_count
-                                           or 0) + created_count
+            company.trial_invoice_count = (
+                company.trial_invoice_count or 0
+            ) + created_count
 
         db.commit()
 
         return {
-            "success":
-            len(bulk_errors) == 0,  # Only true if no errors
-            "total_rows":
-            len(parsed_invoices),
-            "valid_rows":
-            created_count,
-            "errors":
-            bulk_errors,  # Include any duplicate errors
-            "message":
-            f"Successfully imported {created_count} invoices" +
-            (f". {len(bulk_errors)} row(s) rejected due to duplicate invoice numbers."
-             if bulk_errors else "")
+            "success": len(bulk_errors) == 0,  # Only true if no errors
+            "total_rows": len(parsed_invoices),
+            "valid_rows": created_count,
+            "errors": bulk_errors,  # Include any duplicate errors
+            "message": f"Successfully imported {created_count} invoices"
+            + (
+                f". {len(bulk_errors)} row(s) rejected due to duplicate invoice numbers."
+                if bulk_errors
+                else ""
+            ),
         }
 
     except HTTPException:
@@ -10610,9 +11186,10 @@ async def bulk_import_invoices(
 @app.post("/bulk/import/vendors", tags=["Bulk Import"])
 @app.post("/api/bulk/import/vendors", tags=["Bulk Import"])
 async def bulk_import_vendors(
-        file: UploadFile = File(...),
-        current_user: UserDB = Depends(get_current_user_from_header),
-        db: Session = Depends(get_db)):
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
     """Upload and validate CSV/Excel file for bulk vendor creation (stored as inward invoice metadata)"""
     try:
         company_id = current_user.company_id
@@ -10621,63 +11198,62 @@ async def bulk_import_vendors(
 
         file_content = await file.read()
         is_valid, parsed_vendors, errors = BulkImportValidator.validate_vendor_file(
-            file_content, file.filename)
+            file_content, file.filename
+        )
 
         if not is_valid:
             return {
                 "success": False,
                 "total_rows": 0,
                 "valid_rows": 0,
-                "errors": errors
+                "errors": errors,
             }
 
         created_count = 0
         updated_count = 0
 
         for vendor_data in parsed_vendors:
-            existing_vendor = db.query(InwardInvoiceDB).filter_by(
-                company_id=company_id,
-                supplier_trn=vendor_data['vendor_trn']).first()
+            existing_vendor = (
+                db.query(InwardInvoiceDB)
+                .filter_by(
+                    company_id=company_id, supplier_trn=vendor_data["vendor_trn"]
+                )
+                .first()
+            )
 
             if existing_vendor:
-                existing_vendor.supplier_name = vendor_data['vendor_name']
-                existing_vendor.supplier_email = vendor_data['vendor_email']
-                existing_vendor.supplier_peppol_id = vendor_data.get(
-                    'peppol_id')
+                existing_vendor.supplier_name = vendor_data["vendor_name"]
+                existing_vendor.supplier_email = vendor_data["vendor_email"]
+                existing_vendor.supplier_peppol_id = vendor_data.get("peppol_id")
                 updated_count += 1
             else:
                 placeholder_invoice = InwardInvoiceDB(
                     id=str(uuid4()),
                     company_id=company_id,
                     invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
-                    supplier_trn=vendor_data['vendor_trn'],
-                    supplier_name=vendor_data['vendor_name'],
-                    supplier_email=vendor_data['vendor_email'],
-                    supplier_address=vendor_data.get('vendor_address'),
-                    supplier_peppol_id=vendor_data.get('peppol_id'),
+                    supplier_trn=vendor_data["vendor_trn"],
+                    supplier_name=vendor_data["vendor_name"],
+                    supplier_email=vendor_data["vendor_email"],
+                    supplier_address=vendor_data.get("vendor_address"),
+                    supplier_peppol_id=vendor_data.get("peppol_id"),
                     issue_date=date.today(),
                     total=0.00,
-                    status='VENDOR_RECORD',
-                    received_at=datetime.utcnow())
+                    status="VENDOR_RECORD",
+                    received_at=datetime.utcnow(),
+                )
                 db.add(placeholder_invoice)
                 created_count += 1
 
         db.commit()
 
         return {
-            "success":
-            True,
-            "total_rows":
-            len(parsed_vendors),
-            "valid_rows":
-            created_count + updated_count,
-            "created":
-            created_count,
-            "updated":
-            updated_count,
+            "success": True,
+            "total_rows": len(parsed_vendors),
+            "valid_rows": created_count + updated_count,
+            "created": created_count,
+            "updated": updated_count,
             "errors": [],
-            "message":
-            f"Successfully processed {created_count + updated_count} vendors ({created_count} created, {updated_count} updated)"
+            "message": f"Successfully processed {created_count + updated_count} vendors ({created_count} created, {updated_count} updated)",
         }
 
     except HTTPException:
@@ -10707,8 +11283,18 @@ async def serve_react_routes(full_path: str):
     """Serve React app for client-side routing"""
     # Skip API routes
     if full_path.startswith(
-        ("api/", "auth/", "admin/", "companies/", "register/", "plans/",
-         "docs", "redoc", "openapi.json")):
+        (
+            "api/",
+            "auth/",
+            "admin/",
+            "companies/",
+            "register/",
+            "plans/",
+            "docs",
+            "redoc",
+            "openapi.json",
+        )
+    ):
         raise HTTPException(404, "Not found")
 
     if os.path.exists("dist/index.html"):
@@ -10720,6 +11306,7 @@ async def serve_react_routes(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     print("🚀 Starting InvoLinks E-Invoicing API...")
     print("📚 API Docs: http://0.0.0.0:5000/docs")
     uvicorn.run(app, host="0.0.0.0", port=5000)
