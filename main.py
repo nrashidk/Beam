@@ -6241,7 +6241,7 @@ def get_profitability_metrics(
         ExpenseDB.company_id == current_user.company_id, ExpenseDB.expense_date
         >= start_date, ExpenseDB.expense_date <= end_date).all()
 
-    total_expenses = sum(exp.amount for exp in expenses)
+    total_expenses = sum((exp.total_amount or 0.0) for exp in expenses)
 
     # Calculate profitability
     gross_profit = total_revenue - total_expenses
@@ -6266,7 +6266,7 @@ def get_profitability_metrics(
             if inv.paid_at and month_start <= inv.paid_at <= month_end)
 
         month_expenses = sum(
-            exp.amount for exp in expenses
+            (exp.total_amount or 0.0) for exp in expenses
             if month_start.date() <= exp.expense_date <= month_end.date())
 
         month_profit = month_revenue - month_expenses
@@ -7099,26 +7099,30 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
 
 @app.post("/expense-categories", tags=["Expense Categories"])
 def create_expense_category(
-    name: str,
-    description: str = None,
+    name: str = Form(...),
+    description: str = Form(None),
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)):
     """Create a custom expense category"""
     from uuid import uuid4
 
+    normalized_name = (name or "").strip()
+    if not normalized_name:
+        raise HTTPException(400, "Category name is required")
+
     # Check if category already exists
     existing = db.query(ExpenseCategoryDB).filter(
         ExpenseCategoryDB.company_id == current_user.company_id,
-        ExpenseCategoryDB.name == name).first()
+        func.lower(ExpenseCategoryDB.name) == normalized_name.lower()).first()
 
     if existing:
-        raise HTTPException(400, f"Category '{name}' already exists")
+        raise HTTPException(400, f"Category '{normalized_name}' already exists")
 
     category_id = f"expcat_{uuid4().hex[:12]}"
 
     category = ExpenseCategoryDB(id=category_id,
                                  company_id=current_user.company_id,
-                                 name=name,
+                                 name=normalized_name,
                                  description=description,
                                  is_default=False)
 
@@ -7145,53 +7149,9 @@ def list_expense_categories(
     Returns system defaults + user-created categories
     """
     categories = db.query(ExpenseCategoryDB).filter(
-        ExpenseCategoryDB.company_id == current_user.company_id).order_by(
+        ExpenseCategoryDB.company_id == current_user.company_id,
+        ExpenseCategoryDB.is_default == False).order_by(
             ExpenseCategoryDB.name).all()
-
-    # If no categories, seed defaults
-    if not categories:
-        from uuid import uuid4
-        default_categories = [{
-            "name": "Rent",
-            "description": "Office or warehouse rent"
-        }, {
-            "name": "Utilities",
-            "description": "Electricity, water, internet"
-        }, {
-            "name": "Salaries",
-            "description": "Employee wages and benefits"
-        }, {
-            "name": "Raw Materials",
-            "description": "Business supplies and inventory"
-        }, {
-            "name": "Marketing",
-            "description": "Advertising and promotions"
-        }, {
-            "name": "Equipment",
-            "description": "Machinery and tools"
-        }, {
-            "name": "Maintenance",
-            "description": "Repairs and upkeep"
-        }, {
-            "name": "Other",
-            "description": "Miscellaneous expenses"
-        }]
-
-        for cat_data in default_categories:
-            cat_id = f"expcat_{uuid4().hex[:12]}"
-            category = ExpenseCategoryDB(id=cat_id,
-                                         company_id=current_user.company_id,
-                                         name=cat_data["name"],
-                                         description=cat_data["description"],
-                                         is_default=True)
-            db.add(category)
-
-        db.commit()
-
-        # Re-fetch categories
-        categories = db.query(ExpenseCategoryDB).filter(
-            ExpenseCategoryDB.company_id == current_user.company_id).order_by(
-                ExpenseCategoryDB.name).all()
 
     return {
         "categories": [{
@@ -7242,14 +7202,14 @@ def delete_expense_category(
 
 @app.post("/expenses", tags=["Expenses"])
 def create_expense(
-    expense_date: str,
-    category: str,
-    amount: float,
-    vat_amount: float = 0.0,
-    description: str = None,
-    supplier_name: str = None,
-    reference_number: str = None,
-    notes: str = None,
+    expense_date: str = Form(...),
+    category: str = Form(...),
+    amount: float = Form(...),
+    vat_amount: float = Form(0.0),
+    description: str = Form(None),
+    supplier_name: str = Form(None),
+    reference_number: str = Form(None),
+    notes: str = Form(None),
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db)):
     """
@@ -7266,7 +7226,18 @@ def create_expense(
     from dateutil import parser
     from uuid import uuid4
 
-    # Category is now free-form text (user can use any category name)
+    category_name = (category or "").strip()
+    if not category_name:
+        raise HTTPException(400, "Category is required")
+
+    matched_category = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.company_id == current_user.company_id,
+        func.lower(ExpenseCategoryDB.name) == category_name.lower()).first()
+
+    if not matched_category:
+        raise HTTPException(400,
+                            f"Invalid category '{category_name}' for this company")
+
     # Parse date
     try:
         expense_date_obj = parser.parse(expense_date).date()
@@ -7283,7 +7254,7 @@ def create_expense(
     expense = ExpenseDB(id=expense_id,
                         company_id=current_user.company_id,
                         expense_date=expense_date_obj,
-                        category=category.upper(),
+                        category=matched_category.name,
                         description=description,
                         amount=amount,
                         vat_amount=vat_amount,
@@ -7345,7 +7316,7 @@ def list_expenses(
 
     # Filter by category
     if category:
-        query = query.filter(ExpenseDB.category == category.upper())
+        query = query.filter(func.lower(ExpenseDB.category) == category.lower())
 
     # Order by date descending
     expenses = query.order_by(ExpenseDB.expense_date.desc()).all()

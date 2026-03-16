@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import apiClient from "../lib/api";
+import Sidebar from "../components/Sidebar";
 import {
   Plus,
   TrendingUp,
@@ -132,7 +133,10 @@ const ExpenseTracker = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar />
+      <div className="flex-1 ml-64">
+        <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Expense Tracking</h1>
         <div className="flex gap-3">
@@ -167,7 +171,7 @@ const ExpenseTracker = () => {
       </div>
 
       {/* Financial Summary */}
-      {summary && (
+      {/* {summary && (
         <div className="grid md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
             <div className="flex items-center justify-between mb-2">
@@ -188,10 +192,10 @@ const ExpenseTracker = () => {
               <TrendingDown className="h-5 w-5 text-red-500" />
             </div>
             <p className="text-2xl font-bold text-gray-900">
-              AED {summary.expenses?.total?.toLocaleString()}
+              AED {summary.summary?.total_costs?.toLocaleString()}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              {summary.expenses?.expense_count} expenses
+              {summary.expenses?.expense_count} expenses | Base AED {summary.expenses?.total?.toLocaleString()} + VAT AED {summary.expenses?.vat_paid?.toLocaleString()}
             </p>
           </div>
 
@@ -224,7 +228,7 @@ const ExpenseTracker = () => {
             </p>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Expenses List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -510,6 +514,8 @@ const ExpenseTracker = () => {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

@@ -16,6 +16,7 @@ import {
   CheckCircle,
   FileSpreadsheet,
   LineChart,
+  Receipt,
   Building2
 } from 'lucide-react';
 
@@ -30,6 +31,7 @@ export default function Sidebar() {
     { path: '/billing', icon: CreditCard, label: 'Billing' },
     { path: '/settings/branding', icon: Palette, label: 'Branding' },
     { path: '/bulk-import', icon: Upload, label: 'Bulk Import' },
+    { path: '/expense-tracker', icon: Receipt, label: 'Expense Tracker' },
     { path: '/finance', icon: BarChart3, label: 'Finance' },
     { path: '/audit-files', icon: FileCheck, label: 'FTA Audit' },
     { path: '/invoices', icon: FileText, label: 'Invoices' },
