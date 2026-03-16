@@ -26,9 +26,16 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
   const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [billingName, setBillingName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!billingName.trim() || !billingEmail.trim()) {
+      setError('Billing name and billing email are required');
+      return;
+    }
 
     if (!stripe || !elements) {
       return;
@@ -51,7 +58,11 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
         return;
       }
 
-      await onSuccess(paymentMethod.id);
+      await onSuccess({
+        paymentMethodId: paymentMethod.id,
+        billingName: billingName.trim(),
+        billingEmail: billingEmail.trim(),
+      });
       
     } catch (err) {
       setError(err.message || 'Failed to add payment method');
@@ -61,6 +72,34 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Billing Name
+        </label>
+        <input
+          type="text"
+          value={billingName}
+          onChange={(e) => setBillingName(e.target.value)}
+          placeholder="Full name"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+          required
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Billing Email
+        </label>
+        <input
+          type="email"
+          value={billingEmail}
+          onChange={(e) => setBillingEmail(e.target.value)}
+          placeholder="name@company.com"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+          required
+        />
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           <CreditCard className="inline w-4 h-4 mr-1" />

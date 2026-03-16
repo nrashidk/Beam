@@ -66,10 +66,16 @@ export default function BillingSettings() {
     }
   };
 
-  const handleAddCard = async (paymentMethodId) => {
+  const handleAddCard = async ({ paymentMethodId, billingName, billingEmail }) => {
     try {
-      await apiClient.post("/billing/payment-methods", {
-        payment_method_id: paymentMethodId,
+      const formData = new FormData();
+      formData.append("payment_method_token", paymentMethodId);
+      formData.append("billing_name", billingName);
+      formData.append("billing_email", billingEmail);
+      formData.append("set_as_default", paymentMethods.length === 0 ? "true" : "false");
+
+      await apiClient.post("/billing/payment-methods", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
       setShowAddCard(false);
       fetchBillingData();
@@ -140,15 +146,15 @@ export default function BillingSettings() {
   const trialTotalDays = trialDurationMonths * 30;
   const invoicesUsed = trialStatus?.trial_invoice_count || 0;
   const daysUsed = trialTotalDays - trialDaysRemaining;
-  
+
   // Calculate invoices remaining (backend might not send this directly)
   const trialInvoicesRemaining = Math.max(0, trialInvoiceLimit - invoicesUsed);
-  
+
   // Determine which metric to show based on free_plan_type
   // Default to INVOICE_COUNT if not explicitly set to DURATION
   const showInvoiceCount = trialStatus?.free_plan_type !== "DURATION";
   const showDaysRemaining = trialStatus?.free_plan_type === "DURATION";
-  
+
   const trialProgress = invoicesUsed
     ? Math.min(100, (invoicesUsed / trialInvoiceLimit) * 100)
     : 0;
@@ -163,9 +169,9 @@ export default function BillingSettings() {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return "N/A";
     const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'N/A';
+    if (isNaN(date.getTime())) return "N/A";
     return date.toLocaleDateString();
   };
 
@@ -195,7 +201,7 @@ export default function BillingSettings() {
                       Free Trial Active
                     </h3>
                     <p className="text-blue-100">
-                      {showInvoiceCount 
+                      {showInvoiceCount
                         ? `You have ${trialInvoicesRemaining} invoices remaining`
                         : `You have ${trialDaysRemaining} days remaining`}
                     </p>
@@ -213,7 +219,9 @@ export default function BillingSettings() {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>Invoices Used</span>
-                        <span>{invoicesUsed} / {trialInvoiceLimit}</span>
+                        <span>
+                          {invoicesUsed} / {trialInvoiceLimit}
+                        </span>
                       </div>
                       <div className="bg-white/20 rounded-full h-2 overflow-hidden">
                         <div
@@ -228,7 +236,9 @@ export default function BillingSettings() {
                     <div>
                       <div className="flex justify-between text-sm mb-1">
                         <span>Days Used</span>
-                        <span>{daysUsed} / {trialTotalDays} days</span>
+                        <span>
+                          {daysUsed} / {trialTotalDays} days
+                        </span>
                       </div>
                       <div className="bg-white/20 rounded-full h-2 overflow-hidden">
                         <div
@@ -293,14 +303,14 @@ export default function BillingSettings() {
                       <div>
                         <div className="text-gray-600 mb-1">Current Period</div>
                         <div className="font-medium">
-                          {subscription.current_period_start && subscription.current_period_end 
+                          {subscription.current_period_start &&
+                          subscription.current_period_end
                             ? `${formatDate(subscription.current_period_start)} - ${formatDate(subscription.current_period_end)}`
-                            : showInvoiceCount 
+                            : showInvoiceCount
                               ? `${invoicesUsed} / ${trialInvoiceLimit} invoices used`
                               : trialStatus?.trial_start_date
                                 ? `${formatDate(trialStatus.trial_start_date)} - ${formatDate(new Date(new Date(trialStatus.trial_start_date).getTime() + trialTotalDays * 24 * 60 * 60 * 1000).toISOString())}`
-                                : 'N/A'
-                          }
+                                : "N/A"}
                         </div>
                       </div>
                       <div>
