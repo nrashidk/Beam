@@ -1,13 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Plus, Trash2, RefreshCcw, Search, Edit } from 'lucide-react';
-import api from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
-import AdminLayout from '../components/AdminLayout';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  RefreshCcw,
+  Search,
+  Edit,
+} from "lucide-react";
+import api, { getApiBaseUrl } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import AdminLayout from "../components/AdminLayout";
 
 export default function FeaturedBusinesses() {
   const { isSuperAdmin } = useAuth();
@@ -15,20 +27,20 @@ export default function FeaturedBusinesses() {
   const [loading, setLoading] = useState(true);
   const [featured, setFeatured] = useState([]);
   const [allCompanies, setAllCompanies] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [newFeatured, setNewFeatured] = useState({
-    company_id: '',
-    display_name: '',
-    logo_url: ''
+    company_id: "",
+    display_name: "",
+    logo_url: "",
   });
   const [editingFeatured, setEditingFeatured] = useState(null);
 
   useEffect(() => {
     if (!isSuperAdmin) {
-      navigate('/dashboard');
+      navigate("/dashboard");
       return;
     }
     fetchData();
@@ -38,14 +50,14 @@ export default function FeaturedBusinesses() {
     try {
       setLoading(true);
       const [featuredRes, companiesRes] = await Promise.all([
-        api.get('/admin/featured-businesses'),
-        api.get('/admin/companies?status=ACTIVE')
+        api.get("/admin/featured-businesses"),
+        api.get("/admin/companies?status=ACTIVE"),
       ]);
       setFeatured(featuredRes.data);
       setAllCompanies(companiesRes.data || []);
     } catch (error) {
-      console.error('Failed to fetch data:', error);
-      alert('Failed to load featured businesses');
+      console.error("Failed to fetch data:", error);
+      alert("Failed to load featured businesses");
     } finally {
       setLoading(false);
     }
@@ -53,23 +65,23 @@ export default function FeaturedBusinesses() {
 
   async function handleAddFeatured() {
     if (!newFeatured.company_id) {
-      alert('Please select a company');
+      alert("Please select a company");
       return;
     }
 
     try {
       setSaving(true);
-      await api.post('/admin/featured-businesses', newFeatured);
+      await api.post("/admin/featured-businesses", newFeatured);
       await fetchData();
       setShowAddModal(false);
       setNewFeatured({
-        company_id: '',
-        display_name: '',
-        logo_url: ''
+        company_id: "",
+        display_name: "",
+        logo_url: "",
       });
     } catch (error) {
-      console.error('Failed to add featured business:', error);
-      alert(error.response?.data?.detail || 'Failed to add featured business');
+      console.error("Failed to add featured business:", error);
+      alert(error.response?.data?.detail || "Failed to add featured business");
     } finally {
       setSaving(false);
     }
@@ -84,42 +96,44 @@ export default function FeaturedBusinesses() {
         display_name: editingFeatured.display_name,
         logo_url: editingFeatured.logo_url,
         is_active: editingFeatured.is_active,
-        display_order: editingFeatured.display_order
+        display_order: editingFeatured.display_order,
       });
       await fetchData();
       setShowEditModal(false);
       setEditingFeatured(null);
     } catch (error) {
-      console.error('Failed to update featured business:', error);
-      alert(error.response?.data?.detail || 'Failed to update featured business');
+      console.error("Failed to update featured business:", error);
+      alert(
+        error.response?.data?.detail || "Failed to update featured business",
+      );
     } finally {
       setSaving(false);
     }
   }
 
   function openEditModal(featured) {
-    setEditingFeatured({...featured});
+    setEditingFeatured({ ...featured });
     setShowEditModal(true);
   }
 
   async function handleRemoveFeatured(featuredId) {
-    if (!confirm('Remove this business from the featured list?')) return;
+    if (!confirm("Remove this business from the featured list?")) return;
 
     try {
       await api.delete(`/admin/featured-businesses/${featuredId}`);
       await fetchData();
     } catch (error) {
-      console.error('Failed to remove featured business:', error);
-      alert('Failed to remove featured business');
+      console.error("Failed to remove featured business:", error);
+      alert("Failed to remove featured business");
     }
   }
 
-  const filteredCompanies = allCompanies.filter(c => 
-    c.legal_name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredCompanies = allCompanies.filter((c) =>
+    c.legal_name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const availableCompanies = allCompanies.filter(c => 
-    !featured.some(f => f.company_id === c.id)
+  const availableCompanies = allCompanies.filter(
+    (c) => !featured.some((f) => f.company_id === c.id),
   );
 
   if (loading) {
@@ -140,14 +154,16 @@ export default function FeaturedBusinesses() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate("/dashboard")}
               className="rounded-full"
             >
               <ArrowLeft size={18} />
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Featured Businesses</h1>
-              <p className="text-sm text-gray-600">Manage companies shown on the homepage moving bar</p>
+              <p className="text-sm text-gray-600">
+                Manage companies shown on the homepage moving bar
+              </p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -189,8 +205,8 @@ export default function FeaturedBusinesses() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       {f.logo_url && (
-                        <img 
-                          src={f.logo_url} 
+                        <img
+                          src={f.logo_url}
                           alt={f.display_name || f.company_name}
                           className="w-12 h-12 rounded-lg object-cover"
                         />
@@ -199,10 +215,14 @@ export default function FeaturedBusinesses() {
                         <CardTitle className="text-lg">
                           {f.display_name || f.company_name}
                         </CardTitle>
-                        <p className="text-sm text-gray-600">{f.company_name}</p>
+                        <p className="text-sm text-gray-600">
+                          {f.company_name}
+                        </p>
                       </div>
                       {f.is_active ? (
-                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Active</Badge>
+                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                          Active
+                        </Badge>
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
                       )}
@@ -243,14 +263,29 @@ export default function FeaturedBusinesses() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Select Company</label>
+                  <label className="block text-sm font-medium mb-2">
+                    Select Company
+                  </label>
                   <select
                     value={newFeatured.company_id}
-                    onChange={(e) => setNewFeatured({ ...newFeatured, company_id: e.target.value })}
+                    onChange={(e) => {
+                      const companyId = e.target.value;
+                      const selectedCompany = availableCompanies.find(
+                        (c) => c.id === companyId,
+                      );
+                      const logoUrl = selectedCompany?.has_logo
+                        ? `${getApiBaseUrl()}/companies/${companyId}/branding/logo`
+                        : "";
+                      setNewFeatured({
+                        ...newFeatured,
+                        company_id: companyId,
+                        logo_url: logoUrl,
+                      });
+                    }}
                     className="w-full h-10 px-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="">-- Select a company --</option>
-                    {availableCompanies.map(c => (
+                    {availableCompanies.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.legal_name}
                       </option>
@@ -267,7 +302,12 @@ export default function FeaturedBusinesses() {
                   </label>
                   <Input
                     value={newFeatured.display_name}
-                    onChange={(e) => setNewFeatured({ ...newFeatured, display_name: e.target.value })}
+                    onChange={(e) =>
+                      setNewFeatured({
+                        ...newFeatured,
+                        display_name: e.target.value,
+                      })
+                    }
                     placeholder="Leave empty to use company name"
                   />
                 </div>
@@ -276,9 +316,24 @@ export default function FeaturedBusinesses() {
                   <label className="block text-sm font-medium mb-2">
                     Logo URL (Optional)
                   </label>
+                  {/* {newFeatured.logo_url && (
+                    <div className="mb-2 flex items-center gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                      <img
+                        src={newFeatured.logo_url}
+                        alt="Company logo preview"
+                        className="w-10 h-10 rounded object-contain bg-white border border-gray-200"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )} */}
                   <Input
                     value={newFeatured.logo_url}
-                    onChange={(e) => setNewFeatured({ ...newFeatured, logo_url: e.target.value })}
+                    onChange={(e) =>
+                      setNewFeatured({
+                        ...newFeatured,
+                        logo_url: e.target.value,
+                      })
+                    }
                     placeholder="https://example.com/logo.png"
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -292,16 +347,16 @@ export default function FeaturedBusinesses() {
                     disabled={saving}
                     className="flex-1"
                   >
-                    {saving ? 'Adding...' : 'Add Featured Business'}
+                    {saving ? "Adding..." : "Add Featured Business"}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => {
                       setShowAddModal(false);
                       setNewFeatured({
-                        company_id: '',
-                        display_name: '',
-                        logo_url: ''
+                        company_id: "",
+                        display_name: "",
+                        logo_url: "",
                       });
                     }}
                     disabled={saving}
@@ -340,8 +395,13 @@ export default function FeaturedBusinesses() {
                     Display Name (Optional)
                   </label>
                   <Input
-                    value={editingFeatured.display_name || ''}
-                    onChange={(e) => setEditingFeatured({ ...editingFeatured, display_name: e.target.value })}
+                    value={editingFeatured.display_name || ""}
+                    onChange={(e) =>
+                      setEditingFeatured({
+                        ...editingFeatured,
+                        display_name: e.target.value,
+                      })
+                    }
                     placeholder="Leave empty to use company name"
                   />
                 </div>
@@ -351,8 +411,13 @@ export default function FeaturedBusinesses() {
                     Logo URL (Optional)
                   </label>
                   <Input
-                    value={editingFeatured.logo_url || ''}
-                    onChange={(e) => setEditingFeatured({ ...editingFeatured, logo_url: e.target.value })}
+                    value={editingFeatured.logo_url || ""}
+                    onChange={(e) =>
+                      setEditingFeatured({
+                        ...editingFeatured,
+                        logo_url: e.target.value,
+                      })
+                    }
                     placeholder="https://example.com/logo.png"
                   />
                 </div>
@@ -364,7 +429,12 @@ export default function FeaturedBusinesses() {
                   <Input
                     type="number"
                     value={editingFeatured.display_order}
-                    onChange={(e) => setEditingFeatured({ ...editingFeatured, display_order: parseInt(e.target.value) || 0 })}
+                    onChange={(e) =>
+                      setEditingFeatured({
+                        ...editingFeatured,
+                        display_order: parseInt(e.target.value) || 0,
+                      })
+                    }
                     placeholder="0"
                   />
                   <p className="text-xs text-gray-500 mt-1">
@@ -377,7 +447,12 @@ export default function FeaturedBusinesses() {
                     type="checkbox"
                     id="is_active"
                     checked={editingFeatured.is_active}
-                    onChange={(e) => setEditingFeatured({ ...editingFeatured, is_active: e.target.checked })}
+                    onChange={(e) =>
+                      setEditingFeatured({
+                        ...editingFeatured,
+                        is_active: e.target.checked,
+                      })
+                    }
                     className="w-4 h-4 rounded"
                   />
                   <label htmlFor="is_active" className="text-sm font-medium">
@@ -391,7 +466,7 @@ export default function FeaturedBusinesses() {
                     disabled={saving}
                     className="flex-1"
                   >
-                    {saving ? 'Saving...' : 'Save Changes'}
+                    {saving ? "Saving..." : "Save Changes"}
                   </Button>
                   <Button
                     variant="outline"

@@ -3654,12 +3654,22 @@ def get_all_companies(
     # Use invoices table as source of truth for generated invoice count.
     # This avoids stale counters in companies.invoices_generated.
     invoice_counts = {}
+    companies_with_logos = set()
     if companies:
         company_ids = [c.id for c in companies]
         invoice_counts = dict(
             db.query(InvoiceDB.company_id, func.count(InvoiceDB.id))
             .filter(InvoiceDB.company_id.in_(company_ids))
             .group_by(InvoiceDB.company_id)
+            .all()
+        )
+        companies_with_logos = set(
+            cid
+            for (cid,) in db.query(CompanyBrandingDB.company_id)
+            .filter(
+                CompanyBrandingDB.company_id.in_(company_ids),
+                CompanyBrandingDB.logo_file_path.isnot(None),
+            )
             .all()
         )
 
@@ -3682,6 +3692,7 @@ def get_all_companies(
             "free_plan_start_date": c.free_plan_start_date.isoformat()
             if c.free_plan_start_date
             else None,
+            "has_logo": c.id in companies_with_logos,
         }
         for c in companies
     ]
@@ -3883,10 +3894,45 @@ def reset_company_trial(
     if not company:
         raise HTTPException(404, "Company not found")
 
+    # Delete all outbound invoices for this company as requested by super admin.
+    invoices_to_delete = (
+        db.query(InvoiceDB).filter(InvoiceDB.company_id == company_id).all()
+    )
+    invoice_ids = [inv.id for inv in invoices_to_delete]
+
+    # Keep PEPPOL usage rows but detach deleted invoices to avoid FK issues.
+    if invoice_ids:
+        db.query(PeppolUsageDB).filter(
+            PeppolUsageDB.company_id == company_id,
+            PeppolUsageDB.invoice_id.in_(invoice_ids),
+        ).update({PeppolUsageDB.invoice_id: None}, synchronize_session=False)
+
+    deleted_invoices = len(invoices_to_delete)
+    deleted_xml_files = 0
+    deleted_pdf_files = 0
+
+    for invoice in invoices_to_delete:
+        if invoice.xml_file_path and os.path.exists(invoice.xml_file_path):
+            try:
+                os.remove(invoice.xml_file_path)
+                deleted_xml_files += 1
+            except Exception:
+                pass
+
+        if invoice.pdf_file_path and os.path.exists(invoice.pdf_file_path):
+            try:
+                os.remove(invoice.pdf_file_path)
+                deleted_pdf_files += 1
+            except Exception:
+                pass
+
+        db.delete(invoice)
+
     # Reset trial data
     company.trial_status = "ACTIVE"
     company.trial_start_date = datetime.utcnow()
     company.trial_invoice_count = 0
+    company.invoices_generated = 0
     company.trial_ended_at = None
 
     db.commit()
@@ -3898,12 +3944,15 @@ def reset_company_trial(
     return {
         "success": True,
         "company_id": company_id,
-        "message": "Trial reset successfully",
+        "message": "Trial reset successfully and company invoices cleared",
         "trial_status": company.trial_status,
         "trial_start_date": company.trial_start_date.isoformat(),
         "free_plan_type": company.free_plan_type,
         "days_remaining": trial_duration_days,
         "invoices_remaining": invoice_limit,
+        "deleted_invoices": deleted_invoices,
+        "deleted_xml_files": deleted_xml_files,
+        "deleted_pdf_files": deleted_pdf_files,
     }
 
 
@@ -4042,6 +4091,9 @@ def get_admin_stats(
             )
             .count()
         )
+        invoices_used_total = (
+            db.query(InvoiceDB).filter(InvoiceDB.company_id == company.id).count()
+        )
 
         all_companies_list.append(
             {
@@ -4055,7 +4107,9 @@ def get_admin_stats(
                     else "inactive"
                 ),
                 "invoicesThisMonth": invoices_this_month,
+                "invoicesUsed": invoices_used_total,
                 "invoicesLimit": company.free_plan_invoice_limit,
+                "free_plan_type": company.free_plan_type,
                 "plan": plan,
                 "arpu": arpu,
                 "region": company.emirate,
@@ -11069,78 +11123,49 @@ async def bulk_import_invoices(
             tax_amount_calc = prepared["tax_amount_calc"]
             total_amount_calc = prepared["total_amount_calc"]
 
-            # Check if invoice number is provided and already exists
-            invoice_number = invoice_data["invoice_number"]
-            row_num = invoice_data.get("row_num", "Unknown")
+            # Always auto-generate invoice number for bulk import.
+            # Any uploaded invoice_number is intentionally ignored.
+            invoice_type_value = (
+                invoice_type.value
+                if hasattr(invoice_type, "value")
+                else str(invoice_type)
+            )
 
-            if invoice_number:
-                # Check if this invoice number already exists in database
-                existing_invoice = (
+            if invoice_type_value not in invoice_type_counts:
+                invoice_type_counts[invoice_type_value] = (
                     db.query(InvoiceDB)
                     .filter(
                         InvoiceDB.company_id == company_id,
-                        InvoiceDB.invoice_number == invoice_number,
+                        InvoiceDB.invoice_type == invoice_type,
                     )
-                    .first()
-                )
-                if existing_invoice:
-                    # Invoice number already exists - reject this invoice
-                    bulk_errors.append(
-                        f"Row {row_num}: Invoice number '{invoice_number}' already exists in the system. Please use a different invoice number or leave blank for auto-generation."
-                    )
-                    continue
-            else:
-                # No invoice number provided - auto-generate
-                # Get invoice type value for counting
-                invoice_type_value = (
-                    invoice_type.value
-                    if hasattr(invoice_type, "value")
-                    else str(invoice_type)
+                    .count()
                 )
 
-                # Initialize counter for this type if not already done
-                if invoice_type_value not in invoice_type_counts:
-                    # Start with current database count for this type
-                    invoice_type_counts[invoice_type_value] = (
-                        db.query(InvoiceDB)
-                        .filter(
-                            InvoiceDB.company_id == company_id,
-                            InvoiceDB.invoice_type == invoice_type,
-                        )
-                        .count()
-                    )
+            invoice_type_counts[invoice_type_value] += 1
 
-                # Increment counter for this type
+            prefix_map = {
+                "380": "TI",  # Tax Invoice
+                "381": "TCN",  # Tax Credit Note
+                "480": "CI",  # Commercial Invoice
+                "81": "CN",  # Credit Note
+            }
+            prefix = prefix_map.get(invoice_type_value, "TI")
+            generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
+
+            while (
+                db.query(InvoiceDB)
+                .filter(
+                    InvoiceDB.company_id == company_id,
+                    InvoiceDB.invoice_number == generated_number,
+                )
+                .first()
+            ):
                 invoice_type_counts[invoice_type_value] += 1
-
-                # Generate number using the batch-aware counter
-                prefix_map = {
-                    "380": "TI",  # Tax Invoice
-                    "381": "TCN",  # Tax Credit Note
-                    "480": "CI",  # Commercial Invoice
-                    "81": "CN",  # Credit Note
-                }
-                prefix = prefix_map.get(invoice_type_value, "TI")
                 generated_number = (
                     f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
                 )
 
-                # Ensure generated number is unique (check if it conflicts with existing)
-                while (
-                    db.query(InvoiceDB)
-                    .filter(
-                        InvoiceDB.company_id == company_id,
-                        InvoiceDB.invoice_number == generated_number,
-                    )
-                    .first()
-                ):
-                    # Increment counter and try again
-                    invoice_type_counts[invoice_type_value] += 1
-                    generated_number = (
-                        f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
-                    )
-
-                invoice_number = generated_number
+            invoice_number = generated_number
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
@@ -11196,12 +11221,7 @@ async def bulk_import_invoices(
             "total_rows": len(parsed_invoices),
             "valid_rows": created_count,
             "errors": bulk_errors,  # Include any duplicate errors
-            "message": f"Successfully imported {created_count} invoices"
-            + (
-                f". {len(bulk_errors)} row(s) rejected due to duplicate invoice numbers."
-                if bulk_errors
-                else ""
-            ),
+            "message": f"Successfully imported {created_count} invoices",
         }
 
     except HTTPException:
