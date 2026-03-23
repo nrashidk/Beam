@@ -10402,6 +10402,8 @@ async def download_invoice_template(format: str = "csv"):
 
 
 @app.get("/templates/vendors", tags=["Bulk Import"])
+@app.get("/bulk/template/vendors", tags=["Bulk Import"])
+@app.get("/api/bulk/template/vendors", tags=["Bulk Import"])
 async def download_vendor_template(format: str = "csv"):
     """Download CSV/Excel template for bulk vendor import"""
     try:

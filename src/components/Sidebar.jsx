@@ -101,7 +101,7 @@ export default function Sidebar() {
           `}
         >
           <TrendingUp className="w-5 h-5" />
-          <span>Dashboard</span>
+          <span>Profile</span>
         </button>
       </div>
     </div>
