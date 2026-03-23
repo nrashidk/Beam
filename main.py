@@ -1882,6 +1882,8 @@ class InvoiceOut(BaseModel):
     customer_name: str
     customer_email: Optional[str]
     customer_address: Optional[str]
+    customer_city: Optional[str]
+    invoice_notes: Optional[str]
     customer_peppol_id: Optional[str]
 
     # Totals
@@ -5256,6 +5258,8 @@ def create_invoice(
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
         customer_address=invoice.customer_address,
+        customer_city=invoice.customer_city,
+        invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
@@ -5625,7 +5629,9 @@ def get_invoice(invoice_id: str,
         customer_trn=invoice.customer_trn,
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
-        customer_address=invoice.customer_address,
+            customer_address=invoice.customer_address,
+            customer_city=invoice.customer_city,
+            invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
@@ -5805,6 +5811,8 @@ def update_invoice(invoice_id: str,
             customer_name=invoice.customer_name,
             customer_email=invoice.customer_email,
             customer_address=invoice.customer_address,
+            customer_city=invoice.customer_city,
+            invoice_notes=invoice.invoice_notes,
             customer_peppol_id=invoice.customer_peppol_id,
             subtotal_amount=invoice.subtotal_amount,
             tax_amount=invoice.tax_amount,
@@ -7067,6 +7075,8 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
         customer_address=invoice.customer_address,
+        customer_city=invoice.customer_city,
+        invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
