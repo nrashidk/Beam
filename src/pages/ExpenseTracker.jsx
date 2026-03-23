@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import apiClient from "../lib/api";
 import Sidebar from "../components/Sidebar";
 import {
@@ -9,17 +9,28 @@ import {
   Calendar,
   Tag,
   X,
+  Search,
 } from "lucide-react";
+import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 
 const ExpenseTracker = () => {
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [q, setQ] = useState("");
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().slice(0, 7),
   );
+  const [categoryFilter, setCategoryFilter] = useState("_all");
 
   const [newExpense, setNewExpense] = useState({
     expense_date: new Date().toISOString().slice(0, 10),
@@ -37,7 +48,7 @@ const ExpenseTracker = () => {
 
   useEffect(() => {
     loadCategories();
-    loadExpenses();
+    loadExpenses(categoryFilter);
     loadSummary();
   }, [selectedMonth]);
 
@@ -50,11 +61,12 @@ const ExpenseTracker = () => {
     }
   };
 
-  const loadExpenses = async () => {
+  const loadExpenses = async (category = "_all") => {
     try {
-      const res = await apiClient.get("/expenses", {
-        params: { month: selectedMonth },
-      });
+      const params = { month: selectedMonth };
+      if (category && category !== "_all") params.category = category;
+
+      const res = await apiClient.get("/expenses", { params });
       setExpenses(res.data.expenses || []);
     } catch (err) {
       console.error("Error loading expenses:", err);
@@ -71,6 +83,22 @@ const ExpenseTracker = () => {
       console.error("Error loading summary:", err);
     }
   };
+
+  // Reload expenses when categoryFilter changes
+  useEffect(() => {
+    loadExpenses(categoryFilter);
+  }, [categoryFilter, selectedMonth]);
+
+  // Client-side filtered view by supplier or description
+  const filteredExpenses = useMemo(() => {
+    const term = (q || "").trim().toLowerCase();
+    if (!term) return expenses;
+    return expenses.filter((exp) => {
+      const supplier = (exp.supplier_name || "").toLowerCase();
+      const desc = (exp.description || "").toLowerCase();
+      return supplier.includes(term) || desc.includes(term);
+    });
+  }, [expenses, q]);
 
   const createExpense = async (e) => {
     e.preventDefault();
@@ -170,6 +198,43 @@ const ExpenseTracker = () => {
         />
       </div>
 
+      {/* Search & Filter */}
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:gap-4">
+        <div className="flex-1 flex items-center gap-2">
+          <Search className="text-gray-400" />
+          <Input
+            placeholder="Search supplier or description..."
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="max-w-lg"
+          />
+          {q && (
+            <button
+              onClick={() => setQ("")}
+              className="ml-2 text-sm text-gray-500 hover:text-gray-700"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        <div className="w-64 mt-3 md:mt-0">
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="All categories" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">All categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.name}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {/* Financial Summary */}
       {/* {summary && (
         <div className="grid md:grid-cols-4 gap-6 mb-8">
@@ -232,9 +297,9 @@ const ExpenseTracker = () => {
 
       {/* Expenses List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+          <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-900">
-            Expense Records ({expenses.length})
+            Expense Records ({filteredExpenses.length})
           </h2>
         </div>
         <div className="overflow-x-auto">
@@ -265,7 +330,7 @@ const ExpenseTracker = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {expenses.map((expense) => (
+              {filteredExpenses.map((expense) => (
                 <tr key={expense.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm text-gray-900">
                     {expense.expense_date}
