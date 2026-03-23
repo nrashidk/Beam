@@ -7200,6 +7200,60 @@ def delete_expense_category(
     }
 
 
+@app.put("/expense-categories/{category_id}", tags=["Expense Categories"])
+def update_expense_category(
+    category_id: str,
+    name: str = Form(...),
+    description: str = Form(None),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Update a custom expense category. Renames will update existing expenses to new name."""
+    category = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.id == category_id,
+        ExpenseCategoryDB.company_id == current_user.company_id).first()
+
+    if not category:
+        raise HTTPException(404, "Category not found")
+
+    if category.is_default:
+        raise HTTPException(400, "Cannot edit default categories")
+
+    new_name = (name or "").strip()
+    if not new_name:
+        raise HTTPException(400, "Category name is required")
+
+    # Check for duplicates
+    existing = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.company_id == current_user.company_id,
+        func.lower(ExpenseCategoryDB.name) == new_name.lower(),
+        ExpenseCategoryDB.id != category_id).first()
+
+    if existing:
+        raise HTTPException(400, f"Category '{new_name}' already exists")
+
+    old_name = category.name
+    category.name = new_name
+    category.description = description
+    db.add(category)
+
+    # If name changed, update related expenses to new category name
+    if old_name != new_name:
+        db.query(ExpenseDB).filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.category == old_name).update({"category": new_name})
+
+    db.commit()
+    db.refresh(category)
+
+    return {
+        "id": category.id,
+        "name": category.name,
+        "description": category.description,
+        "is_default": category.is_default,
+        "created_at": category.created_at.isoformat()
+    }
+
+
 @app.post("/expenses", tags=["Expenses"])
 def create_expense(
     expense_date: str = Form(...),
@@ -7515,6 +7569,70 @@ def delete_expense(
     return {
         "message": "Expense deleted successfully",
         "expense_id": expense_id
+    }
+
+
+@app.put("/expenses/{expense_id}", tags=["Expenses"])
+def update_expense(
+    expense_id: str,
+    expense_date: str = Form(...),
+    category: str = Form(...),
+    amount: float = Form(...),
+    vat_amount: float = Form(0.0),
+    description: str = Form(None),
+    supplier_name: str = Form(None),
+    reference_number: str = Form(None),
+    notes: str = Form(None),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Update an expense record"""
+    expense = db.query(ExpenseDB).filter(
+        ExpenseDB.id == expense_id,
+        ExpenseDB.company_id == current_user.company_id).first()
+
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+
+    # Validate category exists for company
+    matched_category = db.query(ExpenseCategoryDB).filter(
+        ExpenseCategoryDB.company_id == current_user.company_id,
+        func.lower(ExpenseCategoryDB.name) == (category or "").strip().lower()).first()
+
+    if not matched_category:
+        raise HTTPException(400, f"Invalid category '{category}' for this company")
+
+    from dateutil import parser
+    try:
+        expense_date_obj = parser.parse(expense_date).date()
+    except:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD or ISO format")
+
+    expense.expense_date = expense_date_obj
+    expense.category = matched_category.name
+    expense.amount = amount
+    expense.vat_amount = vat_amount
+    expense.total_amount = (amount or 0.0) + (vat_amount or 0.0)
+    expense.description = description
+    expense.supplier_name = supplier_name
+    expense.reference_number = reference_number
+    expense.notes = notes
+
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+
+    return {
+        "id": expense.id,
+        "expense_date": expense.expense_date.isoformat(),
+        "category": expense.category,
+        "description": expense.description,
+        "amount": expense.amount,
+        "vat_amount": expense.vat_amount,
+        "total_amount": expense.total_amount,
+        "supplier_name": expense.supplier_name,
+        "reference_number": expense.reference_number,
+        "notes": expense.notes,
+        "created_at": expense.created_at.isoformat()
     }
 
 

@@ -10,7 +10,8 @@ import {
   Tag,
   X,
   Search,
-} from "lucide-react";
+  } from "lucide-react";
+import { Edit3, Trash2 } from "lucide-react";
 import { Input } from "../components/ui/input";
 import {
   Select,
@@ -45,6 +46,9 @@ const ExpenseTracker = () => {
     name: "",
     description: "",
   });
+  const [showManageCategories, setShowManageCategories] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingExpense, setEditingExpense] = useState(null);
 
   useEffect(() => {
     loadCategories();
@@ -109,13 +113,18 @@ const ExpenseTracker = () => {
     });
 
     try {
-      await apiClient.post("/expenses", formData, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      });
+      if (editingExpense) {
+        await apiClient.put(`/expenses/${editingExpense.id}`, formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      } else {
+        await apiClient.post("/expenses", formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      }
 
       setShowExpenseForm(false);
+      setEditingExpense(null);
       setNewExpense({
         expense_date: new Date().toISOString().slice(0, 10),
         category: "",
@@ -124,7 +133,7 @@ const ExpenseTracker = () => {
         description: "",
         supplier_name: "",
       });
-      loadExpenses();
+      loadExpenses(categoryFilter);
       loadSummary();
     } catch (err) {
       alert(
@@ -143,13 +152,18 @@ const ExpenseTracker = () => {
       formData.append("description", newCategory.description);
 
     try {
-      await apiClient.post("/expense-categories", formData, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      });
+      if (editingCategory) {
+        await apiClient.put(`/expense-categories/${editingCategory.id}`, formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      } else {
+        await apiClient.post("/expense-categories", formData, {
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+      }
 
       setShowCategoryForm(false);
+      setEditingCategory(null);
       setNewCategory({ name: "", description: "" });
       loadCategories();
     } catch (err) {
@@ -157,6 +171,52 @@ const ExpenseTracker = () => {
         "Error creating category: " +
           (err.response?.data?.detail || err.message),
       );
+    }
+  };
+
+  // Category management helpers
+  const openEditCategory = (cat) => {
+    setEditingCategory(cat);
+    setNewCategory({ name: cat.name, description: cat.description || "" });
+    // Close manage modal so the edit modal appears on top
+    setShowManageCategories(false);
+    setShowCategoryForm(true);
+  };
+
+  const deleteCategory = async (cat) => {
+    if (!confirm(`Delete category '${cat.name}'? This cannot be undone.`)) return;
+    try {
+      await apiClient.delete(`/expense-categories/${cat.id}`);
+      loadCategories();
+      setCategoryFilter("_all");
+      loadExpenses("_all");
+    } catch (err) {
+      alert("Failed to delete category: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  // Expense edit/delete helpers
+  const openEditExpense = (expense) => {
+    setEditingExpense(expense);
+    setNewExpense({
+      expense_date: expense.expense_date,
+      category: expense.category,
+      amount: expense.amount,
+      vat_amount: expense.vat_amount,
+      description: expense.description,
+      supplier_name: expense.supplier_name,
+    });
+    setShowExpenseForm(true);
+  };
+
+  const deleteExpense = async (expense) => {
+    if (!confirm(`Delete expense on ${expense.expense_date}?`)) return;
+    try {
+      await apiClient.delete(`/expenses/${expense.id}`);
+      loadExpenses(categoryFilter);
+      loadSummary();
+    } catch (err) {
+      alert("Failed to delete expense: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -169,11 +229,18 @@ const ExpenseTracker = () => {
         <h1 className="text-3xl font-bold text-gray-900">Expense Tracking</h1>
         <div className="flex gap-3">
           <button
-            onClick={() => setShowCategoryForm(true)}
+            onClick={() => { setEditingCategory(null); setNewCategory({ name: "", description: "" }); setShowCategoryForm(true); }}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2"
           >
             <Tag className="h-4 w-4" />
             New Category
+          </button>
+          <button
+            onClick={() => setShowManageCategories(true)}
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 flex items-center gap-2"
+          >
+            <Edit3 className="h-4 w-4" />
+            Manage Categories
           </button>
           <button
             onClick={() => setShowExpenseForm(true)}
@@ -327,6 +394,9 @@ const ExpenseTracker = () => {
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
                   Total
                 </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
@@ -355,12 +425,22 @@ const ExpenseTracker = () => {
                   <td className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
                     AED {expense.total_amount?.toLocaleString()}
                   </td>
+                  <td className="px-6 py-4 text-sm text-gray-600 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => openEditExpense(expense)} className="p-2 rounded hover:bg-gray-100">
+                        <Edit3 className="h-4 w-4 text-gray-600" />
+                      </button>
+                      <button onClick={() => deleteExpense(expense)} className="p-2 rounded hover:bg-gray-100">
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
-              {expenses.length === 0 && (
+              {filteredExpenses.length === 0 && (
                 <tr>
                   <td
-                    colSpan="7"
+                    colSpan="8"
                     className="px-6 py-12 text-center text-gray-500"
                   >
                     No expenses recorded for this month
@@ -512,12 +592,12 @@ const ExpenseTracker = () => {
         </div>
       )}
 
-      {/* New Category Modal */}
+      {/* New / Edit Category Modal */}
       {showCategoryForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
             <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">New Category</h3>
+              <h3 className="text-lg font-bold text-gray-900">{editingCategory ? 'Edit Category' : 'New Category'}</h3>
               <button
                 onClick={() => setShowCategoryForm(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -572,10 +652,44 @@ const ExpenseTracker = () => {
                   type="submit"
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  Create Category
+                  {editingCategory ? 'Save Category' : 'Create Category'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Manage Categories Modal */}
+      {showManageCategories && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-gray-900">Manage Categories</h3>
+              <button onClick={() => setShowManageCategories(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-3">
+              {categories.length === 0 && (
+                <div className="text-sm text-gray-500">No categories found</div>
+              )}
+              {categories.map((cat) => (
+                <div key={cat.id} className="flex items-center justify-between p-2 border rounded">
+                  <div>
+                    <div className="font-medium">{cat.name}</div>
+                    {cat.description && <div className="text-xs text-gray-500">{cat.description}</div>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => openEditCategory(cat)} className="p-2 rounded hover:bg-gray-100">
+                      <Edit3 className="h-4 w-4 text-gray-600" />
+                    </button>
+                    <button onClick={() => deleteCategory(cat)} className="p-2 rounded hover:bg-gray-100">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
