@@ -4053,6 +4053,19 @@ def get_admin_stats(
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
     all_companies_list = []
+    # Parse optional date range for per-company revenue calculations
+    from_dt = None
+    to_dt = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            from_dt = None
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            to_dt = None
     for company in companies:
         # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
         plan = None
@@ -4080,7 +4093,24 @@ def get_admin_stats(
             >= month_start).count()
         invoices_used_total = db.query(InvoiceDB).filter(
             InvoiceDB.company_id == company.id).count()
-
+        # Calculate company revenue for the supplied date range (paid invoices only)
+        company_revenue = 0.0
+        invoice_rev_q = db.query(InvoiceDB).filter(
+            InvoiceDB.company_id == company.id,
+            InvoiceDB.status == InvoiceStatus.PAID
+        )
+        if from_dt:
+            invoice_rev_q = invoice_rev_q.filter(InvoiceDB.paid_at >= from_dt)
+        if to_dt:
+            invoice_rev_q = invoice_rev_q.filter(InvoiceDB.paid_at <= to_dt)
+        try:
+            invoices_for_company = invoice_rev_q.all()
+            for inv in invoices_for_company:
+                company_revenue += (inv.total_amount or 0.0) * (
+                    -1 if inv.invoice_type in [InvoiceType.TAX_CREDIT_NOTE, InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE] else 1
+                )
+        except Exception:
+            company_revenue = 0.0
         all_companies_list.append({
             "id":
             company.id,
@@ -4103,7 +4133,9 @@ def get_admin_stats(
             "region":
             company.emirate,
             "vatCompliant":
-            bool(company.trn)
+            bool(company.trn),
+            "revenue":
+            round(company_revenue, 2)
         })
 
     # Invoice statistics
