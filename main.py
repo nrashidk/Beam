@@ -7399,6 +7399,13 @@ def get_financial_summary(
     total_revenue = 0.0
     output_vat = 0.0
     invoice_count = 0
+    # Count only invoices with status ISSUED in the period
+    issued_invoice_count = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status == InvoiceStatus.ISSUED,
+        InvoiceDB.issue_date >= start_date,
+        InvoiceDB.issue_date < end_date,
+    ).count()
 
     for invoice in revenue_query.all():
         # Credit notes should be subtracted from revenue, not added
@@ -7446,6 +7453,7 @@ def get_financial_summary(
         "revenue": {
             "total": round(total_revenue, 2),
             "invoice_count": invoice_count,
+            "issued_invoice_count": issued_invoice_count,
             "vat_collected": round(output_vat, 2)
         },
         "expenses": {

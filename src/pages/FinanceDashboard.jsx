@@ -167,7 +167,8 @@ export default function FinanceDashboard() {
           totalExpenses: summary.summary?.total_costs || 0,
           netProfit: summary.summary?.net_income || 0,
           profitMargin: summary.summary?.profit_margin_percent || 0,
-          invoicesSent: summary.revenue?.invoice_count || 0,
+          invoicesIssued:
+            summary.revenue?.issued_invoice_count || summary.revenue?.invoice_count || 0,
           invoicesReceived: 0, // Placeholder - would need AP endpoint
           outstandingAR: outstandingAR,
           outstandingAP: 0, // Placeholder - would need AP endpoint
@@ -440,10 +441,8 @@ export default function FinanceDashboard() {
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Invoices Sent</span>
-                      <span className="font-medium">
-                        {summary.invoicesSent}
-                      </span>
+                      <span className="text-gray-600">Invoices Issued</span>
+                      <span className="font-medium">{summary.invoicesIssued}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Average Days</span>
