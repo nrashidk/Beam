@@ -1,60 +1,111 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useContent } from '../contexts/ContentContext';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Card, CardContent } from '../components/ui/card';
-import { Badge } from '../components/ui/badge';
-import { PhoneInput, EmailInput, PasswordInput } from '../components/ui/validated-input';
-import Footer from '../components/Footer';
-import api from '../lib/api';
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { useContent } from "../contexts/ContentContext";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Card, CardContent } from "../components/ui/card";
+import { Badge } from "../components/ui/badge";
+import {
+  PhoneInput,
+  EmailInput,
+  PasswordInput,
+} from "../components/ui/validated-input";
+import Footer from "../components/Footer";
+import api, { getApiBaseUrl } from "../lib/api";
 
 export default function Homepage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
-  
+
   // Dynamic content
-  const heroTitle = useContent('homepage_hero_title', 'Simple, Compliant\nDigital Invoicing for UAE');
-  const heroSubtitle = useContent('homepage_hero_subtitle', 'Automated invoicing in structured electronic formats.');
-  const box1Title = useContent('feature_box_1_title', 'Government-Approved Invoices');
-  const box1Desc = useContent('feature_box_1_description', 'Create professional invoices that meet all UAE government requirements.');
-  const box2Title = useContent('feature_box_2_title', 'Manage Your Purchases');
-  const box2Desc = useContent('feature_box_2_description', 'Create purchase orders, receive supplier invoices, and keep track of all your expenses.');
-  const box3Title = useContent('feature_box_3_title', 'Extra Security');
-  const box3Desc = useContent('feature_box_3_description', 'Extra protection for your account.');
-  const box4Title = useContent('feature_box_4_title', 'Team Collaboration');
-  const box4Desc = useContent('feature_box_4_description', 'Work together with your team.');
-  const box5Title = useContent('feature_box_5_title', 'Electronic Delivery');
-  const box5Desc = useContent('feature_box_5_description', 'Send invoices electronically to your customers.');
-  const box6Title = useContent('feature_box_6_title', 'Flexible Subscriptions');
-  const box6Desc = useContent('feature_box_6_description', 'Start free with 10 invoices per month.');
+  const heroTitle = useContent(
+    "homepage_hero_title",
+    "Simple, Compliant\nDigital Invoicing for UAE",
+  );
+  const heroSubtitle = useContent(
+    "homepage_hero_subtitle",
+    "Automated invoicing in structured electronic formats.",
+  );
+  const box1Title = useContent(
+    "feature_box_1_title",
+    "Government-Approved Invoices",
+  );
+  const box1Desc = useContent(
+    "feature_box_1_description",
+    "Create professional invoices that meet all UAE government requirements.",
+  );
+  const box2Title = useContent("feature_box_2_title", "Manage Your Purchases");
+  const box2Desc = useContent(
+    "feature_box_2_description",
+    "Create purchase orders, receive supplier invoices, and keep track of all your expenses.",
+  );
+  const box3Title = useContent("feature_box_3_title", "Extra Security");
+  const box3Desc = useContent(
+    "feature_box_3_description",
+    "Extra protection for your account.",
+  );
+  const box4Title = useContent("feature_box_4_title", "Team Collaboration");
+  const box4Desc = useContent(
+    "feature_box_4_description",
+    "Work together with your team.",
+  );
+  const box5Title = useContent("feature_box_5_title", "Electronic Delivery");
+  const box5Desc = useContent(
+    "feature_box_5_description",
+    "Send invoices electronically to your customers.",
+  );
+  const box6Title = useContent("feature_box_6_title", "Flexible Subscriptions");
+  const box6Desc = useContent(
+    "feature_box_6_description",
+    "Start free with 10 invoices per month.",
+  );
   const [formData, setFormData] = useState({
-    email: '',
-    company_name: '',
-    phone: '',
-    password: '',
+    email: "",
+    company_name: "",
+    phone: "",
+    password: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
-  const [publicStats, setPublicStats] = useState({ totalInvoices: 0, totalCompanies: 0 });
+  const [publicStats, setPublicStats] = useState({
+    totalInvoices: 0,
+    totalCompanies: 0,
+  });
+  const [featuredBusinesses, setFeaturedBusinesses] = useState([]);
+  const baseBrands = [
+    { id: "ph_lulu", display_name: "LuLu" },
+    { id: "ph_styli", display_name: "Styli" },
+    { id: "ph_giorgio", display_name: "GIORGIO ARMANI" },
+    { id: "ph_duncan", display_name: "DUNCAN & ROSS" },
+  ];
 
   useEffect(() => {
     if (user) {
       fetchUserInfo();
     }
     fetchPublicStats();
+    fetchPublicFeatured();
   }, [user]);
 
+  const fetchPublicFeatured = async () => {
+    try {
+      const res = await api.get("/public/featured-businesses");
+      setFeaturedBusinesses(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch featured businesses:", err);
+    }
+  };
+
   useEffect(() => {
-    if (location.hash === '#signup') {
+    if (location.hash === "#signup") {
       setTimeout(() => {
-        const el = document.getElementById('signup');
+        const el = document.getElementById("signup");
         if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
         }
       }, 300);
     }
@@ -62,47 +113,47 @@ export default function Homepage() {
 
   const fetchUserInfo = async () => {
     try {
-      const response = await api.get('/me');
+      const response = await api.get("/me");
       setUserInfo(response.data);
     } catch (error) {
-      console.error('Failed to fetch user info:', error);
+      console.error("Failed to fetch user info:", error);
     }
   };
 
   const fetchPublicStats = async () => {
     try {
-      const response = await api.get('/public/stats');
+      const response = await api.get("/public/stats");
       setPublicStats(response.data);
     } catch (error) {
-      console.error('Failed to fetch public stats:', error);
+      console.error("Failed to fetch public stats:", error);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const response = await api.post('/register/quick', {
+      const response = await api.post("/register/quick", {
         email: formData.email,
         company_name: formData.company_name,
-        business_type: 'LLC',
+        business_type: "LLC",
         phone: formData.phone,
         password: formData.password,
       });
 
       if (response.data.success) {
         setSuccess(true);
-        setFormData({ 
-          email: '', 
-          company_name: '', 
-          phone: '', 
-          password: '',
+        setFormData({
+          email: "",
+          company_name: "",
+          phone: "",
+          password: "",
         });
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed');
+      setError(err.response?.data?.detail || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -124,7 +175,7 @@ export default function Homepage() {
               </Button>
             </div>
           ) : (
-            <Button variant="ghost" onClick={() => navigate('/login')}>
+            <Button variant="ghost" onClick={() => navigate("/login")}>
               Sign In
             </Button>
           )}
@@ -145,11 +196,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box1Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box1Title}
+              </h3>
               <p className="text-sm text-gray-600">{box1Desc}</p>
             </CardContent>
           </Card>
@@ -157,11 +220,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box2Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box2Title}
+              </h3>
               <p className="text-sm text-gray-600">{box2Desc}</p>
             </CardContent>
           </Card>
@@ -169,11 +244,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box3Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box3Title}
+              </h3>
               <p className="text-sm text-gray-600">{box3Desc}</p>
             </CardContent>
           </Card>
@@ -181,11 +268,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box4Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box4Title}
+              </h3>
               <p className="text-sm text-gray-600">{box4Desc}</p>
             </CardContent>
           </Card>
@@ -193,11 +292,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box5Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box5Title}
+              </h3>
               <p className="text-sm text-gray-600">{box5Desc}</p>
             </CardContent>
           </Card>
@@ -205,11 +316,23 @@ export default function Homepage() {
           <Card className="hover:shadow-lg transition-shadow bg-white">
             <CardContent className="p-8 text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-indigo-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-8 h-8 text-indigo-600"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900">{box6Title}</h3>
+              <h3 className="text-xl font-semibold text-gray-900">
+                {box6Title}
+              </h3>
               <p className="text-sm text-gray-600">{box6Desc}</p>
             </CardContent>
           </Card>
@@ -217,27 +340,53 @@ export default function Homepage() {
 
         {/* Trusted by Leading Brands */}
         <div className="space-y-8">
-          <h2 className="text-2xl font-semibold text-center text-gray-900">Trusted by Leading Brands</h2>
+          <h2 className="text-2xl font-semibold text-center text-gray-900">
+            Trusted by Leading Brands
+          </h2>
           <div className="overflow-hidden relative">
             <div className="flex gap-12 animate-scroll">
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">LuLu</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">Styli</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-2xl font-bold text-gray-400">GIORGIO ARMANI</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-2xl font-bold text-gray-400">DUNCAN & ROSS</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">LuLu</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">Styli</span>
-              </div>
+              {(() => {
+                const combined = [...baseBrands, ...featuredBusinesses];
+                // Deduplicate by display_name/company_id
+                const seen = new Set();
+                const deduped = combined.filter((b) => {
+                  const key =
+                    b.company_id || b.display_name || b.company_name || b.id;
+                  if (seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                });
+
+                return deduped.map((b) => {
+                  const hasLogo = !!(b.logo_url || b.company_id);
+                  const src =
+                    b.logo_url ||
+                    (b.company_id
+                      ? `${getApiBaseUrl()}/companies/${b.company_id}/branding/logo`
+                      : null);
+                  return (
+                    <div
+                      key={b.id || b.company_id || b.display_name}
+                      className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all"
+                    >
+                      {hasLogo && src ? (
+                        <img
+                          src={src}
+                          alt={b.display_name || b.company_name}
+                          className="max-h-14 object-contain"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <span className="text-2xl font-bold text-gray-400">
+                          {b.display_name || b.company_name}
+                        </span>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
@@ -246,15 +395,23 @@ export default function Homepage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-indigo-600 mb-2">
-              {publicStats.totalCompanies > 0 ? publicStats.totalCompanies.toLocaleString() : '—'}
+              {publicStats.totalCompanies > 0
+                ? publicStats.totalCompanies.toLocaleString()
+                : "—"}
             </div>
-            <p className="text-sm text-gray-700">Active businesses using InvoLinks</p>
+            <p className="text-sm text-gray-700">
+              Active businesses using InvoLinks
+            </p>
           </div>
           <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-200">
             <div className="text-4xl font-bold text-indigo-600 mb-2">
-              {publicStats.totalInvoices > 0 ? publicStats.totalInvoices.toLocaleString() : '—'}
+              {publicStats.totalInvoices > 0
+                ? publicStats.totalInvoices.toLocaleString()
+                : "—"}
             </div>
-            <p className="text-sm text-gray-700">e-Invoices generated on InvoLinks platform</p>
+            <p className="text-sm text-gray-700">
+              e-Invoices generated on InvoLinks platform
+            </p>
           </div>
         </div>
 
@@ -263,17 +420,31 @@ export default function Homepage() {
             {success ? (
               <div className="text-center space-y-4 max-w-md mx-auto">
                 <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  <svg
+                    className="w-8 h-8 text-green-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
                   </svg>
                 </div>
-                <h2 className="text-2xl font-semibold text-gray-900">Registration Successful!</h2>
+                <h2 className="text-2xl font-semibold text-gray-900">
+                  Registration Successful!
+                </h2>
                 <div className="space-y-2">
                   <p className="text-gray-700">Awaiting Admin approval.</p>
-                  <p className="text-sm text-gray-600">A confirmation email will be sent upon approval.</p>
+                  <p className="text-sm text-gray-600">
+                    A confirmation email will be sent upon approval.
+                  </p>
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => setSuccess(false)}
                   className="mt-4"
                 >
@@ -284,7 +455,9 @@ export default function Homepage() {
               <>
                 <div className="text-center">
                   <h2 className="text-2xl font-semibold mb-2">Get Started</h2>
-                  <p className="text-sm text-gray-600">Create your free account</p>
+                  <p className="text-sm text-gray-600">
+                    Create your free account
+                  </p>
                 </div>
 
                 {error && (
@@ -305,7 +478,12 @@ export default function Homepage() {
                         placeholder="Your Company LLC"
                         minLength={3}
                         value={formData.company_name}
-                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            company_name: e.target.value,
+                          })
+                        }
                       />
                     </div>
 
@@ -317,7 +495,9 @@ export default function Homepage() {
                         required
                         name="phone"
                         value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({ ...formData, phone: e.target.value })
+                        }
                       />
                     </div>
 
@@ -329,7 +509,9 @@ export default function Homepage() {
                         required
                         name="email"
                         value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({ ...formData, email: e.target.value })
+                        }
                       />
                     </div>
 
@@ -341,24 +523,26 @@ export default function Homepage() {
                         required
                         name="password"
                         value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        onChange={(e) =>
+                          setFormData({ ...formData, password: e.target.value })
+                        }
                       />
                     </div>
                   </div>
 
                   <div className="flex justify-center pt-2">
                     <Button type="submit" className="px-8" disabled={loading}>
-                      {loading ? 'Creating Account...' : 'Create Account →'}
+                      {loading ? "Creating Account..." : "Create Account →"}
                     </Button>
                   </div>
                 </form>
 
                 <p className="text-center text-sm text-gray-600">
-                  Already have an account?{' '}
+                  Already have an account?{" "}
                   <button
                     type="button"
                     className="text-blue-600 hover:underline"
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate("/login")}
                   >
                     Sign in
                   </button>

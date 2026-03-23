@@ -47,6 +47,7 @@ from sqlalchemy import (
     ForeignKey,
     Text,
     func,
+    or_,
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
@@ -1843,6 +1844,8 @@ class InvoiceOut(BaseModel):
     customer_name: str
     customer_email: Optional[str]
     customer_address: Optional[str]
+    customer_city: Optional[str]
+    invoice_notes: Optional[str]
     customer_peppol_id: Optional[str]
 
     # Totals
@@ -4057,6 +4060,23 @@ def get_admin_stats(
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
     all_companies_list = []
+    # Parse optional date range for per-company revenue calculations
+    from_dt = None
+    to_dt = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except Exception:
+            from_dt = None
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except Exception:
+            to_dt = None
     for company in companies:
         # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
         plan = None
@@ -4094,7 +4114,29 @@ def get_admin_stats(
         invoices_used_total = (
             db.query(InvoiceDB).filter(InvoiceDB.company_id == company.id).count()
         )
-
+        # Calculate company revenue for the supplied date range (paid invoices only)
+        company_revenue = 0.0
+        invoice_rev_q = db.query(InvoiceDB).filter(
+            InvoiceDB.company_id == company.id, InvoiceDB.status == InvoiceStatus.PAID
+        )
+        if from_dt:
+            invoice_rev_q = invoice_rev_q.filter(InvoiceDB.paid_at >= from_dt)
+        if to_dt:
+            invoice_rev_q = invoice_rev_q.filter(InvoiceDB.paid_at <= to_dt)
+        try:
+            invoices_for_company = invoice_rev_q.all()
+            for inv in invoices_for_company:
+                company_revenue += (inv.total_amount or 0.0) * (
+                    -1
+                    if inv.invoice_type
+                    in [
+                        InvoiceType.TAX_CREDIT_NOTE,
+                        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+                    ]
+                    else 1
+                )
+        except Exception:
+            company_revenue = 0.0
         all_companies_list.append(
             {
                 "id": company.id,
@@ -4114,6 +4156,7 @@ def get_admin_stats(
                 "arpu": arpu,
                 "region": company.emirate,
                 "vatCompliant": bool(company.trn),
+                "revenue": round(company_revenue, 2),
             }
         )
 
@@ -5430,6 +5473,8 @@ def create_invoice(
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
         customer_address=invoice.customer_address,
+        customer_city=invoice.customer_city,
+        invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
@@ -5661,6 +5706,7 @@ def list_invoices(
     db: Session = Depends(get_db),
     status: Optional[str] = None,
     invoice_type: Optional[str] = None,
+    q: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
 ):
@@ -5680,6 +5726,16 @@ def list_invoices(
             query = query.filter(InvoiceDB.invoice_type == type_enum)
         except ValueError:
             raise HTTPException(400, f"Invalid invoice type: {invoice_type}")
+
+    # Optional search query - search by invoice number or customer name
+    if q:
+        q_term = f"%{q}%"
+        query = query.filter(
+            or_(
+                InvoiceDB.invoice_number.ilike(q_term),
+                InvoiceDB.customer_name.ilike(q_term),
+            )
+        )
 
     query = query.order_by(InvoiceDB.created_at.desc())
     invoices = query.offset(offset).limit(limit).all()
@@ -5787,6 +5843,8 @@ def get_invoice(
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
         customer_address=invoice.customer_address,
+        customer_city=invoice.customer_city,
+        invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
@@ -5979,6 +6037,8 @@ def update_invoice(
             customer_name=invoice.customer_name,
             customer_email=invoice.customer_email,
             customer_address=invoice.customer_address,
+            customer_city=invoice.customer_city,
+            invoice_notes=invoice.invoice_notes,
             customer_peppol_id=invoice.customer_peppol_id,
             subtotal_amount=invoice.subtotal_amount,
             tax_amount=invoice.tax_amount,
@@ -6220,14 +6280,22 @@ def get_daily_reconciliation_report(
         )
         total_collected += signed_amount
 
-    # Get outstanding invoices (overdue)
+    # Get outstanding invoices (overdue).
+    # Exclude PAID and CANCELLED invoices so cancelled rows are not counted as outstanding.
+    now_date = datetime.utcnow().date()
     outstanding_invoices = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.status != InvoiceStatus.PAID,
-            InvoiceDB.due_date < datetime.utcnow(),
+            InvoiceDB.status.notin_(
+                [
+                    InvoiceStatus.PAID,
+                    InvoiceStatus.CANCELLED,
+                ]
+            ),
+            InvoiceDB.due_date < now_date,
         )
+        .order_by(InvoiceDB.due_date.asc())
         .all()
     )
 
@@ -6259,9 +6327,7 @@ def get_daily_reconciliation_report(
                 "customer_name": inv.customer_name,
                 "amount_due": inv.amount_due,
                 "due_date": inv.due_date.isoformat() if inv.due_date else None,
-                "days_overdue": (datetime.utcnow().date() - inv.due_date).days
-                if inv.due_date
-                else 0,
+                "days_overdue": (now_date - inv.due_date).days if inv.due_date else 0,
             }
             for inv in outstanding_invoices[:10]  # Limit to 10 most overdue
         ],
@@ -7430,6 +7496,8 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         customer_name=invoice.customer_name,
         customer_email=invoice.customer_email,
         customer_address=invoice.customer_address,
+        customer_city=invoice.customer_city,
+        invoice_notes=invoice.invoice_notes,
         customer_peppol_id=invoice.customer_peppol_id,
         subtotal_amount=invoice.subtotal_amount,
         tax_amount=invoice.tax_amount,
@@ -7602,6 +7670,72 @@ def delete_expense_category(
     db.commit()
 
     return {"message": "Category deleted successfully", "category_id": category_id}
+
+
+@app.put("/expense-categories/{category_id}", tags=["Expense Categories"])
+def update_expense_category(
+    category_id: str,
+    name: str = Form(...),
+    description: str = Form(None),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Update a custom expense category. Renames will update existing expenses to new name."""
+    category = (
+        db.query(ExpenseCategoryDB)
+        .filter(
+            ExpenseCategoryDB.id == category_id,
+            ExpenseCategoryDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
+
+    if not category:
+        raise HTTPException(404, "Category not found")
+
+    if category.is_default:
+        raise HTTPException(400, "Cannot edit default categories")
+
+    new_name = (name or "").strip()
+    if not new_name:
+        raise HTTPException(400, "Category name is required")
+
+    # Check for duplicates
+    existing = (
+        db.query(ExpenseCategoryDB)
+        .filter(
+            ExpenseCategoryDB.company_id == current_user.company_id,
+            func.lower(ExpenseCategoryDB.name) == new_name.lower(),
+            ExpenseCategoryDB.id != category_id,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(400, f"Category '{new_name}' already exists")
+
+    old_name = category.name
+    category.name = new_name
+    category.description = description
+    db.add(category)
+
+    # If name changed, update related expenses to new category name
+    if old_name != new_name:
+        db.query(ExpenseDB).filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.category == old_name,
+        ).update({"category": new_name})
+
+    db.commit()
+    db.refresh(category)
+
+    return {
+        "id": category.id,
+        "name": category.name,
+        "description": category.description,
+        "is_default": category.is_default,
+        "created_at": category.created_at.isoformat(),
+    }
 
 
 @app.post("/expenses", tags=["Expenses"])
@@ -7818,6 +7952,17 @@ def get_financial_summary(
     total_revenue = 0.0
     output_vat = 0.0
     invoice_count = 0
+    # Count only invoices with status ISSUED in the period
+    issued_invoice_count = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status == InvoiceStatus.ISSUED,
+            InvoiceDB.issue_date >= start_date,
+            InvoiceDB.issue_date < end_date,
+        )
+        .count()
+    )
 
     for invoice in revenue_query.all():
         # Credit notes should be subtracted from revenue, not added
@@ -7870,6 +8015,7 @@ def get_financial_summary(
         "revenue": {
             "total": round(total_revenue, 2),
             "invoice_count": invoice_count,
+            "issued_invoice_count": issued_invoice_count,
             "vat_collected": round(output_vat, 2),
         },
         "expenses": {
@@ -7929,6 +8075,81 @@ def delete_expense(
     db.commit()
 
     return {"message": "Expense deleted successfully", "expense_id": expense_id}
+
+
+@app.put("/expenses/{expense_id}", tags=["Expenses"])
+def update_expense(
+    expense_id: str,
+    expense_date: str = Form(...),
+    category: str = Form(...),
+    amount: float = Form(...),
+    vat_amount: float = Form(0.0),
+    description: str = Form(None),
+    supplier_name: str = Form(None),
+    reference_number: str = Form(None),
+    notes: str = Form(None),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Update an expense record"""
+    expense = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.id == expense_id, ExpenseDB.company_id == current_user.company_id
+        )
+        .first()
+    )
+
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+
+    # Validate category exists for company
+    matched_category = (
+        db.query(ExpenseCategoryDB)
+        .filter(
+            ExpenseCategoryDB.company_id == current_user.company_id,
+            func.lower(ExpenseCategoryDB.name) == (category or "").strip().lower(),
+        )
+        .first()
+    )
+
+    if not matched_category:
+        raise HTTPException(400, f"Invalid category '{category}' for this company")
+
+    from dateutil import parser
+
+    try:
+        expense_date_obj = parser.parse(expense_date).date()
+    except:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD or ISO format")
+
+    expense.expense_date = expense_date_obj
+    expense.category = matched_category.name
+    expense.amount = amount
+    expense.vat_amount = vat_amount
+    expense.total_amount = (amount or 0.0) + (vat_amount or 0.0)
+    expense.description = description
+    expense.supplier_name = supplier_name
+    expense.reference_number = reference_number
+    expense.notes = notes
+
+    db.add(expense)
+    db.commit()
+    db.refresh(expense)
+
+    return {
+        "id": expense.id,
+        "expense_date": expense.expense_date.isoformat(),
+        "category": expense.category,
+        "description": expense.description,
+        "amount": expense.amount,
+        "vat_amount": expense.vat_amount,
+        "total_amount": expense.total_amount,
+        "supplier_name": expense.supplier_name,
+        "reference_number": expense.reference_number,
+        "notes": expense.notes,
+        "created_at": expense.created_at.isoformat(),
+    }
 
 
 # ==================== SIMPLE INVENTORY TRACKING ====================
@@ -9449,6 +9670,100 @@ async def upload_company_logo(
     }
 
 
+@app.post("/admin/companies/{company_id}/branding/logo", tags=["Admin", "Branding"])
+async def admin_upload_company_logo(
+    company_id: str,
+    logo: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Allow super-admin to upload company logo on behalf of any company"""
+    # Only SUPER_ADMIN role may call this
+    if getattr(current_user, "role", None) != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Not authorized")
+
+    # Check if company exists
+    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    # Validate subscription/plan like regular endpoint
+    subscription = (
+        db.query(CompanySubscriptionDB)
+        .filter(CompanySubscriptionDB.company_id == company_id)
+        .first()
+    )
+
+    if subscription:
+        plan = (
+            db.query(SubscriptionPlanDB)
+            .filter(SubscriptionPlanDB.id == subscription.plan_id)
+            .first()
+        )
+
+        if plan and not plan.allow_branding:
+            raise HTTPException(
+                403, "This company's subscription plan does not allow branding."
+            )
+
+    allowed_types = ["image/png", "image/svg+xml"]
+    allowed_extensions = [".png", ".svg"]
+
+    if not logo.content_type in allowed_types:
+        raise HTTPException(400, "Only PNG and SVG files are allowed")
+
+    file_ext = os.path.splitext(logo.filename)[1].lower() if logo.filename else ""
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            400,
+            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed",
+        )
+
+    content = await logo.read()
+    file_size = len(content)
+
+    if file_size > 2 * 1024 * 1024:  # 2MB limit
+        raise HTTPException(400, "File size must be less than 2MB")
+
+    branding_dir = os.path.join(ARTIFACT_ROOT, "branding", company_id)
+    os.makedirs(branding_dir, exist_ok=True)
+
+    file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
+    file_name = f"logo.{file_extension}"
+    file_path = os.path.join(branding_dir, file_name)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    branding = (
+        db.query(CompanyBrandingDB)
+        .filter(CompanyBrandingDB.company_id == company_id)
+        .first()
+    )
+
+    if not branding:
+        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}", company_id=company_id)
+        db.add(branding)
+
+    if branding.logo_file_path and os.path.exists(branding.logo_file_path):
+        os.remove(branding.logo_file_path)
+
+    branding.logo_file_name = file_name
+    branding.logo_file_path = file_path
+    branding.logo_file_size = file_size
+    branding.logo_mime_type = logo.content_type
+    branding.logo_uploaded_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "message": "Logo uploaded successfully",
+        "file_name": file_name,
+        "file_size": file_size,
+        "uploaded_at": branding.logo_uploaded_at.isoformat(),
+    }
+
+
 @app.post("/companies/{company_id}/branding/stamp", tags=["Branding"])
 async def upload_company_stamp(
     company_id: str,
@@ -10895,6 +11210,8 @@ async def download_invoice_template(format: str = "csv"):
 
 
 @app.get("/templates/vendors", tags=["Bulk Import"])
+@app.get("/bulk/template/vendors", tags=["Bulk Import"])
+@app.get("/api/bulk/template/vendors", tags=["Bulk Import"])
 async def download_vendor_template(format: str = "csv"):
     """Download CSV/Excel template for bulk vendor import"""
     try:

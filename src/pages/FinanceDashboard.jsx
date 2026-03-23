@@ -74,21 +74,29 @@ export default function FinanceDashboard() {
       setError(null);
       const months = getMonthsFromPeriod(selectedPeriod);
 
-      // Fetch data from multiple endpoints in parallel
-      const [summaryRes, revenueRes, cashFlowRes, customersRes, invoicesRes] =
-        await Promise.all([
-          apiClient.get("/expenses/summary"),
-          apiClient.get("/analytics/revenue", { params: { months } }),
-          apiClient.get("/analytics/cash-flow", { params: { months } }),
-          apiClient.get("/analytics/customers", { params: { limit: 4 } }),
-          apiClient.get("/invoices", {
-            params: { limit: 4, sort_by: "issue_date", sort_order: "desc" },
-          }),
-        ]);
+      // Fetch data from multiple endpoints in parallel (including profitability for monthly expenses)
+      const [
+        summaryRes,
+        revenueRes,
+        cashFlowRes,
+        profitabilityRes,
+        customersRes,
+        invoicesRes,
+      ] = await Promise.all([
+        apiClient.get("/expenses/summary"),
+        apiClient.get("/analytics/revenue", { params: { months } }),
+        apiClient.get("/analytics/cash-flow", { params: { months } }),
+        apiClient.get("/analytics/profitability", { params: { months } }),
+        apiClient.get("/analytics/customers", { params: { limit: 4 } }),
+        apiClient.get("/invoices", {
+          params: { limit: 4, sort_by: "issue_date", sort_order: "desc" },
+        }),
+      ]);
 
       const summary = summaryRes.data;
       const revenueData = revenueRes.data;
       const cashFlowData = cashFlowRes.data;
+      const profitabilityData = profitabilityRes.data;
       const customersData = customersRes.data;
       const invoicesData = invoicesRes.data;
 
@@ -111,22 +119,36 @@ export default function FinanceDashboard() {
         color: expenseColors[category] || "#6b7280",
       }));
 
-      // Transform revenue data for monthly chart
-      const revenueByMonth = (revenueData.monthly_data || []).map((item) => ({
-        month: new Date(item.month).toLocaleDateString("en-US", {
-          month: "short",
-        }),
-        revenue: item.revenue || 0,
-        expenses: 0, // We'll need to calculate this from expense data
-      }));
+      // Transform revenue data for monthly chart — prefer profitability monthly breakdown (includes expenses)
+      let revenueByMonth = [];
+      if (
+        profitabilityData &&
+        Array.isArray(profitabilityData.monthly_breakdown)
+      ) {
+        revenueByMonth = profitabilityData.monthly_breakdown.map((item) => ({
+          month: new Date(item.month + "-01").toLocaleDateString("en-US", {
+            month: "short",
+          }),
+          revenue: item.revenue || 0,
+          expenses: item.expenses || 0,
+        }));
+      } else {
+        revenueByMonth = (revenueData.revenue_trend || []).map((item) => ({
+          month: new Date(item.month + "-01").toLocaleDateString("en-US", {
+            month: "short",
+          }),
+          revenue: item.revenue || 0,
+          expenses: 0,
+        }));
+      }
 
-      // Transform cash flow data
-      const cashFlow = (cashFlowData.monthly_data || []).map((item) => ({
-        date: new Date(item.month).toLocaleDateString("en-US", {
+      // Transform cash flow data from analytics endpoint
+      const cashFlow = (cashFlowData.monthly_cash_flow || []).map((item) => ({
+        date: new Date(item.month + "-01").toLocaleDateString("en-US", {
           month: "short",
         }),
-        inflow: item.inflow || 0,
-        outflow: item.outflow || 0,
+        inflow: item.inflows || 0,
+        outflow: item.outflows || 0,
       }));
 
       // Transform invoice data for recent transactions
@@ -164,14 +186,27 @@ export default function FinanceDashboard() {
 
       setFinancialData({
         summary: {
-          totalRevenue: summary.revenue?.total || 0,
+          // Use analytics (paid-based) for displayed revenue, fall back to summary if missing
+          totalRevenue:
+            revenueData.total_revenue ?? summary.revenue?.total ?? 0,
           totalExpenses: summary.summary?.total_costs || 0,
           netProfit: summary.summary?.net_income || 0,
           profitMargin: summary.summary?.profit_margin_percent || 0,
-          invoicesSent: summary.revenue?.invoice_count || 0,
-          invoicesReceived: 0, // Placeholder - would need AP endpoint
+          // Keep issued invoice counts from the summary endpoint
+          invoicesIssued:
+            summary.revenue?.issued_invoice_count ||
+            summary.revenue?.invoice_count ||
+            0,
+          invoicesReceived: 0,
           outstandingAR: outstandingAR,
-          outstandingAP: 0, // Placeholder - would need AP endpoint
+          outstandingAP: 0,
+        },
+        // include raw payloads to help debug mismatches
+        _raw: {
+          summaryRaw: summary,
+          revenueRaw: revenueData,
+          cashFlowRaw: cashFlowData,
+          profitabilityRaw: profitabilityData,
         },
         revenueByMonth,
         cashFlow,
@@ -232,7 +267,12 @@ export default function FinanceDashboard() {
     expenseBreakdown,
     recentInvoices,
     topCustomers,
+    _raw,
   } = financialData;
+
+  const showDebug =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("debug") === "1";
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -278,7 +318,22 @@ export default function FinanceDashboard() {
               <div className="text-2xl font-bold text-gray-900">
                 AED {summary.totalRevenue.toLocaleString()}
               </div>
-              <div className="text-sm text-gray-600 mt-1">Total Revenue</div>
+              <div className="text-sm text-gray-600 mt-1">
+                <div>
+                  Revenue (Received): AED{" "}
+                  {summary.totalRevenue.toLocaleString()}
+                </div>
+                <div className="text-xs text-gray-500">
+                  Revenue (Issued): AED{" "}
+                  {(
+                    (_raw &&
+                      _raw.summaryRaw &&
+                      _raw.summaryRaw.revenue &&
+                      _raw.summaryRaw.revenue.total) ||
+                    0
+                  ).toLocaleString()}
+                </div>
+              </div>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -326,6 +381,25 @@ export default function FinanceDashboard() {
               <div className="text-sm text-gray-600 mt-1">Profit Margin</div>
             </div>
           </div>
+
+          {showDebug && (
+            <div className="mt-6 bg-white p-4 rounded border border-gray-200">
+              <div className="text-sm font-medium mb-2">
+                Debug: Raw API payloads
+              </div>
+              <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-auto">
+                {JSON.stringify(
+                  {
+                    summaryRaw: _raw && _raw.summaryRaw,
+                    revenueRaw: _raw && _raw.revenueRaw,
+                    cashFlowRaw: _raw && _raw.cashFlowRaw,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </div>
+          )}
 
           {/* Charts Row */}
           <div className="grid lg:grid-cols-2 gap-6 mb-8">
@@ -441,9 +515,9 @@ export default function FinanceDashboard() {
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Invoices Sent</span>
+                      <span className="text-gray-600">Invoices Issued</span>
                       <span className="font-medium">
-                        {summary.invoicesSent}
+                        {summary.invoicesIssued}
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">

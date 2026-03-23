@@ -7,6 +7,7 @@ import {
   QrCode,
   Copy,
   Download,
+  Phone,
 } from "lucide-react";
 import { apAPI } from "../lib/api";
 
@@ -43,7 +44,7 @@ export default function POSendModal({
     {
       id: "whatsapp",
       name: "WhatsApp",
-      icon: Send,
+      icon: Phone,
       description: "Send via WhatsApp",
       placeholder: "+971501234567",
       type: "tel",
@@ -273,7 +274,7 @@ export default function POSendModal({
               )}
             </button>
           )}
-          {selectedMethod && selectedMethod.id !== "qrcode" && (
+          {selectedMethod && (
             <button
               onClick={() => setSelectedMethod(null)}
               className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"

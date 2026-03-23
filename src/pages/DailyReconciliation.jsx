@@ -24,6 +24,12 @@ import {
   Calendar,
   Search,
 } from "lucide-react";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../components/ui/tabs";
 import { format } from "date-fns";
 import api from "../lib/api";
 import Sidebar from "../components/Sidebar";
@@ -301,288 +307,416 @@ export default function DailyReconciliation() {
           {loading ? (
             <PageLoader />
           ) : report ? (
-            <>
-              {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">Total Collected</p>
-                        <p className="text-2xl font-bold text-green-600 mt-1">
-                          AED{" "}
-                          {summary.total_collected.toLocaleString("en-AE", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
+            <Tabs defaultValue="summary" className="space-y-6">
+              <TabsList className="bg-white border border-gray-200 p-1 rounded-xl shadow-sm">
+                <TabsTrigger
+                  value="summary"
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+                >
+                  SUMMARY
+                </TabsTrigger>
+                <TabsTrigger
+                  value="payment"
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+                >
+                  PAYMENT BREAKDOWN
+                </TabsTrigger>
+                <TabsTrigger
+                  value="detailed"
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+                >
+                  DETAILED TRANSACTIONS
+                </TabsTrigger>
+                <TabsTrigger
+                  value="outstanding"
+                  className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-indigo-500 data-[state=active]:to-purple-500 data-[state=active]:text-white rounded-lg"
+                >
+                  OUTSTANDING INVOICES
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="summary">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-600">
+                            Total Collected
+                          </p>
+                          <p className="text-2xl font-bold text-green-600 mt-1">
+                            AED{" "}
+                            {summary.total_collected.toLocaleString("en-AE", {
+                              minimumFractionDigits: 2,
+                            })}
+                          </p>
+                        </div>
+                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                          <TrendingUp className="text-green-600" size={24} />
+                        </div>
                       </div>
-                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                        <TrendingUp className="text-green-600" size={24} />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-600">Transactions</p>
+                          <p className="text-2xl font-bold text-gray-900 mt-1">
+                            {summary.total_transactions}
+                          </p>
+                        </div>
+                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <DollarSign className="text-blue-600" size={24} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-600">Outstanding</p>
+                          <p className="text-2xl font-bold text-orange-600 mt-1">
+                            AED{" "}
+                            {summary.outstanding_amount.toLocaleString(
+                              "en-AE",
+                              { minimumFractionDigits: 2 },
+                            )}
+                          </p>
+                        </div>
+                        <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                          <AlertTriangle
+                            className="text-orange-600"
+                            size={24}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-600">Overdue Count</p>
+                          <p className="text-2xl font-bold text-red-600 mt-1">
+                            {summary.outstanding_count}
+                          </p>
+                        </div>
+                        <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                          <Calendar className="text-red-600" size={24} />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+                <div className="flex gap-2">
+                  {report && (
+                    <Button
+                      variant="outline"
+                      onClick={exportToExcel}
+                      className="gap-2"
+                    >
+                      <Download size={16} /> Export to Excel
+                    </Button>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="payment">
+                <Card className="mb-6">
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <CardTitle>Payment Method Breakdown</CardTitle>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="relative">
+                          <Search
+                            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+                            size={14}
+                          />
+                          <Input
+                            className="pl-8 w-[220px] h-9 text-sm"
+                            placeholder="Search customer or method"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                          />
+                        </div>
+                        <Select
+                          value={paymentMethodFilter}
+                          onValueChange={setPaymentMethodFilter}
+                        >
+                          <SelectTrigger className="w-[220px] h-9 text-sm">
+                            <SelectValue placeholder="All methods" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All methods</SelectItem>
+                            {paymentMethodOptions.map((methodName) => (
+                              <SelectItem key={methodName} value={methodName}>
+                                {methodName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">Transactions</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-1">
-                          {summary.total_transactions}
-                        </p>
-                      </div>
-                      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <DollarSign className="text-blue-600" size={24} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">Outstanding</p>
-                        <p className="text-2xl font-bold text-orange-600 mt-1">
-                          AED{" "}
-                          {summary.outstanding_amount.toLocaleString("en-AE", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      </div>
-                      <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                        <AlertTriangle className="text-orange-600" size={24} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">Overdue Count</p>
-                        <p className="text-2xl font-bold text-red-600 mt-1">
-                          {summary.outstanding_count}
-                        </p>
-                      </div>
-                      <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                        <Calendar className="text-red-600" size={24} />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Payment Breakdown */}
-              <Card className="mb-6">
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <CardTitle>Payment Method Breakdown</CardTitle>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="relative">
-                        <Search
-                          className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-                          size={14}
+                  </CardHeader>
+                  <CardContent>
+                    {filteredPaymentBreakdown.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <DollarSign
+                          size={48}
+                          className="mx-auto mb-4 opacity-50"
                         />
-                        <Input
-                          className="pl-8 w-[220px] h-9 text-sm"
-                          placeholder="Search customer or method"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                        />
+                        <p>No matching payments found</p>
                       </div>
-                      <Select
-                        value={paymentMethodFilter}
-                        onValueChange={setPaymentMethodFilter}
-                      >
-                        <SelectTrigger className="w-[220px] h-9 text-sm">
-                          <SelectValue placeholder="All methods" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All methods</SelectItem>
-                          {paymentMethodOptions.map((methodName) => (
-                            <SelectItem key={methodName} value={methodName}>
-                              {methodName}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {filteredPaymentBreakdown.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <DollarSign
-                        size={48}
-                        className="mx-auto mb-4 opacity-50"
-                      />
-                      <p>No matching payments found</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {filteredPaymentBreakdown.map((method, index) => (
-                        <div key={index} className="border rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <Badge
-                                className={getPaymentMethodColor(
-                                  method.payment_method,
-                                )}
-                              >
-                                {method.payment_method}
-                              </Badge>
-                              <span className="text-sm text-gray-600">
-                                {method.count} transaction
-                                {method.count !== 1 ? "s" : ""}
+                    ) : (
+                      <div className="space-y-4">
+                        {filteredPaymentBreakdown.map((method, index) => (
+                          <div key={index} className="border rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <Badge
+                                  className={getPaymentMethodColor(
+                                    method.payment_method,
+                                  )}
+                                >
+                                  {method.payment_method}
+                                </Badge>
+                                <span className="text-sm text-gray-600">
+                                  {method.count} transaction
+                                  {method.count !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+                              <span className="text-lg font-bold text-gray-900">
+                                AED{" "}
+                                {method.total_amount.toLocaleString("en-AE", {
+                                  minimumFractionDigits: 2,
+                                })}
                               </span>
                             </div>
-                            <span className="text-lg font-bold text-gray-900">
-                              AED{" "}
-                              {method.total_amount.toLocaleString("en-AE", {
-                                minimumFractionDigits: 2,
-                              })}
-                            </span>
-                          </div>
 
-                          {method.invoices.length > 0 && (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead className="border-t">
-                                  <tr className="bg-gray-50">
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Invoice #
-                                    </th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Customer
-                                    </th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Payment Method
-                                    </th>
-                                    <th className="text-left py-2 px-3 font-medium text-gray-700">
-                                      Date
-                                    </th>
-                                    <th className="text-right py-2 px-3 font-medium text-gray-700">
-                                      Amount
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {method.invoices.map((inv, invIndex) => (
-                                    <tr key={invIndex} className="border-t">
-                                      <td className="py-2 px-3 text-blue-600 font-medium">
-                                        {inv.invoice_number}
-                                      </td>
-                                      <td className="py-2 px-3">
-                                        {inv.customer_name}
-                                      </td>
-                                      <td className="py-2 px-3 text-gray-600">
-                                        {inv.payment_method ||
-                                          method.payment_method ||
-                                          "—"}
-                                      </td>
-                                      <td className="py-2 px-3 text-gray-600">
-                                        {inv.payment_date
-                                          ? format(
-                                              new Date(inv.payment_date),
-                                              "MMM d, yyyy",
-                                            )
-                                          : "—"}
-                                      </td>
-                                      <td className="py-2 px-3 text-right font-semibold">
-                                        AED{" "}
-                                        {inv.amount.toLocaleString("en-AE", {
-                                          minimumFractionDigits: 2,
-                                        })}
-                                      </td>
+                            {method.invoices.length > 0 && (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead className="border-t">
+                                    <tr className="bg-gray-50">
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                        Invoice #
+                                      </th>
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                        Customer
+                                      </th>
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                        Payment Method
+                                      </th>
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">
+                                        Date
+                                      </th>
+                                      <th className="text-right py-2 px-3 font-medium text-gray-700">
+                                        Amount
+                                      </th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500 mt-4">
-                    Showing {filteredTransactions} of {totalTransactions}{" "}
-                    transactions
-                  </p>
-                </CardContent>
-              </Card>
+                                  </thead>
+                                  <tbody>
+                                    {method.invoices.map((inv, invIndex) => (
+                                      <tr key={invIndex} className="border-t">
+                                        <td className="py-2 px-3 text-blue-600 font-medium">
+                                          {inv.invoice_number}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          {inv.customer_name}
+                                        </td>
+                                        <td className="py-2 px-3 text-gray-600">
+                                          {inv.payment_method ||
+                                            method.payment_method ||
+                                            "—"}
+                                        </td>
+                                        <td className="py-2 px-3 text-gray-600">
+                                          {inv.payment_date
+                                            ? format(
+                                                new Date(inv.payment_date),
+                                                "MMM d, yyyy",
+                                              )
+                                            : "—"}
+                                        </td>
+                                        <td className="py-2 px-3 text-right font-semibold">
+                                          AED{" "}
+                                          {inv.amount.toLocaleString("en-AE", {
+                                            minimumFractionDigits: 2,
+                                          })}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs text-gray-500 mt-4">
+                      Showing {filteredTransactions} of {totalTransactions}{" "}
+                      transactions
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
 
-              {/* Outstanding Invoices */}
-              {outstandingInvoices.length > 0 && (
+              <TabsContent value="detailed">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertTriangle className="text-red-600" size={20} />
-                      Outstanding Invoices (Top 10 Overdue)
-                    </CardTitle>
+                    <CardTitle>Detailed Transactions</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">
-                              Invoice #
+                      <table className="w-full text-sm">
+                        <thead className="border-t">
+                          <tr className="bg-gray-50">
+                            <th className="text-left py-2 px-3 font-medium text-gray-700">
+                              Payment Group
                             </th>
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">
-                              Customer
+                            <th className="text-left py-2 px-3 font-medium text-gray-700">
+                              Invoice Number
                             </th>
-                            <th className="text-left py-3 px-4 font-medium text-gray-700">
-                              Due Date
+                            <th className="text-left py-2 px-3 font-medium text-gray-700">
+                              Customer Name
                             </th>
-                            <th className="text-center py-3 px-4 font-medium text-gray-700">
-                              Days Overdue
+                            <th className="text-left py-2 px-3 font-medium text-gray-700">
+                              Payment Method
                             </th>
-                            <th className="text-right py-3 px-4 font-medium text-gray-700">
-                              Amount Due
+                            <th className="text-left py-2 px-3 font-medium text-gray-700">
+                              Date
+                            </th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-700">
+                              Amount
                             </th>
                           </tr>
                         </thead>
                         <tbody>
-                          {outstandingInvoices.map((inv, index) => (
-                            <tr
-                              key={index}
-                              className="border-b hover:bg-gray-50"
-                            >
-                              <td className="py-3 px-4 font-medium text-blue-600">
-                                {inv.invoice_number}
-                              </td>
-                              <td className="py-3 px-4">{inv.customer_name}</td>
-                              <td className="py-3 px-4 text-gray-600">
-                                {inv.due_date
-                                  ? format(
-                                      new Date(inv.due_date),
-                                      "MMM d, yyyy",
-                                    )
-                                  : "—"}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <Badge className="bg-red-600">
-                                  {inv.days_overdue} days
-                                </Badge>
-                              </td>
-                              <td className="py-3 px-4 text-right font-semibold text-red-600">
-                                AED{" "}
-                                {inv.amount_due.toLocaleString("en-AE", {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </td>
-                            </tr>
-                          ))}
+                          {paymentBreakdown
+                            .flatMap((method) =>
+                              (method.invoices || []).map((inv, i) => ({
+                                method: method.payment_method,
+                                inv,
+                              })),
+                            )
+                            .map((row, idx) => (
+                              <tr key={idx} className="border-t">
+                                <td className="py-2 px-3">{row.method}</td>
+                                <td className="py-2 px-3 text-blue-600 font-medium">
+                                  {row.inv.invoice_number}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {row.inv.customer_name}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {row.inv.payment_method || row.method || "—"}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {row.inv.payment_date
+                                    ? format(
+                                        new Date(row.inv.payment_date),
+                                        "MMM d, yyyy",
+                                      )
+                                    : "—"}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  AED{" "}
+                                  {row.inv.amount.toLocaleString("en-AE", {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
                   </CardContent>
                 </Card>
-              )}
-            </>
+              </TabsContent>
+
+              <TabsContent value="outstanding">
+                {outstandingInvoices.length > 0 ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <AlertTriangle className="text-red-600" size={20} />
+                        Outstanding Invoices (Top 10 Overdue)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left py-3 px-4 font-medium text-gray-700">
+                                Invoice #
+                              </th>
+                              <th className="text-left py-3 px-4 font-medium text-gray-700">
+                                Customer
+                              </th>
+                              <th className="text-left py-3 px-4 font-medium text-gray-700">
+                                Due Date
+                              </th>
+                              <th className="text-center py-3 px-4 font-medium text-gray-700">
+                                Days Overdue
+                              </th>
+                              <th className="text-right py-3 px-4 font-medium text-gray-700">
+                                Amount Due
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {outstandingInvoices.map((inv, index) => (
+                              <tr
+                                key={index}
+                                className="border-b hover:bg-gray-50"
+                              >
+                                <td className="py-3 px-4 font-medium text-blue-600">
+                                  {inv.invoice_number}
+                                </td>
+                                <td className="py-3 px-4">
+                                  {inv.customer_name}
+                                </td>
+                                <td className="py-3 px-4 text-gray-600">
+                                  {inv.due_date
+                                    ? format(
+                                        new Date(inv.due_date),
+                                        "MMM d, yyyy",
+                                      )
+                                    : "—"}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <Badge className="bg-red-600">
+                                    {inv.days_overdue} days
+                                  </Badge>
+                                </td>
+                                <td className="py-3 px-4 text-right font-semibold text-red-600">
+                                  AED{" "}
+                                  {inv.amount_due.toLocaleString("en-AE", {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="p-6 text-center text-gray-500">
+                      No outstanding invoices for the selected period.
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
           ) : null}
         </div>
       </div>

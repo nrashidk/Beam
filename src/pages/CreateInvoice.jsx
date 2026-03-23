@@ -60,6 +60,10 @@ export default function CreateInvoice() {
   const [loadingVatSettings, setLoadingVatSettings] = useState(true);
   const [originalInvoices, setOriginalInvoices] = useState([]);
   const [loadingOriginalInvoices, setLoadingOriginalInvoices] = useState(false);
+  const [originalSearchQuery, setOriginalSearchQuery] = useState("");
+  const [originalSuggestions, setOriginalSuggestions] = useState([]);
+  const [showOriginalSuggestions, setShowOriginalSuggestions] = useState(false);
+  const [originalHighlight, setOriginalHighlight] = useState(-1);
 
   const getDocumentTypeLabel = (type) => {
     const labels = {
@@ -175,6 +179,45 @@ export default function CreateInvoice() {
 
     fetchOriginalInvoices();
   }, [formData.invoice_type]);
+
+  // Fetch suggestions from server when user types in the original invoice field
+  useEffect(() => {
+    const isCreditNote =
+      formData.invoice_type === "381" || formData.invoice_type === "81";
+    if (!isCreditNote) return;
+
+    if (!originalSearchQuery || originalSearchQuery.length < 1) {
+      setOriginalSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const originalType = formData.invoice_type === "381" ? "380" : "480";
+        const resp = await apiClient.get(
+          `/invoices?invoice_type=${originalType}&q=${encodeURIComponent(originalSearchQuery)}&limit=10`,
+          { signal: controller.signal },
+        );
+        const list = Array.isArray(resp.data) ? resp.data : [];
+        setOriginalSuggestions(
+          list.filter((inv) => inv.status !== "CANCELLED"),
+        );
+        setShowOriginalSuggestions(true);
+        setOriginalHighlight(-1);
+      } catch (err) {
+        if (err.name !== "CanceledError" && err.name !== "AbortError") {
+          console.error("Original invoice search failed", err);
+        }
+        setOriginalSuggestions([]);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [originalSearchQuery, formData.invoice_type]);
 
   // Auto-populate credit note data from selected original invoice
   useEffect(() => {
@@ -588,28 +631,101 @@ export default function CreateInvoice() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Original Invoice <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={formData.preceding_invoice_id}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          preceding_invoice_id: e.target.value,
-                        })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      <option value="">
-                        {loadingOriginalInvoices
-                          ? "Loading invoices..."
-                          : "Select original invoice"}
-                      </option>
-                      {originalInvoices.map((inv) => (
-                        <option key={inv.id} value={inv.id}>
-                          {inv.invoice_number} - {inv.customer_name} -{" "}
-                          {inv.currency_code} {inv.total_amount.toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={
+                          // show selected invoice number if selected, otherwise the search query
+                          formData.preceding_invoice_id
+                            ? originalInvoices.find(
+                                (i) => i.id === formData.preceding_invoice_id,
+                              )?.invoice_number || originalSearchQuery
+                            : originalSearchQuery
+                        }
+                        onChange={(e) => {
+                          setOriginalSearchQuery(e.target.value);
+                          setFormData({
+                            ...formData,
+                            preceding_invoice_id: "",
+                          });
+                        }}
+                        onFocus={() => {
+                          if (originalSuggestions.length > 0)
+                            setShowOriginalSuggestions(true);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setOriginalHighlight((h) =>
+                              Math.min(h + 1, originalSuggestions.length - 1),
+                            );
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setOriginalHighlight((h) => Math.max(h - 1, 0));
+                          } else if (e.key === "Enter") {
+                            if (
+                              originalHighlight >= 0 &&
+                              originalSuggestions[originalHighlight]
+                            ) {
+                              const sel =
+                                originalSuggestions[originalHighlight];
+                              setFormData({
+                                ...formData,
+                                preceding_invoice_id: sel.id,
+                              });
+                              setOriginalSearchQuery(sel.invoice_number);
+                              setShowOriginalSuggestions(false);
+                            }
+                          } else if (e.key === "Escape") {
+                            setShowOriginalSuggestions(false);
+                          }
+                        }}
+                        placeholder={
+                          loadingOriginalInvoices
+                            ? "Loading invoices..."
+                            : "Type invoice number or customer name"
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+
+                      {showOriginalSuggestions &&
+                        (originalSuggestions.length > 0 ? (
+                          <ul className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded-md mt-1 max-h-60 overflow-auto">
+                            {originalSuggestions.map((inv, idx) => (
+                              <li
+                                key={inv.id}
+                                onMouseDown={(e) => {
+                                  // use onMouseDown to select before input blur
+                                  e.preventDefault();
+                                  setFormData({
+                                    ...formData,
+                                    preceding_invoice_id: inv.id,
+                                  });
+                                  setOriginalSearchQuery(inv.invoice_number);
+                                  setShowOriginalSuggestions(false);
+                                }}
+                                onMouseEnter={() => setOriginalHighlight(idx)}
+                                className={`px-3 py-2 cursor-pointer ${originalHighlight === idx ? "bg-indigo-50" : ""}`}
+                              >
+                                <div className="text-sm font-medium text-gray-900">
+                                  {inv.invoice_number} — {inv.customer_name}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {inv.currency_code}{" "}
+                                  {inv.total_amount.toFixed(2)} •{" "}
+                                  {new Date(inv.issue_date).toLocaleDateString(
+                                    "en-AE",
+                                  )}
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : originalSearchQuery ? (
+                          <div className="absolute z-50 left-0 right-0 bg-white border border-gray-200 rounded-md mt-1 p-3 text-sm text-gray-500">
+                            No matches
+                          </div>
+                        ) : null)}
+                    </div>
                   </div>
                 )}
 

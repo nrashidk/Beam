@@ -66,10 +66,23 @@ export default function BillingSettings() {
     }
   };
 
-  const handleAddCard = async (paymentMethodId) => {
+  const handleAddCard = async ({
+    paymentMethodId,
+    billingName,
+    billingEmail,
+  }) => {
     try {
-      await apiClient.post("/billing/payment-methods", {
-        payment_method_id: paymentMethodId,
+      const formData = new FormData();
+      formData.append("payment_method_token", paymentMethodId);
+      formData.append("billing_name", billingName);
+      formData.append("billing_email", billingEmail);
+      formData.append(
+        "set_as_default",
+        paymentMethods.length === 0 ? "true" : "false",
+      );
+
+      await apiClient.post("/billing/payment-methods", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
       setShowAddCard(false);
       fetchBillingData();

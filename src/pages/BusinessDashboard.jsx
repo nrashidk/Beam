@@ -84,7 +84,7 @@ export default function BusinessDashboard() {
           {/* Header */}
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
               <p className="text-gray-600 mt-1">
                 Welcome back, {user?.full_name || "User"}
               </p>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -11,9 +11,15 @@ export default function POFormModal({
   initialData = null,
   vatEnabled = false,
 }) {
+  const generatePONumber = () => {
+    const d = new Date();
+    const date = d.toISOString().slice(0, 10).replace(/-/g, "");
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `PO-${date}-${rand}`;
+  };
   const [formData, setFormData] = useState(
     initialData || {
-      po_number: "",
+      po_number: generatePONumber(),
       supplier_trn: "",
       supplier_name: "",
       supplier_contact_email: "",
@@ -43,9 +49,64 @@ export default function POFormModal({
 
   const [errors, setErrors] = useState({});
 
+  // Update formData when initialData changes (for editing)
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setFormData({
+        ...initialData,
+        line_items: initialData.line_items || [
+          {
+            line_number: 1,
+            item_name: "",
+            item_description: "",
+            item_code: "",
+            quantity_ordered: 1,
+            unit_code: "C62",
+            unit_price: 0,
+            tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
+            tax_percent: vatEnabled ? 5.0 : 0.0,
+          },
+        ],
+      });
+    } else if (!initialData && isOpen) {
+      // Reset to new PO form when creating
+      setFormData({
+        po_number: generatePONumber(),
+        supplier_trn: "",
+        supplier_name: "",
+        supplier_contact_email: "",
+        supplier_address: "",
+        supplier_peppol_id: "",
+        order_date: new Date().toISOString().split("T")[0],
+        expected_delivery_date: "",
+        delivery_address: "",
+        currency_code: "AED",
+        reference_number: "",
+        notes: "",
+        line_items: [
+          {
+            line_number: 1,
+            item_name: "",
+            item_description: "",
+            item_code: "",
+            quantity_ordered: 1,
+            unit_code: "C62",
+            unit_price: 0,
+            tax_category: vatEnabled ? "STANDARD" : "OUT_OF_SCOPE",
+            tax_percent: vatEnabled ? 5.0 : 0.0,
+          },
+        ],
+      });
+    }
+  }, [initialData, isOpen, vatEnabled]);
+
   if (!isOpen) return null;
 
   const handleInputChange = (field, value) => {
+    // Enforce numeric-only and max 15 characters for Supplier TRN
+    if (field === "supplier_trn") {
+      value = (value || "").toString().replace(/\D/g, "").slice(0, 15);
+    }
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors((prev) => ({ ...prev, [field]: null }));
@@ -139,6 +200,14 @@ export default function POFormModal({
       newErrors.supplier_name = "Supplier name is required";
     if (!formData.order_date) newErrors.order_date = "Order date is required";
 
+    // If supplier TRN is provided, it must be exactly 15 digits
+    if (
+      formData.supplier_trn &&
+      formData.supplier_trn.toString().length !== 15
+    ) {
+      newErrors.supplier_trn = "Supplier TRN must be exactly 15 digits";
+    }
+
     formData.line_items.forEach((item, index) => {
       if (!item.item_name.trim()) {
         newErrors[`line_item_${index}_name`] = "Item name is required";
@@ -197,7 +266,9 @@ export default function POFormModal({
                   onChange={(e) =>
                     handleInputChange("supplier_trn", e.target.value)
                   }
-                  placeholder="123456789012345"
+                  placeholder="15 digits (optional)"
+                  inputMode="numeric"
+                  maxLength={15}
                   className={errors.supplier_trn ? "border-red-500" : ""}
                 />
                 {errors.supplier_trn && (

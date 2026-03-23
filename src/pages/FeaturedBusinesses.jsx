@@ -16,6 +16,7 @@ import {
   RefreshCcw,
   Search,
   Edit,
+  Upload,
 } from "lucide-react";
 import api, { getApiBaseUrl } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -35,8 +36,11 @@ export default function FeaturedBusinesses() {
     company_id: "",
     display_name: "",
     logo_url: "",
+    logo_preview: "",
   });
   const [editingFeatured, setEditingFeatured] = useState(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingEditLogo, setUploadingEditLogo] = useState(false);
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -78,6 +82,7 @@ export default function FeaturedBusinesses() {
         company_id: "",
         display_name: "",
         logo_url: "",
+        logo_preview: "",
       });
     } catch (error) {
       console.error("Failed to add featured business:", error);
@@ -314,28 +319,164 @@ export default function FeaturedBusinesses() {
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Logo URL (Optional)
+                    Logo (Optional)
                   </label>
-                  {/* {newFeatured.logo_url && (
-                    <div className="mb-2 flex items-center gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
-                      <img
-                        src={newFeatured.logo_url}
-                        alt="Company logo preview"
-                        className="w-10 h-10 rounded object-contain bg-white border border-gray-200"
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
+                  {newFeatured.logo_preview || newFeatured.logo_url ? (
+                    <div className="mb-2">
+                      <div className="mb-2 flex items-center gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                        <img
+                          src={newFeatured.logo_preview || newFeatured.logo_url}
+                          alt="Company logo preview"
+                          className="w-12 h-12 rounded object-contain bg-white border border-gray-200"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <label className="flex-1">
+                          <input
+                            type="file"
+                            accept="image/png,image/svg+xml"
+                            onChange={async (e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              if (!newFeatured.company_id) {
+                                alert(
+                                  "Please select a company before uploading a logo",
+                                );
+                                return;
+                              }
+                              if (
+                                !["image/png", "image/svg+xml"].includes(
+                                  file.type,
+                                )
+                              ) {
+                                alert("Only PNG and SVG files are allowed");
+                                return;
+                              }
+                              if (file.size > 2 * 1024 * 1024) {
+                                alert("File size must be less than 2MB");
+                                return;
+                              }
+                              try {
+                                setUploadingLogo(true);
+                                const formData = new FormData();
+                                formData.append("logo", file);
+                                const uploadPath = isSuperAdmin
+                                  ? `/admin/companies/${newFeatured.company_id}/branding/logo`
+                                  : `/companies/${newFeatured.company_id}/branding/logo`;
+                                await api.post(uploadPath, formData, {
+                                  headers: {
+                                    "Content-Type": "multipart/form-data",
+                                  },
+                                });
+                                // update preview and logo_url
+                                const url = `${getApiBaseUrl()}/companies/${newFeatured.company_id}/branding/logo?t=${Date.now()}`;
+                                setNewFeatured({
+                                  ...newFeatured,
+                                  logo_url: url,
+                                  logo_preview: URL.createObjectURL(file),
+                                });
+                              } catch (err) {
+                                console.error("Logo upload failed", err);
+                                alert(
+                                  err.response?.data?.detail ||
+                                    "Failed to upload logo",
+                                );
+                              } finally {
+                                setUploadingLogo(false);
+                              }
+                            }}
+                            className="hidden"
+                            disabled={uploadingLogo}
+                          />
+                          <div className="w-full px-4 py-2 bg-indigo-600 text-white rounded-xl font-semibold text-center cursor-pointer hover:bg-indigo-700 disabled:opacity-50">
+                            {uploadingLogo ? "Uploading..." : "Replace Logo"}
+                          </div>
+                        </label>
+                        <button
+                          onClick={() =>
+                            setNewFeatured({
+                              ...newFeatured,
+                              logo_url: "",
+                              logo_preview: "",
+                            })
+                          }
+                          className="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                  )} */}
-                  <Input
-                    value={newFeatured.logo_url}
-                    onChange={(e) =>
-                      setNewFeatured({
-                        ...newFeatured,
-                        logo_url: e.target.value,
-                      })
-                    }
-                    placeholder="https://example.com/logo.png"
-                  />
+                  ) : (
+                    <label className="block">
+                      <input
+                        type="file"
+                        accept="image/png,image/svg+xml"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          if (!newFeatured.company_id) {
+                            alert(
+                              "Please select a company before uploading a logo",
+                            );
+                            return;
+                          }
+                          if (
+                            !["image/png", "image/svg+xml"].includes(file.type)
+                          ) {
+                            alert("Only PNG and SVG files are allowed");
+                            return;
+                          }
+                          if (file.size > 2 * 1024 * 1024) {
+                            alert("File size must be less than 2MB");
+                            return;
+                          }
+                          try {
+                            setUploadingLogo(true);
+                            const formData = new FormData();
+                            formData.append("logo", file);
+                            const uploadPath = isSuperAdmin
+                              ? `/admin/companies/${newFeatured.company_id}/branding/logo`
+                              : `/companies/${newFeatured.company_id}/branding/logo`;
+                            await api.post(uploadPath, formData, {
+                              headers: {
+                                "Content-Type": "multipart/form-data",
+                              },
+                            });
+                            const url = `${getApiBaseUrl()}/companies/${newFeatured.company_id}/branding/logo?t=${Date.now()}`;
+                            setNewFeatured({
+                              ...newFeatured,
+                              logo_url: url,
+                              logo_preview: URL.createObjectURL(file),
+                            });
+                          } catch (err) {
+                            console.error("Logo upload failed", err);
+                            alert(
+                              err.response?.data?.detail ||
+                                "Failed to upload logo",
+                            );
+                          } finally {
+                            setUploadingLogo(false);
+                          }
+                        }}
+                        className="hidden"
+                        disabled={uploadingLogo}
+                      />
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                        <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                        <p className="text-gray-700 font-medium mb-1">
+                          {uploadingLogo
+                            ? "Uploading..."
+                            : "Click to upload logo"}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          PNG or SVG (max 2MB)
+                        </p>
+                      </div>
+                    </label>
+                  )}
                   <p className="text-xs text-gray-500 mt-1">
                     Display order will be automatically assigned
                   </p>
@@ -357,6 +498,7 @@ export default function FeaturedBusinesses() {
                         company_id: "",
                         display_name: "",
                         logo_url: "",
+                        logo_preview: "",
                       });
                     }}
                     disabled={saving}
@@ -408,18 +550,170 @@ export default function FeaturedBusinesses() {
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Logo URL (Optional)
+                    Logo (Optional)
                   </label>
-                  <Input
-                    value={editingFeatured.logo_url || ""}
-                    onChange={(e) =>
-                      setEditingFeatured({
-                        ...editingFeatured,
-                        logo_url: e.target.value,
-                      })
-                    }
-                    placeholder="https://example.com/logo.png"
-                  />
+                  {editingFeatured.logo_preview || editingFeatured.logo_url ? (
+                    <div className="mb-2">
+                      <div className="mb-2 flex items-center gap-3 p-2 bg-gray-50 rounded-lg border border-gray-200">
+                        <img
+                          src={
+                            editingFeatured.logo_preview ||
+                            editingFeatured.logo_url
+                          }
+                          alt="Company logo preview"
+                          className="w-12 h-12 rounded object-contain bg-white border border-gray-200"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <label className="flex-1">
+                          <input
+                            type="file"
+                            accept="image/png,image/svg+xml"
+                            onChange={async (e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              const companyId =
+                                editingFeatured.company_id ||
+                                editingFeatured.company_id;
+                              if (!companyId) {
+                                alert("Company ID not available");
+                                return;
+                              }
+                              if (
+                                !["image/png", "image/svg+xml"].includes(
+                                  file.type,
+                                )
+                              ) {
+                                alert("Only PNG and SVG files are allowed");
+                                return;
+                              }
+                              if (file.size > 2 * 1024 * 1024) {
+                                alert("File size must be less than 2MB");
+                                return;
+                              }
+                              try {
+                                setUploadingEditLogo(true);
+                                const formData = new FormData();
+                                formData.append("logo", file);
+                                const uploadPath = isSuperAdmin
+                                  ? `/admin/companies/${companyId}/branding/logo`
+                                  : `/companies/${companyId}/branding/logo`;
+                                await api.post(uploadPath, formData, {
+                                  headers: {
+                                    "Content-Type": "multipart/form-data",
+                                  },
+                                });
+                                const url = `${getApiBaseUrl()}/companies/${companyId}/branding/logo?t=${Date.now()}`;
+                                setEditingFeatured({
+                                  ...editingFeatured,
+                                  logo_url: url,
+                                  logo_preview: URL.createObjectURL(file),
+                                });
+                              } catch (err) {
+                                console.error("Logo upload failed", err);
+                                alert(
+                                  err.response?.data?.detail ||
+                                    "Failed to upload logo",
+                                );
+                              } finally {
+                                setUploadingEditLogo(false);
+                              }
+                            }}
+                            className="hidden"
+                            disabled={uploadingEditLogo}
+                          />
+                          <div className="w-full px-4 py-2 bg-indigo-600 text-white rounded-xl font-semibold text-center cursor-pointer hover:bg-indigo-700 disabled:opacity-50">
+                            {uploadingEditLogo
+                              ? "Uploading..."
+                              : "Replace Logo"}
+                          </div>
+                        </label>
+                        <button
+                          onClick={() =>
+                            setEditingFeatured({
+                              ...editingFeatured,
+                              logo_url: "",
+                              logo_preview: "",
+                            })
+                          }
+                          className="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="block">
+                      <input
+                        type="file"
+                        accept="image/png,image/svg+xml"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (!file) return;
+                          const companyId =
+                            editingFeatured.company_id ||
+                            editingFeatured.company_id;
+                          if (!companyId) {
+                            alert("Company ID not available");
+                            return;
+                          }
+                          if (
+                            !["image/png", "image/svg+xml"].includes(file.type)
+                          ) {
+                            alert("Only PNG and SVG files are allowed");
+                            return;
+                          }
+                          if (file.size > 2 * 1024 * 1024) {
+                            alert("File size must be less than 2MB");
+                            return;
+                          }
+                          try {
+                            setUploadingEditLogo(true);
+                            const formData = new FormData();
+                            formData.append("logo", file);
+                            const uploadPath = isSuperAdmin
+                              ? `/admin/companies/${companyId}/branding/logo`
+                              : `/companies/${companyId}/branding/logo`;
+                            await api.post(uploadPath, formData, {
+                              headers: {
+                                "Content-Type": "multipart/form-data",
+                              },
+                            });
+                            const url = `${getApiBaseUrl()}/companies/${companyId}/branding/logo?t=${Date.now()}`;
+                            setEditingFeatured({
+                              ...editingFeatured,
+                              logo_url: url,
+                              logo_preview: URL.createObjectURL(file),
+                            });
+                          } catch (err) {
+                            console.error("Logo upload failed", err);
+                            alert(
+                              err.response?.data?.detail ||
+                                "Failed to upload logo",
+                            );
+                          } finally {
+                            setUploadingEditLogo(false);
+                          }
+                        }}
+                        className="hidden"
+                        disabled={uploadingEditLogo}
+                      />
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+                        <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                        <p className="text-gray-700 font-medium mb-1">
+                          {uploadingEditLogo
+                            ? "Uploading..."
+                            : "Click to upload logo"}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          PNG or SVG (max 2MB)
+                        </p>
+                      </div>
+                    </label>
+                  )}
                 </div>
 
                 <div>

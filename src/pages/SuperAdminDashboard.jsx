@@ -141,6 +141,8 @@ export default function SuperAdminDashboard() {
   const [q, setQ] = useState("");
   const [plan, setPlan] = useState("all");
   const [status, setStatus] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -366,6 +368,40 @@ export default function SuperAdminDashboard() {
       return true;
     });
   }, [stats, q, plan, status]);
+
+  const sortedCompanies = useMemo(() => {
+    const list = [...(filteredCompanies || [])];
+    const dir = sortDir === "asc" ? 1 : -1;
+    const getVal = (c) => {
+      switch (sortBy) {
+        case "name":
+          return (c.name || "").toLowerCase();
+        case "status":
+          return (c.status || "").toLowerCase();
+        case "plan":
+          return (c.plan || "").toLowerCase();
+        case "invoices":
+          return c.invoicesUsed || 0;
+        case "vat":
+          return c.vatCompliant ? 1 : 0;
+        case "revenue":
+          return Number(c.revenue ?? c.revenue_aed ?? c.arpu ?? 0);
+        default:
+          return (c.name || "").toLowerCase();
+      }
+    };
+
+    list.sort((a, b) => {
+      const va = getVal(a);
+      const vb = getVal(b);
+      if (typeof va === "number" && typeof vb === "number")
+        return (va - vb) * dir;
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return list;
+  }, [filteredCompanies, sortBy, sortDir]);
 
   const navigationButtons = (
     <>
@@ -752,17 +788,116 @@ export default function SuperAdminDashboard() {
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr className="text-left">
-                  <th className="px-4 py-3 font-medium">Company</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Plan</th>
-                  {/* <th className="px-4 py-3 font-medium">ARPU</th> */}
-                  <th className="px-4 py-3 font-medium">Invoices (MTD)</th>
-                  <th className="px-4 py-3 font-medium">VAT</th>
+                  {/** Helper to render sortable header */}
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("name");
+                      setSortDir(
+                        sortBy === "name"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "asc",
+                      );
+                    }}
+                  >
+                    Company{" "}
+                    {sortBy === "name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("status");
+                      setSortDir(
+                        sortBy === "status"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "asc",
+                      );
+                    }}
+                  >
+                    Status{" "}
+                    {sortBy === "status" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("plan");
+                      setSortDir(
+                        sortBy === "plan"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "asc",
+                      );
+                    }}
+                  >
+                    Plan{" "}
+                    {sortBy === "plan" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("revenue");
+                      setSortDir(
+                        sortBy === "revenue"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "desc",
+                      );
+                    }}
+                  >
+                    Revenue{" "}
+                    {sortBy === "revenue"
+                      ? sortDir === "asc"
+                        ? "▲"
+                        : "▼"
+                      : ""}
+                  </th>
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("invoices");
+                      setSortDir(
+                        sortBy === "invoices"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "desc",
+                      );
+                    }}
+                  >
+                    Invoices (MTD){" "}
+                    {sortBy === "invoices"
+                      ? sortDir === "asc"
+                        ? "▲"
+                        : "▼"
+                      : ""}
+                  </th>
+                  <th
+                    className="px-4 py-3 font-medium cursor-pointer"
+                    onClick={() => {
+                      setSortBy("vat");
+                      setSortDir(
+                        sortBy === "vat"
+                          ? sortDir === "asc"
+                            ? "desc"
+                            : "asc"
+                          : "desc",
+                      );
+                    }}
+                  >
+                    VAT{" "}
+                    {sortBy === "vat" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  </th>
                   <th className="px-4 py-3 font-medium">Manage</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredCompanies.map((c) => (
+                {sortedCompanies.map((c) => (
                   <tr key={c.id} className="border-t">
                     <td className="px-4 py-3">{c.name}</td>
                     <td className="px-4 py-3">
@@ -773,7 +908,11 @@ export default function SuperAdminDashboard() {
                       </span>
                     </td>
                     <td className="px-4 py-3">{c.plan || "—"}</td>
-                    {/* <td className="px-4 py-3">{c.arpu ? `AED ${c.arpu}` : '—'}</td> */}
+                    <td className="px-4 py-3 font-medium">
+                      {c.revenue || c.revenue_aed
+                        ? `AED ${Number(c.revenue ?? c.revenue_aed ?? c.arpu ?? 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : "—"}
+                    </td>
                     <td className="px-4 py-3">{`${c.invoicesUsed || 0}/${c.invoicesLimit || 0}`}</td>
                     <td className="px-4 py-3">
                       {c.vatCompliant ? (

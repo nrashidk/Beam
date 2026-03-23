@@ -270,7 +270,7 @@ export default function PODetailModal({ poId, isOpen, onClose, onUpdate }) {
                               {item.item_code || "-"}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                              {item.quantity_ordered} {item.unit_code}
+                              {item.quantity_ordered}
                             </td>
                             <td className="px-4 py-3 text-sm text-gray-900 text-right">
                               {formatCurrency(

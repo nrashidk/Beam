@@ -12,48 +12,79 @@ class BulkImportValidator:
     def generate_invoice_template() -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
         template_data = {
-            "issue_date": ["2025-01-15", "2025-01-16", "2025-01-17", "2025-01-18"],
-            "due_date": ["2025-02-15", "2025-02-16", "2025-02-17", "2025-02-18"],
-            "invoice_type": ["COMMERCIAL", "COMMERCIAL", "CREDIT_NOTE", "COMMERCIAL"],
+            "issue_date": [
+                "2025-01-15",
+                "2025-01-16",
+                "2025-01-17",
+                "2025-01-18",
+                "2025-01-19",
+            ],
+            "due_date": [
+                "2025-02-15",
+                "2025-02-16",
+                "2025-02-17",
+                "2025-02-18",
+                "2025-02-19",
+            ],
+            # Provide examples covering common aliases and codes:
+            # - TAX_INVOICE (380), TAX_CREDIT_NOTE (381), COMMERCIAL (480), CREDIT_NOTE (81), numeric '380'
+            "invoice_type": [
+                "COMMERCIAL",
+                "TAX_INVOICE",
+                "CREDIT_NOTE",
+                "TAX_CREDIT_NOTE",
+                "380",
+            ],
             "customer_name": [
                 "ABC Trading LLC",
                 "XYZ Company",
                 "DEF Corporation",
                 "GHI Enterprises",
+                "JKL Traders",
             ],
             "customer_email": [
                 "customer@example.com",
                 "customer2@example.com",
                 "customer3@example.com",
                 "customer4@example.com",
+                "customer5@example.com",
             ],
-            "customer_trn": ["", "", "", ""],  # Optional for all
+            "customer_trn": ["", "", "", "", ""],  # Optional for all
             "customer_address": [
                 "Dubai, UAE",
                 "Abu Dhabi, UAE",
                 "Sharjah, UAE",
                 "Ajman, UAE",
+                "Ras Al Khaimah, UAE",
             ],
-            "customer_city": ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"],
+            "customer_city": [
+                "Dubai",
+                "Abu Dhabi",
+                "Sharjah",
+                "Ajman",
+                "Ras Al Khaimah",
+            ],
             "preceding_invoice_number": [
                 "",
                 "",
                 "CI-00001",
                 "",
+                "",
             ],  # Required for credit notes only
-            "item_name": ["Goods", "Services", "Refund", "License"],
+            "item_name": ["Goods", "Services", "Refund", "License", "Materials"],
             "item_description": [
                 "Consulting Services",
                 "Professional work",
                 "Refund for returned goods",
                 "Software License",
+                "Building materials",
             ],
-            "quantity": ["10", "5", "8", "12"],
-            "unit_price": ["500.00", "1000.00", "750.00", "1200.00"],
-            "unit_name": ["Hour", "Day", "Unit", "Month"],
-            "tax_category": ["S", "S", "S", "S"],
-            "tax_percent": ["5", "5", "5", "5"],
-            "tax_code": ["S_5_5", "S_5_5", "S_5_5", "S_5_5"],
+            "quantity": ["10", "5", "8", "12", "20"],
+            "unit_price": ["500.00", "1000.00", "750.00", "1200.00", "25.00"],
+            "unit_name": ["Hour", "Day", "Unit", "Month", "Piece"],
+            "tax_category": ["S", "S", "S", "S", "S"],
+            "tax_percent": ["5", "5", "5", "5", "5"],
+            "tax_code": ["S_5_5", "S_5_5", "S_5_5", "S_5_5", "S_5_5"],
         }
         return pd.DataFrame(template_data)
 
@@ -117,7 +148,7 @@ class BulkImportValidator:
                 row_errors = []
 
                 try:
-                    # Safely get invoice_type
+                    # Safely get invoice_type and normalize common aliases / numeric codes
                     invoice_type_raw = (
                         row.get("invoice_type", "COMMERCIAL")
                         if "invoice_type" in row
@@ -128,6 +159,23 @@ class BulkImportValidator:
                         if not pd.isna(invoice_type_raw)
                         else "COMMERCIAL"
                     )
+
+                    # Normalize variants to canonical keys used by the importer
+                    invoice_type_aliases = {
+                        "380": "TAX_INVOICE",
+                        "381": "CREDIT_NOTE",
+                        "81": "CREDIT_NOTE",
+                        "TAX_CREDIT_NOTE": "CREDIT_NOTE",
+                        "TAX INVOICE": "TAX_INVOICE",
+                        "TAX-INVOICE": "TAX_INVOICE",
+                        "COMMERCIAL_INVOICE": "COMMERCIAL",
+                        "COMMERCIAL": "COMMERCIAL",
+                        "CREDIT_NOTE": "CREDIT_NOTE",
+                        "CREDIT-NOTE": "CREDIT_NOTE",
+                    }
+
+                    if invoice_type in invoice_type_aliases:
+                        invoice_type = invoice_type_aliases[invoice_type]
 
                     # TRN: optional but if provided must be valid 15 digits
                     trn_raw = (
