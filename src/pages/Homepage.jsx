@@ -8,7 +8,7 @@ import { Card, CardContent } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { PhoneInput, EmailInput, PasswordInput } from '../components/ui/validated-input';
 import Footer from '../components/Footer';
-import api from '../lib/api';
+import api, { getApiBaseUrl } from '../lib/api';
 
 export default function Homepage() {
   const navigate = useNavigate();
@@ -41,13 +41,30 @@ export default function Homepage() {
   const [success, setSuccess] = useState(false);
   const [userInfo, setUserInfo] = useState(null);
   const [publicStats, setPublicStats] = useState({ totalInvoices: 0, totalCompanies: 0 });
+  const [featuredBusinesses, setFeaturedBusinesses] = useState([]);
+  const baseBrands = [
+    { id: 'ph_lulu', display_name: 'LuLu' },
+    { id: 'ph_styli', display_name: 'Styli' },
+    { id: 'ph_giorgio', display_name: 'GIORGIO ARMANI' },
+    { id: 'ph_duncan', display_name: 'DUNCAN & ROSS' }
+  ];
 
   useEffect(() => {
     if (user) {
       fetchUserInfo();
     }
     fetchPublicStats();
+    fetchPublicFeatured();
   }, [user]);
+
+  const fetchPublicFeatured = async () => {
+    try {
+      const res = await api.get('/public/featured-businesses');
+      setFeaturedBusinesses(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch featured businesses:', err);
+    }
+  };
 
   useEffect(() => {
     if (location.hash === '#signup') {
@@ -220,24 +237,36 @@ export default function Homepage() {
           <h2 className="text-2xl font-semibold text-center text-gray-900">Trusted by Leading Brands</h2>
           <div className="overflow-hidden relative">
             <div className="flex gap-12 animate-scroll">
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">LuLu</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">Styli</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-2xl font-bold text-gray-400">GIORGIO ARMANI</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-2xl font-bold text-gray-400">DUNCAN & ROSS</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">LuLu</span>
-              </div>
-              <div className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
-                <span className="text-3xl font-bold text-gray-400">Styli</span>
-              </div>
+              {(() => {
+                const combined = [...baseBrands, ...featuredBusinesses];
+                // Deduplicate by display_name/company_id
+                const seen = new Set();
+                const deduped = combined.filter((b) => {
+                  const key = b.company_id || b.display_name || b.company_name || b.id;
+                  if (seen.has(key)) return false;
+                  seen.add(key);
+                  return true;
+                });
+
+                return deduped.map((b) => {
+                  const hasLogo = !!(b.logo_url || b.company_id);
+                  const src = b.logo_url || (b.company_id ? `${getApiBaseUrl()}/companies/${b.company_id}/branding/logo` : null);
+                  return (
+                    <div key={b.id || b.company_id || b.display_name} className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all">
+                      {hasLogo && src ? (
+                        <img
+                          src={src}
+                          alt={b.display_name || b.company_name}
+                          className="max-h-14 object-contain"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <span className="text-2xl font-bold text-gray-400">{b.display_name || b.company_name}</span>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>

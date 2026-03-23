@@ -9067,6 +9067,92 @@ async def upload_company_logo(
     }
 
 
+@app.post("/admin/companies/{company_id}/branding/logo", tags=["Admin", "Branding"])
+async def admin_upload_company_logo(
+    company_id: str,
+    logo: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db)):
+    """Allow super-admin to upload company logo on behalf of any company"""
+    # Only SUPER_ADMIN role may call this
+    if getattr(current_user, "role", None) != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Not authorized")
+
+    # Check if company exists
+    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    # Validate subscription/plan like regular endpoint
+    subscription = db.query(CompanySubscriptionDB).filter(
+        CompanySubscriptionDB.company_id == company_id).first()
+
+    if subscription:
+        plan = db.query(SubscriptionPlanDB).filter(
+            SubscriptionPlanDB.id == subscription.plan_id).first()
+
+        if plan and not plan.allow_branding:
+            raise HTTPException(
+                403,
+                "This company's subscription plan does not allow branding."
+            )
+
+    allowed_types = ["image/png", "image/svg+xml"]
+    allowed_extensions = [".png", ".svg"]
+
+    if not logo.content_type in allowed_types:
+        raise HTTPException(400, "Only PNG and SVG files are allowed")
+
+    file_ext = os.path.splitext(logo.filename)[1].lower() if logo.filename else ""
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            400,
+            f"Invalid file extension. Only {', '.join(allowed_extensions)} are allowed"
+        )
+
+    content = await logo.read()
+    file_size = len(content)
+
+    if file_size > 2 * 1024 * 1024:  # 2MB limit
+        raise HTTPException(400, "File size must be less than 2MB")
+
+    branding_dir = os.path.join(ARTIFACT_ROOT, "branding", company_id)
+    os.makedirs(branding_dir, exist_ok=True)
+
+    file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
+    file_name = f"logo.{file_extension}"
+    file_path = os.path.join(branding_dir, file_name)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    branding = db.query(CompanyBrandingDB).filter(
+        CompanyBrandingDB.company_id == company_id).first()
+
+    if not branding:
+        branding = CompanyBrandingDB(id=f"br_{uuid4().hex[:8]}",
+                                     company_id=company_id)
+        db.add(branding)
+
+    if branding.logo_file_path and os.path.exists(branding.logo_file_path):
+        os.remove(branding.logo_file_path)
+
+    branding.logo_file_name = file_name
+    branding.logo_file_path = file_path
+    branding.logo_file_size = file_size
+    branding.logo_mime_type = logo.content_type
+    branding.logo_uploaded_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "message": "Logo uploaded successfully",
+        "file_name": file_name,
+        "file_size": file_size,
+        "uploaded_at": branding.logo_uploaded_at.isoformat()
+    }
+
+
 @app.post("/companies/{company_id}/branding/stamp", tags=["Branding"])
 async def upload_company_stamp(
     company_id: str,
