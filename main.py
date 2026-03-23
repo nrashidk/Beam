@@ -6031,13 +6031,19 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
         })
         total_collected += signed_amount
 
-    # Get outstanding invoices (overdue)
+    # Get outstanding invoices (overdue).
+    # Exclude PAID and CANCELLED invoices so cancelled rows are not counted as outstanding.
+    now_date = datetime.utcnow().date()
     outstanding_invoices = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id, InvoiceDB.status
-        != InvoiceStatus.PAID, InvoiceDB.due_date < datetime.utcnow()).all()
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.status.notin_([
+            InvoiceStatus.PAID,
+            InvoiceStatus.CANCELLED,
+        ]),
+        InvoiceDB.due_date < now_date
+    ).order_by(InvoiceDB.due_date.asc()).all()
 
-    outstanding_total = sum(inv.amount_due or 0.0
-                            for inv in outstanding_invoices)
+    outstanding_total = sum(inv.amount_due or 0.0 for inv in outstanding_invoices)
 
     return {
         "report_period": {
@@ -6066,8 +6072,7 @@ def get_daily_reconciliation_report(current_user: UserDB = Depends(
                 inv.amount_due,
                 "due_date":
                 inv.due_date.isoformat() if inv.due_date else None,
-                "days_overdue": (datetime.utcnow().date() -
-                                 inv.due_date).days if inv.due_date else 0
+                "days_overdue": (now_date - inv.due_date).days if inv.due_date else 0
             } for inv in outstanding_invoices[:10]  # Limit to 10 most overdue
         ]
     }
