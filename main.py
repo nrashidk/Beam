@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # SQLAlchemy
-from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func
+from sqlalchemy import create_engine, Column, String, Integer, Float, Boolean, Date, DateTime, Enum as SQLEnum, ForeignKey, Text, func, or_
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
 # Password & JWT
@@ -5495,6 +5495,7 @@ def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
                   db: Session = Depends(get_db),
                   status: Optional[str] = None,
                   invoice_type: Optional[str] = None,
+                  q: Optional[str] = None,
                   limit: int = 50,
                   offset: int = 0):
     """List invoices for the current company"""
@@ -5514,6 +5515,16 @@ def list_invoices(current_user: UserDB = Depends(get_current_user_from_header),
             query = query.filter(InvoiceDB.invoice_type == type_enum)
         except ValueError:
             raise HTTPException(400, f"Invalid invoice type: {invoice_type}")
+
+    # Optional search query - search by invoice number or customer name
+    if q:
+        q_term = f"%{q}%"
+        query = query.filter(
+            or_(
+                InvoiceDB.invoice_number.ilike(q_term),
+                InvoiceDB.customer_name.ilike(q_term),
+            )
+        )
 
     query = query.order_by(InvoiceDB.created_at.desc())
     invoices = query.offset(offset).limit(limit).all()
