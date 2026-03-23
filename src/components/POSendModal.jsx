@@ -254,7 +254,7 @@ export default function POSendModal({ isOpen, onClose, poId, onSuccess, poNumber
               )}
             </button>
           )}
-          {selectedMethod && selectedMethod.id !== "qrcode" && (
+          {selectedMethod && (
             <button
               onClick={() => setSelectedMethod(null)}
               className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
