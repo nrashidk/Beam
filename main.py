@@ -10969,18 +10969,29 @@ async def bulk_import_vendors(
                     'peppol_id')
                 updated_count += 1
             else:
+                # Ensure required customer_name (our company) is provided
+                company = db.get(CompanyDB, company_id)
+                company_name = (
+                    company.legal_name if company and company.legal_name else f"Company {company_id}"
+                )
+
                 placeholder_invoice = InwardInvoiceDB(
                     id=str(uuid4()),
                     company_id=company_id,
-                    invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
+                    supplier_invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
                     supplier_trn=vendor_data['vendor_trn'],
                     supplier_name=vendor_data['vendor_name'],
-                    supplier_email=vendor_data['vendor_email'],
                     supplier_address=vendor_data.get('vendor_address'),
                     supplier_peppol_id=vendor_data.get('peppol_id'),
-                    issue_date=date.today(),
-                    total=0.00,
-                    status='VENDOR_RECORD',
+                    invoice_date=date.today(),
+                    customer_trn=None,
+                    customer_name=company_name,
+                    currency_code='AED',
+                    subtotal_amount=0.00,
+                    tax_amount=0.00,
+                    total_amount=0.00,
+                    amount_due=0.00,
+                    status=InwardInvoiceStatus.RECEIVED,
                     received_at=datetime.utcnow())
                 db.add(placeholder_invoice)
                 created_count += 1
