@@ -1,0 +1,69 @@
+CREATE TYPE "public"."audit_file_status_t" AS ENUM('GENERATING', 'COMPLETED', 'FAILED');
+CREATE TYPE "public"."company_status_t" AS ENUM('PENDING_REVIEW', 'ACTIVE', 'SUSPENDED', 'REJECTED');
+CREATE TYPE "public"."document_status_t" AS ENUM('PENDING_REVIEW', 'APPROVED', 'REJECTED');
+CREATE TYPE "public"."document_type_t" AS ENUM('BUSINESS_LICENSE', 'TRN_CERTIFICATE', 'TRADE_LICENSE', 'PASSPORT', 'EMIRATES_ID');
+CREATE TYPE "public"."goods_receipt_status_t" AS ENUM('PENDING', 'RECEIVED', 'PARTIAL', 'REJECTED');
+CREATE TYPE "public"."invoice_status_t" AS ENUM('DRAFT', 'ISSUED', 'SENT', 'VIEWED', 'PAID', 'CANCELLED', 'OVERDUE');
+CREATE TYPE "public"."invoice_type_t" AS ENUM('380', '381', '480', '81', '383');
+CREATE TYPE "public"."inward_invoice_status_t" AS ENUM('RECEIVED', 'PENDING_REVIEW', 'MATCHED', 'APPROVED', 'REJECTED', 'PAID', 'DISPUTED', 'CANCELLED');
+CREATE TYPE "public"."matching_status_t" AS ENUM('NOT_MATCHED', 'PARTIAL_MATCH', 'FULL_MATCH', 'VARIANCE_DETECTED');
+CREATE TYPE "public"."purchase_order_status_t" AS ENUM('DRAFT', 'SENT', 'ACKNOWLEDGED', 'FULFILLED', 'CANCELLED');
+CREATE TYPE "public"."role_t" AS ENUM('SUPER_ADMIN', 'COMPANY_ADMIN', 'BUSINESS_ADMIN', 'FINANCE_USER');
+CREATE TYPE "public"."subscription_status_t" AS ENUM('TRIAL', 'ACTIVE', 'PAST_DUE', 'CANCELED');
+CREATE TYPE "public"."tax_category_t" AS ENUM('S', 'Z', 'E', 'O');
+ALTER TYPE "public"."invoicetype" ADD VALUE 'TAX_DEBIT_NOTE';
+CREATE TABLE "password_history" (
+	"id" varchar PRIMARY KEY NOT NULL,
+	"user_id" varchar NOT NULL,
+	"password_hash" varchar NOT NULL,
+	"created_at" timestamp
+);
+CREATE TABLE "audit_log" (
+	"id" varchar PRIMARY KEY NOT NULL,
+	"entity_type" varchar NOT NULL,
+	"entity_id" varchar NOT NULL,
+	"action" varchar NOT NULL,
+	"field_name" varchar,
+	"old_value" text,
+	"new_value" text,
+	"changed_by_user_id" varchar,
+	"changed_by_email" varchar,
+	"ip_address" varchar,
+	"user_agent" text,
+	"timestamp" timestamp NOT NULL,
+	"company_id" varchar
+);
+ALTER TABLE "invoices" ADD COLUMN "debit_note_reason" varchar;
+ALTER TABLE "invoices" ADD COLUMN "supply_date" date;
+ALTER TABLE "users" ADD COLUMN "must_change_password" boolean DEFAULT false;
+ALTER TABLE "users" ADD COLUMN "password_changed_at" timestamp;
+ALTER TABLE "users" ADD COLUMN "failed_login_attempts" integer DEFAULT 0;
+ALTER TABLE "users" ADD COLUMN "locked_until" timestamp;
+ALTER TABLE "password_history" ADD CONSTRAINT "password_history_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_changed_by_user_id_fkey" FOREIGN KEY ("changed_by_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "public"."companies"("id") ON DELETE no action ON UPDATE no action;
+CREATE INDEX "ix_password_history_user_id" ON "password_history" USING btree ("user_id");
+CREATE INDEX "idx_audit_log_company" ON "audit_log" USING btree ("company_id");
+CREATE INDEX "idx_audit_log_entity" ON "audit_log" USING btree ("entity_type","entity_id");
+CREATE INDEX "idx_audit_log_timestamp" ON "audit_log" USING btree ("timestamp");
+CREATE INDEX "ix_audit_log_company_id" ON "audit_log" USING btree ("company_id");
+CREATE INDEX "ix_audit_log_entity_id" ON "audit_log" USING btree ("entity_id");
+CREATE INDEX "ix_audit_log_timestamp" ON "audit_log" USING btree ("timestamp");
+CREATE INDEX "idx_invtrx_item" ON "inventory_transactions" USING btree ("inventory_item_id");
+CREATE INDEX "idx_inventory_company" ON "inventory_items" USING btree ("company_id");
+CREATE INDEX "idx_featured_company" ON "featured_businesses" USING btree ("company_id");
+CREATE INDEX "idx_content_blocks_section" ON "content_blocks" USING btree ("section");
+CREATE INDEX "idx_invoices_company" ON "invoices" USING btree ("company_id");
+CREATE INDEX "idx_invoices_number" ON "invoices" USING btree ("invoice_number");
+CREATE INDEX "idx_inward_company" ON "inward_invoices" USING btree ("company_id");
+CREATE INDEX "idx_inward_supplier_invoice_number" ON "inward_invoices" USING btree ("supplier_invoice_number");
+CREATE INDEX "idx_expenses_company" ON "expenses" USING btree ("company_id");
+CREATE INDEX "idx_company_subs_company" ON "company_subscriptions" USING btree ("company_id");
+CREATE INDEX "idx_ili_invoice" ON "invoice_line_items" USING btree ("invoice_id");
+CREATE INDEX "idx_payment_company" ON "payment_methods" USING btree ("company_id");
+CREATE INDEX "idx_companies_trn" ON "companies" USING btree ("trn");
+CREATE INDEX "idx_po_company" ON "purchase_orders" USING btree ("company_id");
+CREATE INDEX "idx_po_number" ON "purchase_orders" USING btree ("po_number");
+CREATE INDEX "idx_grn_company" ON "goods_receipts" USING btree ("company_id");
+CREATE INDEX "idx_grn_number" ON "goods_receipts" USING btree ("grn_number");
+CREATE INDEX "idx_poli_po" ON "purchase_order_line_items" USING btree ("po_id");
