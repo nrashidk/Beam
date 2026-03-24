@@ -37,7 +37,8 @@ const AdvancedAnalytics = () => {
   const [cashFlowData, setCashFlowData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timePeriod, setTimePeriod] = useState(12);
+  // Default to 1 month to match FinanceDashboard's default (30 days -> 1 month)
+  const [timePeriod, setTimePeriod] = useState(1);
 
   const COLORS = [
     "#10b981",
@@ -185,10 +186,10 @@ const AdvancedAnalytics = () => {
                 onChange={(e) => setTimePeriod(Number(e.target.value))}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
+                <option value={1}>Last 30 Days</option>
                 <option value={3}>Last 3 Months</option>
                 <option value={6}>Last 6 Months</option>
                 <option value={12}>Last 12 Months</option>
-                <option value={24}>Last 24 Months</option>
               </select>
             </div>
           </div>
