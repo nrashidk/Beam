@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
-import { authAPI, mfaAPI } from "../lib/api";
+import { authAPI, mfaAPI, apiClient } from "../lib/api";
 
 const AuthContext = createContext(null);
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -64,8 +64,29 @@ export const AuthProvider = ({ children }) => {
           logout();
         }
       } else {
-        // Token is still valid
-        setUser(JSON.parse(userData));
+        // Token is still valid - try to fetch fresh user profile from /me
+        try {
+          const resp = await apiClient.get("/me");
+          const profile = resp.data;
+          // Normalize to client user shape
+          const userObj = {
+            user_id: profile.user_id,
+            company_id: profile.company?.id || profile.company_id,
+            company_name: profile.company?.legal_name || profile.company_name,
+            role: profile.role,
+            email: profile.email,
+            company: profile.company,
+          };
+          localStorage.setItem("user", JSON.stringify(userObj));
+          setUser(userObj);
+        } catch (err) {
+          // Fallback to cached userData if /me fails
+          try {
+            setUser(JSON.parse(userData));
+          } catch (e) {
+            setUser(null);
+          }
+        }
       }
 
       setLoading(false);
@@ -91,21 +112,31 @@ export const AuthProvider = ({ children }) => {
         };
       }
 
-      const {
-        access_token,
-        refresh_token,
-        user_id,
-        company_id,
-        company_name,
-        role,
-      } = data;
+      const { access_token, refresh_token } = data;
       localStorage.setItem("token", access_token);
       if (refresh_token) {
         localStorage.setItem("refresh_token", refresh_token);
       }
-      const userData = { user_id, company_id, company_name, role };
-      localStorage.setItem("user", JSON.stringify(userData));
-      setUser(userData);
+      // Fetch full profile (/me) to get email and company info
+      try {
+        const resp = await apiClient.get("/me");
+        const profile = resp.data;
+        const userObj = {
+          user_id: profile.user_id,
+          company_id: profile.company?.id || profile.company_id,
+          company_name: profile.company?.legal_name || profile.company_name,
+          role: profile.role,
+          email: profile.email,
+          company: profile.company,
+        };
+        localStorage.setItem("user", JSON.stringify(userObj));
+        setUser(userObj);
+      } catch (err) {
+        // Fallback to minimal user info if /me fails
+        const userData = { user_id: data.user_id, company_id: data.company_id, company_name: data.company_name, role: data.role };
+        localStorage.setItem("user", JSON.stringify(userData));
+        setUser(userData);
+      }
 
       return { success: true, mfaRequired: false };
     } catch (error) {
@@ -119,22 +150,33 @@ export const AuthProvider = ({ children }) => {
   const verifyMFA = async (code, method) => {
     try {
       const response = await mfaAPI.verifyMFA(tempToken, code, method);
-      const {
-        access_token,
-        refresh_token,
-        user_id,
-        company_id,
-        company_name,
-        role,
-      } = response.data;
-
+      const { access_token, refresh_token } = response.data;
       localStorage.setItem("token", access_token);
       if (refresh_token) {
         localStorage.setItem("refresh_token", refresh_token);
       }
-      const userData = { user_id, company_id, company_name, role };
-      localStorage.setItem("user", JSON.stringify(userData));
-      setUser(userData);
+
+      // Fetch /me for full profile
+      try {
+        const resp = await apiClient.get("/me");
+        const profile = resp.data;
+        const userObj = {
+          user_id: profile.user_id,
+          company_id: profile.company?.id || profile.company_id,
+          company_name: profile.company?.legal_name || profile.company_name,
+          role: profile.role,
+          email: profile.email,
+          company: profile.company,
+        };
+        localStorage.setItem("user", JSON.stringify(userObj));
+        setUser(userObj);
+      } catch (err) {
+        // If /me fails, fall back to minimal response data
+        const { user_id, company_id, company_name, role } = response.data;
+        const userData = { user_id, company_id, company_name, role };
+        localStorage.setItem("user", JSON.stringify(userData));
+        setUser(userData);
+      }
 
       setMfaRequired(false);
       setTempToken(null);
@@ -143,10 +185,7 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.detail || "Verification failed",
-      };
+      return { success: false, error: error.response?.data?.detail || "MFA verification failed" };
     }
   };
 
