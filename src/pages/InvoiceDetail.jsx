@@ -328,21 +328,16 @@ export default function InvoiceDetail() {
                   From (Supplier)
                 </h3>
                 <div className="space-y-1">
-                  <p className="font-bold text-gray-900">
-                    {invoice.supplier_name}
-                  </p>
-                  <p className="text-gray-600 text-sm">
-                    TRN: {invoice.supplier_trn}
-                  </p>
+                  <p className="font-bold text-gray-900">{invoice.supplier_name}</p>
+                  <p className="text-gray-600 text-sm">TRN: {invoice.supplier_trn}</p>
                   {invoice.supplier_address && (
-                    <p className="text-gray-600 text-sm">
-                      {invoice.supplier_address}
-                    </p>
+                    <p className="text-gray-600 text-sm">{invoice.supplier_address}</p>
+                  )}
+                  {invoice.supplier_city && (
+                    <p className="text-gray-600 text-sm">{invoice.supplier_city}</p>
                   )}
                   {invoice.supplier_peppol_id && (
-                    <p className="text-gray-600 text-sm">
-                      Peppol ID: {invoice.supplier_peppol_id}
-                    </p>
+                    <p className="text-gray-600 text-sm">Peppol ID: {invoice.supplier_peppol_id}</p>
                   )}
                 </div>
               </div>
@@ -352,29 +347,12 @@ export default function InvoiceDetail() {
                   To (Customer)
                 </h3>
                 <div className="space-y-1">
-                  <p className="font-bold text-gray-900">
-                    {invoice.customer_name}
-                  </p>
-                  {invoice.customer_trn && (
-                    <p className="text-gray-600 text-sm">
-                      TRN: {invoice.customer_trn}
-                    </p>
-                  )}
-                  {invoice.customer_email && (
-                    <p className="text-gray-600 text-sm">
-                      {invoice.customer_email}
-                    </p>
-                  )}
-                  {invoice.customer_address && (
-                    <p className="text-gray-600 text-sm">
-                      {invoice.customer_address}
-                    </p>
-                  )}
-                  {invoice.customer_peppol_id && (
-                    <p className="text-gray-600 text-sm">
-                      Peppol ID: {invoice.customer_peppol_id}
-                    </p>
-                  )}
+                  <p className="font-bold text-gray-900">{invoice.customer_name}</p>
+                  {invoice.customer_trn && (<p className="text-gray-600 text-sm">TRN: {invoice.customer_trn}</p>)}
+                  {invoice.customer_email && (<p className="text-gray-600 text-sm">{invoice.customer_email}</p>)}
+                  {invoice.customer_address && (<p className="text-gray-600 text-sm">{invoice.customer_address}</p>)}
+                  {invoice.customer_city && (<p className="text-gray-600 text-sm">{invoice.customer_city}</p>)}
+                  {invoice.customer_peppol_id && (<p className="text-gray-600 text-sm">Peppol ID: {invoice.customer_peppol_id}</p>)}
                 </div>
               </div>
             </div>
@@ -505,6 +483,16 @@ export default function InvoiceDetail() {
                 )}
               </div>
             </div>
+
+            {/* Notes (optional) */}
+            {(invoice.invoice_notes || invoice.notes) && (
+              <div className="bg-white border rounded-xl p-6">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase mb-2">Notes</h3>
+                <div className="text-sm text-gray-700 whitespace-pre-line">
+                  {invoice.invoice_notes || invoice.notes}
+                </div>
+              </div>
+            )}
 
             {/* UBL XML Info */}
             {invoice.xml_file_path && (
