@@ -98,7 +98,8 @@ import stripe
 
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
-ARTIFACT_ROOT = os.path.join(os.getcwd(), "artifacts")
+# Allow overriding artifact root via env to avoid issues when working directory differs
+ARTIFACT_ROOT = os.getenv("ARTIFACT_ROOT", os.path.join(os.getcwd(), "artifacts"))
 os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
@@ -9630,13 +9631,17 @@ async def upload_company_logo(
     branding_dir = os.path.join(ARTIFACT_ROOT, "branding", company_id)
     os.makedirs(branding_dir, exist_ok=True)
 
-    # Save file
+    # Save file - use original filename + timestamp to avoid collisions
     file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
-    file_name = f"logo.{file_extension}"
+    orig_base = os.path.splitext(logo.filename)[0] if logo.filename else "logo"
+    safe_base = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in orig_base)[:100]
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    file_name = f"{safe_base}_{timestamp}.{file_extension}"
     file_path = os.path.join(branding_dir, file_name)
 
     with open(file_path, "wb") as f:
         f.write(content)
+    logger.info(f"Saved company logo to %s", file_path)
 
     # Get or create branding record
     branding = (
@@ -9665,6 +9670,7 @@ async def upload_company_logo(
     return {
         "message": "Logo uploaded successfully",
         "file_name": file_name,
+        "file_path": file_path,
         "file_size": file_size,
         "uploaded_at": branding.logo_uploaded_at.isoformat(),
     }
@@ -9729,11 +9735,15 @@ async def admin_upload_company_logo(
     os.makedirs(branding_dir, exist_ok=True)
 
     file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
-    file_name = f"logo.{file_extension}"
+    orig_base = os.path.splitext(logo.filename)[0] if logo.filename else "logo"
+    safe_base = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in orig_base)[:100]
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    file_name = f"{safe_base}_{timestamp}.{file_extension}"
     file_path = os.path.join(branding_dir, file_name)
 
     with open(file_path, "wb") as f:
         f.write(content)
+    logger.info(f"Saved company logo to %s", file_path)
 
     branding = (
         db.query(CompanyBrandingDB)
@@ -9759,6 +9769,7 @@ async def admin_upload_company_logo(
     return {
         "message": "Logo uploaded successfully",
         "file_name": file_name,
+        "file_path": file_path,
         "file_size": file_size,
         "uploaded_at": branding.logo_uploaded_at.isoformat(),
     }

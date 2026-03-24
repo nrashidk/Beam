@@ -347,40 +347,123 @@ export default function Homepage() {
             <div className="flex gap-12 animate-scroll">
               {(() => {
                 const combined = [...baseBrands, ...featuredBusinesses];
-                // Deduplicate by display_name/company_id
-                const seen = new Set();
-                const deduped = combined.filter((b) => {
-                  const key =
-                    b.company_id || b.display_name || b.company_name || b.id;
-                  if (seen.has(key)) return false;
-                  seen.add(key);
-                  return true;
-                });
+                console.log("Combined brands before deduplication:", combined);
+
+                // Deduplicate entries. Prefer items with a `company_id` (real company)
+                // and avoid duplicate display names (case-insensitive).
+                const deduped = [];
+                const seenCompanyIds = new Set();
+                const seenNames = new Set();
+
+                for (const b of combined) {
+                  const name = (b.display_name || b.company_name || "")
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                  const cid = b.company_id || null;
+
+                  // Skip if we've already seen this company id
+                  if (cid && seenCompanyIds.has(cid)) continue;
+
+                  // If name exists and we've already added an entry with same name
+                  // prefer the one that has a company_id (i.e. replace baseBrand)
+                  if (name && seenNames.has(name)) {
+                    if (cid) {
+                      // remove previous non-company entry with same name
+                      const prevIdx = deduped.findIndex((x) =>
+                        ((x.company_id || null) === null) &&
+                        ((x.display_name || x.company_name || "").toString().trim().toLowerCase() === name),
+                      );
+                      if (prevIdx !== -1) deduped.splice(prevIdx, 1);
+                    } else {
+                      // already have a name and this one has no company id -> skip
+                      continue;
+                    }
+                  }
+
+                  if (cid) seenCompanyIds.add(cid);
+                  if (name) seenNames.add(name);
+                  deduped.push(b);
+                }
 
                 return deduped.map((b) => {
-                  const hasLogo = !!(b.logo_url || b.company_id);
-                  const src =
-                    b.logo_url ||
-                    (b.company_id
-                      ? `${getApiBaseUrl()}/companies/${b.company_id}/branding/logo`
-                      : null);
+                  const name = b.display_name || b.company_name || "";
+                  // Build candidate URLs to try when loading the logo
+                  const candidates = [];
+
+                  // If logo_url is provided
+                  if (b.logo_url && b.logo_url.toString().trim()) {
+                    const raw = b.logo_url.toString().trim();
+                    // If absolute URL, try it first
+                    if (/^https?:\/\//i.test(raw)) {
+                      candidates.push(raw);
+                      try {
+                        // also try same-path on API host if different port/host
+                        const parsed = new URL(raw);
+                        const pathAndQuery = parsed.pathname + (parsed.search || "");
+                        candidates.push(`${getApiBaseUrl()}${pathAndQuery}`);
+                      } catch (err) {
+                        // ignore URL parsing errors
+                      }
+                    } else if (raw.startsWith("/")) {
+                      candidates.push(`${getApiBaseUrl()}${raw}`);
+                    } else {
+                      // relative-ish path
+                      candidates.push(`${getApiBaseUrl()}/${raw}`);
+                    }
+                  }
+
+                  // If company_id exists, try the canonical branding endpoint (with cache-busting)
+                  if (b.company_id) {
+                    candidates.push(
+                      `${getApiBaseUrl()}/companies/${b.company_id}/branding/logo?t=${Date.now()}`,
+                    );
+                  }
+
+                  // Remove duplicates while preserving order
+                  const seenCands = new Set();
+                  const uniqCandidates = candidates.filter((c) => {
+                    if (!c) return false;
+                    if (seenCands.has(c)) return false;
+                    seenCands.add(c);
+                    return true;
+                  });
+
+                  const firstSrc = uniqCandidates.length > 0 ? uniqCandidates[0] : null;
+
                   return (
                     <div
                       key={b.id || b.company_id || b.display_name}
                       className="flex items-center justify-center min-w-[200px] h-20 grayscale hover:grayscale-0 transition-all"
                     >
-                      {hasLogo && src ? (
+                      {firstSrc ? (
                         <img
-                          src={src}
-                          alt={b.display_name || b.company_name}
+                          src={firstSrc}
+                          alt={name}
                           className="max-h-14 object-contain"
+                          data-candidates={JSON.stringify(uniqCandidates)}
+                          data-try-index={0}
                           onError={(e) => {
-                            e.target.style.display = "none";
+                            try {
+                              const img = e.target;
+                              const candidates =
+                                JSON.parse(img.dataset.candidates || "[]") || [];
+                              let idx = Number(img.dataset.tryIndex || 0);
+                              idx += 1;
+                              if (idx < candidates.length) {
+                                img.dataset.tryIndex = idx;
+                                img.src = candidates[idx];
+                              } else {
+                                img.style.display = "none";
+                              }
+                            } catch (err) {
+                              e.target.style.display = "none";
+                            }
                           }}
                         />
                       ) : (
                         <span className="text-2xl font-bold text-gray-400">
-                          {b.display_name || b.company_name}
+                          {name}
                         </span>
                       )}
                     </div>
