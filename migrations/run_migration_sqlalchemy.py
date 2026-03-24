@@ -8,7 +8,7 @@ if not DATABASE_URL:
     raise Exception("Please set DATABASE_URL environment variable.")
 
 # Read migration SQL
-with open("001_init_neon.sql", "r", encoding="utf-8") as f:
+with open("2025_01_001_init_schema.sql", "r", encoding="utf-8") as f:
     sql = f.read()
 
 # Create engine (no psycopg needed)
