@@ -184,14 +184,32 @@ export default function FinanceDashboard() {
           return sum + (isCreditNote ? -amount : amount);
         }, 0);
 
+      // Prefer profitability analytics totals when available to keep metrics consistent
       setFinancialData({
         summary: {
           // Use analytics (paid-based) for displayed revenue, fall back to summary if missing
           totalRevenue:
-            revenueData.total_revenue ?? summary.revenue?.total ?? 0,
-          totalExpenses: summary.summary?.total_costs || 0,
-          netProfit: summary.summary?.net_income || 0,
-          profitMargin: summary.summary?.profit_margin_percent || 0,
+            // profitability endpoint may include consolidated totals
+            (profitabilityData && profitabilityData.total_revenue) ||
+            revenueData.total_revenue ||
+            summary.revenue?.total ||
+            0,
+          // Prefer analytics expenses if present
+          totalExpenses:
+            (profitabilityData && profitabilityData.total_expenses) ||
+            summary.summary?.total_costs ||
+            0,
+          // Prefer analytics gross profit if available
+          netProfit:
+            (profitabilityData && profitabilityData.gross_profit) ||
+            summary.summary?.net_income ||
+            0,
+          // Prefer analytics margin (gross_margin) then fallback to summary percent
+          profitMargin:
+            (profitabilityData &&
+              (profitabilityData.gross_margin ?? profitabilityData.gross_margin_percent)) ||
+            summary.summary?.profit_margin_percent ||
+            0,
           // Keep issued invoice counts from the summary endpoint
           invoicesIssued:
             summary.revenue?.issued_invoice_count ||
