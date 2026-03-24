@@ -6714,6 +6714,143 @@ def get_cash_flow_analytics(
     }
 
 
+@app.get("/analytics/accounts-receivable", tags=["Analytics"])
+def get_accounts_receivable(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return accounts receivable totals and simple aging buckets.
+
+    - Considers invoices where amount_due > 0 and status is not PAID/CANCELLED.
+    - Aging is based on `due_date` where available; missing due_date treated as current bucket.
+    """
+    from datetime import datetime
+
+    today = datetime.utcnow().date()
+
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.amount_due > 0,
+            InvoiceDB.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        )
+        .all()
+    )
+
+    total_outstanding = 0.0
+    count = 0
+    aging = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
+    details = []
+
+    for inv in invoices:
+        amt = float(inv.amount_due or 0.0)
+        if amt <= 0:
+            continue
+        total_outstanding += amt
+        count += 1
+
+        # Determine aging bucket
+        days_past_due = 0
+        if inv.due_date:
+            days_past_due = (today - inv.due_date).days
+
+        if days_past_due <= 30:
+            aging["0_30"] += amt
+        elif days_past_due <= 60:
+            aging["31_60"] += amt
+        elif days_past_due <= 90:
+            aging["61_90"] += amt
+        else:
+            aging["90_plus"] += amt
+
+        details.append(
+            {
+                "id": inv.id,
+                "invoice_number": inv.invoice_number,
+                "customer": inv.customer_name,
+                "amount_due": amt,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "status": inv.status,
+            }
+        )
+
+    return {
+        "total_outstanding": round(total_outstanding, 2),
+        "count": count,
+        "aging": {k: round(v, 2) for k, v in aging.items()},
+        "details": details[:50],
+    }
+
+
+@app.get("/analytics/accounts-payable", tags=["Analytics"])
+def get_accounts_payable(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return accounts payable totals and simple aging buckets.
+
+    This aggregates unpaid inward invoices (supplier invoices). Future: include POs and unpaid expenses.
+    """
+    from datetime import datetime
+
+    today = datetime.utcnow().date()
+
+    invoices = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.company_id == current_user.company_id,
+            InwardInvoiceDB.total_amount > 0,
+            InwardInvoiceDB.payment_status != "PAID",
+        )
+        .all()
+    )
+
+    total_outstanding = 0.0
+    count = 0
+    aging = {"0_30": 0.0, "31_60": 0.0, "61_90": 0.0, "90_plus": 0.0}
+    details = []
+
+    for inv in invoices:
+        # Use amount_due if present else total_amount - paid_amount
+        amt = float(inv.amount_due if getattr(inv, "amount_due", None) is not None else (inv.total_amount - (inv.paid_amount or 0.0)))
+        if amt <= 0:
+            continue
+        total_outstanding += amt
+        count += 1
+
+        days_past_due = 0
+        if inv.due_date:
+            days_past_due = (today - inv.due_date).days
+
+        if days_past_due <= 30:
+            aging["0_30"] += amt
+        elif days_past_due <= 60:
+            aging["31_60"] += amt
+        elif days_past_due <= 90:
+            aging["61_90"] += amt
+        else:
+            aging["90_plus"] += amt
+
+        details.append(
+            {
+                "id": inv.id,
+                "supplier_invoice_number": inv.supplier_invoice_number,
+                "supplier": inv.supplier_name,
+                "amount_due": amt,
+                "due_date": inv.due_date.isoformat() if inv.due_date else None,
+                "payment_status": inv.payment_status,
+            }
+        )
+
+    return {
+        "total_outstanding": round(total_outstanding, 2),
+        "count": count,
+        "aging": {k: round(v, 2) for k, v in aging.items()},
+        "details": details[:50],
+    }
+
+
 @app.post("/invoices/{invoice_id}/issue", tags=["Invoices"])
 def issue_invoice(
     invoice_id: str,

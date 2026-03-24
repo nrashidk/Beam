@@ -82,6 +82,8 @@ export default function FinanceDashboard() {
         profitabilityRes,
         customersRes,
         invoicesRes,
+        arRes,
+        apRes,
       ] = await Promise.all([
         apiClient.get("/expenses/summary"),
         apiClient.get("/analytics/revenue", { params: { months } }),
@@ -91,6 +93,8 @@ export default function FinanceDashboard() {
         apiClient.get("/invoices", {
           params: { limit: 4, sort_by: "issue_date", sort_order: "desc" },
         }),
+        apiClient.get("/analytics/accounts-receivable"),
+        apiClient.get("/analytics/accounts-payable"),
       ]);
 
       const summary = summaryRes.data;
@@ -99,6 +103,8 @@ export default function FinanceDashboard() {
       const profitabilityData = profitabilityRes.data;
       const customersData = customersRes.data;
       const invoicesData = invoicesRes.data;
+      const arData = arRes.data;
+      const apData = apRes.data;
 
       // Transform expense breakdown for pie chart
       const expenseColors = {
@@ -216,8 +222,8 @@ export default function FinanceDashboard() {
             summary.revenue?.invoice_count ||
             0,
           invoicesReceived: 0,
-          outstandingAR: outstandingAR,
-          outstandingAP: 0,
+          outstandingAR: arData.total_outstanding || outstandingAR,
+          outstandingAP: apData.total_outstanding || 0,
         },
         // include raw payloads to help debug mismatches
         _raw: {
