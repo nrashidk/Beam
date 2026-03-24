@@ -94,7 +94,7 @@ export default function BusinessDashboard() {
                 <Badge variant="outline" className="mr-2">
                   {user?.role}
                 </Badge>
-                {user?.company_name || company?.legal_name}
+                {user?.email || ""}
               </div>
               <Button
                 variant="outline"
