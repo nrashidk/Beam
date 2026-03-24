@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import api from "../lib/api";
+import * as XLSX from "xlsx";
 import Sidebar from "../components/Sidebar";
 import PageLoader from "../components/PageLoader";
 
@@ -89,49 +90,66 @@ export default function DailyReconciliation() {
       ? report.outstanding_invoices
       : [];
 
-    // Create CSV content
-    let csv = "Daily Reconciliation Report\n\n";
-    csv += `Report Period:,${reportPeriod.start_date} to ${reportPeriod.end_date}\n\n`;
+    // Build Excel workbook with separate sheets for each section
+    const wb = XLSX.utils.book_new();
 
-    csv += "SUMMARY\n";
-    csv += `Total Collected:,AED ${summary.total_collected.toFixed(2)}\n`;
-    csv += `Total Transactions:,${summary.total_transactions}\n`;
-    csv += `Outstanding Amount:,AED ${summary.outstanding_amount.toFixed(2)}\n`;
-    csv += `Outstanding Count:,${summary.outstanding_count}\n\n`;
+    // Summary sheet (key-value pairs)
+    const summaryAoA = [
+      ["Report Period", `${reportPeriod.start_date} to ${reportPeriod.end_date}`],
+      ["Total Collected", summary.total_collected.toFixed(2)],
+      ["Total Transactions", summary.total_transactions],
+      ["Outstanding Amount", summary.outstanding_amount.toFixed(2)],
+      ["Outstanding Count", summary.outstanding_count],
+    ];
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoA);
+    XLSX.utils.book_append_sheet(wb, wsSummary, "SUMMARY");
 
-    csv += "PAYMENT BREAKDOWN\n";
-    csv += "Payment Method,Count,Total Amount\n";
+    // Payment Breakdown sheet
+    const paymentRows = [["Payment Method", "Count", "Total Amount"]];
     paymentBreakdown.forEach((method) => {
-      csv += `${method.payment_method},${method.count},AED ${method.total_amount.toFixed(2)}\n`;
+      paymentRows.push([method.payment_method, method.count, method.total_amount.toFixed(2)]);
     });
+    const wsPayment = XLSX.utils.aoa_to_sheet(paymentRows);
+    XLSX.utils.book_append_sheet(wb, wsPayment, "PAYMENT BREAKDOWN");
 
-    csv += "\n\nDETAILED TRANSACTIONS\n";
-    csv +=
-      "Payment Group,Invoice Number,Customer Name,Amount,Payment Method,Date\n";
+    // Detailed Transactions sheet
+    const detailedRows = [["Payment Group", "Invoice Number", "Customer Name", "Amount", "Payment Method", "Date"]];
     paymentBreakdown.forEach((method) => {
-      method.invoices.forEach((inv) => {
-        csv += `${method.payment_method},${inv.invoice_number},${inv.customer_name},AED ${inv.amount.toFixed(2)},${inv.payment_method || method.payment_method},${inv.payment_date}\n`;
+      (method.invoices || []).forEach((inv) => {
+        detailedRows.push([
+          method.payment_method,
+          inv.invoice_number,
+          inv.customer_name,
+          inv.amount != null ? inv.amount.toFixed(2) : "",
+          inv.payment_method || method.payment_method || "",
+          inv.payment_date || "",
+        ]);
       });
     });
+    const wsDetailed = XLSX.utils.aoa_to_sheet(detailedRows);
+    XLSX.utils.book_append_sheet(wb, wsDetailed, "DETAILED TRANSACTIONS");
 
-    if (outstandingInvoices.length > 0) {
-      csv += "\n\nOUTSTANDING INVOICES\n";
-      csv += "Invoice Number,Customer Name,Amount Due,Due Date,Days Overdue\n";
-      outstandingInvoices.forEach((inv) => {
-        csv += `${inv.invoice_number},${inv.customer_name},AED ${inv.amount_due.toFixed(2)},${inv.due_date},${inv.days_overdue}\n`;
-      });
-    }
+    // Outstanding Invoices sheet
+    const outRows = [["Invoice Number", "Customer Name", "Amount Due", "Due Date", "Days Overdue"]];
+    outstandingInvoices.forEach((inv) => {
+      outRows.push([
+        inv.invoice_number,
+        inv.customer_name,
+        inv.amount_due != null ? inv.amount_due.toFixed(2) : "",
+        inv.due_date || "",
+        inv.days_overdue != null ? String(inv.days_overdue) : "",
+      ]);
+    });
+    const wsOutstanding = XLSX.utils.aoa_to_sheet(outRows);
+    XLSX.utils.book_append_sheet(wb, wsOutstanding, "OUTSTANDING INVOICES");
 
-    // Download CSV
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
+    // Write workbook to binary and trigger download
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `reconciliation_${reportPeriod.start_date}_${reportPeriod.end_date}.csv`,
-    );
-    link.style.visibility = "hidden";
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reconciliation_${reportPeriod.start_date}_${reportPeriod.end_date}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
