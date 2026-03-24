@@ -170,6 +170,8 @@ export default function CreateInvoice() {
         );
         const list = Array.isArray(response.data) ? response.data : [];
         setOriginalInvoices(list.filter((inv) => inv.status !== "CANCELLED"));
+        // initialize suggestions to first page of results
+        setOriginalSuggestions((list || []).slice(0, 50));
       } catch (error) {
         setOriginalInvoices([]);
       } finally {
@@ -187,8 +189,14 @@ export default function CreateInvoice() {
       formData.invoice_type === "381" || formData.invoice_type === "81";
     if (!isCreditNote) return;
 
+    // If no search query, show the pre-fetched original invoices (first page)
     if (!originalSearchQuery || originalSearchQuery.length < 1) {
-      setOriginalSuggestions([]);
+      if (originalInvoices && originalInvoices.length > 0) {
+        setOriginalSuggestions(originalInvoices.slice(0, 50));
+        setShowOriginalSuggestions(true);
+      } else {
+        setOriginalSuggestions([]);
+      }
       return;
     }
 
