@@ -107,6 +107,7 @@ export default function PublicInvoiceView() {
                 </div>
                 <div className="space-y-1 text-sm opacity-90">
                   <div>{invoice.supplier_address}</div>
+                  {invoice.supplier_city && <div>{invoice.supplier_city}</div>}
                   <div>TRN: {invoice.supplier_trn}</div>
                   {invoice.supplier_peppol_id && (
                     <div>PEPPOL ID: {invoice.supplier_peppol_id}</div>
@@ -157,6 +158,9 @@ export default function PublicInvoiceView() {
               {invoice.customer_name}
             </div>
             <div className="text-gray-700">{invoice.customer_address}</div>
+            {invoice.customer_city && (
+              <div className="text-gray-700">{invoice.customer_city}</div>
+            )}
             {invoice.customer_trn && (
               <div className="text-gray-600 text-sm mt-1">
                 TRN: {invoice.customer_trn}
@@ -250,6 +254,18 @@ export default function PublicInvoiceView() {
               </div>
             </div>
           </div>
+
+          {/* Notes */}
+          {(invoice.invoice_notes || invoice.notes) && (
+            <div className="p-8">
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">
+                Notes
+              </h3>
+              <div className="text-sm text-gray-700 whitespace-pre-line">
+                {invoice.invoice_notes || invoice.notes}
+              </div>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="bg-gray-50 p-6 border-t border-gray-200">

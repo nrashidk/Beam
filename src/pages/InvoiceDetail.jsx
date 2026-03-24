@@ -339,6 +339,11 @@ export default function InvoiceDetail() {
                       {invoice.supplier_address}
                     </p>
                   )}
+                  {invoice.supplier_city && (
+                    <p className="text-gray-600 text-sm">
+                      {invoice.supplier_city}
+                    </p>
+                  )}
                   {invoice.supplier_peppol_id && (
                     <p className="text-gray-600 text-sm">
                       Peppol ID: {invoice.supplier_peppol_id}
@@ -368,6 +373,11 @@ export default function InvoiceDetail() {
                   {invoice.customer_address && (
                     <p className="text-gray-600 text-sm">
                       {invoice.customer_address}
+                    </p>
+                  )}
+                  {invoice.customer_city && (
+                    <p className="text-gray-600 text-sm">
+                      {invoice.customer_city}
                     </p>
                   )}
                   {invoice.customer_peppol_id && (
@@ -505,6 +515,18 @@ export default function InvoiceDetail() {
                 )}
               </div>
             </div>
+
+            {/* Notes (optional) */}
+            {(invoice.invoice_notes || invoice.notes) && (
+              <div className="bg-white border rounded-xl p-6">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase mb-2">
+                  Notes
+                </h3>
+                <div className="text-sm text-gray-700 whitespace-pre-line">
+                  {invoice.invoice_notes || invoice.notes}
+                </div>
+              </div>
+            )}
 
             {/* UBL XML Info */}
             {invoice.xml_file_path && (

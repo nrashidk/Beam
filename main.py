@@ -6802,6 +6802,64 @@ def issue_invoice(
     if not invoice.total_amount or invoice.total_amount == 0.0:
         invoice.total_amount = total_calc
 
+    # Recompute line item and invoice totals to ensure imported invoices
+    # or manual edits have consistent stored values before issuing. This
+    # mirrors the logic used during creation and edit flows so the final
+    # XML generation always uses correct monetary totals.
+    try:
+        recomputed_subtotal = 0.0
+        recomputed_tax = 0.0
+        # Reload line items to ensure fresh values
+        line_items = (
+            db.query(InvoiceLineItemDB)
+            .filter(InvoiceLineItemDB.invoice_id == invoice.id)
+            .order_by(InvoiceLineItemDB.line_number)
+            .all()
+        )
+
+        for li in line_items:
+            # Determine line extension amount
+            line_ext = (
+                li.line_extension_amount
+                if li.line_extension_amount is not None
+                else (li.quantity * li.unit_price)
+            )
+
+            # Compute tax according to company VAT setting and saved tax category
+            if (
+                company
+                and company.vat_enabled
+                and li.tax_category == TaxCategory.STANDARD
+            ):
+                computed_tax = round(line_ext * (li.tax_percent or 0.0) / 100.0, 2)
+            else:
+                computed_tax = 0.0
+
+            # Update stored values if they differ
+            li.line_extension_amount = round(line_ext, 2)
+            li.tax_amount = round(computed_tax, 2)
+            li.line_total_amount = round(li.line_extension_amount + li.tax_amount, 2)
+
+            recomputed_subtotal += li.line_extension_amount
+            recomputed_tax += li.tax_amount
+
+            db.add(li)
+
+        # Update invoice totals based on recomputed values
+        invoice.subtotal_amount = round(recomputed_subtotal, 2)
+        invoice.tax_amount = round(recomputed_tax, 2)
+        invoice.total_amount = round(invoice.subtotal_amount + invoice.tax_amount, 2)
+        # If invoice had no payments, align amount_due to total_amount
+        if not invoice.amount_due or invoice.amount_due == 0.0:
+            invoice.amount_due = invoice.total_amount
+
+        db.add(invoice)
+        db.commit()
+        db.refresh(invoice)
+    except Exception:
+        # If recompute fails, continue with previously calculated values
+        db.rollback()
+
     # ==== PHASE 1: Digital Signatures, Hash Chain & UBL XML Generation ====
     from utils.crypto_utils import get_crypto_instance
     from utils.ubl_xml_generator import generate_invoice_xml
@@ -11634,18 +11692,31 @@ async def bulk_import_vendors(
                 existing_vendor.supplier_peppol_id = vendor_data.get("peppol_id")
                 updated_count += 1
             else:
+                # Ensure required customer_name (our company) is provided
+                company = db.get(CompanyDB, company_id)
+                company_name = (
+                    company.legal_name
+                    if company and company.legal_name
+                    else f"Company {company_id}"
+                )
+
                 placeholder_invoice = InwardInvoiceDB(
                     id=str(uuid4()),
                     company_id=company_id,
-                    invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
+                    supplier_invoice_number=f"VENDOR-{vendor_data['vendor_trn']}",
                     supplier_trn=vendor_data["vendor_trn"],
                     supplier_name=vendor_data["vendor_name"],
-                    supplier_email=vendor_data["vendor_email"],
                     supplier_address=vendor_data.get("vendor_address"),
                     supplier_peppol_id=vendor_data.get("peppol_id"),
-                    issue_date=date.today(),
-                    total=0.00,
-                    status="VENDOR_RECORD",
+                    invoice_date=date.today(),
+                    customer_trn=None,
+                    customer_name=company_name,
+                    currency_code="AED",
+                    subtotal_amount=0.00,
+                    tax_amount=0.00,
+                    total_amount=0.00,
+                    amount_due=0.00,
+                    status=InwardInvoiceStatus.RECEIVED,
                     received_at=datetime.utcnow(),
                 )
                 db.add(placeholder_invoice)

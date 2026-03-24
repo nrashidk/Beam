@@ -134,7 +134,7 @@ export default function BulkImport() {
               >
                 Import Invoices
               </button>
-              <button
+              {/* <button
                 onClick={() => {
                   setActiveTab("vendors");
                   setSelectedFile(null);
@@ -148,7 +148,7 @@ export default function BulkImport() {
                 }`}
               >
                 Import Vendors
-              </button>
+              </button> */}
             </div>
 
             <Card>
