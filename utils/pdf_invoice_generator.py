@@ -30,7 +30,34 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image, PageBreak
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image as PILImage
+
+# ── Arabic support (Task 6) ────────────────────────────────────────────────
+_AMIRI_REG = os.path.join(os.path.dirname(__file__), '..', 'fonts', 'Amiri-Regular.ttf')
+_AMIRI_BOLD = os.path.join(os.path.dirname(__file__), '..', 'fonts', 'Amiri-Bold.ttf')
+_ARABIC_ENABLED = False
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display as bidi_get_display
+    if os.path.exists(_AMIRI_REG):
+        pdfmetrics.registerFont(TTFont('Amiri', _AMIRI_REG))
+        pdfmetrics.registerFont(TTFont('Amiri-Bold', _AMIRI_BOLD))
+        _ARABIC_ENABLED = True
+except Exception:
+    pass
+
+
+def _ar(text: str) -> str:
+    """Reshape + apply bidi to Arabic text for correct PDF rendering."""
+    if not _ARABIC_ENABLED:
+        return text
+    try:
+        reshaped = arabic_reshaper.reshape(text)
+        return bidi_get_display(reshaped)
+    except Exception:
+        return text
 
 
 class PDFInvoiceGenerator:
@@ -105,7 +132,31 @@ class PDFInvoiceGenerator:
             textColor=self.GRAY_COLOR,
             spaceAfter=2
         ))
-    
+
+        # Task 6: Arabic title style (right-aligned, Amiri font)
+        arabic_font = 'Amiri-Bold' if _ARABIC_ENABLED else 'Helvetica-Bold'
+        self.styles.add(ParagraphStyle(
+            name='ArabicTitle',
+            parent=self.styles['Normal'],
+            fontSize=18,
+            textColor=self.DARK_GRAY,
+            spaceAfter=4,
+            alignment=TA_RIGHT,
+            fontName=arabic_font,
+        ))
+
+        # Task 6: Arabic normal style (right-aligned, Amiri font)
+        arabic_normal_font = 'Amiri' if _ARABIC_ENABLED else 'Helvetica'
+        self.styles.add(ParagraphStyle(
+            name='ArabicNormal',
+            parent=self.styles['Normal'],
+            fontSize=10,
+            textColor=self.DARK_GRAY,
+            spaceAfter=3,
+            alignment=TA_RIGHT,
+            fontName=arabic_normal_font,
+        ))
+
     def generate_qr_code(self, data: str, size: int = 150) -> Image:
         """
         Generate QR code image for invoice
@@ -166,7 +217,7 @@ class PDFInvoiceGenerator:
         vat_enabled = invoice_data.get('vat_enabled', False)
         if vat_enabled and invoice_data.get('supplier_trn'):
             company_info.append(Paragraph(
-                f"<b>TRN:</b> {invoice_data['supplier_trn']}",
+                f"<b>TRN / الرقم الضريبي:</b> {invoice_data['supplier_trn']}",
                 self.styles['NormalText']
             ))
         
@@ -177,6 +228,17 @@ class PDFInvoiceGenerator:
         invoice_classification = invoice_data.get('invoice_classification', '')
         invoice_type_code = str(invoice_data.get('invoice_type', '380'))
         
+        # Task 6: Arabic invoice type labels (bilingual EN/AR)
+        _ar_type_map = {
+            'FULL TAX INVOICE':        'فاتورة ضريبية كاملة',
+            'SIMPLIFIED TAX INVOICE':  'فاتورة ضريبية مبسطة',
+            'TAX INVOICE':             'فاتورة ضريبية',
+            'CREDIT NOTE':             'إشعار دائن',
+            'DEBIT NOTE':              'إشعار مدين',
+            'COMMERCIAL INVOICE':      'فاتورة تجارية',
+            'INVOICE':                 'فاتورة',
+        }
+
         if vat_enabled and invoice_classification:
             # VAT-registered business: Show TAX invoice classification (FTA compliant)
             if invoice_classification == 'full':
@@ -188,36 +250,58 @@ class PDFInvoiceGenerator:
                 invoice_type_map = {
                     '380': 'TAX INVOICE',
                     '381': 'CREDIT NOTE',
+                    '383': 'DEBIT NOTE',
                     '480': 'COMMERCIAL INVOICE'
                 }
                 invoice_type = invoice_type_map.get(invoice_type_code, 'TAX INVOICE')
         else:
             # Non-VAT business: CANNOT use "TAX" label (UAE FTA law)
-            # Only VAT-registered businesses can issue "Tax Invoice" documents
             invoice_type_map = {
-                '380': 'INVOICE',                # Standard invoice (no VAT)
-                '381': 'CREDIT NOTE',            # Credit notes allowed
-                '480': 'COMMERCIAL INVOICE'      # Commercial invoice allowed
+                '380': 'INVOICE',
+                '381': 'CREDIT NOTE',
+                '383': 'DEBIT NOTE',
+                '480': 'COMMERCIAL INVOICE'
             }
             invoice_type = invoice_type_map.get(invoice_type_code, 'INVOICE')
-        
+
         invoice_info.append(Paragraph(
             invoice_type,
             self.styles['InvoiceTitle']
         ))
+
+        # Task 6: Arabic translation of invoice type
+        arabic_title = _ar_type_map.get(invoice_type, '')
+        if arabic_title:
+            invoice_info.append(Paragraph(
+                _ar(arabic_title),
+                self.styles['ArabicTitle']
+            ))
+
         invoice_info.append(Paragraph(
             f"<b>Invoice #:</b> {invoice_data.get('invoice_number', 'N/A')}",
             self.styles['NormalText']
         ))
         invoice_info.append(Paragraph(
+            _ar(f"رقم الفاتورة: {invoice_data.get('invoice_number', '')}"),
+            self.styles['ArabicNormal']
+        ))
+        invoice_info.append(Paragraph(
             f"<b>Date:</b> {invoice_data.get('issue_date', 'N/A')}",
             self.styles['NormalText']
         ))
-        
+        invoice_info.append(Paragraph(
+            _ar(f"التاريخ: {invoice_data.get('issue_date', '')}"),
+            self.styles['ArabicNormal']
+        ))
+
         if invoice_data.get('due_date'):
             invoice_info.append(Paragraph(
                 f"<b>Due Date:</b> {invoice_data['due_date']}",
                 self.styles['NormalText']
+            ))
+            invoice_info.append(Paragraph(
+                _ar(f"تاريخ الاستحقاق: {invoice_data['due_date']}"),
+                self.styles['ArabicNormal']
             ))
         
         # Status badge

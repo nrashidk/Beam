@@ -29,6 +29,8 @@ import ContentManager from "./pages/ContentManager";
 import Pricing from "./pages/Pricing";
 import BillingSettings from "./pages/BillingSettings";
 import FinanceDashboard from "./pages/FinanceDashboard";
+import PeriodicReport from "./pages/PeriodicReport";
+import DataArchival from "./pages/DataArchival";
 import SuppliersManagement from "./pages/SuppliersManagement";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
 import PaymentVerification from "./pages/PaymentVerification";
@@ -280,6 +282,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <FinanceDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reports/periodic"
+              element={
+                <ProtectedRoute>
+                  <PeriodicReport />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data-archival"
+              element={
+                <ProtectedRoute>
+                  <DataArchival />
                 </ProtectedRoute>
               }
             />

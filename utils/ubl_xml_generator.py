@@ -130,10 +130,26 @@ class UBLXMLGenerator:
             if isinstance(due_date, (datetime, date)):
                 due_date = due_date.strftime('%Y-%m-%d')
             self._add_element(self.root, 'DueDate', due_date)
-        
-        # Invoice type code (380 = Commercial Invoice, 381 = Credit Note)
+
+        # Supply / delivery date — Task 5: cac:Delivery/cbc:ActualDeliveryDate
+        supply_date = invoice_data.get('supply_date')
+        if supply_date:
+            if isinstance(supply_date, (datetime, date)):
+                supply_date = supply_date.strftime('%Y-%m-%d')
+            delivery_el = SubElement(self.root, 'cac:Delivery')
+            self._add_element(delivery_el, 'ActualDeliveryDate', supply_date)
+
+        # Invoice type code (380 = Tax Invoice, 381 = Credit Note, 383 = Debit Note, 480 = Commercial)
         invoice_type = invoice_data.get('invoice_type', 'TAX_INVOICE')
-        type_code = '381' if 'CREDIT' in invoice_type.upper() else '380'
+        _type_map = {'381': '381', '383': '383', '480': '480', '81': '81'}
+        if isinstance(invoice_type, str) and invoice_type in _type_map:
+            type_code = _type_map[invoice_type]
+        elif 'CREDIT' in str(invoice_type).upper():
+            type_code = '381'
+        elif 'DEBIT' in str(invoice_type).upper():
+            type_code = '383'
+        else:
+            type_code = '380'
         self._add_element(self.root, 'InvoiceTypeCode', type_code)
         
         # Document currency

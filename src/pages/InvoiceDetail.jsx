@@ -10,6 +10,7 @@ import {
   Download,
   FileText,
   Edit2,
+  Lock,
 } from "lucide-react";
 import Toast from "../components/ui/Toast";
 import PageLoader from "../components/PageLoader";
@@ -22,6 +23,7 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [lockedModal, setLockedModal] = useState({ isOpen: false, title: "", message: "" });
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     action: null,
@@ -90,16 +92,45 @@ export default function InvoiceDetail() {
     });
   };
 
+  const handleEditClick = () => {
+    if (invoice.status !== "DRAFT") {
+      setLockedModal({
+        isOpen: true,
+        title: "Invoice is Locked",
+        message:
+          `This invoice has status "${invoice.status}" and cannot be edited. ` +
+          "Posted invoices are locked to preserve the audit trail. " +
+          "To correct this invoice, please create a Credit Note (document type 381) referencing it.",
+      });
+      return;
+    }
+    navigate(`/invoices/${id}/edit`);
+  };
+
   const handleCancel = async () => {
-    setConfirmModal({
-      isOpen: true,
-      action: "cancel",
-      title: "Cancel Invoice",
-      message: "Cancel this invoice? This action cannot be undone.",
-      confirmText: "Cancel Invoice",
-      cancelText: "Keep it",
-      type: "danger",
-    });
+    if (invoice.status === "ISSUED" || invoice.status === "SENT") {
+      setConfirmModal({
+        isOpen: true,
+        action: "cancel",
+        title: "Cancel Posted Invoice",
+        message:
+          "To cancel a posted invoice, a Credit Note must already exist for it. " +
+          "If no credit note exists, cancellation will be blocked. Continue?",
+        confirmText: "Try Cancel",
+        cancelText: "Back",
+        type: "danger",
+      });
+    } else {
+      setConfirmModal({
+        isOpen: true,
+        action: "cancel",
+        title: "Cancel Invoice",
+        message: "Cancel this invoice? This action cannot be undone.",
+        confirmText: "Cancel Invoice",
+        cancelText: "Keep it",
+        type: "danger",
+      });
+    }
   };
 
   const executeAction = async () => {
@@ -140,11 +171,21 @@ export default function InvoiceDetail() {
         });
       }
     } catch (error) {
-      setToast({
-        message: error.response?.data?.detail || `Failed to ${action} invoice`,
-        type: "error",
-        onClose: () => setToast(null),
-      });
+      const status = error.response?.status;
+      const detail = error.response?.data?.detail || `Failed to ${action} invoice`;
+      if (status === 409) {
+        setLockedModal({
+          isOpen: true,
+          title: "Action Blocked",
+          message: detail,
+        });
+      } else {
+        setToast({
+          message: detail,
+          type: "error",
+          onClose: () => setToast(null),
+        });
+      }
     } finally {
       setActionLoading(false);
     }
@@ -265,13 +306,22 @@ export default function InvoiceDetail() {
 
           {/* Actions */}
           <div className="p-6 bg-gray-50 border-b flex gap-3">
-            {invoice.status === "DRAFT" && (
+            {invoice.status !== "CANCELLED" && invoice.status !== "PAID" && (
               <button
-                onClick={() => navigate(`/invoices/${id}/edit`)}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700"
+                onClick={handleEditClick}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold ${
+                  invoice.status === "DRAFT"
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                }`}
+                title={invoice.status !== "DRAFT" ? "Invoice is locked — click to learn more" : "Edit invoice"}
               >
-                <Edit2 className="w-5 h-5" />
-                Edit Invoice
+                {invoice.status === "DRAFT" ? (
+                  <Edit2 className="w-5 h-5" />
+                ) : (
+                  <Lock className="w-5 h-5" />
+                )}
+                {invoice.status === "DRAFT" ? "Edit Invoice" : "Locked"}
               </button>
             )}
 
@@ -305,6 +355,29 @@ export default function InvoiceDetail() {
                 <Share2 className="w-5 h-5" />
                 Copy Share Link
               </button>
+            )}
+
+            {/* Credit Note & Debit Note quick actions for posted tax invoices */}
+            {(invoice.status === "ISSUED" || invoice.status === "SENT" || invoice.status === "VIEWED") &&
+              invoice.invoice_type === "380" && (
+              <>
+                <button
+                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`)}
+                  className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
+                  title="Issue a credit note against this invoice"
+                >
+                  <FileText className="w-5 h-5" />
+                  Credit Note
+                </button>
+                <button
+                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=debit_note`)}
+                  className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
+                  title="Issue a debit note against this invoice"
+                >
+                  <FileText className="w-5 h-5" />
+                  Debit Note
+                </button>
+              </>
             )}
 
             {invoice.status !== "CANCELLED" && invoice.status !== "PAID" && (
@@ -402,6 +475,14 @@ export default function InvoiceDetail() {
                   <p className="text-sm text-gray-500 mb-1">Due Date</p>
                   <p className="font-semibold">
                     {new Date(invoice.due_date).toLocaleDateString("en-AE")}
+                  </p>
+                </div>
+              )}
+              {invoice.supply_date && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Supply Date</p>
+                  <p className="font-semibold">
+                    {new Date(invoice.supply_date).toLocaleDateString("en-AE")}
                   </p>
                 </div>
               )}
@@ -581,6 +662,38 @@ export default function InvoiceDetail() {
         onCancel={closeConfirmModal}
         isLoading={actionLoading}
       />
+
+      {/* Locked Invoice Modal */}
+      {lockedModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-3 bg-amber-100 rounded-full">
+                <Lock className="w-6 h-6 text-amber-600" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900">{lockedModal.title}</h2>
+            </div>
+            <p className="text-gray-600 mb-6 leading-relaxed">{lockedModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setLockedModal({ isOpen: false, title: "", message: "" })}
+                className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setLockedModal({ isOpen: false, title: "", message: "" });
+                  navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`);
+                }}
+                className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700"
+              >
+                Create Credit Note
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toast && (

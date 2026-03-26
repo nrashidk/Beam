@@ -60,6 +60,7 @@ export default function EditInvoice() {
   const [toast, setToast] = useState(null);
   const [vatEnabled, setVatEnabled] = useState(false);
   const [invoice, setInvoice] = useState(null);
+  const [invoiceVersion, setInvoiceVersion] = useState(1);
   const [originalInvoices, setOriginalInvoices] = useState([]);
   const [loadingOriginalInvoices, setLoadingOriginalInvoices] = useState(false);
   const [formData, setFormData] = useState({
@@ -108,6 +109,7 @@ export default function EditInvoice() {
         const vatStatus = vatRes.data.vat_enabled || false;
         setVatEnabled(vatStatus);
         setInvoice(invoiceData);
+        setInvoiceVersion(invoiceData.version || 1);
 
         // Populate form with existing data
         setFormData({
@@ -279,7 +281,9 @@ export default function EditInvoice() {
         }),
       };
 
-      await apiClient.put(`/invoices/${id}`, cleanedFormData);
+      await apiClient.put(`/invoices/${id}`, cleanedFormData, {
+        headers: { "If-Match": String(invoiceVersion) },
+      });
       setToast({
         message: "Invoice updated successfully!",
         type: "success",
@@ -289,6 +293,18 @@ export default function EditInvoice() {
         },
       });
     } catch (error) {
+      if (error.response?.status === 412) {
+        setToast({
+          message:
+            "This invoice was modified by another session. Please reload the page and reapply your changes.",
+          type: "error",
+          onClose: () => {
+            setToast(null);
+            navigate(0);
+          },
+        });
+        return;
+      }
       const errorMessage =
         error.response?.data?.detail ||
         error.message ||

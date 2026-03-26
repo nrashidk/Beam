@@ -25,6 +25,7 @@ from fastapi import (
     HTTPException,
     Depends,
     Form,
+    Request,
     Response,
     Header,
     Cookie,
@@ -48,6 +49,7 @@ from sqlalchemy import (
     Text,
     func,
     or_,
+    text,
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
@@ -163,6 +165,7 @@ class DocumentStatus(str, enum.Enum):
 class InvoiceType(str, enum.Enum):
     TAX_INVOICE = "380"  # Commercial invoice (standard VAT)
     TAX_CREDIT_NOTE = "381"  # Credit note
+    DEBIT_NOTE = "383"  # Debit note (Task 4 — FTA UBL type 383)
     COMMERCIAL_INVOICE = "480"  # Invoice out of scope of tax
     CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
 
@@ -246,6 +249,10 @@ class UserDB(Base):
     mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed backup codes
     mfa_enrolled_at = Column(DateTime, nullable=True)
     mfa_last_verified_at = Column(DateTime, nullable=True)
+
+    # Task 2: Account lockout fields
+    failed_login_count = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
 
 
 class CompanyDB(Base):
@@ -498,6 +505,10 @@ class InvoiceDB(Base):
     status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT)
     issue_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
+    supply_date = Column(Date, nullable=True)  # Task 5: UBL cac:Delivery date
+    version = Column(Integer, default=1, nullable=False, server_default="1")  # Task 10: optimistic locking
+    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")  # Task 12: archival
+    archived_at = Column(DateTime, nullable=True)  # Task 12: timestamp when archived
     currency_code = Column(String, default="AED")
 
     # Supplier (Issuer) - Company issuing the invoice
@@ -1009,6 +1020,91 @@ class AuditFileDB(Base):
     company = relationship("CompanyDB", backref="audit_files")
 
 
+class PasswordHistoryDB(Base):
+    """Stores the last N password hashes per user to prevent reuse (Task 2)."""
+
+    __tablename__ = "password_history"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("UserDB", backref="password_history")
+
+
+class AuditLogDB(Base):
+    """Immutable audit trail — every sensitive action is recorded here (Task 1)."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+
+    # What happened
+    action = Column(String, nullable=False)        # e.g. "USER_LOGIN", "INVOICE_ISSUED"
+    resource_type = Column(String, nullable=True)  # e.g. "invoice", "vat_return"
+    resource_id = Column(String, nullable=True)    # PK of the affected resource
+
+    # Change detail (JSON-encoded strings)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+
+    # Request context
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+
+    # Timestamp — never nullable; auto-set
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    company = relationship("CompanyDB", backref="audit_logs")
+    user = relationship("UserDB", backref="audit_logs")
+
+
+class VATReturnDB(Base):
+    """VAT Return — stores computed FTA VAT returns per period (Task 9)."""
+
+    __tablename__ = "vat_returns"
+
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+
+    # Period
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+
+    # Transaction counts
+    total_sales_invoices = Column(Integer, default=0)
+    total_purchase_invoices = Column(Integer, default=0)
+
+    # Box 1 — Standard rated supplies (AED)
+    standard_rated_sales = Column(Float, default=0.0)
+    # Box 2 — Tax refunds provided (AED)
+    tax_refunds_provided = Column(Float, default=0.0)
+    # Box 3 — Output VAT
+    output_vat = Column(Float, default=0.0)
+
+    # Box 9 — Standard rated purchases
+    standard_rated_purchases = Column(Float, default=0.0)
+    # Box 10 — Expenses
+    purchase_expenses = Column(Float, default=0.0)
+    # Box 11 — Total input VAT
+    input_vat_bills = Column(Float, default=0.0)
+    input_vat_expenses = Column(Float, default=0.0)
+    total_input_vat = Column(Float, default=0.0)
+
+    # Net payable / refundable
+    net_vat_payable = Column(Float, default=0.0)
+
+    # Metadata
+    generated_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    company = relationship("CompanyDB", backref="vat_returns")
+
+
 class PaymentMethodDB(Base):
     """Customer payment methods (credit cards via Stripe)"""
 
@@ -1252,6 +1348,64 @@ class InventoryTransactionDB(Base):
     inventory_item = relationship("InventoryItemDB", backref="transactions")
 
 
+# ==================== TASK 8: GENERAL LEDGER / DOUBLE-ENTRY ACCOUNTING ====================
+
+class AccountDB(Base):
+    """Chart of Accounts — one set per company, system accounts auto-created."""
+
+    __tablename__ = "accounts"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    account_code = Column(String(20), nullable=False)
+    account_name = Column(String(100), nullable=False)
+    account_name_ar = Column(String(100), nullable=True)
+    account_type = Column(String(20), nullable=False)  # ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+    parent_account_id = Column(String, ForeignKey("accounts.id"), nullable=True)
+    is_system = Column(Boolean, default=False)  # System accounts auto-created per company
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    company = relationship("CompanyDB", backref="accounts")
+
+
+class JournalEntryDB(Base):
+    """Journal Entry header — one per business event (invoice issued, payment, etc.)."""
+
+    __tablename__ = "journal_entries"
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    entry_date = Column(Date, nullable=False)
+    reference_type = Column(String(50), nullable=True)  # INVOICE, CREDIT_NOTE, DEBIT_NOTE, PAYMENT, EXPENSE
+    reference_id = Column(String, nullable=True)  # FK to source document
+    reference_number = Column(String(100), nullable=True)  # Human-readable (invoice number)
+    description = Column(String(500), nullable=True)
+    is_posted = Column(Boolean, default=True)
+    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    company = relationship("CompanyDB", backref="journal_entries")
+    lines = relationship("JournalEntryLineDB", backref="journal_entry", cascade="all, delete-orphan")
+
+
+class JournalEntryLineDB(Base):
+    """Journal Entry Line — debit or credit leg of a journal entry."""
+
+    __tablename__ = "journal_entry_lines"
+    id = Column(String, primary_key=True)
+    journal_entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
+    account_id = Column(String, ForeignKey("accounts.id"), nullable=False)
+    account_code = Column(String(20), nullable=True)   # Denormalized for read performance
+    account_name = Column(String(100), nullable=True)  # Denormalized for read performance
+    debit_amount = Column(Float, default=0.0)
+    credit_amount = Column(Float, default=0.0)
+    currency = Column(String(3), default="AED")
+    amount_aed = Column(Float, default=0.0)
+    description = Column(String(500), nullable=True)
+    line_number = Column(Integer, nullable=True)
+
+    account = relationship("AccountDB", backref="journal_entry_lines")
+
+
 # Create tables
 Base.metadata.create_all(engine)
 
@@ -1262,6 +1416,292 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ==================== PASSWORD SECURITY HELPERS (Task 2) ====================
+
+MAX_FAILED_LOGINS = 5       # Lock after N consecutive failures
+LOCKOUT_MINUTES = 30        # Lock duration
+PASSWORD_HISTORY_DEPTH = 5  # Number of past hashes to retain per user
+
+
+def validate_password_complexity(password: str) -> None:
+    """
+    Enforce UAE FTA password policy:
+    - Min 8 characters
+    - At least one uppercase letter
+    - At least one lowercase letter
+    - At least one digit
+    - At least one special character
+    Raises ValueError on failure.
+    """
+    import re
+    errors = []
+    if len(password) < 8:
+        errors.append("at least 8 characters")
+    if not re.search(r"[A-Z]", password):
+        errors.append("an uppercase letter")
+    if not re.search(r"[a-z]", password):
+        errors.append("a lowercase letter")
+    if not re.search(r"\d", password):
+        errors.append("a digit")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        errors.append("a special character")
+    if errors:
+        raise ValueError(f"Password must contain: {', '.join(errors)}")
+
+
+def _save_password_history(user_id: str, password_hash: str, db: Session) -> None:
+    """Save a new password hash and trim to the last N entries."""
+    entry = PasswordHistoryDB(
+        id=f"ph_{uuid4().hex[:16]}",
+        user_id=user_id,
+        password_hash=password_hash,
+        created_at=datetime.utcnow(),
+    )
+    db.add(entry)
+    db.flush()
+
+    # Trim to keep only the most recent PASSWORD_HISTORY_DEPTH entries
+    history = (
+        db.query(PasswordHistoryDB)
+        .filter(PasswordHistoryDB.user_id == user_id)
+        .order_by(PasswordHistoryDB.created_at.desc())
+        .all()
+    )
+    for old in history[PASSWORD_HISTORY_DEPTH:]:
+        db.delete(old)
+
+
+def _check_password_history(user_id: str, new_plain: str, db: Session) -> bool:
+    """
+    Returns True if new_plain matches any of the last PASSWORD_HISTORY_DEPTH hashes.
+    """
+    history = (
+        db.query(PasswordHistoryDB)
+        .filter(PasswordHistoryDB.user_id == user_id)
+        .order_by(PasswordHistoryDB.created_at.desc())
+        .limit(PASSWORD_HISTORY_DEPTH)
+        .all()
+    )
+    for h in history:
+        if verify_password(new_plain, h.password_hash):
+            return True
+    return False
+
+
+# ==================== AUDIT TRAIL HELPER (Task 1) ====================
+
+
+def log_audit_event(
+    db: Session,
+    action: str,
+    user_id: Optional[str] = None,
+    company_id: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    old_value: Optional[str] = None,
+    new_value: Optional[str] = None,
+    description: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> None:
+    """
+    Persist a single audit trail entry.
+    This is a fire-and-forget helper — failures are logged but never raised.
+    """
+    try:
+        entry = AuditLogDB(
+            id=f"al_{uuid4().hex[:16]}",
+            company_id=company_id,
+            user_id=user_id,
+            action=action,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            old_value=old_value,
+            new_value=new_value,
+            description=description,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            created_at=datetime.utcnow(),
+        )
+        db.add(entry)
+        db.flush()  # Don't commit — caller controls the transaction
+    except Exception as exc:
+        logger.error(f"Audit log write failed (non-fatal): {exc}")
+
+
+# ==================== GL HELPER FUNCTIONS (Task 8) ====================
+
+# System chart of accounts template
+_DEFAULT_ACCOUNTS = [
+    ("1000", "Cash / Bank",          "نقد / بنك",        "ASSET"),
+    ("1100", "Accounts Receivable",  "حسابات القبض",     "ASSET"),
+    ("1200", "VAT Receivable",       "ضريبة القيمة المضافة المستردة", "ASSET"),
+    ("2100", "Accounts Payable",     "حسابات الدفع",     "LIABILITY"),
+    ("2200", "VAT Payable",          "ضريبة القيمة المضافة المستحقة", "LIABILITY"),
+    ("3000", "Sales Revenue",        "إيرادات المبيعات", "REVENUE"),
+    ("4000", "Purchase / Cost of Goods", "المشتريات / تكلفة البضاعة", "EXPENSE"),
+]
+
+
+def create_default_chart_of_accounts(company_id: str, db: Session) -> None:
+    """Create the 7 system accounts for a company if they don't already exist."""
+    for code, name_en, name_ar, acc_type in _DEFAULT_ACCOUNTS:
+        existing = (
+            db.query(AccountDB)
+            .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
+            .first()
+        )
+        if not existing:
+            db.add(AccountDB(
+                id=str(uuid4()),
+                company_id=company_id,
+                account_code=code,
+                account_name=name_en,
+                account_name_ar=name_ar,
+                account_type=acc_type,
+                is_system=True,
+                is_active=True,
+            ))
+    db.flush()
+
+
+def _get_account(company_id: str, code: str, db: Session) -> AccountDB:
+    """Fetch a system account by code, creating default accounts if missing."""
+    acc = (
+        db.query(AccountDB)
+        .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
+        .first()
+    )
+    if not acc:
+        create_default_chart_of_accounts(company_id, db)
+        acc = (
+            db.query(AccountDB)
+            .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
+            .first()
+        )
+    return acc
+
+
+def create_journal_entry_for_invoice(invoice: "InvoiceDB", db: Session, user_id: str = None) -> None:
+    """
+    Auto-generate a double-entry journal entry when an outgoing invoice is ISSUED.
+
+    Sales Invoice (380):
+        DR  1100 Accounts Receivable  [total incl. VAT]
+            CR  3000 Sales Revenue    [subtotal excl. VAT]
+            CR  2200 VAT Payable      [VAT amount]
+
+    Credit Note (381):
+        DR  3000 Sales Revenue        [subtotal]
+        DR  2200 VAT Payable          [VAT]
+            CR  1100 Accounts Receivable [total]
+    """
+    try:
+        company_id = invoice.company_id
+        entry_date = invoice.issue_date if isinstance(invoice.issue_date, date) else date.today()
+        total = round(float(invoice.total_amount or 0), 2)
+        subtotal = round(float(invoice.subtotal_amount or 0), 2)
+        tax = round(float(invoice.tax_amount or 0), 2)
+
+        is_credit_note = invoice.invoice_type in [
+            InvoiceType.TAX_CREDIT_NOTE,
+            InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+        ]
+
+        ref_type = "CREDIT_NOTE" if is_credit_note else "INVOICE"
+        desc = f"{'Credit Note' if is_credit_note else 'Invoice'} {invoice.invoice_number}"
+
+        je = JournalEntryDB(
+            id=str(uuid4()),
+            company_id=company_id,
+            entry_date=entry_date,
+            reference_type=ref_type,
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            description=desc,
+            is_posted=True,
+            created_by_user_id=user_id,
+        )
+        db.add(je)
+        db.flush()
+
+        ar = _get_account(company_id, "1100", db)
+        rev = _get_account(company_id, "3000", db)
+        vat_p = _get_account(company_id, "2200", db)
+
+        lines = []
+        if is_credit_note:
+            lines = [
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=rev.id,  account_code=rev.account_code,  account_name=rev.account_name,  debit_amount=subtotal, credit_amount=0,     currency="AED", amount_aed=subtotal, description="Revenue reversal", line_number=1),
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_p.id,account_code=vat_p.account_code,account_name=vat_p.account_name,debit_amount=tax,     credit_amount=0,     currency="AED", amount_aed=tax,     description="VAT reversal",     line_number=2),
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ar.id,   account_code=ar.account_code,   account_name=ar.account_name,   debit_amount=0,       credit_amount=total, currency="AED", amount_aed=total,   description="AR credit",         line_number=3),
+            ]
+        else:
+            lines = [
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ar.id,   account_code=ar.account_code,   account_name=ar.account_name,   debit_amount=total,   credit_amount=0,       currency="AED", amount_aed=total,   description="AR debit",     line_number=1),
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=rev.id,  account_code=rev.account_code,  account_name=rev.account_name,  debit_amount=0,       credit_amount=subtotal,currency="AED", amount_aed=subtotal,description="Revenue",      line_number=2),
+                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_p.id,account_code=vat_p.account_code,account_name=vat_p.account_name,debit_amount=0,       credit_amount=tax,     currency="AED", amount_aed=tax,     description="VAT Payable",  line_number=3),
+            ]
+
+        for line in lines:
+            db.add(line)
+        db.flush()
+        logger.info(f"GL: journal entry {je.id} created for invoice {invoice.invoice_number}")
+    except Exception as exc:
+        logger.error(f"GL: failed to create journal entry for invoice {getattr(invoice, 'invoice_number', '?')}: {exc}")
+
+
+def create_journal_entry_for_purchase(inward_invoice, db: Session, user_id: str = None) -> None:
+    """
+    Auto-generate a double-entry journal entry when a purchase invoice is received.
+
+    Purchase Invoice:
+        DR  4000 Purchase / COGS   [subtotal]
+        DR  1200 VAT Receivable    [VAT]
+            CR  2100 Accounts Payable [total]
+    """
+    try:
+        company_id = inward_invoice.company_id
+        entry_date = (
+            inward_invoice.invoice_date.date()
+            if hasattr(inward_invoice.invoice_date, "date")
+            else date.today()
+        )
+        total = round(float(inward_invoice.total_amount or 0), 2)
+        subtotal = round(float(inward_invoice.subtotal_amount or 0), 2)
+        tax = round(float(inward_invoice.tax_amount or 0), 2)
+
+        je = JournalEntryDB(
+            id=str(uuid4()),
+            company_id=company_id,
+            entry_date=entry_date,
+            reference_type="PURCHASE",
+            reference_id=str(inward_invoice.id),
+            reference_number=inward_invoice.supplier_invoice_number,
+            description=f"Purchase {inward_invoice.supplier_invoice_number} from {inward_invoice.supplier_name}",
+            is_posted=True,
+            created_by_user_id=user_id,
+        )
+        db.add(je)
+        db.flush()
+
+        cogs = _get_account(company_id, "4000", db)
+        vat_r = _get_account(company_id, "1200", db)
+        ap = _get_account(company_id, "2100", db)
+
+        lines = [
+            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=cogs.id, account_code=cogs.account_code, account_name=cogs.account_name, debit_amount=subtotal, credit_amount=0,     currency="AED", amount_aed=subtotal, description="Purchase cost", line_number=1),
+            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_r.id,account_code=vat_r.account_code,account_name=vat_r.account_name,debit_amount=tax,     credit_amount=0,     currency="AED", amount_aed=tax,     description="Input VAT",     line_number=2),
+            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ap.id,   account_code=ap.account_code,   account_name=ap.account_name,   debit_amount=0,       credit_amount=total, currency="AED", amount_aed=total,   description="AP credit",     line_number=3),
+        ]
+        for line in lines:
+            db.add(line)
+        db.flush()
+        logger.info(f"GL: purchase journal entry {je.id} created for {inward_invoice.supplier_invoice_number}")
+    except Exception as exc:
+        logger.error(f"GL: failed to create purchase journal entry: {exc}")
 
 
 # ==================== AUTH HELPERS ====================
@@ -1334,14 +1774,32 @@ def generate_temp_password(length: int = 16) -> str:
 
 
 def authenticate_user(email: str, password: str, db: Session):
-    """Authenticate user (super admin, company admin, etc) by email and password"""
+    """Authenticate user with lockout enforcement (Task 2)."""
     user = db.query(UserDB).filter(UserDB.email == email).first()
-    if not user:
+    if not user or not user.password_hash:
         return None
-    if not user.password_hash:
-        return None
+
+    # Task 2: Check account lockout
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        remaining = int((user.locked_until - datetime.utcnow()).total_seconds() / 60)
+        raise HTTPException(
+            403,
+            f"Account is locked due to {MAX_FAILED_LOGINS} failed login attempts. "
+            f"Try again in {remaining} minute(s).",
+        )
+
     if not verify_password(password, user.password_hash):
+        # Increment failed attempts and possibly lock the account
+        user.failed_login_count = (user.failed_login_count or 0) + 1
+        if user.failed_login_count >= MAX_FAILED_LOGINS:
+            user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
+            user.failed_login_count = 0
+        db.commit()
         return None
+
+    # Successful login — reset counter
+    user.failed_login_count = 0
+    user.locked_until = None
     return user
 
 
@@ -1776,6 +2234,7 @@ class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType
     issue_date: str  # ISO date format
     due_date: Optional[str] = None
+    supply_date: Optional[str] = None  # Task 5: Actual delivery/supply date
     currency_code: str = "AED"
 
     # Customer details
@@ -1832,6 +2291,8 @@ class InvoiceOut(BaseModel):
     status: InvoiceStatus
     issue_date: str
     due_date: Optional[str]
+    supply_date: Optional[str] = None  # Task 5: Actual delivery/supply date
+    version: int = 1  # Task 10: Optimistic locking counter
     currency_code: str
 
     # Supplier (auto-filled from company)
@@ -2178,9 +2639,34 @@ else:
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+def _run_column_migrations():
+    """Add new columns to existing tables without affecting data (Task 2)."""
+    migrations = [
+        # Task 2: Account lockout columns for users table
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP",
+        # Task 5: Supply date on invoices
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supply_date DATE",
+        # Task 10: Optimistic locking version counter
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1",
+        # Task 12: Data archival columns
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+    ]
+    with engine.begin() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+            except Exception as e:
+                logger.warning(f"Column migration skipped (may already exist): {e}")
+
+
 @app.on_event("startup")
 def startup_event():
     """Seed plans on startup and validate environment"""
+    # Run column-level migrations for new fields on existing tables
+    _run_column_migrations()
+
     # Check if running in production mode
     production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
 
@@ -2884,6 +3370,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
         # Update last login
         user.last_login = datetime.utcnow()
+        log_audit_event(
+            db, "USER_LOGIN",
+            user_id=user.id, company_id=user.company_id,
+            resource_type="user", resource_id=user.id,
+            description=f"User {user.email} logged in",
+        )
         db.commit()
         return MFALoginResponse(
             mfa_required=False,
@@ -5113,10 +5605,11 @@ def generate_invoice_number(
     """Generate sequential invoice number for company with type-specific prefix"""
     # Map invoice type to prefix
     prefix_map = {
-        "380": "TI",  # Tax Invoice
+        "380": "TI",   # Tax Invoice
         "381": "TCN",  # Tax Credit Note
-        "480": "CI",  # Commercial Invoice
-        "81": "CN",  # Credit Note
+        "383": "DN",   # Debit Note (Task 4)
+        "480": "CI",   # Commercial Invoice
+        "81": "CN",    # Credit Note
     }
 
     # Handle both enum and string types
@@ -5292,6 +5785,7 @@ def create_invoice(
 
     issue_date = dt.fromisoformat(payload.issue_date).date()
     due_date = dt.fromisoformat(payload.due_date).date() if payload.due_date else None
+    supply_date = dt.fromisoformat(payload.supply_date).date() if getattr(payload, "supply_date", None) else None
 
     # Create invoice
     invoice = InvoiceDB(
@@ -5302,6 +5796,7 @@ def create_invoice(
         status=InvoiceStatus.DRAFT,
         issue_date=issue_date,
         due_date=due_date,
+        supply_date=supply_date,
         currency_code=payload.currency_code,
         # Supplier (from company)
         supplier_trn=company.trn,
@@ -5449,6 +5944,37 @@ def create_invoice(
         original_invoice.amount_due = max(0.0, new_amount_due)
         db.add(original_invoice)  # Explicitly mark for update
 
+    # Debit note validation (Task 4 — FTA UBL 383): must reference an issued tax invoice
+    if invoice.invoice_type == InvoiceType.DEBIT_NOTE:
+        if not invoice.preceding_invoice_id:
+            raise HTTPException(400, "Debit notes must reference an existing tax invoice.")
+
+        original_invoice = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.id == invoice.preceding_invoice_id,
+                InvoiceDB.company_id == company.id,
+            )
+            .first()
+        )
+
+        if not original_invoice:
+            raise HTTPException(400, "Referenced invoice not found.")
+
+        if original_invoice.invoice_type != InvoiceType.TAX_INVOICE:
+            raise HTTPException(400, "Debit notes must reference a tax invoice (type 380).")
+
+        if original_invoice.status not in [InvoiceStatus.ISSUED, InvoiceStatus.SENT, InvoiceStatus.VIEWED, InvoiceStatus.PAID]:
+            raise HTTPException(400, "Debit notes can only be issued against a posted invoice.")
+
+        # Add debit note amount to original invoice's amount_due
+        new_amount_due = float(
+            Decimal(str(original_invoice.amount_due))
+            + Decimal(str(invoice.total_amount))
+        )
+        original_invoice.amount_due = new_amount_due
+        db.add(original_invoice)
+
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
         total_amount=Decimal(str(invoice.total_amount)),
@@ -5475,6 +6001,7 @@ def create_invoice(
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -5721,8 +6248,11 @@ def list_invoices(
     limit: int = 50,
     offset: int = 0,
 ):
-    """List invoices for the current company"""
-    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == current_user.company_id)
+    """List invoices for the current company (excludes archived invoices by default)"""
+    query = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        InvoiceDB.is_archived == False,  # Task 12: hide archived by default
+    )
 
     if status:
         try:
@@ -5765,6 +6295,156 @@ def list_invoices(
         )
         for inv in invoices
     ]
+
+
+@app.get("/invoices/archived", tags=["Invoices"])
+def list_archived_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """
+    Task 12 — Data Archival: list all archived invoices for this company.
+
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
+    """
+    if current_user.role not in [
+        Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER,
+    ]:
+        raise HTTPException(403, "Insufficient permissions to view archived invoices")
+
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == True,
+        )
+        .order_by(InvoiceDB.archived_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "invoice_type": inv.invoice_type.value if inv.invoice_type else None,
+            "status": inv.status.value if inv.status else None,
+            "issue_date": inv.issue_date.isoformat() if inv.issue_date else None,
+            "customer_name": inv.customer_name,
+            "total_amount": inv.total_amount,
+            "currency_code": inv.currency_code,
+            "archived_at": inv.archived_at.isoformat() if inv.archived_at else None,
+        }
+        for inv in invoices
+    ]
+
+
+@app.post("/invoices/archive", tags=["Invoices"])
+def archive_old_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    years_old: int = 5,
+):
+    """
+    Task 12 — Data Archival: archive all PAID/CANCELLED invoices older than `years_old` years.
+
+    Archived invoices are hidden from normal invoice lists but remain in the database
+    and can be retrieved for audit purposes via GET /invoices/archived.
+
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN only.
+    Default: archives invoices issued more than 5 years ago.
+    """
+    from datetime import date, timedelta
+
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Only Company Admin or Business Admin can archive invoices")
+
+    if years_old < 1:
+        raise HTTPException(400, "years_old must be at least 1")
+
+    cutoff_date = date.today() - timedelta(days=years_old * 365)
+
+    invoices_to_archive = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == False,
+            InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+            InvoiceDB.issue_date <= cutoff_date,
+        )
+        .all()
+    )
+
+    now = datetime.utcnow()
+    archived_count = 0
+    for inv in invoices_to_archive:
+        inv.is_archived = True
+        inv.archived_at = now
+        archived_count += 1
+
+    db.commit()
+
+    log_audit_event(
+        db, "INVOICES_ARCHIVED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="invoice", resource_id=None,
+        description=f"Archived {archived_count} invoices older than {years_old} years (cutoff: {cutoff_date})",
+    )
+
+    return {
+        "archived_count": archived_count,
+        "cutoff_date": cutoff_date.isoformat(),
+        "years_old": years_old,
+        "message": f"Successfully archived {archived_count} invoice(s) issued before {cutoff_date}.",
+    }
+
+
+@app.post("/invoices/{invoice_id}/restore", tags=["Invoices"])
+def restore_archived_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 12 — Data Archival: restore a single archived invoice back to normal.
+
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN only.
+    """
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Only Company Admin or Business Admin can restore invoices")
+
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.id == invoice_id,
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == True,
+        )
+        .first()
+    )
+
+    if not invoice:
+        raise HTTPException(404, "Archived invoice not found")
+
+    invoice.is_archived = False
+    invoice.archived_at = None
+    db.commit()
+
+    log_audit_event(
+        db, "INVOICE_RESTORED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="invoice", resource_id=invoice.id,
+        description=f"Restored archived invoice {invoice.invoice_number}",
+    )
+
+    return {
+        "id": invoice.id,
+        "invoice_number": invoice.invoice_number,
+        "message": f"Invoice {invoice.invoice_number} successfully restored.",
+    }
 
 
 @app.get("/invoices/pending-payment", tags=["Invoices"])
@@ -5822,10 +6502,14 @@ def get_pending_payment_invoices(
 @app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def get_invoice(
     invoice_id: str,
+    response: Response,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Get a specific invoice"""
+    """Get a specific invoice.
+
+    Task 10: Returns ETag header with current version for optimistic locking.
+    """
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -5837,6 +6521,10 @@ def get_invoice(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
+    # Task 10: Set ETag header for optimistic locking support
+    current_version = invoice.version if invoice.version is not None else 1
+    response.headers["ETag"] = str(current_version)
+
     return InvoiceOut(
         id=invoice.id,
         company_id=invoice.company_id,
@@ -5845,6 +6533,8 @@ def get_invoice(
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
+        version=current_version,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -5903,10 +6593,15 @@ def get_invoice(
 def update_invoice(
     invoice_id: str,
     data: InvoiceCreate,
+    request: Request,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Update a DRAFT invoice (only DRAFT invoices can be edited)"""
+    """Update a DRAFT invoice (only DRAFT invoices can be edited).
+
+    Task 10 — Concurrent Update Prevention: supports ETag/If-Match optimistic locking.
+    Supply `If-Match: <version>` to detect mid-air edits. Returns 412 on conflict.
+    """
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -5920,9 +6615,27 @@ def update_invoice(
 
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(
-            403,
-            f"Cannot edit invoice. Only DRAFT invoices can be edited. Current status: {invoice.status.value}",
+            409,
+            f"Cannot edit invoice. Only DRAFT invoices can be edited. "
+            f"Current status: {invoice.status.value}. "
+            "To correct a posted invoice, issue a credit note (document type 381).",
         )
+
+    # Task 10: Optimistic locking via If-Match / ETag
+    if_match = request.headers.get("If-Match")
+    current_version = invoice.version if invoice.version is not None else 1
+    if if_match is not None:
+        try:
+            client_version = int(if_match.strip('"'))
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version number")
+        if client_version != current_version:
+            raise HTTPException(
+                412,
+                f"Precondition Failed: invoice was modified by another session "
+                f"(client version={client_version}, server version={current_version}). "
+                "Reload the invoice and reapply your changes.",
+            )
 
     try:
         # Update basic invoice details
@@ -6028,6 +6741,8 @@ def update_invoice(
             )
             db.add(breakdown)
 
+        # Task 10: Increment optimistic-locking version counter
+        invoice.version = (invoice.version or 1) + 1
         db.commit()
 
         # Return updated invoice
@@ -6039,6 +6754,8 @@ def update_invoice(
             status=invoice.status,
             issue_date=invoice.issue_date.isoformat(),
             due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+            supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
+            version=invoice.version,
             currency_code=invoice.currency_code,
             supplier_trn=invoice.supplier_trn,
             supplier_name=invoice.supplier_name,
@@ -6199,6 +6916,130 @@ def verify_invoice_payment(
         "total_amount": invoice.total_amount,
         "verified_by": current_user.email,
         "verified_at": invoice.payment_verified_at.isoformat(),
+    }
+
+
+@app.get("/reports/periodic", tags=["Reports"])
+def get_periodic_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period_type: str = "monthly",
+    year: int = None,
+    period: int = None,
+):
+    """
+    Task 11 — Periodic Report: monthly or quarterly invoice summary.
+
+    Query parameters:
+    - period_type: "monthly" (default) or "quarterly"
+    - year: calendar year (default: current year)
+    - period: 1-12 for monthly, 1-4 for quarterly (default: current period)
+
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
+    """
+    from datetime import date
+    import calendar
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
+        raise HTTPException(403, "Insufficient permissions to view periodic reports")
+
+    today = date.today()
+    if year is None:
+        year = today.year
+
+    if period_type == "quarterly":
+        if period is None:
+            period = (today.month - 1) // 3 + 1
+        if period < 1 or period > 4:
+            raise HTTPException(400, "period must be 1-4 for quarterly reports")
+        start_month = (period - 1) * 3 + 1
+        end_month = start_month + 2
+        start_dt = date(year, start_month, 1)
+        last_day = calendar.monthrange(year, end_month)[1]
+        end_dt = date(year, end_month, last_day)
+        period_label = f"Q{period} {year}"
+    else:
+        period_type = "monthly"
+        if period is None:
+            period = today.month
+        if period < 1 or period > 12:
+            raise HTTPException(400, "period must be 1-12 for monthly reports")
+        start_dt = date(year, period, 1)
+        last_day = calendar.monthrange(year, period)[1]
+        end_dt = date(year, period, last_day)
+        period_label = f"{calendar.month_name[period]} {year}"
+
+    # Query all non-cancelled invoices in the period
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status != InvoiceStatus.CANCELLED,
+            InvoiceDB.issue_date >= start_dt,
+            InvoiceDB.issue_date <= end_dt,
+        )
+        .all()
+    )
+
+    # Aggregate totals by invoice type
+    type_labels = {
+        "380": "Tax Invoice",
+        "381": "Credit Note",
+        "383": "Debit Note",
+        "480": "Commercial Invoice",
+        "81": "Simplified Tax Invoice",
+    }
+    breakdown = {}
+    overall = {
+        "count": 0,
+        "subtotal": 0.0,
+        "tax_amount": 0.0,
+        "total_amount": 0.0,
+    }
+
+    for inv in invoices:
+        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
+        if type_code not in breakdown:
+            breakdown[type_code] = {
+                "invoice_type_code": type_code,
+                "invoice_type_label": type_labels.get(type_code, type_code),
+                "count": 0,
+                "subtotal": 0.0,
+                "tax_amount": 0.0,
+                "total_amount": 0.0,
+            }
+        entry = breakdown[type_code]
+        entry["count"] += 1
+        entry["subtotal"] += float(inv.subtotal_amount or 0)
+        entry["tax_amount"] += float(inv.tax_amount or 0)
+        entry["total_amount"] += float(inv.total_amount or 0)
+
+        overall["count"] += 1
+        overall["subtotal"] += float(inv.subtotal_amount or 0)
+        overall["tax_amount"] += float(inv.tax_amount or 0)
+        overall["total_amount"] += float(inv.total_amount or 0)
+
+    # Round all floats
+    for row in breakdown.values():
+        row["subtotal"] = round(row["subtotal"], 2)
+        row["tax_amount"] = round(row["tax_amount"], 2)
+        row["total_amount"] = round(row["total_amount"], 2)
+    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
+
+    return {
+        "period_type": period_type,
+        "period_label": period_label,
+        "year": year,
+        "period": period,
+        "start_date": start_dt.isoformat(),
+        "end_date": end_dt.isoformat(),
+        "summary": overall,
+        "breakdown_by_type": list(breakdown.values()),
+        "generated_at": datetime.utcnow().isoformat(),
     }
 
 
@@ -6978,6 +7819,7 @@ def issue_invoice(
         "invoice_number": invoice.invoice_number,
         "issue_date": invoice.issue_date,
         "due_date": invoice.due_date,
+        "supply_date": invoice.supply_date,  # Task 5: cac:Delivery/cbc:ActualDeliveryDate
         "invoice_type": invoice.invoice_type.value,
         "currency_code": invoice.currency_code,
         "supplier_trn": invoice.supplier_trn,
@@ -7067,6 +7909,21 @@ def issue_invoice(
 
     # Update invoice status
     invoice.status = InvoiceStatus.ISSUED
+
+    # Task 8: Auto-generate GL journal entry (wrapped so GL failure never breaks issuance)
+    try:
+        create_journal_entry_for_invoice(invoice, db, user_id=current_user.id)
+    except Exception as gl_err:
+        logger.error(f"GL journal entry failed for {invoice.invoice_number}: {gl_err}")
+
+    # Task 1: Audit trail
+    log_audit_event(
+        db, "INVOICE_ISSUED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="invoice", resource_id=invoice.id,
+        new_value=invoice.status.value if invoice.status else None,
+        description=f"Invoice {invoice.invoice_number} issued",
+    )
 
     db.commit()
     db.refresh(invoice)
@@ -7216,7 +8073,10 @@ def download_invoice_pdf(
         "status": invoice.status.value,
         "issue_date": invoice.issue_date.isoformat() if invoice.issue_date else "",
         "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
+        "supply_date": invoice.supply_date.isoformat() if invoice.supply_date else None,
         "currency_code": invoice.currency_code,
+        "vat_enabled": bool(invoice.supplier_trn),
+        "invoice_classification": invoice.invoice_classification,
         # Supplier
         "supplier_trn": invoice.supplier_trn,
         "supplier_name": invoice.supplier_name,
@@ -7275,6 +8135,15 @@ def download_invoice_pdf(
             invoice_data=invoice_data, line_items=line_items_data, public_url=public_url
         )
 
+        # Task 1: Audit trail — PDF download
+        log_audit_event(
+            db, "INVOICE_PDF_DOWNLOADED",
+            user_id=current_user.id, company_id=current_user.company_id,
+            resource_type="invoice", resource_id=invoice.id,
+            description=f"PDF downloaded for invoice {invoice.invoice_number}",
+        )
+        db.commit()
+
         # Return PDF as download
         filename = f"{invoice.invoice_number.replace('/', '_')}.pdf"
 
@@ -7314,7 +8183,30 @@ def cancel_invoice(
         raise HTTPException(404, "Invoice not found")
 
     if invoice.status in [InvoiceStatus.PAID, InvoiceStatus.CANCELLED]:
-        raise HTTPException(400, f"Cannot cancel invoice with status: {invoice.status}")
+        raise HTTPException(409, f"Cannot cancel invoice with status: {invoice.status.value}")
+
+    # Task 3: ISSUED invoices require a credit note before cancellation
+    if invoice.status in [InvoiceStatus.ISSUED, InvoiceStatus.SENT]:
+        credit_note_exists = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.preceding_invoice_id == invoice.id,
+                InvoiceDB.invoice_type.in_([
+                    InvoiceType.TAX_CREDIT_NOTE,
+                    InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+                ]),
+                InvoiceDB.status.in_([InvoiceStatus.ISSUED, InvoiceStatus.SENT]),
+                InvoiceDB.company_id == current_user.company_id,
+            )
+            .first()
+        )
+        if not credit_note_exists:
+            raise HTTPException(
+                409,
+                "A posted invoice can only be cancelled after issuing a credit note "
+                "(document type 381 referencing this invoice). "
+                "Please create a credit note first.",
+            )
 
     # If cancelling a credit note, restore the original invoice's amount_due
     if invoice.invoice_type in [
@@ -7343,7 +8235,36 @@ def cancel_invoice(
                 )
                 db.add(original_invoice)
 
+    # Task 4: If cancelling a debit note, subtract its amount back from the original invoice's amount_due
+    if invoice.invoice_type == InvoiceType.DEBIT_NOTE and invoice.preceding_invoice_id:
+        original_invoice = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.id == invoice.preceding_invoice_id,
+                InvoiceDB.company_id == current_user.company_id,
+            )
+            .first()
+        )
+        if original_invoice:
+            new_amount_due = float(
+                Decimal(str(original_invoice.amount_due))
+                - Decimal(str(invoice.total_amount))
+            )
+            original_invoice.amount_due = max(0.0, new_amount_due)
+            db.add(original_invoice)
+
     invoice.status = InvoiceStatus.CANCELLED
+
+    # Task 1: Audit trail
+    log_audit_event(
+        db, "INVOICE_CANCELLED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="invoice", resource_id=invoice.id,
+        old_value="ISSUED",
+        new_value="CANCELLED",
+        description=f"Invoice {invoice.invoice_number} cancelled",
+    )
+
     db.commit()
 
     return {
@@ -7639,6 +8560,7 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
+        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -8688,6 +9610,12 @@ def receive_inward_invoice(
         matching_po.variance_amount = (
             matching_po.expected_total - matching_po.received_amount_total
         )
+
+    # Task 8: Auto-generate GL journal entry for purchase (wrapped — GL failure must not block)
+    try:
+        create_journal_entry_for_purchase(new_invoice, db, user_id=current_user.id)
+    except Exception as gl_err:
+        logger.error(f"GL purchase journal entry failed: {gl_err}")
 
     db.commit()
     db.refresh(new_invoice)
@@ -10367,17 +11295,17 @@ def generate_fta_audit_file(
 
     # Create audit file record
     audit_file_id = f"faf_{uuid4().hex[:12]}"
-    file_name = (
-        f"FTA_Audit_File_{company.trn}_{period_start}_to_{period_end}.{format.lower()}"
-    )
-    file_path = os.path.join(ARTIFACT_ROOT, "audit_files", company.id, file_name)
+    base_name = f"FTA_FAF_{company.trn}_{period_start}_to_{period_end}"
+    file_name = f"{base_name}.zip"
+    output_dir = os.path.join(ARTIFACT_ROOT, "audit_files", company.id)
+    file_path = os.path.join(output_dir, file_name)
 
     audit_file = AuditFileDB(
         id=audit_file_id,
         company_id=company.id,
         file_name=file_name,
         file_path=file_path,
-        format=format.upper(),
+        format="ZIP",
         period_start_date=start_date,
         period_end_date=end_date,
         status=AuditFileStatus.GENERATING,
@@ -10447,7 +11375,7 @@ def generate_fta_audit_file(
             for inv in inward_invoices
         ]
 
-        # Generate audit file using utility
+        # Generate FAF ZIP (4-table CSV + SHA-256 hash, packed into ZIP)
         from utils.fta_audit_generator import FTAAuditFileGenerator
 
         company_data = {
@@ -10456,14 +11384,13 @@ def generate_fta_audit_file(
             "address": f"{company.address_line1 or ''} {company.address_line2 or ''}".strip(),
             "city": company.city,
             "emirate": company.emirate,
+            "registration_date": company.registration_date,
         }
 
         generator = FTAAuditFileGenerator(company_data)
-
-        if format.upper() == "CSV":
-            stats = generator.generate_csv(outgoing_data, inward_data, file_path)
-        else:
-            stats = generator.generate_txt(outgoing_data, inward_data, file_path)
+        zip_path, stats = generator.generate_faf_zip(
+            outgoing_data, inward_data, output_dir, base_name
+        )
 
         # Update audit file record with stats
         audit_file.status = AuditFileStatus.COMPLETED
@@ -10473,16 +11400,25 @@ def generate_fta_audit_file(
         audit_file.total_vat = stats.get("total_vat", 0.0)
         audit_file.file_size = stats.get("file_size", 0)
 
+        # Task 1: Audit trail
+        log_audit_event(
+            db, "FAF_GENERATED",
+            user_id=current_user.id, company_id=company.id,
+            resource_type="audit_file", resource_id=audit_file_id,
+            description=f"FAF generated for period {period_start} to {period_end}",
+        )
+
         db.commit()
 
         return {
             "success": True,
-            "message": "FTA Audit File generated successfully",
+            "message": "FTA Audit File (FAFv1.0.0) generated — ZIP with CSV + SHA-256 hash",
             "audit_file_id": audit_file_id,
             "file_name": file_name,
+            "sha256": stats.get("sha256", ""),
             "period_start": period_start,
             "period_end": period_end,
-            "format": format.upper(),
+            "format": "ZIP",
             "statistics": {
                 "total_invoices": audit_file.total_invoices,
                 "total_sales": stats.get("total_sales", 0),
@@ -10566,8 +11502,14 @@ def download_audit_file(
     if not os.path.exists(audit_file.file_path):
         raise HTTPException(404, "Audit file not found on disk")
 
-    # Determine media type
-    media_type = "text/csv" if audit_file.format == "CSV" else "text/plain"
+    # Determine media type — new files are ZIPs; legacy CSV/TXT still served correctly
+    ext = os.path.splitext(audit_file.file_path)[1].lower()
+    media_type_map = {
+        ".zip": "application/zip",
+        ".csv": "text/csv",
+        ".txt": "text/plain",
+    }
+    media_type = media_type_map.get(ext, "application/octet-stream")
 
     return FileResponse(
         path=audit_file.file_path, media_type=media_type, filename=audit_file.file_name
@@ -11627,10 +12569,11 @@ async def bulk_import_invoices(
             invoice_type_counts[invoice_type_value] += 1
 
             prefix_map = {
-                "380": "TI",  # Tax Invoice
+                "380": "TI",   # Tax Invoice
                 "381": "TCN",  # Tax Credit Note
-                "480": "CI",  # Commercial Invoice
-                "81": "CN",  # Credit Note
+                "383": "DN",   # Debit Note (Task 4)
+                "480": "CI",   # Commercial Invoice
+                "81": "CN",    # Credit Note
             }
             prefix = prefix_map.get(invoice_type_value, "TI")
             generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
@@ -11848,6 +12791,510 @@ async def bulk_import_vendors(
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Bulk vendor import failed: {str(e)}")
+
+
+# ==================== TASK 2: PASSWORD SECURITY ENDPOINTS ====================
+
+
+@app.post("/me/change-password", tags=["Password Security"])
+def change_password(
+    current_password: str,
+    new_password: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Change the current user's password.
+    Enforces:
+    - Current password must be correct
+    - New password must meet complexity requirements (Task 2)
+    - New password must not match any of the last 5 passwords (Task 2)
+    """
+    # 1. Verify current password
+    if not current_user.password_hash or not verify_password(
+        current_password, current_user.password_hash
+    ):
+        raise HTTPException(400, "Current password is incorrect")
+
+    # 2. Validate complexity
+    try:
+        validate_password_complexity(new_password)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    # 3. Check password history (no reuse of last 5)
+    if _check_password_history(current_user.id, new_password, db):
+        raise HTTPException(
+            422,
+            f"New password cannot be the same as any of your last {PASSWORD_HISTORY_DEPTH} passwords",
+        )
+
+    # 4. Hash and save
+    new_hash = get_password_hash(new_password)
+    _save_password_history(current_user.id, new_hash, db)
+    current_user.password_hash = new_hash
+
+    # 5. Audit trail
+    log_audit_event(
+        db, "PASSWORD_CHANGED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="user", resource_id=current_user.id,
+        description=f"User {current_user.email} changed their password",
+    )
+
+    db.commit()
+    return {"success": True, "message": "Password changed successfully"}
+
+
+# ==================== TASK 1: AUDIT LOG ENDPOINTS ====================
+
+
+@app.get("/audit-logs", tags=["Audit Trail"])
+def list_audit_logs(
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    List audit log entries for the company.
+    Company admins see their company's logs. Super-admins see all logs.
+    """
+    from datetime import datetime as dt
+
+    q = db.query(AuditLogDB)
+
+    if current_user.role != Role.SUPER_ADMIN:
+        if not current_user.company_id:
+            raise HTTPException(400, "User has no associated company")
+        q = q.filter(AuditLogDB.company_id == current_user.company_id)
+
+    if action:
+        q = q.filter(AuditLogDB.action == action.upper())
+    if resource_type:
+        q = q.filter(AuditLogDB.resource_type == resource_type.lower())
+    if from_date:
+        try:
+            q = q.filter(AuditLogDB.created_at >= dt.strptime(from_date, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(400, "Invalid from_date format. Use YYYY-MM-DD")
+    if to_date:
+        try:
+            q = q.filter(AuditLogDB.created_at <= dt.strptime(to_date, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(400, "Invalid to_date format. Use YYYY-MM-DD")
+
+    total = q.count()
+    logs = (
+        q.order_by(AuditLogDB.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "audit_logs": [
+            {
+                "id": log.id,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": log.resource_id,
+                "user_id": log.user_id,
+                "company_id": log.company_id,
+                "old_value": log.old_value,
+                "new_value": log.new_value,
+                "description": log.description,
+                "ip_address": log.ip_address,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+    }
+
+
+# ==================== TASK 9: VAT RETURN ENDPOINTS ====================
+
+
+@app.post("/vat-return/generate", tags=["VAT Return"])
+def generate_vat_return(
+    period_start: str,
+    period_end: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate and persist a VAT return for the given period.
+    Uses the existing calculate_vat_return() utility (Task 9 — must not modify it).
+    """
+    from decimal import Decimal
+    from datetime import datetime as dt
+    from utils.vat_utils import calculate_vat_return
+
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+
+    try:
+        start_date = dt.strptime(period_start, "%Y-%m-%d").date()
+        end_date = dt.strptime(period_end, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    if start_date > end_date:
+        raise HTTPException(400, "Start date must be before end date")
+
+    if end_date > date.today():
+        raise HTTPException(400, "End date cannot be in the future")
+
+    # Aggregate output VAT from issued/paid/sent sales invoices in the period
+    sales_invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.issue_date >= start_date,
+            InvoiceDB.issue_date <= end_date,
+            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+        )
+        .all()
+    )
+
+    # Aggregate input VAT from purchase invoices in the period
+    purchase_invoices = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.company_id == current_user.company_id,
+            InwardInvoiceDB.invoice_date >= start_date,
+            InwardInvoiceDB.invoice_date <= end_date,
+            InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED,
+        )
+        .all()
+    )
+
+    # Compute totals
+    sales_vat_total = sum(Decimal(str(inv.tax_amount or 0)) for inv in sales_invoices)
+    purchase_vat_total = sum(
+        Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices
+    )
+    # Separate purchases into bills vs expenses (no expense type yet — all go to bills)
+    purchase_bills_vat = purchase_vat_total
+    purchase_expenses_vat = Decimal("0.00")
+
+    # Standard rated subtotals
+    standard_rated_sales_total = sum(
+        Decimal(str(inv.subtotal_amount or 0)) for inv in sales_invoices
+    )
+    standard_rated_purchases_total = sum(
+        Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices
+    )
+
+    # Call the protected utility function (MUST NOT BE MODIFIED)
+    result = calculate_vat_return(
+        sales_invoices_vat=sales_vat_total,
+        purchase_bills_vat=purchase_bills_vat,
+        purchase_expenses_vat=purchase_expenses_vat,
+    )
+
+    # Persist the return
+    return_id = f"vr_{uuid4().hex[:12]}"
+    vat_return = VATReturnDB(
+        id=return_id,
+        company_id=current_user.company_id,
+        period_start=start_date,
+        period_end=end_date,
+        total_sales_invoices=len(sales_invoices),
+        total_purchase_invoices=len(purchase_invoices),
+        standard_rated_sales=float(standard_rated_sales_total),
+        tax_refunds_provided=0.0,
+        output_vat=float(result["output_vat"]),
+        standard_rated_purchases=float(standard_rated_purchases_total),
+        purchase_expenses=0.0,
+        input_vat_bills=float(result["input_vat_bills"]),
+        input_vat_expenses=float(result["input_vat_expenses"]),
+        total_input_vat=float(result["total_input_vat"]),
+        net_vat_payable=float(result["net_vat_payable"]),
+        generated_by_user_id=current_user.id,
+    )
+    db.add(vat_return)
+
+    # Task 1: Audit trail
+    log_audit_event(
+        db, "VAT_RETURN_GENERATED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="vat_return", resource_id=return_id,
+        description=f"VAT return generated for period {period_start} to {period_end}",
+    )
+
+    db.commit()
+    db.refresh(vat_return)
+
+    return {
+        "success": True,
+        "return_id": return_id,
+        "period_start": period_start,
+        "period_end": period_end,
+        "total_sales_invoices": len(sales_invoices),
+        "total_purchase_invoices": len(purchase_invoices),
+        "standard_rated_sales": float(standard_rated_sales_total),
+        "output_vat": float(result["output_vat"]),
+        "standard_rated_purchases": float(standard_rated_purchases_total),
+        "input_vat_bills": float(result["input_vat_bills"]),
+        "input_vat_expenses": float(result["input_vat_expenses"]),
+        "total_input_vat": float(result["total_input_vat"]),
+        "net_vat_payable": float(result["net_vat_payable"]),
+        "status": "payable" if float(result["net_vat_payable"]) > 0 else "refundable",
+    }
+
+
+@app.get("/vat-return", tags=["VAT Return"])
+def list_vat_returns(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """List all VAT returns for the current company."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+    returns = (
+        db.query(VATReturnDB)
+        .filter(VATReturnDB.company_id == current_user.company_id)
+        .order_by(VATReturnDB.created_at.desc())
+        .all()
+    )
+    return {
+        "vat_returns": [
+            {
+                "id": r.id,
+                "period_start": str(r.period_start),
+                "period_end": str(r.period_end),
+                "total_sales_invoices": r.total_sales_invoices,
+                "total_purchase_invoices": r.total_purchase_invoices,
+                "output_vat": r.output_vat,
+                "total_input_vat": r.total_input_vat,
+                "net_vat_payable": r.net_vat_payable,
+                "status": "payable" if r.net_vat_payable > 0 else "refundable",
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in returns
+        ]
+    }
+
+
+@app.get("/vat-return/{return_id}", tags=["VAT Return"])
+def get_vat_return(
+    return_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Get a single VAT return with full box-by-box breakdown."""
+    r = (
+        db.query(VATReturnDB)
+        .filter(
+            VATReturnDB.id == return_id,
+            VATReturnDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
+    if not r:
+        raise HTTPException(404, "VAT return not found")
+    return {
+        "id": r.id,
+        "period_start": str(r.period_start),
+        "period_end": str(r.period_end),
+        "total_sales_invoices": r.total_sales_invoices,
+        "total_purchase_invoices": r.total_purchase_invoices,
+        "box_1_standard_rated_sales": r.standard_rated_sales,
+        "box_2_tax_refunds_provided": r.tax_refunds_provided,
+        "box_3_output_vat": r.output_vat,
+        "box_9_standard_rated_purchases": r.standard_rated_purchases,
+        "box_10_purchase_expenses": r.purchase_expenses,
+        "box_11_input_vat_bills": r.input_vat_bills,
+        "box_12_input_vat_expenses": r.input_vat_expenses,
+        "box_13_total_input_vat": r.total_input_vat,
+        "net_vat_payable": r.net_vat_payable,
+        "status": "payable" if r.net_vat_payable > 0 else "refundable",
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+# ==================== TASK 8: GL / JOURNAL ENTRY ENDPOINTS ====================
+
+
+@app.get("/accounts", tags=["General Ledger"])
+def list_accounts(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """List chart of accounts for the current company. Creates default accounts if none exist."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+    accounts = (
+        db.query(AccountDB)
+        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
+        .order_by(AccountDB.account_code)
+        .all()
+    )
+    if not accounts:
+        create_default_chart_of_accounts(current_user.company_id, db)
+        db.commit()
+        accounts = (
+            db.query(AccountDB)
+            .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
+            .order_by(AccountDB.account_code)
+            .all()
+        )
+    return {
+        "accounts": [
+            {
+                "id": a.id,
+                "account_code": a.account_code,
+                "account_name": a.account_name,
+                "account_name_ar": a.account_name_ar,
+                "account_type": a.account_type,
+                "is_system": a.is_system,
+                "is_active": a.is_active,
+            }
+            for a in accounts
+        ]
+    }
+
+
+@app.get("/journal-entries", tags=["General Ledger"])
+def list_journal_entries(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    reference_type: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """List journal entries for the company with optional date and type filters."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+    q = db.query(JournalEntryDB).filter(JournalEntryDB.company_id == current_user.company_id)
+    if from_date:
+        q = q.filter(JournalEntryDB.entry_date >= from_date)
+    if to_date:
+        q = q.filter(JournalEntryDB.entry_date <= to_date)
+    if reference_type:
+        q = q.filter(JournalEntryDB.reference_type == reference_type.upper())
+    total = q.count()
+    entries = q.order_by(JournalEntryDB.entry_date.desc()).offset((page - 1) * limit).limit(limit).all()
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "journal_entries": [
+            {
+                "id": e.id,
+                "entry_date": str(e.entry_date),
+                "reference_type": e.reference_type,
+                "reference_id": e.reference_id,
+                "reference_number": e.reference_number,
+                "description": e.description,
+                "is_posted": e.is_posted,
+                "created_at": e.created_at.isoformat() if e.created_at else None,
+            }
+            for e in entries
+        ],
+    }
+
+
+@app.get("/journal-entries/{entry_id}", tags=["General Ledger"])
+def get_journal_entry(
+    entry_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Get a single journal entry with all its debit/credit lines."""
+    entry = (
+        db.query(JournalEntryDB)
+        .filter(JournalEntryDB.id == entry_id, JournalEntryDB.company_id == current_user.company_id)
+        .first()
+    )
+    if not entry:
+        raise HTTPException(404, "Journal entry not found")
+    return {
+        "id": entry.id,
+        "entry_date": str(entry.entry_date),
+        "reference_type": entry.reference_type,
+        "reference_id": entry.reference_id,
+        "reference_number": entry.reference_number,
+        "description": entry.description,
+        "is_posted": entry.is_posted,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+        "lines": [
+            {
+                "id": l.id,
+                "account_id": l.account_id,
+                "account_code": l.account_code,
+                "account_name": l.account_name,
+                "debit_amount": l.debit_amount,
+                "credit_amount": l.credit_amount,
+                "currency": l.currency,
+                "amount_aed": l.amount_aed,
+                "description": l.description,
+                "line_number": l.line_number,
+            }
+            for l in entry.lines
+        ],
+    }
+
+
+@app.get("/gl-summary", tags=["General Ledger"])
+def get_gl_summary(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Account balances summary — total debits, credits, and net balance per account."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+
+    accounts = (
+        db.query(AccountDB)
+        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
+        .order_by(AccountDB.account_code)
+        .all()
+    )
+
+    summary = []
+    for acc in accounts:
+        q = (
+            db.query(JournalEntryLineDB)
+            .join(JournalEntryDB, JournalEntryLineDB.journal_entry_id == JournalEntryDB.id)
+            .filter(
+                JournalEntryLineDB.account_id == acc.id,
+                JournalEntryDB.company_id == current_user.company_id,
+                JournalEntryDB.is_posted == True,
+            )
+        )
+        if from_date:
+            q = q.filter(JournalEntryDB.entry_date >= from_date)
+        if to_date:
+            q = q.filter(JournalEntryDB.entry_date <= to_date)
+
+        lines = q.all()
+        total_debit = round(sum(l.debit_amount or 0 for l in lines), 2)
+        total_credit = round(sum(l.credit_amount or 0 for l in lines), 2)
+        net = round(total_debit - total_credit, 2)
+
+        summary.append({
+            "account_code": acc.account_code,
+            "account_name": acc.account_name,
+            "account_type": acc.account_type,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "net_balance": net,
+        })
+
+    return {"from_date": from_date, "to_date": to_date, "accounts": summary}
 
 
 # ==================== REACT APP SERVING ====================

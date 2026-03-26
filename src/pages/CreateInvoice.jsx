@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "../lib/api";
 import { EmailInput, TRNInput } from "../components/ui/validated-input";
 import {
@@ -54,6 +54,7 @@ const normalizeLineItemForVat = (item, isVatEnabled) => {
 
 export default function CreateInvoice() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
   const [vatEnabled, setVatEnabled] = useState(false);
@@ -69,6 +70,7 @@ export default function CreateInvoice() {
     const labels = {
       380: "Tax Invoice (380)",
       381: "Tax Credit Note (381)",
+      383: "Debit Note (383)",
       480: "Commercial Invoice (480)",
       81: "Credit Note (81)",
     };
@@ -93,6 +95,7 @@ export default function CreateInvoice() {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0],
+    supply_date: null,
     currency_code: "AED",
     customer_name: "",
     customer_email: "",
@@ -105,6 +108,19 @@ export default function CreateInvoice() {
     preceding_invoice_id: "",
     line_items: [buildDefaultLineItem(false)],
   });
+
+  // Pre-fill form from URL params (e.g. ?type=debit_note&preceding_invoice_id=xxx)
+  useEffect(() => {
+    const urlType = searchParams.get("type");
+    const urlPrecedingId = searchParams.get("preceding_invoice_id");
+    const updates = {};
+    if (urlType === "debit_note") updates.invoice_type = "383";
+    else if (urlType === "credit_note") updates.invoice_type = "381";
+    if (urlPrecedingId) updates.preceding_invoice_id = urlPrecedingId;
+    if (Object.keys(updates).length > 0) {
+      setFormData((prev) => ({ ...prev, ...updates }));
+    }
+  }, []);
 
   // Fetch VAT settings on component mount and when window gains focus
   useEffect(() => {
@@ -154,15 +170,15 @@ export default function CreateInvoice() {
 
   useEffect(() => {
     const fetchOriginalInvoices = async () => {
-      const isCreditNote =
-        formData.invoice_type === "381" || formData.invoice_type === "81";
-      if (!isCreditNote) {
+      const needsOriginalInvoice =
+        formData.invoice_type === "381" || formData.invoice_type === "81" || formData.invoice_type === "383";
+      if (!needsOriginalInvoice) {
         setOriginalInvoices([]);
         setFormData((prev) => ({ ...prev, preceding_invoice_id: "" }));
         return;
       }
 
-      const originalType = formData.invoice_type === "381" ? "380" : "480";
+      const originalType = formData.invoice_type === "381" || formData.invoice_type === "383" ? "380" : "480";
       setLoadingOriginalInvoices(true);
       try {
         const response = await apiClient.get(
@@ -184,9 +200,9 @@ export default function CreateInvoice() {
 
   // Fetch suggestions from server when user types in the original invoice field
   useEffect(() => {
-    const isCreditNote =
-      formData.invoice_type === "381" || formData.invoice_type === "81";
-    if (!isCreditNote) return;
+    const needsOriginalInvoice =
+      formData.invoice_type === "381" || formData.invoice_type === "81" || formData.invoice_type === "383";
+    if (!needsOriginalInvoice) return;
 
     // If no search query, show the pre-fetched original invoices (first page)
     if (!originalSearchQuery || originalSearchQuery.length < 1) {
@@ -202,7 +218,7 @@ export default function CreateInvoice() {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const originalType = formData.invoice_type === "381" ? "380" : "480";
+        const originalType = formData.invoice_type === "381" || formData.invoice_type === "383" ? "380" : "480";
         const resp = await apiClient.get(
           `/invoices?invoice_type=${originalType}&q=${encodeURIComponent(originalSearchQuery)}&limit=10`,
           { signal: controller.signal },
@@ -349,6 +365,8 @@ export default function CreateInvoice() {
 
   const isCreditNote =
     formData.invoice_type === "381" || formData.invoice_type === "81";
+  const isDebitNote = formData.invoice_type === "383";
+  const needsOriginalInvoice = isCreditNote || isDebitNote;
   const selectedOriginalInvoice = originalInvoices.find(
     (inv) => inv.id === formData.preceding_invoice_id,
   );
@@ -358,10 +376,12 @@ export default function CreateInvoice() {
     setLoading(true);
 
     try {
-      if (isCreditNote) {
+      if (needsOriginalInvoice) {
         if (!formData.preceding_invoice_id || !selectedOriginalInvoice) {
           setToast({
-            message: "Please select the original invoice for this credit note.",
+            message: isDebitNote
+              ? "Please select the original tax invoice for this debit note."
+              : "Please select the original invoice for this credit note.",
             type: "error",
             onClose: () => setToast(null),
           });
@@ -369,39 +389,41 @@ export default function CreateInvoice() {
           return;
         }
 
-        // Validate credit note type matches original invoice type
-        const expectedCreditNoteType = getValidCreditNoteType(
-          selectedOriginalInvoice.invoice_type,
-        );
-
-        if (formData.invoice_type !== expectedCreditNoteType) {
-          const originalLabel = getDocumentTypeLabel(
+        if (!isDebitNote) {
+          // Validate credit note type matches original invoice type
+          const expectedCreditNoteType = getValidCreditNoteType(
             selectedOriginalInvoice.invoice_type,
           );
-          const expectedLabel = getDocumentTypeLabel(expectedCreditNoteType);
-          const currentLabel = getDocumentTypeLabel(formData.invoice_type);
 
-          setToast({
-            message: `${originalLabel} requires ${expectedLabel}, not ${currentLabel}. Please select the correct credit note type.`,
-            type: "error",
-            onClose: () => setToast(null),
-          });
-          setLoading(false);
-          return;
-        }
+          if (formData.invoice_type !== expectedCreditNoteType) {
+            const originalLabel = getDocumentTypeLabel(
+              selectedOriginalInvoice.invoice_type,
+            );
+            const expectedLabel = getDocumentTypeLabel(expectedCreditNoteType);
+            const currentLabel = getDocumentTypeLabel(formData.invoice_type);
 
-        // Validate credit note total doesn't exceed original invoice total
-        const creditTotal = calculateTotal();
-        const originalTotal = Number(selectedOriginalInvoice.total_amount || 0);
+            setToast({
+              message: `${originalLabel} requires ${expectedLabel}, not ${currentLabel}. Please select the correct credit note type.`,
+              type: "error",
+              onClose: () => setToast(null),
+            });
+            setLoading(false);
+            return;
+          }
 
-        if (creditTotal > originalTotal) {
-          setToast({
-            message: `Credit note total (${formData.currency_code} ${creditTotal.toFixed(2)}) cannot exceed original invoice total (${selectedOriginalInvoice.currency_code} ${originalTotal.toFixed(2)}).`,
-            type: "error",
-            onClose: () => setToast(null),
-          });
-          setLoading(false);
-          return;
+          // Validate credit note total doesn't exceed original invoice total
+          const creditTotal = calculateTotal();
+          const originalTotal = Number(selectedOriginalInvoice.total_amount || 0);
+
+          if (creditTotal > originalTotal) {
+            setToast({
+              message: `Credit note total (${formData.currency_code} ${creditTotal.toFixed(2)}) cannot exceed original invoice total (${selectedOriginalInvoice.currency_code} ${originalTotal.toFixed(2)}).`,
+              type: "error",
+              onClose: () => setToast(null),
+            });
+            setLoading(false);
+            return;
+          }
         }
 
         // Validate currency matches
@@ -548,6 +570,28 @@ export default function CreateInvoice() {
               </div>
             )}
 
+            {/* Debit Note Information Banner */}
+            {isDebitNote && (
+              <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-800">
+                      <strong>Debit Note Rules (UBL 383):</strong>
+                    </p>
+                    <ul className="text-xs text-blue-700 mt-2 list-disc list-inside space-y-1">
+                      <li>Must reference a posted Tax Invoice (380)</li>
+                      <li>Increases the amount owed by the customer</li>
+                      <li>Use for additional charges, price adjustments, or corrections</li>
+                      <li>Date must be on or after the original invoice date</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* VAT Status Information */}
             {!vatEnabled && (
               <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
@@ -611,6 +655,9 @@ export default function CreateInvoice() {
                         <option value="381">
                           Tax Credit Note (381) - VAT Adjustment
                         </option>
+                        <option value="383">
+                          Debit Note (383) - Additional Charge
+                        </option>
                         <option value="480">
                           Commercial Invoice (480) - Export/Non-VAT
                         </option>
@@ -634,10 +681,10 @@ export default function CreateInvoice() {
                   )}
                 </div>
 
-                {isCreditNote && (
+                {needsOriginalInvoice && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Original Invoice <span className="text-red-500">*</span>
+                      {isDebitNote ? "Referenced Tax Invoice" : "Original Invoice"} <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <input
@@ -796,6 +843,24 @@ export default function CreateInvoice() {
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Supply / Delivery Date{" "}
+                    <span className="text-xs text-gray-400">(optional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.supply_date || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, supply_date: e.target.value || null })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    FTA UBL cac:Delivery/cbc:ActualDeliveryDate
+                  </p>
                 </div>
               </div>
             </div>

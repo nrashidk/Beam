@@ -1,299 +1,407 @@
 """
 FTA Audit File (FAF) Generator
 ==============================
-Generates UAE Federal Tax Authority compliant audit files in CSV/TXT format.
+Generates UAE Federal Tax Authority compliant audit files in FAF v1.0.0 format.
 
-Based on FTA specifications:
-- Invoice-level transaction detail
-- Company and customer/supplier information
-- VAT categorization and amounts
-- Tax codes (SR, ZR, EX)
+FAF 4-table structure required by the FTA:
+  [CompanyData]  — entity metadata (1 data row)
+  [SalesData]    — outgoing tax invoices / credit notes
+  [PurchaseData] — inward invoices (purchases)
+  [TaxData]      — tax summary per rate category
+
+Each generated file is accompanied by a SHA-256 hash file (.sha256).
+Both are packed into a ZIP archive returned for download.
 """
 import csv
+import hashlib
+import io
 import os
+import zipfile
 from datetime import date
-from typing import List, Dict, Any
-from io import StringIO
+from typing import Any, Dict, List, Tuple
 
+
+FAF_VERSION = "FAFv1.0.0"
+TAX_AGENCY_NAME = "InvoLinks"
+
+# ---------------------------------------------------------------------------
+# Column definitions per table
+# ---------------------------------------------------------------------------
+
+COMPANY_DATA_HEADERS = [
+    "TaxAgencyName",
+    "FAFVersion",
+    "TRN",
+    "CompanyName",
+    "RegistrationDate",
+    "Address",
+    "City",
+    "Emirate",
+]
+
+SALES_DATA_HEADERS = [
+    "TransactionID",
+    "InvoiceDate",
+    "InvoiceType",
+    "CustomerTRN",
+    "CustomerName",
+    "CustomerCountry",
+    "InvoiceValueExclVAT",
+    "VATAmount",
+    "TotalInvoiceValue",
+    "Currency",
+    "TaxCode",
+    "VATRatePct",
+    "Status",
+]
+
+PURCHASE_DATA_HEADERS = [
+    "TransactionID",
+    "InvoiceDate",
+    "InvoiceType",
+    "SupplierTRN",
+    "SupplierName",
+    "SupplierCountry",
+    "InvoiceValueExclVAT",
+    "VATAmount",
+    "TotalInvoiceValue",
+    "Currency",
+    "TaxCode",
+    "VATRatePct",
+    "Status",
+]
+
+TAX_DATA_HEADERS = [
+    "TaxCategory",
+    "TaxCode",
+    "VATRatePct",
+    "TaxableAmountSales",
+    "VATAmountSales",
+    "TaxableAmountPurchases",
+    "VATAmountPurchases",
+    "NetVATDue",
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _derive_tax_code(invoice_type: str, vat_rate: float) -> str:
+    """Map invoice_type + vat_rate to FTA tax code."""
+    itype = (invoice_type or "").upper()
+    if "EXEMPT" in itype or itype == "EX":
+        return "EX"
+    if "ZERO" in itype or "ZR" in itype or abs(vat_rate) < 0.001:
+        return "ZR"
+    if "OUT" in itype or "OOS" in itype:
+        return "OOS"
+    return "SR"  # Standard Rate 5%
+
+
+def _derive_vat_rate(vat_amount: float, subtotal: float) -> float:
+    """Compute effective VAT rate from amounts; fallback to 5%."""
+    if subtotal and subtotal != 0:
+        return round((vat_amount / subtotal) * 100, 2)
+    return 5.0
+
+
+def _format_date(d) -> str:
+    if isinstance(d, date):
+        return d.strftime("%Y-%m-%d")
+    return str(d) if d else ""
+
+
+def _amount(v) -> str:
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+# ---------------------------------------------------------------------------
+# Generator class
+# ---------------------------------------------------------------------------
 
 class FTAAuditFileGenerator:
-    """Generate FTA-compliant audit files (FAF format)"""
-    
-    # FTA FAF CSV Headers
-    FAF_HEADERS = [
-        "TRN",  # Company Tax Registration Number
-        "Company Name",
-        "Invoice Number",
-        "Invoice Date",
-        "Invoice Type",  # "Tax Invoice", "Credit Note", etc.
-        "Customer TRN",
-        "Customer Name",
-        "Customer Country",
-        "Supplier TRN",  # For purchase invoices
-        "Supplier Name",
-        "Supplier Country",
-        "Transaction Type",  # "Sale" or "Purchase"
-        "Invoice Value (Excl. VAT)",
-        "VAT Amount",
-        "Total Invoice Value",
-        "Currency",
-        "Tax Code",  # SR (Standard Rate 5%), ZR (Zero Rated), EX (Exempt), OOS (Out of Scope)
-        "VAT Rate %",
-        "Payment Date",
-        "Payment Method",
-        "Status"
-    ]
-    
+    """Generate FTA-compliant FAF v1.0.0 audit files."""
+
     def __init__(self, company_data: Dict[str, Any]):
-        """
-        Initialize generator with company information
-        
-        Args:
-            company_data: Dict with company_trn, company_name, address, etc.
-        """
         self.company_data = company_data
-    
-    def generate_csv(
-        self, 
-        outgoing_invoices: List[Dict], 
+
+    # ------------------------------------------------------------------
+    # Primary public method — produces a ZIP with CSV + SHA-256 file
+    # ------------------------------------------------------------------
+
+    def generate_faf_zip(
+        self,
+        outgoing_invoices: List[Dict],
         inward_invoices: List[Dict],
-        output_path: str
+        output_dir: str,
+        base_name: str,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        Build the FAF CSV, compute its SHA-256, pack both into a ZIP.
+
+        Returns:
+            zip_path  — absolute path to the generated .zip file
+            stats     — dict with summary counts / totals
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        csv_content, stats = self._build_faf_content(outgoing_invoices, inward_invoices)
+
+        csv_bytes = csv_content.encode("utf-8")
+        sha256_hex = hashlib.sha256(csv_bytes).hexdigest()
+
+        csv_name = f"{base_name}.csv"
+        sha256_name = f"{base_name}.sha256"
+        zip_name = f"{base_name}.zip"
+        zip_path = os.path.join(output_dir, zip_name)
+
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(csv_name, csv_bytes)
+            zf.writestr(sha256_name, f"{sha256_hex}  {csv_name}\n".encode("utf-8"))
+
+        stats["file_size"] = os.path.getsize(zip_path)
+        stats["sha256"] = sha256_hex
+        stats["zip_name"] = zip_name
+
+        return zip_path, stats
+
+    # ------------------------------------------------------------------
+    # Legacy compatibility methods (keep same signature)
+    # ------------------------------------------------------------------
+
+    def generate_csv(
+        self,
+        outgoing_invoices: List[Dict],
+        inward_invoices: List[Dict],
+        output_path: str,
     ) -> Dict[str, Any]:
-        """
-        Generate FTA Audit File in CSV format
-        
-        Args:
-            outgoing_invoices: List of issued invoices (sales)
-            inward_invoices: List of received invoices (purchases)
-            output_path: Path to save the CSV file
-            
-        Returns:
-            Statistics dict with counts and totals
-        """
-        rows = []
-        stats = {
-            "total_invoices": 0,
-            "total_sales": 0,
-            "total_purchases": 0,
-            "total_customers": set(),
-            "total_suppliers": set(),
-            "total_amount": 0.0,
-            "total_vat": 0.0
-        }
-        
-        # Process outgoing invoices (sales)
-        for invoice in outgoing_invoices:
-            row = self._create_sales_row(invoice)
-            rows.append(row)
-            stats["total_sales"] += 1
-            stats["total_customers"].add(invoice.get("customer_trn", ""))
-            stats["total_amount"] += invoice.get("total_amount", 0.0)
-            stats["total_vat"] += invoice.get("tax_amount", 0.0)
-        
-        # Process inward invoices (purchases)
-        for invoice in inward_invoices:
-            row = self._create_purchase_row(invoice)
-            rows.append(row)
-            stats["total_purchases"] += 1
-            stats["total_suppliers"].add(invoice.get("supplier_trn", ""))
-            stats["total_amount"] += invoice.get("total_amount", 0.0)
-            stats["total_vat"] += invoice.get("tax_amount", 0.0)
-        
-        stats["total_invoices"] = stats["total_sales"] + stats["total_purchases"]
-        stats["total_customers"] = len([c for c in stats["total_customers"] if c])
-        stats["total_suppliers"] = len([s for s in stats["total_suppliers"] if s])
-        
-        # Write CSV file
+        """Write a FAF CSV (no ZIP). Kept for backward compatibility."""
+        csv_content, stats = self._build_faf_content(outgoing_invoices, inward_invoices)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=self.FAF_HEADERS)
-            writer.writeheader()
-            writer.writerows(rows)
-        
-        # Get file size
-        file_size = os.path.getsize(output_path)
-        stats["file_size"] = file_size
-        
+        with open(output_path, "w", encoding="utf-8", newline="") as f:
+            f.write(csv_content)
+        stats["file_size"] = os.path.getsize(output_path)
         return stats
-    
-    def _create_sales_row(self, invoice: Dict) -> Dict:
-        """Create CSV row for sales invoice"""
-        # Validate mandatory fields
-        self._validate_invoice_data(invoice, is_sales=True)
-        
-        # Determine tax code and rate
-        tax_code, vat_rate = self._get_tax_info(invoice)
-        
-        return {
-            "TRN": self.company_data.get("trn", ""),
-            "Company Name": self.company_data.get("legal_name", ""),
-            "Invoice Number": invoice.get("invoice_number", ""),
-            "Invoice Date": self._format_date(invoice.get("issue_date")),
-            "Invoice Type": self._map_invoice_type(invoice.get("invoice_type", "")),
-            "Customer TRN": invoice.get("customer_trn", "") or "N/A",  # N/A for B2C
-            "Customer Name": invoice.get("customer_name", ""),
-            "Customer Country": invoice.get("customer_country", "AE"),
-            "Supplier TRN": "",  # Empty for sales
-            "Supplier Name": "",
-            "Supplier Country": "",
-            "Transaction Type": "Sale",
-            "Invoice Value (Excl. VAT)": f"{invoice.get('subtotal_amount', 0.0):.2f}",
-            "VAT Amount": f"{invoice.get('tax_amount', 0.0):.2f}",
-            "Total Invoice Value": f"{invoice.get('total_amount', 0.0):.2f}",
-            "Currency": invoice.get("currency_code", "AED"),
-            "Tax Code": tax_code,
-            "VAT Rate %": f"{vat_rate:.2f}",
-            "Payment Date": "",  # To be filled when payment recorded
-            "Payment Method": "",
-            "Status": invoice.get("status", "")
-        }
-    
-    def _create_purchase_row(self, invoice: Dict) -> Dict:
-        """Create CSV row for purchase invoice"""
-        # Validate mandatory fields
-        self._validate_invoice_data(invoice, is_sales=False)
-        
-        # Determine tax code and rate
-        tax_code, vat_rate = self._get_tax_info(invoice)
-        
-        return {
-            "TRN": self.company_data.get("trn", ""),
-            "Company Name": self.company_data.get("legal_name", ""),
-            "Invoice Number": invoice.get("supplier_invoice_number", ""),
-            "Invoice Date": self._format_date(invoice.get("invoice_date")),
-            "Invoice Type": self._map_invoice_type(invoice.get("invoice_type", "")),
-            "Customer TRN": "",  # Empty for purchases
-            "Customer Name": "",
-            "Customer Country": "",
-            "Supplier TRN": invoice.get("supplier_trn", ""),
-            "Supplier Name": invoice.get("supplier_name", ""),
-            "Supplier Country": "AE",  # Default to UAE
-            "Transaction Type": "Purchase",
-            "Invoice Value (Excl. VAT)": f"{invoice.get('subtotal_amount', 0.0):.2f}",
-            "VAT Amount": f"{invoice.get('tax_amount', 0.0):.2f}",
-            "Total Invoice Value": f"{invoice.get('total_amount', 0.0):.2f}",
-            "Currency": invoice.get("currency_code", "AED"),
-            "Tax Code": tax_code,
-            "VAT Rate %": f"{vat_rate:.2f}",
-            "Payment Date": "",
-            "Payment Method": "",
-            "Status": invoice.get("status", "")
-        }
-    
-    def _get_tax_info(self, invoice: Dict) -> tuple:
-        """
-        Determine tax code and VAT rate from invoice
-        
-        Returns:
-            (tax_code, vat_rate) tuple
-        """
-        tax_amount = invoice.get("tax_amount", 0.0)
-        subtotal = invoice.get("subtotal_amount", 0.0)
-        
-        if subtotal == 0:
-            return ("OOS", 0.0)  # Out of Scope
-        
-        # Calculate effective VAT rate
-        vat_rate = (tax_amount / subtotal * 100) if subtotal > 0 else 0.0
-        
-        # Classify based on rate
-        if vat_rate == 0.0:
-            tax_code = "ZR"  # Zero-rated
-        elif 4.5 <= vat_rate <= 5.5:  # Allow small rounding tolerance
-            tax_code = "SR"  # Standard Rate (5%)
-            vat_rate = 5.0
-        else:
-            tax_code = "EX"  # Exempt or other
-        
-        return (tax_code, vat_rate)
-    
-    def _map_invoice_type(self, type_code: str) -> str:
-        """Map invoice type code to readable name"""
-        type_mapping = {
-            "380": "Tax Invoice",
-            "381": "Credit Note",
-            "480": "Commercial Invoice",
-            "81": "Credit Note (Out of Scope)"
-        }
-        return type_mapping.get(type_code, "Tax Invoice")
-    
-    def _validate_invoice_data(self, invoice: Dict, is_sales: bool) -> None:
-        """
-        Validate that mandatory invoice fields are present
-        
-        Raises:
-            ValueError: If required fields are missing
-        """
-        # Common mandatory fields
-        required_fields = ["subtotal_amount", "tax_amount", "total_amount", "currency_code"]
-        
-        if is_sales:
-            # Sales invoices require invoice_number, issue_date, customer_name
-            required_fields.extend(["invoice_number", "issue_date", "customer_name"])
-            invoice_ref = invoice.get("invoice_number", "UNKNOWN")
-        else:
-            # Purchase invoices require supplier_invoice_number, invoice_date, supplier info
-            required_fields.extend(["supplier_invoice_number", "invoice_date", "supplier_trn", "supplier_name"])
-            invoice_ref = invoice.get("supplier_invoice_number", "UNKNOWN")
-        
-        missing_fields = []
-        for field in required_fields:
-            # Check if field exists and has a value (not None or empty string)
-            value = invoice.get(field)
-            if value is None or (isinstance(value, str) and value.strip() == ""):
-                missing_fields.append(field)
-        
-        if missing_fields:
-            raise ValueError(
-                f"Invoice {invoice_ref} is missing mandatory FTA fields: {', '.join(missing_fields)}. "
-                f"All invoices must have complete data for audit file generation."
-            )
-    
-    def _format_date(self, date_value) -> str:
-        """Format date to YYYY-MM-DD"""
-        if isinstance(date_value, date):
-            return date_value.strftime("%Y-%m-%d")
-        elif isinstance(date_value, str):
-            return date_value
-        return ""
-    
+
     def generate_txt(
         self,
         outgoing_invoices: List[Dict],
         inward_invoices: List[Dict],
-        output_path: str
+        output_path: str,
     ) -> Dict[str, Any]:
-        """
-        Generate FTA Audit File in TXT (tab-delimited) format
-        
-        Same as CSV but with tab delimiters
-        """
-        # Generate CSV first to a string buffer
-        csv_buffer = StringIO()
-        rows = []
-        stats = {"total_invoices": 0, "total_amount": 0.0, "total_vat": 0.0}
-        
-        # Process invoices (same logic as CSV)
-        for invoice in outgoing_invoices:
-            rows.append(self._create_sales_row(invoice))
-        
-        for invoice in inward_invoices:
-            rows.append(self._create_purchase_row(invoice))
-        
-        stats["total_invoices"] = len(rows)
-        
-        # Write as tab-delimited
+        """Write a tab-delimited FAF file (no ZIP). Kept for backward compatibility."""
+        csv_content, stats = self._build_faf_content(
+            outgoing_invoices, inward_invoices, delimiter="\t"
+        )
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with open(output_path, 'w', encoding='utf-8') as txtfile:
-            # Write header
-            txtfile.write('\t'.join(self.FAF_HEADERS) + '\n')
-            
-            # Write rows
-            for row in rows:
-                values = [str(row.get(header, "")) for header in self.FAF_HEADERS]
-                txtfile.write('\t'.join(values) + '\n')
-        
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(csv_content)
         stats["file_size"] = os.path.getsize(output_path)
         return stats
+
+    # ------------------------------------------------------------------
+    # Core builder — produces the 4-table FAF string
+    # ------------------------------------------------------------------
+
+    def _build_faf_content(
+        self,
+        outgoing_invoices: List[Dict],
+        inward_invoices: List[Dict],
+        delimiter: str = ",",
+    ) -> Tuple[str, Dict[str, Any]]:
+        buf = io.StringIO()
+
+        # File-level header metadata
+        buf.write(f"FAFVersion{delimiter}{FAF_VERSION}\n")
+        buf.write(f"TaxAgencyName{delimiter}{TAX_AGENCY_NAME}\n")
+        buf.write(f"GeneratedDate{delimiter}{date.today().strftime('%Y-%m-%d')}\n")
+        buf.write("\n")
+
+        # ============================================================
+        # TABLE 1: CompanyData
+        # ============================================================
+        buf.write("[CompanyData]\n")
+        writer = csv.DictWriter(
+            buf, fieldnames=COMPANY_DATA_HEADERS,
+            delimiter=delimiter, lineterminator="\n"
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "TaxAgencyName": TAX_AGENCY_NAME,
+                "FAFVersion": FAF_VERSION,
+                "TRN": self.company_data.get("trn", ""),
+                "CompanyName": self.company_data.get("legal_name", ""),
+                "RegistrationDate": _format_date(
+                    self.company_data.get("registration_date", "")
+                ),
+                "Address": self.company_data.get("address", ""),
+                "City": self.company_data.get("city", ""),
+                "Emirate": self.company_data.get("emirate", ""),
+            }
+        )
+        buf.write("\n")
+
+        # ============================================================
+        # TABLE 2: SalesData
+        # ============================================================
+        buf.write("[SalesData]\n")
+        writer = csv.DictWriter(
+            buf, fieldnames=SALES_DATA_HEADERS,
+            delimiter=delimiter, lineterminator="\n"
+        )
+        writer.writeheader()
+
+        total_sales = 0
+        total_sales_excl = 0.0
+        total_sales_vat = 0.0
+        sales_by_code: Dict[str, Dict] = {}
+
+        for inv in outgoing_invoices:
+            subtotal = float(inv.get("subtotal_amount", 0) or 0)
+            vat = float(inv.get("tax_amount", 0) or 0)
+            total = float(inv.get("total_amount", 0) or 0)
+            inv_type = inv.get("invoice_type", "TAX_INVOICE")
+            vat_rate = _derive_vat_rate(vat, subtotal)
+            tax_code = _derive_tax_code(inv_type, vat_rate)
+
+            writer.writerow(
+                {
+                    "TransactionID": inv.get("invoice_number", ""),
+                    "InvoiceDate": _format_date(inv.get("issue_date", "")),
+                    "InvoiceType": inv_type,
+                    "CustomerTRN": inv.get("customer_trn", "") or "N/A",
+                    "CustomerName": inv.get("customer_name", ""),
+                    "CustomerCountry": inv.get("customer_country", "AE"),
+                    "InvoiceValueExclVAT": _amount(subtotal),
+                    "VATAmount": _amount(vat),
+                    "TotalInvoiceValue": _amount(total),
+                    "Currency": inv.get("currency_code", "AED"),
+                    "TaxCode": tax_code,
+                    "VATRatePct": f"{vat_rate:.1f}",
+                    "Status": inv.get("status", ""),
+                }
+            )
+            total_sales += 1
+            total_sales_excl += subtotal
+            total_sales_vat += vat
+
+            bucket = sales_by_code.setdefault(
+                tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
+            )
+            bucket["taxable"] += subtotal
+            bucket["vat"] += vat
+
+        buf.write("\n")
+
+        # ============================================================
+        # TABLE 3: PurchaseData
+        # ============================================================
+        buf.write("[PurchaseData]\n")
+        writer = csv.DictWriter(
+            buf, fieldnames=PURCHASE_DATA_HEADERS,
+            delimiter=delimiter, lineterminator="\n"
+        )
+        writer.writeheader()
+
+        total_purchases = 0
+        total_purchase_excl = 0.0
+        total_purchase_vat = 0.0
+        purchase_by_code: Dict[str, Dict] = {}
+
+        for inv in inward_invoices:
+            subtotal = float(inv.get("subtotal_amount", 0) or 0)
+            vat = float(inv.get("tax_amount", 0) or 0)
+            total = float(inv.get("total_amount", 0) or 0)
+            inv_type = inv.get("invoice_type", "TAX_INVOICE")
+            vat_rate = _derive_vat_rate(vat, subtotal)
+            tax_code = _derive_tax_code(inv_type, vat_rate)
+
+            writer.writerow(
+                {
+                    "TransactionID": inv.get("supplier_invoice_number", ""),
+                    "InvoiceDate": _format_date(inv.get("invoice_date", "")),
+                    "InvoiceType": inv_type,
+                    "SupplierTRN": inv.get("supplier_trn", ""),
+                    "SupplierName": inv.get("supplier_name", ""),
+                    "SupplierCountry": inv.get("supplier_country", "AE"),
+                    "InvoiceValueExclVAT": _amount(subtotal),
+                    "VATAmount": _amount(vat),
+                    "TotalInvoiceValue": _amount(total),
+                    "Currency": inv.get("currency_code", "AED"),
+                    "TaxCode": tax_code,
+                    "VATRatePct": f"{vat_rate:.1f}",
+                    "Status": inv.get("status", ""),
+                }
+            )
+            total_purchases += 1
+            total_purchase_excl += subtotal
+            total_purchase_vat += vat
+
+            bucket = purchase_by_code.setdefault(
+                tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
+            )
+            bucket["taxable"] += subtotal
+            bucket["vat"] += vat
+
+        buf.write("\n")
+
+        # ============================================================
+        # TABLE 4: TaxData
+        # ============================================================
+        buf.write("[TaxData]\n")
+        writer = csv.DictWriter(
+            buf, fieldnames=TAX_DATA_HEADERS,
+            delimiter=delimiter, lineterminator="\n"
+        )
+        writer.writeheader()
+
+        all_codes = set(list(sales_by_code.keys()) + list(purchase_by_code.keys()))
+        if not all_codes:
+            all_codes = {"SR"}
+
+        category_labels = {
+            "SR": "Standard Rate (5%)",
+            "ZR": "Zero Rated",
+            "EX": "Exempt",
+            "OOS": "Out of Scope",
+        }
+
+        for code in sorted(all_codes):
+            s = sales_by_code.get(code, {"vat_rate": 5.0, "taxable": 0.0, "vat": 0.0})
+            p = purchase_by_code.get(
+                code, {"vat_rate": s["vat_rate"], "taxable": 0.0, "vat": 0.0}
+            )
+            vat_rate = s["vat_rate"] or p["vat_rate"]
+            writer.writerow(
+                {
+                    "TaxCategory": category_labels.get(code, code),
+                    "TaxCode": code,
+                    "VATRatePct": f"{vat_rate:.1f}",
+                    "TaxableAmountSales": _amount(s["taxable"]),
+                    "VATAmountSales": _amount(s["vat"]),
+                    "TaxableAmountPurchases": _amount(p["taxable"]),
+                    "VATAmountPurchases": _amount(p["vat"]),
+                    "NetVATDue": _amount(s["vat"] - p["vat"]),
+                }
+            )
+
+        buf.write("\n")
+
+        content = buf.getvalue()
+
+        stats: Dict[str, Any] = {
+            "total_invoices": total_sales + total_purchases,
+            "total_sales": total_sales,
+            "total_purchases": total_purchases,
+            "total_customers": total_sales,
+            "total_suppliers": total_purchases,
+            "total_amount": round(total_sales_excl + total_purchase_excl, 2),
+            "total_vat": round(total_sales_vat + total_purchase_vat, 2),
+        }
+
+        return content, stats
