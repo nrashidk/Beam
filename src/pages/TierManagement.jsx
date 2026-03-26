@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Badge } from '../components/ui/badge';
-import { ArrowLeft, Save, RefreshCcw, Edit2, Check, X } from 'lucide-react';
-import api from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
-import AdminLayout from '../components/AdminLayout';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Badge } from "../components/ui/badge";
+import { ArrowLeft, Save, RefreshCcw, Edit2, Check, X } from "lucide-react";
+import api from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
+import AdminLayout from "../components/AdminLayout";
 
 export default function TierManagement() {
   const { isSuperAdmin } = useAuth();
@@ -19,7 +24,7 @@ export default function TierManagement() {
 
   useEffect(() => {
     if (!isSuperAdmin) {
-      navigate('/dashboard');
+      navigate("/dashboard");
       return;
     }
     fetchPlans();
@@ -28,11 +33,11 @@ export default function TierManagement() {
   async function fetchPlans() {
     try {
       setLoading(true);
-      const response = await api.get('/admin/subscription-plans');
+      const response = await api.get("/admin/subscription-plans");
       setPlans(response.data);
     } catch (error) {
-      console.error('Failed to fetch plans:', error);
-      alert('Failed to load subscription plans');
+      console.error("Failed to fetch plans:", error);
+      alert("Failed to load subscription plans");
     } finally {
       setLoading(false);
     }
@@ -56,7 +61,9 @@ export default function TierManagement() {
         description: editingPlan.description,
         price_monthly: parseFloat(editingPlan.price_monthly),
         price_yearly: parseFloat(editingPlan.price_yearly),
-        max_invoices_per_month: editingPlan.max_invoices_per_month ? parseInt(editingPlan.max_invoices_per_month) : null,
+        max_invoices_per_month: editingPlan.max_invoices_per_month
+          ? parseInt(editingPlan.max_invoices_per_month)
+          : null,
         max_users: parseInt(editingPlan.max_users),
         max_business_admins: parseInt(editingPlan.max_business_admins),
         max_finance_users: parseInt(editingPlan.max_finance_users),
@@ -65,22 +72,22 @@ export default function TierManagement() {
         allow_branding: editingPlan.allow_branding,
         allow_multi_currency: editingPlan.allow_multi_currency,
         priority_support: editingPlan.priority_support,
-        active: editingPlan.active
+        active: editingPlan.active,
       });
-      
+
       await fetchPlans();
       setEditingPlan(null);
-      alert('Subscription plan updated successfully');
+      alert("Subscription plan updated successfully");
     } catch (error) {
-      console.error('Failed to save plan:', error);
-      alert('Failed to update subscription plan');
+      console.error("Failed to save plan:", error);
+      alert("Failed to update subscription plan");
     } finally {
       setSaving(false);
     }
   }
 
   function updateField(field, value) {
-    setEditingPlan(prev => ({ ...prev, [field]: value }));
+    setEditingPlan((prev) => ({ ...prev, [field]: value }));
   }
 
   if (loading) {
@@ -101,14 +108,16 @@ export default function TierManagement() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate("/dashboard")}
               className="rounded-full"
             >
               <ArrowLeft size={18} />
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Tier Management</h1>
-              <p className="text-sm text-gray-600">Manage subscription plan limits and features</p>
+              <p className="text-sm text-gray-600">
+                Manage subscription plan limits and features
+              </p>
             </div>
           </div>
           <Button
@@ -123,7 +132,7 @@ export default function TierManagement() {
         </div>
 
         <div className="grid gap-4">
-          {plans.map(plan => {
+          {plans.map((plan) => {
             const isEditing = editingPlan?.id === plan.id;
             const currentPlan = isEditing ? editingPlan : plan;
 
@@ -136,7 +145,9 @@ export default function TierManagement() {
                         {isEditing ? (
                           <Input
                             value={currentPlan.name}
-                            onChange={(e) => updateField('name', e.target.value)}
+                            onChange={(e) =>
+                              updateField("name", e.target.value)
+                            }
                             className="h-8 w-48"
                           />
                         ) : (
@@ -144,7 +155,9 @@ export default function TierManagement() {
                         )}
                       </CardTitle>
                       {currentPlan.active ? (
-                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Active</Badge>
+                        <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                          Active
+                        </Badge>
                       ) : (
                         <Badge variant="secondary">Inactive</Badge>
                       )}
@@ -187,154 +200,212 @@ export default function TierManagement() {
                   </div>
                   {isEditing && (
                     <Input
-                      value={currentPlan.description || ''}
-                      onChange={(e) => updateField('description', e.target.value)}
+                      value={currentPlan.description || ""}
+                      onChange={(e) =>
+                        updateField("description", e.target.value)
+                      }
                       placeholder="Description"
                       className="mt-2"
                     />
                   )}
                   {!isEditing && currentPlan.description && (
-                    <p className="text-sm text-gray-600 mt-1">{currentPlan.description}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {currentPlan.description}
+                    </p>
                   )}
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-gray-700">Pricing</h4>
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        Pricing
+                      </h4>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24">Monthly:</span>
+                          <span className="text-xs text-gray-600 w-24">
+                            Monthly:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
                               step="0.01"
                               value={currentPlan.price_monthly}
-                              onChange={(e) => updateField('price_monthly', e.target.value)}
+                              onChange={(e) =>
+                                updateField("price_monthly", e.target.value)
+                              }
                               className="h-8 w-32"
                             />
                           ) : (
-                            <span className="text-sm font-medium">AED {currentPlan.price_monthly.toFixed(2)}</span>
+                            <span className="text-sm font-medium">
+                              AED {currentPlan.price_monthly.toFixed(2)}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-24">Yearly:</span>
+                          <span className="text-xs text-gray-600 w-24">
+                            Yearly:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
                               step="0.01"
                               value={currentPlan.price_yearly}
-                              onChange={(e) => updateField('price_yearly', e.target.value)}
+                              onChange={(e) =>
+                                updateField("price_yearly", e.target.value)
+                              }
                               className="h-8 w-32"
                             />
                           ) : (
-                            <span className="text-sm font-medium">AED {currentPlan.price_yearly.toFixed(2)}</span>
+                            <span className="text-sm font-medium">
+                              AED {currentPlan.price_yearly.toFixed(2)}
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-gray-700">User Limits</h4>
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        User Limits
+                      </h4>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">Total Users:</span>
+                          <span className="text-xs text-gray-600 w-32">
+                            Total Users:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
                               value={currentPlan.max_users}
-                              onChange={(e) => updateField('max_users', e.target.value)}
+                              onChange={(e) =>
+                                updateField("max_users", e.target.value)
+                              }
                               className="h-8 w-20"
                             />
                           ) : (
-                            <span className="text-sm font-medium">{currentPlan.max_users}</span>
+                            <span className="text-sm font-medium">
+                              {currentPlan.max_users}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">Business Admins:</span>
+                          <span className="text-xs text-gray-600 w-32">
+                            Business Admins:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
                               value={currentPlan.max_business_admins}
-                              onChange={(e) => updateField('max_business_admins', e.target.value)}
+                              onChange={(e) =>
+                                updateField(
+                                  "max_business_admins",
+                                  e.target.value,
+                                )
+                              }
                               className="h-8 w-20"
                             />
                           ) : (
-                            <span className="text-sm font-medium">{currentPlan.max_business_admins}</span>
+                            <span className="text-sm font-medium">
+                              {currentPlan.max_business_admins}
+                            </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">Finance Users:</span>
+                          <span className="text-xs text-gray-600 w-32">
+                            Finance Users:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
                               value={currentPlan.max_finance_users}
-                              onChange={(e) => updateField('max_finance_users', e.target.value)}
+                              onChange={(e) =>
+                                updateField("max_finance_users", e.target.value)
+                              }
                               className="h-8 w-20"
                             />
                           ) : (
-                            <span className="text-sm font-medium">{currentPlan.max_finance_users}</span>
+                            <span className="text-sm font-medium">
+                              {currentPlan.max_finance_users}
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-gray-700">Resource Limits</h4>
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        Resource Limits
+                      </h4>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">Invoices/Month:</span>
+                          <span className="text-xs text-gray-600 w-32">
+                            Invoices/Month:
+                          </span>
                           {isEditing ? (
                             <Input
                               type="number"
-                              value={currentPlan.max_invoices_per_month || ''}
-                              onChange={(e) => updateField('max_invoices_per_month', e.target.value)}
+                              value={currentPlan.max_invoices_per_month || ""}
+                              onChange={(e) =>
+                                updateField(
+                                  "max_invoices_per_month",
+                                  e.target.value,
+                                )
+                              }
                               placeholder="Unlimited"
                               className="h-8 w-20"
                             />
                           ) : (
                             <span className="text-sm font-medium">
-                              {currentPlan.max_invoices_per_month || 'Unlimited'}
+                              {currentPlan.max_invoices_per_month ||
+                                "Unlimited"}
                             </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">POS Devices:</span>
-                          {isEditing ? (
-                            <Input
-                              type="number"
-                              value={currentPlan.max_pos_devices}
-                              onChange={(e) => updateField('max_pos_devices', e.target.value)}
-                              className="h-8 w-20"
-                            />
-                          ) : (
-                            <span className="text-sm font-medium">{currentPlan.max_pos_devices}</span>
                           )}
                         </div>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-gray-700">Features</h4>
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        Features
+                      </h4>
                       <div className="space-y-1">
-                        {['allow_api_access', 'allow_branding', 'allow_multi_currency', 'priority_support'].map(feature => (
-                          <div key={feature} className="flex items-center gap-2">
+                        {[
+                          "allow_api_access",
+                          "allow_branding",
+                          "allow_multi_currency",
+                          "priority_support",
+                        ].map((feature) => (
+                          <div
+                            key={feature}
+                            className="flex items-center gap-2"
+                          >
                             {isEditing ? (
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                   type="checkbox"
                                   checked={currentPlan[feature]}
-                                  onChange={(e) => updateField(feature, e.target.checked)}
+                                  onChange={(e) =>
+                                    updateField(feature, e.target.checked)
+                                  }
                                   className="h-4 w-4 rounded border-gray-300"
                                 />
                                 <span className="text-xs text-gray-700">
-                                  {feature.replace('allow_', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                  {feature
+                                    .replace("allow_", "")
+                                    .replace(/_/g, " ")
+                                    .replace(/\b\w/g, (l) => l.toUpperCase())}
                                 </span>
                               </label>
                             ) : (
                               <>
-                                <div className={`h-2 w-2 rounded-full ${currentPlan[feature] ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                <div
+                                  className={`h-2 w-2 rounded-full ${currentPlan[feature] ? "bg-emerald-500" : "bg-gray-300"}`}
+                                />
                                 <span className="text-xs text-gray-700">
-                                  {feature.replace('allow_', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                  {feature
+                                    .replace("allow_", "")
+                                    .replace(/_/g, " ")
+                                    .replace(/\b\w/g, (l) => l.toUpperCase())}
                                 </span>
                               </>
                             )}
