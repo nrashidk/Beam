@@ -10749,6 +10749,13 @@ def update_vat_settings(
     db: Session = Depends(get_db),
 ):
     """Update VAT registration configuration for the company"""
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]:
+        raise HTTPException(403, "Only admins can update VAT settings")
+
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )
@@ -10822,6 +10829,13 @@ async def upload_vat_certificate(
     db: Session = Depends(get_db),
 ):
     """Upload VAT registration certificate (PDF only)"""
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]:
+        raise HTTPException(403, "Only admins can upload VAT certificates")
+
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )

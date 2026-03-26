@@ -30,6 +30,7 @@ function BackToDashboard() {
 
 export default function VATSettings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   // No need to get token here; apiClient handles it
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,6 +49,7 @@ export default function VATSettings() {
 
   // Track if VAT is actually active (saved in database)
   const [isVatActive, setIsVatActive] = useState(false);
+  const isFinanceUser = user?.role === "FINANCE_USER";
 
   useEffect(() => {
     fetchSettings();
@@ -193,6 +195,11 @@ export default function VATSettings() {
                       Your 15-digit Tax Registration Number (TRN) will appear on
                       all invoices when VAT is enabled.
                     </p>
+                    {isFinanceUser && (
+                      <p className="text-sm text-blue-800 font-medium">
+                        Finance users have view-only access to VAT settings.
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -248,6 +255,7 @@ export default function VATSettings() {
                       type="checkbox"
                       className="sr-only peer"
                       checked={settings.vat_enabled}
+                      disabled={isFinanceUser}
                       onChange={(e) => {
                         const enabled = e.target.checked;
                         setSettings({ ...settings, vat_enabled: enabled });
@@ -275,6 +283,7 @@ export default function VATSettings() {
                         maxLength="15"
                         placeholder="123456789012345"
                         value={settings.tax_registration_number}
+                        disabled={isFinanceUser}
                         onChange={(e) => {
                           const value = e.target.value.replace(/\D/g, "");
                           setSettings({
@@ -303,6 +312,7 @@ export default function VATSettings() {
                       <input
                         type="date"
                         value={settings.vat_registration_date}
+                        disabled={isFinanceUser}
                         onChange={(e) => {
                           setSettings({
                             ...settings,
@@ -337,7 +347,7 @@ export default function VATSettings() {
                             accept="application/pdf"
                             onChange={handleCertificateUpload}
                             className="hidden"
-                            disabled={uploadingCert}
+                            disabled={uploadingCert || isFinanceUser}
                           />
                         </label>
                         {uploadingCert && (
@@ -399,6 +409,7 @@ export default function VATSettings() {
                   <Button
                     onClick={handleSave}
                     disabled={
+                      isFinanceUser ||
                       saving ||
                       (settings.vat_enabled &&
                         (!settings.tax_registration_number ||
