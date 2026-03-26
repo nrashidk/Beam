@@ -297,19 +297,7 @@ export default function TierManagement() {
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-600 w-32">POS Devices:</span>
-                          {isEditing ? (
-                            <Input
-                              type="number"
-                              value={currentPlan.max_pos_devices}
-                              onChange={(e) => updateField('max_pos_devices', e.target.value)}
-                              className="h-8 w-20"
-                            />
-                          ) : (
-                            <span className="text-sm font-medium">{currentPlan.max_pos_devices}</span>
-                          )}
-                        </div>
+                      
                       </div>
                     </div>
 
