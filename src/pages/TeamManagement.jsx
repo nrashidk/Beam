@@ -182,7 +182,16 @@ export default function TeamManagement() {
     return { businessAdmins, financeUsers };
   };
 
+  const isBusinessAdmin = user?.role === "BUSINESS_ADMIN";
+  const canManageTeamInvites = [
+    "SUPER_ADMIN",
+    "COMPANY_ADMIN",
+    "BUSINESS_ADMIN",
+  ].includes(user?.role);
+
   const canInviteRole = (role) => {
+    if (!canManageTeamInvites) return false;
+    if (isBusinessAdmin && role !== "FINANCE_USER") return false;
     if (!tierLimits) return true;
     const counts = getCurrentRoleCounts();
 
@@ -275,6 +284,7 @@ export default function TeamManagement() {
               <Button
                 onClick={() => setShowInviteForm(!showInviteForm)}
                 className="gap-2"
+                disabled={!canManageTeamInvites}
               >
                 <UserPlus size={16} />
                 Invite Team Member
@@ -354,22 +364,29 @@ export default function TeamManagement() {
                             )}
                           </div>
                         </SelectItem>
-                        <SelectItem
-                          value="BUSINESS_ADMIN"
-                          disabled={!canInviteRole("BUSINESS_ADMIN")}
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <span>Business Admin</span>
-                            {tierLimits && (
-                              <Badge variant="outline" className="ml-2 text-xs">
-                                {getRoleLimit("BUSINESS_ADMIN")}
-                              </Badge>
-                            )}
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="COMPANY_ADMIN">
-                          Company Admin (Owner-level)
-                        </SelectItem>
+                        {!isBusinessAdmin && (
+                          <SelectItem
+                            value="BUSINESS_ADMIN"
+                            disabled={!canInviteRole("BUSINESS_ADMIN")}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <span>Business Admin</span>
+                              {tierLimits && (
+                                <Badge
+                                  variant="outline"
+                                  className="ml-2 text-xs"
+                                >
+                                  {getRoleLimit("BUSINESS_ADMIN")}
+                                </Badge>
+                              )}
+                            </div>
+                          </SelectItem>
+                        )}
+                        {!isBusinessAdmin && (
+                          <SelectItem value="COMPANY_ADMIN">
+                            Company Admin (Owner-level)
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                     <div className="text-xs text-gray-500 mt-2 space-y-1">
@@ -377,14 +394,23 @@ export default function TeamManagement() {
                         <strong>Finance User:</strong> Can create invoices,
                         manage expenses, view financial data
                       </p>
-                      <p>
-                        <strong>Business Admin:</strong> Can manage invoices,
-                        expenses, inventory, suppliers, and team members
-                      </p>
-                      <p>
-                        <strong>Company Admin:</strong> Full access including
-                        billing, branding, and settings
-                      </p>
+                      {!isBusinessAdmin && (
+                        <p>
+                          <strong>Business Admin:</strong> Can manage invoices,
+                          expenses, inventory, suppliers, and team members
+                        </p>
+                      )}
+                      {!isBusinessAdmin && (
+                        <p>
+                          <strong>Company Admin:</strong> Full access including
+                          billing, branding, and settings
+                        </p>
+                      )}
+                      {isBusinessAdmin && (
+                        <p className="text-blue-600">
+                          Business admins can invite finance users only.
+                        </p>
+                      )}
                       {tierLimits && (
                         <p className="text-blue-600 mt-2">
                           <strong>Your Plan:</strong> {tierLimits.name} -{" "}
@@ -571,6 +597,18 @@ export default function TeamManagement() {
                     <p className="text-sm text-gray-600">
                       Full company access, can invite/remove team members,
                       manage all invoices, branding, and settings
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Badge className="bg-indigo-600 mt-1">Business Admin</Badge>
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      Business Operations Admin
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Can manage operational modules and invite finance users
+                      for the company team
                     </p>
                   </div>
                 </div>

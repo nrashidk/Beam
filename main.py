@@ -4979,10 +4979,20 @@ def invite_user(
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Invite a team member to the company (Company Admin only)"""
-    # Only company admins or owners can invite users
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+    """Invite a team member to the company based on inviter role permissions."""
+    allowed_inviter_roles = [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]
+    if current_user.role not in allowed_inviter_roles:
         raise HTTPException(403, "Only admins can invite users")
+
+    if current_user.role == Role.BUSINESS_ADMIN and payload.role != Role.FINANCE_USER:
+        raise HTTPException(
+            403,
+            "Business admins can only invite finance users",
+        )
 
     if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(400, "User must belong to a company to invite others")
