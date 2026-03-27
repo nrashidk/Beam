@@ -171,20 +171,21 @@ export default function GLAccounts() {
             <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
           )}
 
-          {loading ? (
+          {loading && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center text-gray-400 text-sm">
               Loading accounts…
             </div>
-          ) : filtered.length === 0 ? (
+          )}
+          {!loading && filtered.length === 0 && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-center py-12 text-gray-400">
               <BookOpen className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No accounts found.</p>
             </div>
-          ) : (
-            TYPE_ORDER.filter((t) => grouped[t]).map((type) => {
-              const accts = grouped[type];
-              return (
-                <div key={type} className="mb-6">
+          )}
+          {!loading && filtered.length > 0 && TYPE_ORDER.filter((t) => grouped[t]).map((type) => {
+            const accts = grouped[type];
+            return (
+              <div key={type} className="mb-6">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge type={type} />
                   <span className="text-xs text-gray-400 font-medium">{accts.length} accounts</span>
@@ -233,8 +234,8 @@ export default function GLAccounts() {
                   </div>
                 </div>
               </div>
-            ))
-          )}
+            );
+          })}
 
           <div className="mt-2 text-xs text-gray-400">
             Showing {filtered.length} of {accounts.length} accounts

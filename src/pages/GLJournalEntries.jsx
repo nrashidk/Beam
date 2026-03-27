@@ -71,12 +71,12 @@ export default function GLJournalEntries() {
   const [detailLoading, setDetailLoading] = useState({});
 
   const load = useCallback(
-    async (pg = 1) => {
+    async (pg = 1, fd = fromDate, td = toDate, rt = refType) => {
       setLoading(true);
       setError("");
       try {
-        const params = { from_date: fromDate, to_date: toDate, page: pg, limit: LIMIT };
-        if (refType) params.reference_type = refType;
+        const params = { from_date: fd, to_date: td, page: pg, limit: LIMIT };
+        if (rt) params.reference_type = rt;
         const res = await apiClient.get("/journal-entries", { params });
         setEntries(res.data.journal_entries || []);
         setTotal(res.data.total || 0);
@@ -87,12 +87,13 @@ export default function GLJournalEntries() {
         setLoading(false);
       }
     },
-    [fromDate, toDate, refType],
+    [],
   );
 
   useEffect(() => {
-    load(1);
-  }, [load]);
+    load(1, fromDate, toDate, refType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function toggleEntry(id) {
     if (expandedId === id) {
@@ -164,7 +165,7 @@ export default function GLJournalEntries() {
             </div>
             <div className="flex items-end">
               <button
-                onClick={() => load(1)}
+                onClick={() => load(1, fromDate, toDate, refType)}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50"
               >
@@ -288,7 +289,7 @@ export default function GLJournalEntries() {
                   </span>
                   <div className="flex gap-2">
                     <button
-                      onClick={() => load(page - 1)}
+                      onClick={() => load(page - 1, fromDate, toDate, refType)}
                       disabled={page <= 1 || loading}
                       className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
                     >
@@ -298,7 +299,7 @@ export default function GLJournalEntries() {
                       Page {page} of {totalPages}
                     </span>
                     <button
-                      onClick={() => load(page + 1)}
+                      onClick={() => load(page + 1, fromDate, toDate, refType)}
                       disabled={page >= totalPages || loading}
                       className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
                     >

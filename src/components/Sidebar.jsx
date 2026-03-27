@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   FileText,
@@ -34,6 +34,10 @@ export default function Sidebar() {
 
   const isGLPath = location.pathname.startsWith("/gl/") || location.pathname === "/general-ledger";
   const [glOpen, setGlOpen] = useState(isGLPath);
+
+  useEffect(() => {
+    if (isGLPath) setGlOpen(true);
+  }, [isGLPath]);
 
   const isActive = (path) => location.pathname === path;
   const isGroupActive = (paths) => paths.some((p) => location.pathname === p || location.pathname.startsWith(p));

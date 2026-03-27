@@ -98,15 +98,16 @@ export default function GLTrialBalance() {
 
   const accounts = data?.accounts || [];
   const types = ["ALL", ...Array.from(new Set(accounts.map((a) => a.account_type)))];
-  const filtered = accounts.filter((a) => {
-    const matchType = typeFilter === "ALL" || a.account_type === typeFilter;
-    const hasActivity = a.total_debit !== 0 || a.total_credit !== 0;
-    return matchType && hasActivity;
-  });
 
-  const totalDebits = filtered.reduce((s, a) => s + a.total_debit, 0);
-  const totalCredits = filtered.reduce((s, a) => s + a.total_credit, 0);
-  const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
+  const activeAccounts = accounts.filter((a) => a.total_debit !== 0 || a.total_credit !== 0);
+  const filtered = activeAccounts.filter((a) => typeFilter === "ALL" || a.account_type === typeFilter);
+
+  const globalTotalDebits = activeAccounts.reduce((s, a) => s + a.total_debit, 0);
+  const globalTotalCredits = activeAccounts.reduce((s, a) => s + a.total_credit, 0);
+  const isBalanced = Math.abs(globalTotalDebits - globalTotalCredits) < 0.01;
+
+  const filteredTotalDebits = filtered.reduce((s, a) => s + a.total_debit, 0);
+  const filteredTotalCredits = filtered.reduce((s, a) => s + a.total_credit, 0);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -184,10 +185,11 @@ export default function GLTrialBalance() {
             >
               <ArrowUpDown className="h-4 w-4" />
               {isBalanced
-                ? "Trial balance is balanced — debits equal credits"
-                : `Out of balance by ${fmt(Math.abs(totalDebits - totalCredits))}`}
+                ? "Trial balance is balanced — total debits equal total credits"
+                : `Out of balance by ${fmt(Math.abs(globalTotalDebits - globalTotalCredits))} (all accounts)`}
               <span className="ml-auto font-normal text-xs text-gray-500">
-                {filtered.length} accounts with activity
+                {activeAccounts.length} accounts with activity
+                {typeFilter !== "ALL" && ` (showing ${filtered.length} filtered)`}
               </span>
             </div>
           )}
@@ -254,20 +256,22 @@ export default function GLTrialBalance() {
                   <tfoot className="bg-indigo-50 border-t-2 border-indigo-200">
                     <tr>
                       <td colSpan={3} className="px-4 py-3 text-sm font-bold text-indigo-800">
-                        Totals
+                        {typeFilter === "ALL" ? "Totals (All Accounts)" : `Totals (${typeFilter})`}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm font-bold text-indigo-800">
-                        {fmt(totalDebits)}
+                        {fmt(filteredTotalDebits)}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm font-bold text-indigo-800">
-                        {fmt(totalCredits)}
+                        {fmt(filteredTotalCredits)}
                       </td>
                       <td
                         className={`px-4 py-3 text-right font-mono text-sm font-bold ${
-                          isBalanced ? "text-green-700" : "text-red-600"
+                          typeFilter === "ALL"
+                            ? isBalanced ? "text-green-700" : "text-red-600"
+                            : "text-indigo-800"
                         }`}
                       >
-                        {fmt(totalDebits - totalCredits)}
+                        {fmt(filteredTotalDebits - filteredTotalCredits)}
                       </td>
                     </tr>
                   </tfoot>
