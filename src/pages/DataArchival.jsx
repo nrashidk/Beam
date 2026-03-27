@@ -12,6 +12,7 @@ export default function DataArchival() {
   const [yearsOld, setYearsOld] = useState(5);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
+  const [archivalStatus, setArchivalStatus] = useState(null);
 
   const fetchArchived = async () => {
     setLoading(true);
@@ -28,8 +29,16 @@ export default function DataArchival() {
     }
   };
 
+  const fetchStatus = async () => {
+    try {
+      const res = await apiClient.get("/invoices/archive/status", { params: { years_old: 5 } });
+      setArchivalStatus(res.data);
+    } catch (_) {}
+  };
+
   useEffect(() => {
     fetchArchived();
+    fetchStatus();
   }, []);
 
   const handleArchive = async () => {
@@ -45,7 +54,7 @@ export default function DataArchival() {
     try {
       const res = await apiClient.post(`/invoices/archive?years_old=${yearsOld}`);
       setMessage(res.data.message);
-      await fetchArchived();
+      await Promise.all([fetchArchived(), fetchStatus()]);
     } catch (err) {
       setError(
         err.response?.data?.detail || "Failed to run archival. Please try again."
@@ -98,6 +107,26 @@ export default function DataArchival() {
         </div>
 
         <div className="p-6 max-w-5xl mx-auto w-full">
+          {/* Archival status banner */}
+          {archivalStatus && archivalStatus.eligible_for_archival > 0 && (
+            <div className="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                <span className="font-semibold">{archivalStatus.eligible_for_archival} invoice(s)</span> issued before{" "}
+                <span className="font-medium">{archivalStatus.cutoff_date}</span> are eligible for archival (FTA 5-year
+                retention policy). Run archival below to comply.
+              </div>
+            </div>
+          )}
+          {archivalStatus && archivalStatus.eligible_for_archival === 0 && (
+            <div className="mb-5 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
+              <p className="text-sm text-green-800">
+                Archival is up to date — no invoices older than 5 years require archiving.
+              </p>
+            </div>
+          )}
+
           {/* Archive action */}
           <div className="bg-white rounded-xl border p-5 mb-6">
             <h2 className="font-semibold text-gray-900 mb-1">Run Archival</h2>

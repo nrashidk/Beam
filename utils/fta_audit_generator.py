@@ -360,9 +360,10 @@ class FTAAuditFileGenerator:
         )
         writer.writeheader()
 
-        all_codes = set(list(sales_by_code.keys()) + list(purchase_by_code.keys()))
-        if not all_codes:
-            all_codes = {"SR"}
+        # FTA spec requires one row per tax category (S/SR, Z/ZR, E/EX, O/OOS)
+        # Always emit all 4 rows, even if amounts are zero.
+        ALL_TAX_CODES = ["SR", "ZR", "EX", "OOS"]
+        all_codes = ALL_TAX_CODES  # fixed order, all 4 categories always present
 
         category_labels = {
             "SR": "Standard Rate (5%)",
@@ -371,12 +372,15 @@ class FTAAuditFileGenerator:
             "OOS": "Out of Scope",
         }
 
-        for code in sorted(all_codes):
-            s = sales_by_code.get(code, {"vat_rate": 5.0, "taxable": 0.0, "vat": 0.0})
+        DEFAULT_RATES = {"SR": 5.0, "ZR": 0.0, "EX": 0.0, "OOS": 0.0}
+
+        for code in all_codes:
+            default_rate = DEFAULT_RATES.get(code, 0.0)
+            s = sales_by_code.get(code, {"vat_rate": default_rate, "taxable": 0.0, "vat": 0.0})
             p = purchase_by_code.get(
-                code, {"vat_rate": s["vat_rate"], "taxable": 0.0, "vat": 0.0}
+                code, {"vat_rate": default_rate, "taxable": 0.0, "vat": 0.0}
             )
-            vat_rate = s["vat_rate"] or p["vat_rate"]
+            vat_rate = s["vat_rate"] if s["vat_rate"] else (p["vat_rate"] if p["vat_rate"] else default_rate)
             writer.writerow(
                 {
                     "TaxCategory": category_labels.get(code, code),

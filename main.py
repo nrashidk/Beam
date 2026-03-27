@@ -108,7 +108,7 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "0.25"))  # default 15 min; override via JWT_EXPIRY_HOURS
+_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "24"))  # default 24 h; override via JWT_EXPIRY_HOURS (FTA Article 9.1 session control)
 ACCESS_TOKEN_EXPIRE_MINUTES = max(15, int(_jwt_expiry_hours * 60))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "1"))
 
@@ -2755,25 +2755,30 @@ def startup_event():
     db.close()
 
     # Archival status check: warn if invoices older than 5 years are not yet archived
+    # Open a fresh session — the seeding session above is already closed.
     try:
-        five_years_ago = date.today().replace(year=date.today().year - 5)
-        eligible_count = (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.invoice_date <= five_years_ago,
-                InvoiceDB.status.in_(["PAID", "CANCELLED"]),
-                InvoiceDB.is_archived == False,
+        _arch_db = SessionLocal()
+        try:
+            five_years_ago = date.today().replace(year=date.today().year - 5)
+            eligible_count = (
+                _arch_db.query(InvoiceDB)
+                .filter(
+                    InvoiceDB.issue_date <= five_years_ago,
+                    InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+                    InvoiceDB.is_archived == False,
+                )
+                .count()
             )
-            .count()
-        )
-        if eligible_count > 0:
-            logger.warning(
-                f"⚠️ ARCHIVAL REQUIRED: {eligible_count} invoice(s) older than 5 years "
-                "are eligible for archival but not yet archived. "
-                "Use POST /invoices/archive to archive them."
-            )
-        else:
-            logger.info("✅ Archival check: No invoices require archiving at this time.")
+            if eligible_count > 0:
+                logger.warning(
+                    f"⚠️ ARCHIVAL REQUIRED: {eligible_count} invoice(s) older than 5 years "
+                    "are eligible for archival but not yet archived. "
+                    "Use POST /invoices/archive to archive them."
+                )
+            else:
+                logger.info("✅ Archival check: No invoices require archiving at this time.")
+        finally:
+            _arch_db.close()
     except Exception as _arch_exc:
         logger.warning(f"Archival startup check failed: {_arch_exc}")
 
