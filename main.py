@@ -7009,6 +7009,9 @@ def verify_invoice_payment(
     else:
         payment_dt = datetime.utcnow()
 
+    # Snapshot prior status before mutation
+    _prev_status_paid = invoice.status.value if invoice.status else "UNKNOWN"
+
     # Update invoice payment details
     invoice.status = InvoiceStatus.PAID
     invoice.payment_method = payment.payment_method
@@ -7032,13 +7035,13 @@ def verify_invoice_payment(
         else:
             invoice.invoice_notes = f"Payment Reference: {payment.payment_reference}"
 
-    # Task 15: Audit trail — capture ISSUED → PAID status transition
+    # Task 1 / Task 15: Audit trail — log actual prior → new status
     import json as _json
     log_audit_event(
         db, "INVOICE_PAID",
         user_id=current_user.id, company_id=current_user.company_id,
         resource_type="invoice", resource_id=invoice.id,
-        old_value=_json.dumps({"status": "ISSUED"}),
+        old_value=_json.dumps({"status": _prev_status_paid}),
         new_value=_json.dumps({
             "status": "PAID",
             "payment_method": payment.payment_method,
@@ -8051,7 +8054,8 @@ def issue_invoice(
         invoice.signing_timestamp = datetime.utcnow()
         invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
 
-    # Update invoice status
+    # Update invoice status — snapshot prior status before mutation
+    _prev_status_issue = invoice.status.value if invoice.status else "UNKNOWN"
     invoice.status = InvoiceStatus.ISSUED
 
     # Task 8: Auto-generate GL journal entry (wrapped so GL failure never breaks issuance)
@@ -8060,13 +8064,14 @@ def issue_invoice(
     except Exception as gl_err:
         logger.error(f"GL journal entry failed for {invoice.invoice_number}: {gl_err}")
 
-    # Task 1 / Task 15: Audit trail — capture old (DRAFT) → new (ISSUED) status
+    # Task 1 / Task 15: Audit trail — log actual prior → new status
+    import json as _json
     log_audit_event(
         db, "INVOICE_ISSUED",
         user_id=current_user.id, company_id=current_user.company_id,
         resource_type="invoice", resource_id=invoice.id,
-        old_value="DRAFT",
-        new_value="ISSUED",
+        old_value=_json.dumps({"status": _prev_status_issue}),
+        new_value=_json.dumps({"status": "ISSUED"}),
         description=f"Invoice {invoice.invoice_number} issued",
     )
 
@@ -8398,15 +8403,18 @@ def cancel_invoice(
             original_invoice.amount_due = max(0.0, new_amount_due)
             db.add(original_invoice)
 
+    # Snapshot prior status before mutation
+    _prev_status_cancel = invoice.status.value if invoice.status else "UNKNOWN"
     invoice.status = InvoiceStatus.CANCELLED
 
-    # Task 1: Audit trail
+    # Task 1 / Task 15: Audit trail — log actual prior → new status
+    import json as _json
     log_audit_event(
         db, "INVOICE_CANCELLED",
         user_id=current_user.id, company_id=current_user.company_id,
         resource_type="invoice", resource_id=invoice.id,
-        old_value="ISSUED",
-        new_value="CANCELLED",
+        old_value=_json.dumps({"status": _prev_status_cancel}),
+        new_value=_json.dumps({"status": "CANCELLED"}),
         description=f"Invoice {invoice.invoice_number} cancelled",
     )
 
