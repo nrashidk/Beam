@@ -20,6 +20,9 @@ import {
   Building2,
   CalendarDays,
   Archive,
+  ClipboardList,
+  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 
 export default function Sidebar() {
@@ -51,8 +54,11 @@ export default function Sidebar() {
     { path: "/reconciliation", icon: FileSpreadsheet, label: "Reconciliation" },
     { path: "/reports/periodic", icon: CalendarDays, label: "Periodic Report" },
     { path: "/data-archival", icon: Archive, label: "Data Archival" },
+    { path: "/audit-trail", icon: ShieldCheck, label: "Audit Trail" },
+    { path: "/general-ledger", icon: BookOpen, label: "General Ledger" },
     { path: "/settings/security", icon: Shield, label: "Security" },
     { path: "/settings/team", icon: Users, label: "Team" },
+    { path: "/vat-return", icon: ClipboardList, label: "VAT Return" },
     { path: "/settings/vat", icon: Percent, label: "VAT Settings" },
   ];
 

@@ -108,8 +108,9 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 15
-REFRESH_TOKEN_EXPIRE_DAYS = 1
+_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "24"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(_jwt_expiry_hours * 60)
+REFRESH_TOKEN_EXPIRE_DAYS = max(1, int(_jwt_expiry_hours / 8))
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -1079,23 +1080,39 @@ class VATReturnDB(Base):
     total_sales_invoices = Column(Integer, default=0)
     total_purchase_invoices = Column(Integer, default=0)
 
-    # Box 1 — Standard rated supplies (AED)
+    # === SALES / OUTPUT SIDE ===
+    # Box 1 — Standard rated supplies (taxable amount excl. VAT)
     standard_rated_sales = Column(Float, default=0.0)
-    # Box 2 — Tax refunds provided (AED)
+    # Box 2 — Tax refunds provided to tourists (AED)
     tax_refunds_provided = Column(Float, default=0.0)
-    # Box 3 — Output VAT
+    # Box 3 — Output VAT (VAT on standard-rated sales)
     output_vat = Column(Float, default=0.0)
+    # Box 4 — Zero-rated supplies (taxable amount)
+    zero_rated_sales = Column(Float, default=0.0)
+    # Box 5 — Exempt supplies (amount)
+    exempt_sales = Column(Float, default=0.0)
+    # Box 6 — Out-of-scope / reverse-charge supplies (amount)
+    out_of_scope_sales = Column(Float, default=0.0)
+    # Box 7 — Total supplies (Box 1 + 4 + 5 + 6)
+    total_sales = Column(Float, default=0.0)
 
-    # Box 9 — Standard rated purchases
+    # === PURCHASES / INPUT SIDE ===
+    # Box 8 — Standard-rated purchases – bills (taxable amount excl. VAT)
     standard_rated_purchases = Column(Float, default=0.0)
-    # Box 10 — Expenses
-    purchase_expenses = Column(Float, default=0.0)
-    # Box 11 — Total input VAT
+    # Box 9 — Recoverable input VAT on bills
     input_vat_bills = Column(Float, default=0.0)
+    # Box 10 — Standard-rated purchases – expenses (taxable amount excl. VAT)
+    purchase_expenses = Column(Float, default=0.0)
+    # Box 11 — Recoverable input VAT on expenses
     input_vat_expenses = Column(Float, default=0.0)
+    # Box 12 — Total input VAT (Box 9 + Box 11)
     total_input_vat = Column(Float, default=0.0)
+    # Zero-rated & exempt purchases (informational; VAT = 0)
+    zero_rated_purchases = Column(Float, default=0.0)
+    exempt_purchases = Column(Float, default=0.0)
 
-    # Net payable / refundable
+    # === NET ===
+    # Box 13 — Net VAT payable / refundable (Box 3 – Box 12)
     net_vat_payable = Column(Float, default=0.0)
 
     # Metadata
@@ -2652,6 +2669,13 @@ def _run_column_migrations():
         # Task 12: Data archival columns
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        # Task 13: VAT return 13-box breakdown columns
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS out_of_scope_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS total_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_purchases DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_purchases DOUBLE PRECISION DEFAULT 0.0",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -2723,6 +2747,29 @@ def startup_event():
         logger.info(f"Super Admin already exists: {existing_super_admin.email}")
 
     db.close()
+
+    # Archival status check: warn if invoices older than 5 years are not yet archived
+    try:
+        five_years_ago = date.today().replace(year=date.today().year - 5)
+        eligible_count = (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.invoice_date <= five_years_ago,
+                InvoiceDB.status.in_(["PAID", "CANCELLED"]),
+                InvoiceDB.is_archived == False,
+            )
+            .count()
+        )
+        if eligible_count > 0:
+            logger.warning(
+                f"⚠️ ARCHIVAL REQUIRED: {eligible_count} invoice(s) older than 5 years "
+                "are eligible for archival but not yet archived. "
+                "Use POST /invoices/archive to archive them."
+            )
+        else:
+            logger.info("✅ Archival check: No invoices require archiving at this time.")
+    except Exception as _arch_exc:
+        logger.warning(f"Archival startup check failed: {_arch_exc}")
 
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
@@ -6402,6 +6449,58 @@ def archive_old_invoices(
     }
 
 
+@app.get("/invoices/archive/status", tags=["Invoices"])
+def get_archival_status(
+    years_old: int = 5,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 16 — Archival status: count invoices eligible for archival
+    (PAID/CANCELLED, older than `years_old` years, not yet archived).
+    Useful for admins to know when to trigger POST /invoices/archive.
+    """
+    from datetime import date, timedelta
+
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only admins can view archival status")
+
+    cutoff_date = date.today() - timedelta(days=years_old * 365)
+
+    eligible_count = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == False,
+            InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+            InvoiceDB.issue_date <= cutoff_date,
+        )
+        .count()
+    )
+
+    already_archived = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == True,
+        )
+        .count()
+    )
+
+    return {
+        "years_old": years_old,
+        "cutoff_date": cutoff_date.isoformat(),
+        "eligible_for_archival": eligible_count,
+        "already_archived": already_archived,
+        "archival_required": eligible_count > 0,
+        "message": (
+            f"{eligible_count} invoice(s) eligible for archival (issued before {cutoff_date})."
+            if eligible_count > 0
+            else "No invoices require archiving at this time."
+        ),
+    }
+
+
 @app.post("/invoices/{invoice_id}/restore", tags=["Invoices"])
 def restore_archived_invoice(
     invoice_id: str,
@@ -6621,6 +6720,14 @@ def update_invoice(
             "To correct a posted invoice, issue a credit note (document type 381).",
         )
 
+    # Task 15: Capture old values before any mutation (for audit trail)
+    import json as _json
+    _old_snapshot = {
+        "status": invoice.status.value if invoice.status else None,
+        "customer_name": invoice.customer_name,
+        "total_amount": float(invoice.total_amount) if invoice.total_amount else None,
+    }
+
     # Task 10: Optimistic locking via If-Match / ETag
     if_match = request.headers.get("If-Match")
     current_version = invoice.version if invoice.version is not None else 1
@@ -6743,6 +6850,22 @@ def update_invoice(
 
         # Task 10: Increment optimistic-locking version counter
         invoice.version = (invoice.version or 1) + 1
+
+        # Task 15: Log INVOICE_UPDATED with old/new key fields
+        _new_snapshot = {
+            "status": invoice.status.value if invoice.status else None,
+            "customer_name": invoice.customer_name,
+            "total_amount": float(invoice.total_amount) if invoice.total_amount else None,
+        }
+        log_audit_event(
+            db, "INVOICE_UPDATED",
+            user_id=current_user.id, company_id=current_user.company_id,
+            resource_type="invoice", resource_id=invoice.id,
+            old_value=_json.dumps(_old_snapshot),
+            new_value=_json.dumps(_new_snapshot),
+            description=f"Invoice {invoice.invoice_number} updated",
+        )
+
         db.commit()
 
         # Return updated invoice
@@ -6902,6 +7025,21 @@ def verify_invoice_payment(
             invoice.invoice_notes += note
         else:
             invoice.invoice_notes = f"Payment Reference: {payment.payment_reference}"
+
+    # Task 15: Audit trail — capture ISSUED → PAID status transition
+    import json as _json
+    log_audit_event(
+        db, "INVOICE_PAID",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="invoice", resource_id=invoice.id,
+        old_value=_json.dumps({"status": "ISSUED"}),
+        new_value=_json.dumps({
+            "status": "PAID",
+            "payment_method": payment.payment_method,
+            "total_amount": float(invoice.total_amount),
+        }),
+        description=f"Invoice {invoice.invoice_number} marked as paid via {payment.payment_method}",
+    )
 
     db.commit()
     db.refresh(invoice)
@@ -7916,12 +8054,13 @@ def issue_invoice(
     except Exception as gl_err:
         logger.error(f"GL journal entry failed for {invoice.invoice_number}: {gl_err}")
 
-    # Task 1: Audit trail
+    # Task 1 / Task 15: Audit trail — capture old (DRAFT) → new (ISSUED) status
     log_audit_event(
         db, "INVOICE_ISSUED",
         user_id=current_user.id, company_id=current_user.company_id,
         resource_type="invoice", resource_id=invoice.id,
-        new_value=invoice.status.value if invoice.status else None,
+        old_value="DRAFT",
+        new_value="ISSUED",
         description=f"Invoice {invoice.invoice_number} issued",
     )
 
@@ -12952,7 +13091,7 @@ def generate_vat_return(
     if end_date > date.today():
         raise HTTPException(400, "End date cannot be in the future")
 
-    # Aggregate output VAT from issued/paid/sent sales invoices in the period
+    # --- Sales invoices in period (not DRAFT or CANCELLED) ---
     sales_invoices = (
         db.query(InvoiceDB)
         .filter(
@@ -12964,7 +13103,7 @@ def generate_vat_return(
         .all()
     )
 
-    # Aggregate input VAT from purchase invoices in the period
+    # --- Purchase invoices in period (not CANCELLED) ---
     purchase_invoices = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -12976,29 +13115,67 @@ def generate_vat_return(
         .all()
     )
 
-    # Compute totals
-    sales_vat_total = sum(Decimal(str(inv.tax_amount or 0)) for inv in sales_invoices)
-    purchase_vat_total = sum(
-        Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices
+    # --- 13-Box breakdown via InvoiceTaxBreakdownDB ---
+    # Pull all tax breakdowns for the sales invoices in the period
+    sale_invoice_ids = [inv.id for inv in sales_invoices]
+    tax_breakdowns = (
+        db.query(InvoiceTaxBreakdownDB)
+        .filter(InvoiceTaxBreakdownDB.invoice_id.in_(sale_invoice_ids))
+        .all()
+        if sale_invoice_ids
+        else []
     )
-    # Separate purchases into bills vs expenses (no expense type yet — all go to bills)
-    purchase_bills_vat = purchase_vat_total
-    purchase_expenses_vat = Decimal("0.00")
 
-    # Standard rated subtotals
-    standard_rated_sales_total = sum(
-        Decimal(str(inv.subtotal_amount or 0)) for inv in sales_invoices
+    # Aggregate by tax category
+    box1_std_taxable = Decimal("0.00")   # Box 1: Standard-rated sales (excl. VAT)
+    box3_output_vat = Decimal("0.00")    # Box 3: Output VAT (VAT on standard sales)
+    box4_zero_rated = Decimal("0.00")    # Box 4: Zero-rated sales
+    box5_exempt = Decimal("0.00")        # Box 5: Exempt supplies
+    box6_out_of_scope = Decimal("0.00")  # Box 6: Out-of-scope / reverse-charge
+
+    for tb in tax_breakdowns:
+        taxable = Decimal(str(tb.taxable_amount or 0))
+        vat_amt = Decimal(str(tb.tax_amount or 0))
+        cat = tb.tax_category
+        if cat == TaxCategory.STANDARD:
+            box1_std_taxable += taxable
+            box3_output_vat += vat_amt
+        elif cat == TaxCategory.ZERO:
+            box4_zero_rated += taxable
+        elif cat == TaxCategory.EXEMPT:
+            box5_exempt += taxable
+        elif cat == TaxCategory.OUT_OF_SCOPE:
+            box6_out_of_scope += taxable
+
+    # Fallback: if no breakdowns recorded, use invoice-level tax_amount for output VAT
+    if not tax_breakdowns:
+        box3_output_vat = sum(
+            (Decimal(str(inv.tax_amount or 0)) for inv in sales_invoices), Decimal("0.00")
+        )
+        box1_std_taxable = sum(
+            (Decimal(str(inv.subtotal_amount or 0)) for inv in sales_invoices), Decimal("0.00")
+        )
+
+    box7_total_sales = box1_std_taxable + box4_zero_rated + box5_exempt + box6_out_of_scope  # Box 7
+
+    # Purchases — InwardInvoiceDB has no tax_category; all treated as standard-rated
+    purchase_bills_vat = sum(
+        (Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
     )
-    standard_rated_purchases_total = sum(
-        Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices
-    )
+    purchase_expenses_vat = Decimal("0.00")
+    box8_std_purchases = sum(
+        (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
+    )  # Box 8
 
     # Call the protected utility function (MUST NOT BE MODIFIED)
     result = calculate_vat_return(
-        sales_invoices_vat=sales_vat_total,
+        sales_invoices_vat=box3_output_vat,
         purchase_bills_vat=purchase_bills_vat,
         purchase_expenses_vat=purchase_expenses_vat,
     )
+
+    # Box 12: Total input VAT = result["total_input_vat"]
+    # Box 13: Net payable = result["net_vat_payable"]
 
     # Persist the return
     return_id = f"vr_{uuid4().hex[:12]}"
@@ -13009,20 +13186,29 @@ def generate_vat_return(
         period_end=end_date,
         total_sales_invoices=len(sales_invoices),
         total_purchase_invoices=len(purchase_invoices),
-        standard_rated_sales=float(standard_rated_sales_total),
+        # Sales / output side
+        standard_rated_sales=float(box1_std_taxable),
         tax_refunds_provided=0.0,
         output_vat=float(result["output_vat"]),
-        standard_rated_purchases=float(standard_rated_purchases_total),
-        purchase_expenses=0.0,
+        zero_rated_sales=float(box4_zero_rated),
+        exempt_sales=float(box5_exempt),
+        out_of_scope_sales=float(box6_out_of_scope),
+        total_sales=float(box7_total_sales),
+        # Purchases / input side
+        standard_rated_purchases=float(box8_std_purchases),
         input_vat_bills=float(result["input_vat_bills"]),
+        purchase_expenses=0.0,
         input_vat_expenses=float(result["input_vat_expenses"]),
         total_input_vat=float(result["total_input_vat"]),
+        zero_rated_purchases=0.0,
+        exempt_purchases=0.0,
+        # Net
         net_vat_payable=float(result["net_vat_payable"]),
         generated_by_user_id=current_user.id,
     )
     db.add(vat_return)
 
-    # Task 1: Audit trail
+    # Audit trail
     log_audit_event(
         db, "VAT_RETURN_GENERATED",
         user_id=current_user.id, company_id=current_user.company_id,
@@ -13040,13 +13226,22 @@ def generate_vat_return(
         "period_end": period_end,
         "total_sales_invoices": len(sales_invoices),
         "total_purchase_invoices": len(purchase_invoices),
-        "standard_rated_sales": float(standard_rated_sales_total),
-        "output_vat": float(result["output_vat"]),
-        "standard_rated_purchases": float(standard_rated_purchases_total),
-        "input_vat_bills": float(result["input_vat_bills"]),
-        "input_vat_expenses": float(result["input_vat_expenses"]),
-        "total_input_vat": float(result["total_input_vat"]),
-        "net_vat_payable": float(result["net_vat_payable"]),
+        # Sales boxes
+        "box1_standard_rated_sales": float(box1_std_taxable),
+        "box2_tax_refunds": 0.0,
+        "box3_output_vat": float(result["output_vat"]),
+        "box4_zero_rated_sales": float(box4_zero_rated),
+        "box5_exempt_sales": float(box5_exempt),
+        "box6_out_of_scope_sales": float(box6_out_of_scope),
+        "box7_total_sales": float(box7_total_sales),
+        # Purchase boxes
+        "box8_standard_rated_purchases": float(box8_std_purchases),
+        "box9_input_vat_bills": float(result["input_vat_bills"]),
+        "box10_purchase_expenses": 0.0,
+        "box11_input_vat_expenses": float(result["input_vat_expenses"]),
+        "box12_total_input_vat": float(result["total_input_vat"]),
+        # Net
+        "box13_net_vat_payable": float(result["net_vat_payable"]),
         "status": "payable" if float(result["net_vat_payable"]) > 0 else "refundable",
     }
 
@@ -13073,9 +13268,16 @@ def list_vat_returns(
                 "period_end": str(r.period_end),
                 "total_sales_invoices": r.total_sales_invoices,
                 "total_purchase_invoices": r.total_purchase_invoices,
-                "output_vat": r.output_vat,
-                "total_input_vat": r.total_input_vat,
-                "net_vat_payable": r.net_vat_payable,
+                "box1_standard_rated_sales": r.standard_rated_sales,
+                "box3_output_vat": r.output_vat,
+                "box4_zero_rated_sales": getattr(r, "zero_rated_sales", 0.0),
+                "box5_exempt_sales": getattr(r, "exempt_sales", 0.0),
+                "box6_out_of_scope_sales": getattr(r, "out_of_scope_sales", 0.0),
+                "box7_total_sales": getattr(r, "total_sales", 0.0),
+                "box8_standard_rated_purchases": r.standard_rated_purchases,
+                "box9_input_vat_bills": r.input_vat_bills,
+                "box12_total_input_vat": r.total_input_vat,
+                "box13_net_vat_payable": r.net_vat_payable,
                 "status": "payable" if r.net_vat_payable > 0 else "refundable",
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
@@ -13107,15 +13309,22 @@ def get_vat_return(
         "period_end": str(r.period_end),
         "total_sales_invoices": r.total_sales_invoices,
         "total_purchase_invoices": r.total_purchase_invoices,
-        "box_1_standard_rated_sales": r.standard_rated_sales,
-        "box_2_tax_refunds_provided": r.tax_refunds_provided,
-        "box_3_output_vat": r.output_vat,
-        "box_9_standard_rated_purchases": r.standard_rated_purchases,
-        "box_10_purchase_expenses": r.purchase_expenses,
-        "box_11_input_vat_bills": r.input_vat_bills,
-        "box_12_input_vat_expenses": r.input_vat_expenses,
-        "box_13_total_input_vat": r.total_input_vat,
-        "net_vat_payable": r.net_vat_payable,
+        # Sales / Output side
+        "box1_standard_rated_sales": r.standard_rated_sales,
+        "box2_tax_refunds": r.tax_refunds_provided,
+        "box3_output_vat": r.output_vat,
+        "box4_zero_rated_sales": getattr(r, "zero_rated_sales", 0.0),
+        "box5_exempt_sales": getattr(r, "exempt_sales", 0.0),
+        "box6_out_of_scope_sales": getattr(r, "out_of_scope_sales", 0.0),
+        "box7_total_sales": getattr(r, "total_sales", 0.0),
+        # Purchases / Input side
+        "box8_standard_rated_purchases": r.standard_rated_purchases,
+        "box9_input_vat_bills": r.input_vat_bills,
+        "box10_purchase_expenses": r.purchase_expenses,
+        "box11_input_vat_expenses": r.input_vat_expenses,
+        "box12_total_input_vat": r.total_input_vat,
+        # Net
+        "box13_net_vat_payable": r.net_vat_payable,
         "status": "payable" if r.net_vat_payable > 0 else "refundable",
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }

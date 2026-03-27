@@ -31,6 +31,9 @@ import BillingSettings from "./pages/BillingSettings";
 import FinanceDashboard from "./pages/FinanceDashboard";
 import PeriodicReport from "./pages/PeriodicReport";
 import DataArchival from "./pages/DataArchival";
+import VATReturn from "./pages/VATReturn";
+import GeneralLedger from "./pages/GeneralLedger";
+import AuditTrail from "./pages/AuditTrail";
 import SuppliersManagement from "./pages/SuppliersManagement";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
 import PaymentVerification from "./pages/PaymentVerification";
@@ -298,6 +301,30 @@ function App() {
               element={
                 <ProtectedRoute>
                   <DataArchival />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/vat-return"
+              element={
+                <ProtectedRoute>
+                  <VATReturn />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/general-ledger"
+              element={
+                <ProtectedRoute>
+                  <GeneralLedger />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/audit-trail"
+              element={
+                <ProtectedRoute>
+                  <AuditTrail />
                 </ProtectedRoute>
               }
             />
