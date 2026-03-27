@@ -2759,7 +2759,7 @@ def startup_event():
     try:
         _arch_db = SessionLocal()
         try:
-            five_years_ago = date.today().replace(year=date.today().year - 5)
+            five_years_ago = date.today() - timedelta(days=5 * 365)
             eligible_count = (
                 _arch_db.query(InvoiceDB)
                 .filter(
@@ -11675,6 +11675,23 @@ def download_audit_file(
 
 
 # ==================== PEPPOL SETTINGS ====================
+
+
+@app.get("/settings/session", tags=["Settings"])
+def get_session_settings(
+    current_user: UserDB = Depends(get_current_user_from_header),
+):
+    """
+    Return current JWT session configuration.
+    Controlled via JWT_EXPIRY_HOURS environment variable (default: 24 hours).
+    FTA Article 9.1 requires configurable session lifetime.
+    """
+    return {
+        "jwt_expiry_hours": round(ACCESS_TOKEN_EXPIRE_MINUTES / 60, 2),
+        "jwt_expiry_minutes": ACCESS_TOKEN_EXPIRE_MINUTES,
+        "env_var": "JWT_EXPIRY_HOURS",
+        "fta_reference": "Article 9.1 – Session Controls",
+    }
 
 
 @app.get("/settings/peppol", tags=["Settings"])
