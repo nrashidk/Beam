@@ -1,0 +1,90 @@
+FTA Tax Accounting Software Accreditation — Updated Readiness Report
+Assessment Date: March 27, 2026 | Overall Readiness: ~32% (up from ~25% prior)
+
+Despite instructions to Replit AI to implement all FTA requirements, the actual codebase shows minimal substantive progress. Here is the honest area-by-area status:
+
+Area 1: FAF — 4-Table Structure ❌ 50%
+The FAF generator (utils/fta_audit_generator.py) still outputs a single combined CSV/TXT file. The FTA requires four distinct tables:
+
+Required Table	Status
+CompanyInformation	❌ Not a separate table — columns embedded in rows
+SalesInvoices	⚠️ Mixed with purchases in one loop
+PurchaseInvoices	⚠️ Mixed with sales in one loop
+GeneralLedger	❌ Completely absent
+The 21-column structure is present for invoice data, but the structural separation the FTA requires does not exist.
+
+Area 2: VAT Return File Generation ❌ 10%
+vat_utils.py → calculate_vat_return() returns only 5 values covering Boxes 9–11 (output VAT, input VAT, net payable). Boxes 1–8 are missing entirely — no categorisation by standard-rated, reverse charge, exempt, zero-rated, or imported goods. No formal VAT Return file is generated or exported.
+
+Area 3: General Ledger / Double-Entry Accounting ❌ 0%
+Nothing has been implemented. Searched main.py across all 38+ database models — zero matches for:
+
+GeneralLedgerDB, ChartOfAccountsDB, JournalEntryDB, TrialBalanceDB
+No journal entries, no account master, no debit/credit logic, no trial balance. No new GL-related files exist in utils/. No GL pages in src/pages/.
+
+Area 4: Audit Trail (Change Logging) ❌ 0%
+Nothing has been implemented. No audit_trail, audit_log, ActivityLog, or ChangeLog model exists. No middleware captures old/new values on writes. No IP or session context is logged for data mutations. The invoice signing_cert_serial field tracks cryptographic signing only — it is not an audit trail.
+
+Area 5: Password Policy ⚠️ 33%
+Control	Status
+Minimum 8 characters	✅ min_length=8 at line 1434
+Complexity (upper/lower/digit/special)	❌ No pattern validation
+Password history / reuse prevention	❌ No table, no logic
+Account lockout after failed attempts	❌ No failed_attempts field
+Session/inactivity timeout	❌ Hardcoded 24-hour JWT, no inactivity check
+MFA (TOTP, email OTP, backup codes) is well implemented per Article 9.1, but password controls remain weak.
+
+Area 6: Data Archival & 5-Year Retention ❌ 0%
+No archival utilities, no ArchivalDB model, no retention policy, no scheduled jobs, no integrity verification, no restore endpoints. Artifacts are stored locally in /artifacts/ with no lifecycle management.
+
+Area 7: System Availability & Disaster Recovery ⚠️ 20%
+A basic /health endpoint exists (line 7795) returning status + database connectivity. Database connection pooling is configured. Nothing else — no automated backup, no failover, no RTO/RPO definitions, no monitoring alerts.
+
+Area 8: UBL 2.1 / PINT-AE XML ✅ 100%
+This was already well-implemented and remains so:
+
+Correct namespaces, ProfileID, CustomizationID
+TaxTotal, LegalMonetaryTotal, line-item tax breakdowns
+Digital signature (signature_b64) and hash chain (prev_invoice_hash)
+utils/ubl_xml_generator.py — 461 lines, comprehensive
+New Files Added Since Previous Analysis
+Checking utils/ — the following were not present before and are now confirmed:
+
+mfa_utils.py — TOTP + Email OTP + backup codes (solid implementation)
+peppol_provider.py — PEPPOL transmission (Tradeshift/Basware/Mock)
+Still absent (i.e., Replit did not create):
+
+general_ledger_generator.py
+vat_return_generator.py
+audit_trail_logger.py
+archival_manager.py
+journal_entry_manager.py
+Frontend Pages
+Required Page	Status
+FTAAuditFiles	✅ Exists
+VATSettings	✅ Exists
+GeneralLedger	❌ Not created
+JournalEntries	❌ Not created
+ChartOfAccounts	❌ Not created
+TrialBalance	❌ Not created
+AuditTrail	❌ Not created
+Consolidated Scorecard
+Requirement	Before	Now	Delta
+FAF 4-Table Structure	25%	50%	+25%
+VAT Return File (13 Boxes)	10%	10%	—
+General Ledger / Double-Entry	0%	0%	—
+Audit Trail (Change Logging)	0%	0%	—
+Password Policy (complexity + lockout)	20%	33%	+13%
+Data Archival / 5-Year Retention	0%	0%	—
+Disaster Recovery / Backup	15%	20%	+5%
+UBL 2.1 / PINT-AE XML	100%	100%	—
+Frontend Compliance Pages	25%	25%	—
+OVERALL	~25%	~32%	+7%
+Verdict
+The Replit AI agent made minor improvements (MFA utilities, PEPPOL integration, slight FAF column improvements) but did not implement the four critical requirements that account for the majority of the accreditation gap:
+
+General Ledger — still zero implementation; this is the single largest blocker
+Audit Trail — still zero implementation; a hard FTA requirement
+VAT Return File (Boxes 1–13) — still only partial calculation, no file output
+Data Archival — still zero implementation
+To reach 70%+ readiness, these four areas must be built from scratch. The GL system alone (models + journal posting logic + trial balance + FAF integration) represents several weeks of backend engineering work.
