@@ -67,6 +67,7 @@ function GLSubnav({ current }) {
 
 export default function GLAccounts() {
   const [accounts, setAccounts] = useState([]);
+  const [balanceMap, setBalanceMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -76,8 +77,17 @@ export default function GLAccounts() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiClient.get("/accounts");
-      setAccounts(res.data.accounts || []);
+      const today = new Date().toISOString().slice(0, 10);
+      const [acctRes, summaryRes] = await Promise.all([
+        apiClient.get("/accounts"),
+        apiClient.get("/gl-summary", { params: { from_date: "2000-01-01", to_date: today } }),
+      ]);
+      setAccounts(acctRes.data.accounts || []);
+      const map = {};
+      for (const a of summaryRes.data.accounts || []) {
+        map[a.account_code] = a.net_balance;
+      }
+      setBalanceMap(map);
     } catch (e) {
       setError(e.response?.data?.detail || "Failed to load chart of accounts.");
     } finally {
@@ -100,12 +110,16 @@ export default function GLAccounts() {
     return matchType && matchSearch;
   });
 
+  const TYPE_ORDER = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"];
   const grouped = {};
-  filtered.forEach((a) => {
-    const t = a.account_type;
-    if (!grouped[t]) grouped[t] = [];
-    grouped[t].push(a);
-  });
+  filtered
+    .slice()
+    .sort((a, b) => a.account_code.localeCompare(b.account_code))
+    .forEach((a) => {
+      const t = a.account_type;
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(a);
+    });
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -167,8 +181,10 @@ export default function GLAccounts() {
               <p className="text-sm">No accounts found.</p>
             </div>
           ) : (
-            Object.entries(grouped).map(([type, accts]) => (
-              <div key={type} className="mb-6">
+            TYPE_ORDER.filter((t) => grouped[t]).map((type) => {
+              const accts = grouped[type];
+              return (
+                <div key={type} className="mb-6">
                 <div className="flex items-center gap-2 mb-2">
                   <Badge type={type} />
                   <span className="text-xs text-gray-400 font-medium">{accts.length} accounts</span>
@@ -201,8 +217,14 @@ export default function GLAccounts() {
                                 <span className="text-xs text-indigo-500">Custom</span>
                               )}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono text-sm text-gray-700">
-                              {typeof a.balance === "number" ? fmt(a.balance) : "—"}
+                            <td className="px-4 py-3 text-right font-mono text-sm">
+                              {typeof balanceMap[a.account_code] === "number" ? (
+                                <span className={balanceMap[a.account_code] < 0 ? "text-red-600 font-semibold" : "text-gray-700"}>
+                                  {fmt(balanceMap[a.account_code])}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
                             </td>
                           </tr>
                         ))}

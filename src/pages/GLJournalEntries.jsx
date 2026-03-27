@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import { apiClient } from "../lib/api";
@@ -206,9 +206,8 @@ export default function GLJournalEntries() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {entries.map((e) => (
-                        <>
+                        <React.Fragment key={e.id}>
                           <tr
-                            key={e.id}
                             className="hover:bg-gray-50 cursor-pointer"
                             onClick={() => toggleEntry(e.id)}
                           >
@@ -240,7 +239,7 @@ export default function GLJournalEntries() {
                             </td>
                           </tr>
                           {expandedId === e.id && (
-                            <tr key={`${e.id}-detail`}>
+                            <tr>
                               <td colSpan={6} className="px-6 py-4 bg-indigo-50 border-t border-indigo-100">
                                 {detailLoading[e.id] ? (
                                   <p className="text-sm text-gray-400">Loading lines…</p>
@@ -277,7 +276,7 @@ export default function GLJournalEntries() {
                               </td>
                             </tr>
                           )}
-                        </>
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>
