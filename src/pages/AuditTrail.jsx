@@ -110,11 +110,11 @@ export default function AuditTrail() {
 
   const LIMIT = 25;
 
-  // Fetch distinct action values from the backend to supplement the known list
+  // Fetch distinct action values from the backend dedicated endpoint
   useEffect(() => {
-    apiClient.get("/audit-logs", { params: { limit: 500 } })
+    apiClient.get("/audit-logs/actions")
       .then((res) => {
-        const dynamic = (res.data.audit_logs || []).map((l) => l.action).filter(Boolean);
+        const dynamic = res.data.actions || [];
         const merged = Array.from(new Set([...KNOWN_ACTIONS, ...dynamic])).sort();
         setAvailableActions(merged);
       })

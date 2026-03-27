@@ -13082,6 +13082,29 @@ def list_audit_logs(
     }
 
 
+@app.get("/audit-logs/actions", tags=["Audit Trail"])
+def list_audit_actions(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the distinct action values present in this company's audit log.
+    Used by the frontend to populate the action filter dropdown.
+    """
+    from sqlalchemy import distinct as _distinct
+
+    q = db.query(_distinct(AuditLogDB.action))
+
+    if current_user.role != Role.SUPER_ADMIN:
+        if not current_user.company_id:
+            raise HTTPException(400, "User has no associated company")
+        q = q.filter(AuditLogDB.company_id == current_user.company_id)
+
+    actions = [row[0] for row in q.all() if row[0]]
+    actions.sort()
+    return {"actions": actions}
+
+
 # ==================== TASK 9: VAT RETURN ENDPOINTS ====================
 
 
