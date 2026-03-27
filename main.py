@@ -108,9 +108,9 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "24"))
-ACCESS_TOKEN_EXPIRE_MINUTES = int(_jwt_expiry_hours * 60)
-REFRESH_TOKEN_EXPIRE_DAYS = max(1, int(_jwt_expiry_hours / 8))
+_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "0.25"))  # default 15 min; override via JWT_EXPIRY_HOURS
+ACCESS_TOKEN_EXPIRE_MINUTES = max(15, int(_jwt_expiry_hours * 60))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "1"))
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -1093,6 +1093,8 @@ class VATReturnDB(Base):
     exempt_sales = Column(Float, default=0.0)
     # Box 6 — Out-of-scope / reverse-charge supplies (amount)
     out_of_scope_sales = Column(Float, default=0.0)
+    # Alias required by task spec: reverse_charge_sales = same as out_of_scope_sales (category O)
+    reverse_charge_sales = Column(Float, default=0.0)
     # Box 7 — Total supplies (Box 1 + 4 + 5 + 6)
     total_sales = Column(Float, default=0.0)
 
@@ -1110,6 +1112,8 @@ class VATReturnDB(Base):
     # Zero-rated & exempt purchases (informational; VAT = 0)
     zero_rated_purchases = Column(Float, default=0.0)
     exempt_purchases = Column(Float, default=0.0)
+    # Reverse-charge VAT: input VAT due on reverse-charge purchases (category O inward invoices)
+    reverse_charge_vat = Column(Float, default=0.0)
 
     # === NET ===
     # Box 13 — Net VAT payable / refundable (Box 3 – Box 12)
@@ -2673,7 +2677,9 @@ def _run_column_migrations():
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS out_of_scope_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS reverse_charge_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS total_sales DOUBLE PRECISION DEFAULT 0.0",
+        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS reverse_charge_vat DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_purchases DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_purchases DOUBLE PRECISION DEFAULT 0.0",
     ]
@@ -13193,6 +13199,7 @@ def generate_vat_return(
         zero_rated_sales=float(box4_zero_rated),
         exempt_sales=float(box5_exempt),
         out_of_scope_sales=float(box6_out_of_scope),
+        reverse_charge_sales=float(box6_out_of_scope),
         total_sales=float(box7_total_sales),
         # Purchases / input side
         standard_rated_purchases=float(box8_std_purchases),
@@ -13202,6 +13209,7 @@ def generate_vat_return(
         total_input_vat=float(result["total_input_vat"]),
         zero_rated_purchases=0.0,
         exempt_purchases=0.0,
+        reverse_charge_vat=0.0,
         # Net
         net_vat_payable=float(result["net_vat_payable"]),
         generated_by_user_id=current_user.id,
@@ -13233,6 +13241,7 @@ def generate_vat_return(
         "box4_zero_rated_sales": float(box4_zero_rated),
         "box5_exempt_sales": float(box5_exempt),
         "box6_out_of_scope_sales": float(box6_out_of_scope),
+        "box6_reverse_charge_sales": float(box6_out_of_scope),
         "box7_total_sales": float(box7_total_sales),
         # Purchase boxes
         "box8_standard_rated_purchases": float(box8_std_purchases),
@@ -13240,6 +13249,7 @@ def generate_vat_return(
         "box10_purchase_expenses": 0.0,
         "box11_input_vat_expenses": float(result["input_vat_expenses"]),
         "box12_total_input_vat": float(result["total_input_vat"]),
+        "reverse_charge_vat": 0.0,
         # Net
         "box13_net_vat_payable": float(result["net_vat_payable"]),
         "status": "payable" if float(result["net_vat_payable"]) > 0 else "refundable",

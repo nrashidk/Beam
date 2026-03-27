@@ -258,7 +258,7 @@ export default function VATReturn() {
                 No prior returns found. Generate your first return above.
               </div>
             ) : (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-gray-100 max-h-[480px] overflow-y-auto">
                 {history.map((r) => {
                   const expanded = expandedId === r.id;
                   const payable = r.box13_net_vat_payable > 0;
