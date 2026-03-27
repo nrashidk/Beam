@@ -13029,7 +13029,9 @@ def list_audit_logs(
             raise HTTPException(400, "Invalid from_date format. Use YYYY-MM-DD")
     if to_date:
         try:
-            q = q.filter(AuditLogDB.created_at <= dt.strptime(to_date, "%Y-%m-%d"))
+            from datetime import timedelta as _td
+            _to = dt.strptime(to_date, "%Y-%m-%d") + _td(days=1)
+            q = q.filter(AuditLogDB.created_at < _to)
         except ValueError:
             raise HTTPException(400, "Invalid to_date format. Use YYYY-MM-DD")
 
@@ -13040,6 +13042,13 @@ def list_audit_logs(
         .limit(limit)
         .all()
     )
+
+    # Build user_id → email map for response enrichment
+    user_ids = list({log.user_id for log in logs if log.user_id})
+    user_email_map: dict = {}
+    if user_ids:
+        users = db.query(UserDB).filter(UserDB.id.in_(user_ids)).all()
+        user_email_map = {u.id: u.email for u in users}
 
     return {
         "total": total,
@@ -13052,6 +13061,7 @@ def list_audit_logs(
                 "resource_type": log.resource_type,
                 "resource_id": log.resource_id,
                 "user_id": log.user_id,
+                "user_email": user_email_map.get(log.user_id),
                 "company_id": log.company_id,
                 "old_value": log.old_value,
                 "new_value": log.new_value,

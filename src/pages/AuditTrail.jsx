@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Sidebar from "../components/Sidebar";
 import { apiClient } from "../lib/api";
 import {
@@ -7,7 +7,6 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
-  Search,
   Eye,
   Edit,
   Trash2,
@@ -196,11 +195,11 @@ export default function AuditTrail() {
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase w-8"></th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Timestamp</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">User</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Action</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Resource</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Resource ID</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Description</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">IP</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -208,9 +207,8 @@ export default function AuditTrail() {
                         const expanded = expandedId === log.id;
                         const hasDetails = log.old_value || log.new_value;
                         return (
-                          <>
+                          <React.Fragment key={log.id}>
                             <tr
-                              key={log.id}
                               className={`hover:bg-gray-50 ${hasDetails ? "cursor-pointer" : ""}`}
                               onClick={() => hasDetails && setExpandedId(expanded ? null : log.id)}
                             >
@@ -224,6 +222,9 @@ export default function AuditTrail() {
                                   ? new Date(log.created_at).toLocaleString("en-AE", { dateStyle: "short", timeStyle: "medium" })
                                   : "—"}
                               </td>
+                              <td className="px-4 py-3 text-xs text-gray-600 max-w-[140px] truncate" title={log.user_email || log.user_id}>
+                                {log.user_email || <span className="text-gray-400">—</span>}
+                              </td>
                               <td className="px-4 py-3">
                                 <ActionBadge action={log.action} />
                               </td>
@@ -236,12 +237,9 @@ export default function AuditTrail() {
                               <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">
                                 {log.description || "—"}
                               </td>
-                              <td className="px-4 py-3 text-xs font-mono text-gray-400">
-                                {log.ip_address || "—"}
-                              </td>
                             </tr>
                             {expanded && hasDetails && (
-                              <tr key={`${log.id}-detail`}>
+                              <tr>
                                 <td colSpan={7} className="px-6 py-4 bg-indigo-50 border-t border-indigo-100">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <JsonDiff label="Before (old_value)" value={log.old_value} />
@@ -250,7 +248,7 @@ export default function AuditTrail() {
                                 </td>
                               </tr>
                             )}
-                          </>
+                          </React.Fragment>
                         );
                       })}
                     </tbody>
