@@ -13,31 +13,38 @@ import {
   LogIn,
   Download,
   Plus,
+  CheckCircle,
 } from "lucide-react";
 
-const ACTION_COLORS = {
-  CREATE: "bg-green-100 text-green-700",
-  UPDATE: "bg-blue-100 text-blue-700",
-  DELETE: "bg-red-100 text-red-700",
-  VIEW: "bg-gray-100 text-gray-600",
-  LOGIN: "bg-indigo-100 text-indigo-700",
-  DOWNLOAD: "bg-amber-100 text-amber-700",
-  GENERATE: "bg-purple-100 text-purple-700",
-};
+function actionColor(action) {
+  if (!action) return "bg-gray-100 text-gray-600";
+  if (action.includes("ISSUED")) return "bg-green-100 text-green-700";
+  if (action.includes("PAID")) return "bg-emerald-100 text-emerald-700";
+  if (action.includes("CANCELLED")) return "bg-red-100 text-red-700";
+  if (action.includes("UPDATED") || action.includes("ARCHIVED") || action.includes("RESTORED"))
+    return "bg-blue-100 text-blue-700";
+  if (action.includes("GENERATED")) return "bg-purple-100 text-purple-700";
+  if (action.includes("DOWNLOADED") || action.includes("PDF")) return "bg-amber-100 text-amber-700";
+  if (action.includes("LOGIN")) return "bg-indigo-100 text-indigo-700";
+  if (action.includes("PASSWORD")) return "bg-orange-100 text-orange-700";
+  return "bg-gray-100 text-gray-600";
+}
 
-const ACTION_ICONS = {
-  CREATE: Plus,
-  UPDATE: Edit,
-  DELETE: Trash2,
-  VIEW: Eye,
-  LOGIN: LogIn,
-  DOWNLOAD: Download,
-  GENERATE: Shield,
-};
+function actionIcon(action) {
+  if (!action) return Shield;
+  if (action.includes("ISSUED")) return Plus;
+  if (action.includes("PAID")) return CheckCircle;
+  if (action.includes("CANCELLED") || action.includes("DELETE")) return Trash2;
+  if (action.includes("UPDATED") || action.includes("ARCHIVED") || action.includes("RESTORED")) return Edit;
+  if (action.includes("GENERATED")) return Shield;
+  if (action.includes("DOWNLOADED") || action.includes("PDF")) return Download;
+  if (action.includes("LOGIN")) return LogIn;
+  return Eye;
+}
 
 function ActionBadge({ action }) {
-  const cls = ACTION_COLORS[action] || "bg-gray-100 text-gray-600";
-  const Icon = ACTION_ICONS[action] || Shield;
+  const cls = actionColor(action);
+  const Icon = actionIcon(action);
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
       <Icon className="h-3 w-3" />
@@ -69,7 +76,19 @@ const RESOURCE_TYPES = [
   "user", "company", "payment", "expense", "audit_file",
 ];
 
-const ACTIONS = ["", "CREATE", "UPDATE", "DELETE", "VIEW", "LOGIN", "DOWNLOAD", "GENERATE"];
+const KNOWN_ACTIONS = [
+  "FAF_GENERATED",
+  "INVOICES_ARCHIVED",
+  "INVOICE_CANCELLED",
+  "INVOICE_ISSUED",
+  "INVOICE_PAID",
+  "INVOICE_PDF_DOWNLOADED",
+  "INVOICE_RESTORED",
+  "INVOICE_UPDATED",
+  "PASSWORD_CHANGED",
+  "USER_LOGIN",
+  "VAT_RETURN_GENERATED",
+];
 
 export default function AuditTrail() {
   const today = new Date();
@@ -87,8 +106,20 @@ export default function AuditTrail() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [availableActions, setAvailableActions] = useState(KNOWN_ACTIONS);
 
   const LIMIT = 25;
+
+  // Fetch distinct action values from the backend to supplement the known list
+  useEffect(() => {
+    apiClient.get("/audit-logs", { params: { limit: 500 } })
+      .then((res) => {
+        const dynamic = (res.data.audit_logs || []).map((l) => l.action).filter(Boolean);
+        const merged = Array.from(new Set([...KNOWN_ACTIONS, ...dynamic])).sort();
+        setAvailableActions(merged);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async (pg = 1) => {
     setLoading(true);
@@ -145,8 +176,9 @@ export default function AuditTrail() {
                 <label className="block text-xs text-gray-500 mb-1">Action</label>
                 <select value={action} onChange={(e) => setAction(e.target.value)}
                   className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  {ACTIONS.map((a) => (
-                    <option key={a} value={a}>{a || "All Actions"}</option>
+                  <option value="">All Actions</option>
+                  {availableActions.map((a) => (
+                    <option key={a} value={a}>{a}</option>
                   ))}
                 </select>
               </div>
