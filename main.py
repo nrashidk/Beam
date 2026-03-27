@@ -13164,14 +13164,49 @@ def generate_vat_return(
 
     box7_total_sales = box1_std_taxable + box4_zero_rated + box5_exempt + box6_out_of_scope  # Box 7
 
-    # Purchases — InwardInvoiceDB has no tax_category; all treated as standard-rated
-    purchase_bills_vat = sum(
-        (Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
+    # Purchases — group InwardInvoiceLineItemDB by tax_category to fill all purchase boxes
+    purchase_invoice_ids = [inv.id for inv in purchase_invoices]
+    inward_line_items = (
+        db.query(InwardInvoiceLineItemDB)
+        .filter(InwardInvoiceLineItemDB.inward_invoice_id.in_(purchase_invoice_ids))
+        .all()
+        if purchase_invoice_ids
+        else []
     )
-    purchase_expenses_vat = Decimal("0.00")
-    box8_std_purchases = sum(
-        (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
-    )  # Box 8
+
+    box8_std_purchases = Decimal("0.00")     # Box 8: Standard-rated purchases (excl. VAT)
+    purchase_bills_vat = Decimal("0.00")     # Box 9: Input VAT on standard-rated bills
+    box_zero_rated_purch = Decimal("0.00")   # Zero-rated purchases (no input VAT)
+    box_exempt_purch = Decimal("0.00")       # Exempt purchases (no input VAT)
+    box_reverse_charge_vat = Decimal("0.00") # Input VAT due on reverse-charge (cat O) purchases
+
+    for li in inward_line_items:
+        taxable = Decimal(str(li.line_extension_amount or 0))
+        vat_amt = Decimal(str(li.tax_amount or 0))
+        cat = li.tax_category
+        if cat == TaxCategory.STANDARD:
+            box8_std_purchases += taxable
+            purchase_bills_vat += vat_amt
+        elif cat == TaxCategory.ZERO:
+            box_zero_rated_purch += taxable
+        elif cat == TaxCategory.EXEMPT:
+            box_exempt_purch += taxable
+        elif cat == TaxCategory.OUT_OF_SCOPE:
+            # Reverse-charge: VAT must be accounted for by the buyer
+            box8_std_purchases += taxable
+            box_reverse_charge_vat += vat_amt
+            purchase_bills_vat += vat_amt
+
+    # Fallback: if no line items, derive from invoice-level totals (all standard-rated)
+    if not inward_line_items and purchase_invoices:
+        purchase_bills_vat = sum(
+            (Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
+        )
+        box8_std_purchases = sum(
+            (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
+        )
+
+    purchase_expenses_vat = Decimal("0.00")  # Box 11 (expenses VAT handled separately)
 
     # Call the protected utility function (MUST NOT BE MODIFIED)
     result = calculate_vat_return(
@@ -13207,9 +13242,9 @@ def generate_vat_return(
         purchase_expenses=0.0,
         input_vat_expenses=float(result["input_vat_expenses"]),
         total_input_vat=float(result["total_input_vat"]),
-        zero_rated_purchases=0.0,
-        exempt_purchases=0.0,
-        reverse_charge_vat=0.0,
+        zero_rated_purchases=float(box_zero_rated_purch),
+        exempt_purchases=float(box_exempt_purch),
+        reverse_charge_vat=float(box_reverse_charge_vat),
         # Net
         net_vat_payable=float(result["net_vat_payable"]),
         generated_by_user_id=current_user.id,
@@ -13249,7 +13284,9 @@ def generate_vat_return(
         "box10_purchase_expenses": 0.0,
         "box11_input_vat_expenses": float(result["input_vat_expenses"]),
         "box12_total_input_vat": float(result["total_input_vat"]),
-        "reverse_charge_vat": 0.0,
+        "zero_rated_purchases": float(box_zero_rated_purch),
+        "exempt_purchases": float(box_exempt_purch),
+        "reverse_charge_vat": float(box_reverse_charge_vat),
         # Net
         "box13_net_vat_payable": float(result["net_vat_payable"]),
         "status": "payable" if float(result["net_vat_payable"]) > 0 else "refundable",
@@ -13283,10 +13320,14 @@ def list_vat_returns(
                 "box4_zero_rated_sales": getattr(r, "zero_rated_sales", 0.0),
                 "box5_exempt_sales": getattr(r, "exempt_sales", 0.0),
                 "box6_out_of_scope_sales": getattr(r, "out_of_scope_sales", 0.0),
+                "box6_reverse_charge_sales": getattr(r, "reverse_charge_sales", 0.0),
                 "box7_total_sales": getattr(r, "total_sales", 0.0),
                 "box8_standard_rated_purchases": r.standard_rated_purchases,
                 "box9_input_vat_bills": r.input_vat_bills,
                 "box12_total_input_vat": r.total_input_vat,
+                "zero_rated_purchases": getattr(r, "zero_rated_purchases", 0.0),
+                "exempt_purchases": getattr(r, "exempt_purchases", 0.0),
+                "reverse_charge_vat": getattr(r, "reverse_charge_vat", 0.0),
                 "box13_net_vat_payable": r.net_vat_payable,
                 "status": "payable" if r.net_vat_payable > 0 else "refundable",
                 "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -13333,6 +13374,9 @@ def get_vat_return(
         "box10_purchase_expenses": r.purchase_expenses,
         "box11_input_vat_expenses": r.input_vat_expenses,
         "box12_total_input_vat": r.total_input_vat,
+        "zero_rated_purchases": getattr(r, "zero_rated_purchases", 0.0),
+        "exempt_purchases": getattr(r, "exempt_purchases", 0.0),
+        "reverse_charge_vat": getattr(r, "reverse_charge_vat", 0.0),
         # Net
         "box13_net_vat_payable": r.net_vat_payable,
         "status": "payable" if r.net_vat_payable > 0 else "refundable",
