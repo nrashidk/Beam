@@ -33,6 +33,9 @@ import PeriodicReport from "./pages/PeriodicReport";
 import DataArchival from "./pages/DataArchival";
 import VATReturn from "./pages/VATReturn";
 import GeneralLedger from "./pages/GeneralLedger";
+import GLAccounts from "./pages/GLAccounts";
+import GLJournalEntries from "./pages/GLJournalEntries";
+import GLTrialBalance from "./pages/GLTrialBalance";
 import AuditTrail from "./pages/AuditTrail";
 import SuppliersManagement from "./pages/SuppliersManagement";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
@@ -317,6 +320,30 @@ function App() {
               element={
                 <ProtectedRoute>
                   <GeneralLedger />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/gl/accounts"
+              element={
+                <ProtectedRoute>
+                  <GLAccounts />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/gl/journal-entries"
+              element={
+                <ProtectedRoute>
+                  <GLJournalEntries />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/gl/trial-balance"
+              element={
+                <ProtectedRoute>
+                  <GLTrialBalance />
                 </ProtectedRoute>
               }
             />
