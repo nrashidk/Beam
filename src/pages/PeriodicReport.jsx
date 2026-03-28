@@ -22,21 +22,32 @@ const QUARTERS = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct
 const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
+/**
+ * Returns { isoYear, isoWeek } for a given Date using the standard
+ * ISO 8601 definition: week 1 contains the year's first Thursday;
+ * Monday is day 1.  Works correctly for all year-boundary dates.
+ */
+function getISOWeekData(d) {
+  // Copy to avoid mutating the original
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  // Thursday in current week decides the year (ISO rule)
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const isoWeek = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return { isoYear: date.getUTCFullYear(), isoWeek };
+}
+
 function getISOWeeksInYear(year) {
-  const dec28 = new Date(year, 11, 28);
-  const dayOfWeek = dec28.getDay() || 7;
-  const jan4 = new Date(year, 0, 4);
-  const dayOfWeekJan4 = jan4.getDay() || 7;
-  const week = Math.ceil((((dec28 - jan4) / 86400000) + dayOfWeekJan4) / 7);
-  return week;
+  // Dec 28 is always in the last ISO week of the year
+  return getISOWeekData(new Date(year, 11, 28)).isoWeek;
 }
 
 function currentISOWeek() {
-  const today = new Date();
-  const jan4 = new Date(today.getFullYear(), 0, 4);
-  const dayOfWeekJan4 = jan4.getDay() || 7;
-  const diff = (today - jan4) / 86400000;
-  return Math.ceil((diff + dayOfWeekJan4) / 7);
+  return getISOWeekData(new Date()).isoWeek;
+}
+
+function currentISOYear() {
+  return getISOWeekData(new Date()).isoYear;
 }
 
 export default function PeriodicReport() {
@@ -58,7 +69,10 @@ export default function PeriodicReport() {
     } else if (periodType === "quarterly") {
       setPeriod(Math.floor(new Date().getMonth() / 3) + 1);
     } else if (periodType === "weekly") {
-      setPeriod(currentISOWeek());
+      // Use correct ISO year for the year selector too
+      const { isoYear, isoWeek } = getISOWeekData(new Date());
+      setYear(isoYear);
+      setPeriod(isoWeek);
     } else {
       setPeriod(1);
     }

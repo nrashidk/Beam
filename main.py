@@ -7266,6 +7266,8 @@ def get_periodic_report(
     start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
         period_type, year, period
     )
+    # Use start_dt.year for response metadata so it is never None
+    _resp_year = start_dt.year
 
     # Query all non-cancelled invoices in the period
     invoices = (
@@ -7327,7 +7329,7 @@ def get_periodic_report(
     return {
         "period_type": period_type,
         "period_label": period_label,
-        "year": year,
+        "year": _resp_year,
         "period": period,
         "start_date": start_dt.isoformat(),
         "end_date": end_dt.isoformat(),
