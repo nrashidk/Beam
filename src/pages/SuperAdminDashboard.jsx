@@ -224,6 +224,7 @@ export default function SuperAdminDashboard() {
       const res = await api.get("/admin/integrity/verify");
       setIntegrityStatus({
         status: res.data.integrity_ok ? "PASSED" : "FAILED",
+        scope: "GLOBAL",
         last_checked_at: res.data.checked_at,
         integrity_ok: res.data.integrity_ok,
         total_invoices: res.data.total_invoices_checked,
@@ -953,6 +954,11 @@ export default function SuperAdminDashboard() {
                       <p className={`text-sm font-semibold ${integrityStatus.integrity_ok ? "text-emerald-600" : "text-red-600"}`}>
                         {integrityStatus.integrity_ok ? "PASSED" : "FAILED"}
                       </p>
+                      {integrityStatus.scope && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Scope: {integrityStatus.scope}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Invoices Checked</p>

@@ -3370,12 +3370,47 @@ def get_integrity_status(
 
     q = db.query(IntegrityCheckDB).order_by(IntegrityCheckDB.checked_at.desc())
     if target_company_id:
+        # Company-scoped: return latest result for that specific company
         q = q.filter(IntegrityCheckDB.company_id == target_company_id)
+    elif current_user.role == Role.SUPER_ADMIN:
+        # Global scope for SUPER_ADMIN with no filter: prefer the latest
+        # global run (company_id IS NULL); fall back to latest any-scope run
+        # if no global run exists yet
+        global_last = q.filter(IntegrityCheckDB.company_id.is_(None)).first()
+        last = global_last or q.filter(True).first()
+        if not last:
+            return {
+                "status": "NEVER_CHECKED",
+                "scope": "GLOBAL",
+                "message": "No integrity check has been performed yet. Run GET /admin/integrity/verify.",
+                "last_checked_at": None,
+                "integrity_ok": None,
+                "total_invoices": None,
+                "valid_links": None,
+                "first_broken_link": None,
+            }
+        return {
+            "status": "PASSED" if last.integrity_ok else "FAILED",
+            "scope": "GLOBAL" if last.company_id is None else "COMPANY",
+            "last_checked_at": last.checked_at.isoformat(),
+            "integrity_ok": last.integrity_ok,
+            "total_invoices": last.total_invoices,
+            "valid_links": last.valid_links,
+            "checked_by_user_id": last.performed_by_user_id,
+            "company_id": last.company_id,
+            "first_broken_link": {
+                "invoice_id": last.first_broken_invoice_id,
+                "invoice_number": last.first_broken_invoice_number,
+                "invoice_date": last.first_broken_invoice_date,
+            } if not last.integrity_ok else None,
+        }
+
     last = q.first()
 
     if not last:
         return {
             "status": "NEVER_CHECKED",
+            "scope": "COMPANY" if target_company_id else "GLOBAL",
             "message": "No integrity check has been performed yet. Run GET /admin/integrity/verify.",
             "last_checked_at": None,
             "integrity_ok": None,
@@ -3386,6 +3421,7 @@ def get_integrity_status(
 
     return {
         "status": "PASSED" if last.integrity_ok else "FAILED",
+        "scope": "GLOBAL" if last.company_id is None else "COMPANY",
         "last_checked_at": last.checked_at.isoformat(),
         "integrity_ok": last.integrity_ok,
         "total_invoices": last.total_invoices,
