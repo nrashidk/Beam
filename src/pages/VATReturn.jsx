@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
+  Download,
 } from "lucide-react";
 
 function fmt(val) {
@@ -46,10 +47,39 @@ export default function VATReturn() {
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
+  const [downloading, setDownloading] = useState({});
 
   useEffect(() => {
     fetchHistory();
   }, []);
+
+  async function handleDownload(returnId, format, periodStart, periodEnd) {
+    const key = `${returnId}-${format}`;
+    setDownloading((prev) => ({ ...prev, [key]: true }));
+    try {
+      const res = await apiClient.get(`/vat-return/${returnId}/export`, {
+        params: { format },
+        responseType: "blob",
+      });
+      const ext = format === "xlsx" ? "xlsx" : "xml";
+      const mime =
+        format === "xlsx"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/xml";
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: mime }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `vat_return_${periodStart}_${periodEnd}.${ext}`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Export failed. Please try again.");
+    } finally {
+      setDownloading((prev) => ({ ...prev, [key]: false }));
+    }
+  }
 
   async function fetchHistory() {
     setHistoryLoading(true);
@@ -238,9 +268,40 @@ export default function VATReturn() {
                 </table>
               </div>
 
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-8 text-sm text-gray-600">
-                <span>Sales invoices processed: <strong>{result.total_sales_invoices}</strong></span>
-                <span>Purchase invoices processed: <strong>{result.total_purchase_invoices}</strong></span>
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex gap-8 text-sm text-gray-600">
+                  <span>Sales invoices processed: <strong>{result.total_sales_invoices}</strong></span>
+                  <span>Purchase invoices processed: <strong>{result.total_purchase_invoices}</strong></span>
+                </div>
+                {result.return_id && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">Download:</span>
+                    <button
+                      onClick={() => handleDownload(result.return_id, "xlsx", result.period_start, result.period_end)}
+                      disabled={downloading[`${result.return_id}-xlsx`]}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    >
+                      {downloading[`${result.return_id}-xlsx`] ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Download className="h-3 w-3" />
+                      )}
+                      XLSX
+                    </button>
+                    <button
+                      onClick={() => handleDownload(result.return_id, "xml", result.period_start, result.period_end)}
+                      disabled={downloading[`${result.return_id}-xml`]}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {downloading[`${result.return_id}-xml`] ? (
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Download className="h-3 w-3" />
+                      )}
+                      XML
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -303,7 +364,7 @@ export default function VATReturn() {
                       </button>
                       {expanded && (
                         <div className="px-6 pb-4">
-                          <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                          <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 md:grid-cols-3 gap-3 text-sm mb-3">
                             <div>
                               <p className="text-gray-500 text-xs">Box 1 — Std Sales</p>
                               <p className="font-mono font-medium">{fmt(r.box1_standard_rated_sales)}</p>
@@ -342,6 +403,25 @@ export default function VATReturn() {
                                 {fmt(r.box13_net_vat_payable)}
                               </p>
                             </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">Download:</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDownload(r.id, "xlsx", r.period_start, r.period_end); }}
+                              disabled={downloading[`${r.id}-xlsx`]}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                            >
+                              {downloading[`${r.id}-xlsx`] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                              XLSX
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDownload(r.id, "xml", r.period_start, r.period_end); }}
+                              disabled={downloading[`${r.id}-xml`]}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                              {downloading[`${r.id}-xml`] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                              XML
+                            </button>
                           </div>
                         </div>
                       )}

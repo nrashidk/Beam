@@ -13447,6 +13447,226 @@ def get_vat_return(
     }
 
 
+_SOFTWARE_NAME = "InvoLinks"
+_SOFTWARE_VERSION = "1.0.0"
+
+
+@app.get("/vat-return/{return_id}/export", tags=["VAT Return"])
+def export_vat_return(
+    return_id: str,
+    format: str = "xlsx",
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export a VAT return as XLSX or XML (FTA-compliant formats)."""
+    from io import BytesIO
+    from fastapi.responses import StreamingResponse
+    import xml.etree.ElementTree as ET
+
+    r = (
+        db.query(VATReturnDB)
+        .filter(
+            VATReturnDB.id == return_id,
+            VATReturnDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
+    if not r:
+        raise HTTPException(404, "VAT return not found")
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == r.company_id).first()
+    company_name = (company.legal_name or "") if company else ""
+    company_trn = (company.trn or "") if company else ""
+
+    period_start = str(r.period_start)
+    period_end = str(r.period_end)
+
+    boxes = [
+        (1, "Standard-rated supplies (taxable amount, excl. VAT)", getattr(r, "standard_rated_sales", 0.0)),
+        (2, "Tax refunds provided to tourists", getattr(r, "tax_refunds_provided", 0.0)),
+        (3, "Output VAT (5% on standard-rated sales)", r.output_vat),
+        (4, "Zero-rated supplies", getattr(r, "zero_rated_sales", 0.0)),
+        (5, "Exempt supplies", getattr(r, "exempt_sales", 0.0)),
+        (6, "Out-of-scope / reverse-charge supplies", getattr(r, "out_of_scope_sales", 0.0)),
+        (7, "Total value of all supplies", getattr(r, "total_sales", 0.0)),
+        (8, "Standard-rated purchases — bills (excl. VAT)", r.standard_rated_purchases),
+        (9, "Input VAT recoverable on bills", r.input_vat_bills),
+        (10, "Standard-rated purchases — expenses (excl. VAT)", getattr(r, "purchase_expenses", 0.0)),
+        (11, "Input VAT recoverable on expenses", r.input_vat_expenses),
+        (12, "Total input VAT (Box 9 + Box 11)", r.total_input_vat),
+        (13, "Net VAT payable / (refundable)", r.net_vat_payable),
+    ]
+
+    fmt_lower = format.lower()
+
+    if fmt_lower == "xlsx":
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "VAT Return FTA 301"
+
+        header_fill = PatternFill("solid", fgColor="1F3A6E")
+        header_font = Font(color="FFFFFF", bold=True, size=11)
+        section_fill = PatternFill("solid", fgColor="E8EDF5")
+        section_font = Font(bold=True, size=10, color="1F3A6E")
+        highlight_fill = PatternFill("solid", fgColor="FFF3CD")
+        highlight_font = Font(bold=True, size=10)
+        thin = Side(style="thin", color="CCCCCC")
+        thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def hrow(row, text, fill=None, font=None, merged_to=4):
+            cell = ws.cell(row=row, column=1, value=text)
+            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=merged_to)
+            if fill:
+                cell.fill = fill
+            if font:
+                cell.font = font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            return cell
+
+        def mrow(row, label, value):
+            lc = ws.cell(row=row, column=1, value=label)
+            lc.font = Font(bold=True, size=10)
+            lc.alignment = Alignment(horizontal="left", vertical="center")
+            vc = ws.cell(row=row, column=2, value=value)
+            vc.alignment = Alignment(horizontal="left", vertical="center")
+            for c in range(1, 5):
+                ws.cell(row=row, column=c).border = thin_border
+
+        ws.row_dimensions[1].height = 28
+        hrow(1, "UAE FTA — VAT Return (Form 301)", fill=header_fill, font=header_font)
+
+        ws.row_dimensions[2].height = 20
+        mrow(2, "Company Name", company_name)
+        ws.row_dimensions[3].height = 20
+        mrow(3, "Tax Registration Number (TRN)", company_trn)
+        ws.row_dimensions[4].height = 20
+        mrow(4, "Period Start", period_start)
+        ws.row_dimensions[5].height = 20
+        mrow(5, "Period End", period_end)
+        ws.row_dimensions[6].height = 20
+        mrow(6, "Software Name", _SOFTWARE_NAME)
+        ws.row_dimensions[7].height = 20
+        mrow(7, "Software Version", _SOFTWARE_VERSION)
+        ws.row_dimensions[8].height = 20
+        mrow(8, "Vendor TRN", company_trn)
+
+        ws.row_dimensions[9].height = 8
+
+        ws.row_dimensions[10].height = 22
+        hrow(10, "Box-by-Box Breakdown — FTA Form 301", fill=PatternFill("solid", fgColor="2E5FA3"),
+             font=Font(color="FFFFFF", bold=True, size=11))
+
+        ws.row_dimensions[11].height = 20
+        for col, txt in enumerate(["Box", "Description", "Amount (AED)"], start=1):
+            c = ws.cell(row=11, column=col, value=txt)
+            c.font = Font(bold=True, size=10, color="FFFFFF")
+            c.fill = PatternFill("solid", fgColor="4472C4")
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.border = thin_border
+
+        highlight_boxes = {3, 7, 12, 13}
+        section_breaks = {
+            1: "Section 1 — Sales & Output Tax",
+            8: "Section 2 — Purchases & Input Tax",
+            13: "Section 3 — Net VAT",
+        }
+
+        data_row = 12
+        for box_num, desc, val in boxes:
+            if box_num in section_breaks:
+                ws.row_dimensions[data_row].height = 18
+                sc = ws.cell(row=data_row, column=1, value=section_breaks[box_num])
+                ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=3)
+                sc.fill = section_fill
+                sc.font = section_font
+                sc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+                sc.border = thin_border
+                data_row += 1
+
+            ws.row_dimensions[data_row].height = 18
+            is_hl = box_num in highlight_boxes
+            fill = highlight_fill if is_hl else None
+            font = highlight_font if is_hl else Font(size=10)
+
+            for col_i, v in enumerate([f"Box {box_num}", desc, round(float(val or 0), 2)], start=1):
+                c = ws.cell(row=data_row, column=col_i, value=v)
+                c.border = thin_border
+                c.font = font
+                if fill:
+                    c.fill = fill
+                if col_i == 1:
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                elif col_i == 3:
+                    c.alignment = Alignment(horizontal="right", vertical="center")
+                    c.number_format = '#,##0.00'
+                else:
+                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+            data_row += 1
+
+        ws.column_dimensions["A"].width = 10
+        ws.column_dimensions["B"].width = 58
+        ws.column_dimensions["C"].width = 20
+        ws.column_dimensions["D"].width = 5
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        filename = f"vat_return_{period_start}_{period_end}.xlsx"
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    elif fmt_lower == "xml":
+        root = ET.Element("VATReturn")
+        root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
+        root.set("SchemaVersion", "1.0")
+
+        meta = ET.SubElement(root, "Metadata")
+        ET.SubElement(meta, "SoftwareName").text = _SOFTWARE_NAME
+        ET.SubElement(meta, "SoftwareVersion").text = _SOFTWARE_VERSION
+        ET.SubElement(meta, "VendorTRN").text = company_trn
+        ET.SubElement(meta, "GeneratedAt").text = datetime.utcnow().isoformat() + "Z"
+
+        taxpayer = ET.SubElement(root, "TaxpayerInfo")
+        ET.SubElement(taxpayer, "CompanyName").text = company_name
+        ET.SubElement(taxpayer, "TRN").text = company_trn
+        ET.SubElement(taxpayer, "PeriodStart").text = period_start
+        ET.SubElement(taxpayer, "PeriodEnd").text = period_end
+
+        section_sales = ET.SubElement(root, "SalesAndOutputTax")
+        purchase_section = ET.SubElement(root, "PurchasesAndInputTax")
+        net_section = ET.SubElement(root, "NetVAT")
+
+        for box_num, desc, val in boxes:
+            tag = f"Box{box_num}"
+            amount_str = f"{float(val or 0):.2f}"
+            if box_num <= 7:
+                el = ET.SubElement(section_sales, tag)
+            elif box_num <= 12:
+                el = ET.SubElement(purchase_section, tag)
+            else:
+                el = ET.SubElement(net_section, tag)
+            el.set("description", desc)
+            el.text = amount_str
+
+        ET.indent(root, space="  ")
+        xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        filename = f"vat_return_{period_start}_{period_end}.xml"
+        return StreamingResponse(
+            BytesIO(xml_bytes),
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    else:
+        raise HTTPException(400, "format must be 'xlsx' or 'xml'")
+
+
 # ==================== TASK 8: GL / JOURNAL ENTRY ENDPOINTS ====================
 
 
