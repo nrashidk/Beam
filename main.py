@@ -3268,7 +3268,12 @@ def verify_hash_chain_integrity(
                 integrity_ok = False
                 continue
 
-            if inv.prev_invoice_hash == expected_hash:
+            # Primary: compare against independently recomputed canonical hash
+            # Fallback: legacy data used prev_invoice.xml_hash (XML-content hash)
+            # Accept either for backward compatibility — new invoices will only
+            # match the canonical hash going forward.
+            legacy_match = prev.xml_hash and (inv.prev_invoice_hash == prev.xml_hash)
+            if inv.prev_invoice_hash == expected_hash or legacy_match:
                 valid_links += 1
             else:
                 if integrity_ok:
@@ -9046,16 +9051,29 @@ def issue_invoice(
     from utils.ubl_xml_generator import generate_invoice_xml
     import json
 
-    # Get previous invoice hash for chain
+    # Get previous ISSUED invoice for chain linkage.
+    # Requirements:
+    # 1. Only link to immutable (issued) invoices — drafts can still be edited,
+    #    which would silently break the chain.
+    # 2. Use issue_date ASC, created_at ASC ordering to match the verifier, so
+    #    backdated invoices don't cause ordering mismatches during verification.
     prev_invoice = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
             InvoiceDB.id != invoice.id,  # Exclude current invoice
+            InvoiceDB.status.in_([
+                InvoiceStatus.ISSUED,
+                InvoiceStatus.SENT,
+                InvoiceStatus.VIEWED,
+                InvoiceStatus.PAID,
+            ]),
         )
-        .order_by(InvoiceDB.created_at.desc())
-        .first()
+        .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
+        .all()
     )
+    # Take the last element — the predecessor in the sorted chain
+    prev_invoice = prev_invoice[-1] if prev_invoice else None
 
     if prev_invoice:
         # Compute canonical hash of previous invoice for hash chain linking.
