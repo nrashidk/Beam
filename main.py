@@ -15437,7 +15437,6 @@ def export_trial_balance(
         ws.title = "Trial Balance"
 
         primary_fill = PatternFill("solid", fgColor="4F46E5")
-        header_fill = PatternFill("solid", fgColor="EEF2FF")
         total_fill = PatternFill("solid", fgColor="C7D2FE")
         white_font = Font(color="FFFFFF", bold=True)
         bold_font = Font(bold=True)

@@ -208,7 +208,17 @@ function JournalEntries() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e.response?.data?.detail || `Export failed: ${e.message}`);
+      let msg = `Export failed: ${e.message}`;
+      if (e.response?.data instanceof Blob) {
+        try {
+          const text = await e.response.data.text();
+          const parsed = JSON.parse(text);
+          msg = parsed.detail || msg;
+        } catch (_) {}
+      } else if (e.response?.data?.detail) {
+        msg = e.response.data.detail;
+      }
+      alert(msg);
     } finally {
       setExporting("");
     }
@@ -440,7 +450,17 @@ function TrialBalance() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(e.response?.data?.detail || `Export failed: ${e.message}`);
+      let msg = `Export failed: ${e.message}`;
+      if (e.response?.data instanceof Blob) {
+        try {
+          const text = await e.response.data.text();
+          const parsed = JSON.parse(text);
+          msg = parsed.detail || msg;
+        } catch (_) {}
+      } else if (e.response?.data?.detail) {
+        msg = e.response.data.detail;
+      }
+      alert(msg);
     } finally {
       setExporting("");
     }
