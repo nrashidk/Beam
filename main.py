@@ -5727,6 +5727,8 @@ def admin_reset_user_password(
     temp_password = generate_temp_password(16)
     target_user.password_hash = get_password_hash(temp_password)
     target_user.must_change_password = True
+    # Task 22: Track password mutation time for expiry policy
+    target_user.password_changed_at = datetime.utcnow()
 
     log_audit_event(
         db, "PASSWORD_CHANGED",
@@ -11884,6 +11886,8 @@ def restore_superadmin(db: Session = Depends(get_db)):
         user.password_hash = get_password_hash(super_admin_password)
         user.company_id = None
         user.is_owner = False
+        # Task 22: Track password mutation time for expiry policy
+        user.password_changed_at = datetime.utcnow()
         db.commit()
         return {
             "success": True,

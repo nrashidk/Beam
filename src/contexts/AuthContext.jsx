@@ -257,7 +257,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("token");
     localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
+    localStorage.removeItem("force_password_change");
     setUser(null);
+    // Task 22: Clear password expiry state on logout
+    setPasswordExpiresInDays(null);
     authAPI.logout().catch(() => {});
   };
 
