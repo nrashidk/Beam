@@ -1,0 +1,118 @@
+Now I have everything I need. The grep on main.py returned zero results for every compliance keyword. The SQL migration file is fully read — 691 lines, same single file, no new tables. The JSX file list shows no new pages. I can give you a definitive report.
+
+FTA Tax Accounting Software Accreditation — Re-Assessment Report
+Date: March 28, 2026 | Overall Readiness: ~32% | Change from last review: 0%
+
+Bottom Line First
+The Replit AI agent made no changes to any of the four critical compliance gaps. The grep across all of main.py returned zero matches for every FTA-required keyword: general_ledger, journal_entry, chart_of_accounts, trial_balance, audit_trail, audit_log, lockout, failed_attempts, password_history, archiv, vat_return, session_timeout. The database migration file is still a single 691-line file — no new tables were added anywhere.
+
+Full Area-by-Area Breakdown
+1. FAF — 4-Table Structure ⚠️ 50% (unchanged)
+utils/fta_audit_generator.py produces a single combined CSV/TXT with 21 columns. The FTA-required structure is four separate named tables:
+
+Required Table	Current Status
+CompanyInformation	❌ Columns embedded into invoice rows — not a standalone table
+SalesInvoices	⚠️ Mixed into one combined loop with purchases
+PurchaseInvoices	⚠️ Mixed into one combined loop with sales
+GeneralLedger	❌ Cannot exist — no GL system anywhere in the codebase
+Field-level validation and statistics (total invoices, VAT, customers) work correctly. The format itself is non-compliant.
+
+2. VAT Return File — Boxes 1–13 ❌ 10% (unchanged)
+utils/vat_utils.py → calculate_vat_return() returns five values covering Boxes 9–11 only. No file is generated or exported.
+
+Box	Description	Status
+1	Standard-rated supplies	❌ Missing
+2	Reverse charge supplies	❌ Missing
+3	Exempt supplies	❌ Missing
+4	Zero-rated supplies	❌ Missing
+5	Total value of all supplies	❌ Missing
+6	Goods imported	❌ Missing
+7	Adjustments to goods imported	❌ Missing
+8	Totals summary	❌ Missing
+9	Output VAT	✅ Calculated
+10	Input VAT recoverable	✅ Calculated
+11	Net VAT payable	✅ Calculated
+12	Prior period corrections	❌ Missing
+13	Final VAT payable	❌ Missing
+No vat_return_generator.py file. No export format. No API endpoint.
+
+3. General Ledger / Double-Entry Accounting ❌ 0% (unchanged)
+The complete migration SQL (2025_01_001_init_schema.sql) was read line by line. The 18 tables that exist are:
+
+users, companies, subscription_plans, company_subscriptions, company_documents, company_branding, registration_progress, content_blocks, featured_businesses, invoices, invoice_line_items, invoice_tax_breakdowns, purchase_orders, purchase_order_line_items, goods_receipts, goods_receipt_line_items, inward_invoices, inward_invoice_line_items, audit_files, payment_methods, subscriptions, peppol_usage, billing_invoices, expense_categories, expenses, inventory_items, inventory_transactions
+
+Not one of these is a GL table. The following required tables do not exist anywhere:
+
+general_ledger_accounts — ❌
+journal_entries — ❌
+journal_lines — ❌
+gl_account_balances — ❌
+No GL-related frontend pages (GeneralLedger.jsx, JournalEntries.jsx, ChartOfAccounts.jsx, TrialBalance.jsx) were added. No GL routes in App.jsx.
+
+4. Audit Trail — Change Logging ❌ 0% (unchanged)
+Zero matches for audit_trail, audit_log, AuditLog, or any variant in main.py. No table in the migration SQL. No middleware. No who/what/when/old-value/new-value logging on any write path. No AuditTrail.jsx page.
+
+What exists is narrow and not a compliance audit trail:
+
+signing_timestamp — tracks invoice digital signature time only
+reviewed_by_user_id / approved_by_user_id — inward invoice workflow steps only
+generated_by_user_id on audit_files — who generated a FAF
+5. Password Policy ⚠️ 33% (unchanged)
+Control	Status
+Minimum 8 characters	✅ Enforced
+Uppercase + lowercase + digit + special	❌ No pattern validation
+Password history / reuse prevention	❌ No table, no logic
+Account lockout after failed attempts	❌ users table has no failed_attempts or lockout_until field
+Inactivity session timeout	❌ 24-hour JWT hardcoded; no inactivity mechanism
+MFA (TOTP, Email OTP, backup codes) is well built. But the login endpoint has no rate limit and no lockout — a brute-force attack faces zero resistance.
+
+6. Data Archival & 5-Year Retention ❌ 0% (unchanged)
+No archival table, no retention policy, no scheduler, no integrity checksums, no restore endpoint. Files stored flat in /artifacts/ with no lifecycle management.
+
+7. System Availability & Disaster Recovery ⚠️ 20% (unchanged)
+✅ /health endpoint exists — returns DB connectivity + basic counters
+✅ Connection pooling configured (pool_pre_ping, pool_recycle)
+❌ No automated backups
+❌ No failover or replication
+❌ No monitoring alerts or defined RTO/RPO
+8. UBL 2.1 / PINT-AE XML ✅ 100% (unchanged — strongest area)
+utils/ubl_xml_generator.py (461 lines) — fully compliant:
+
+Correct PEPPOL ProfileID and CustomizationID
+All required namespaces
+TaxTotal, LegalMonetaryTotal, line-item tax breakdowns
+Digital signature fields and hash chain (prev_invoice_hash) indexed
+All invoice types: 380, 381, 480, 81
+9. New Files Added ❌ None
+Confirmed file inventory — identical to previous review. No new .py files in utils/. No new .sql migration files. No new .jsx pages. The Replit agent added nothing.
+
+10. Frontend Compliance Pages ⚠️ 25% (unchanged)
+Page	Status
+FTAAuditFiles.jsx	✅
+VATSettings.jsx	✅
+MFASettings.jsx	✅
+GeneralLedger.jsx	❌ Does not exist
+JournalEntries.jsx	❌ Does not exist
+ChartOfAccounts.jsx	❌ Does not exist
+TrialBalance.jsx	❌ Does not exist
+AuditTrail.jsx	❌ Does not exist
+VATReturn.jsx	❌ Does not exist
+DataArchival.jsx	❌ Does not exist
+Consolidated Scorecard
+Requirement	Two Reviews Ago	Last Review	Now	Δ
+FAF 4-Table Structure	25%	50%	50%	—
+VAT Return File (13 Boxes)	10%	10%	10%	—
+General Ledger / Double-Entry	0%	0%	0%	—
+Audit Trail (Change Logging)	0%	0%	0%	—
+Password Policy	20%	33%	33%	—
+Data Archival / 5-Year Retention	0%	0%	0%	—
+Disaster Recovery / Backup	15%	20%	20%	—
+UBL 2.1 / PINT-AE XML	100%	100%	100%	—
+Frontend Compliance Pages	25%	25%	25%	—
+OVERALL	~25%	~32%	~32%	0%
+Recommendation
+The Replit AI agent has now been instructed twice and produced no measurable progress on the FTA gaps. The four critical missing components — General Ledger, Audit Trail, VAT Return File, and Data Archival — each require substantial backend engineering that apparently falls outside what Replit's agent is completing. You may want to either:
+
+Give Replit a narrower, single-feature instruction (e.g. "add a general_ledger_accounts table and journal entry system") rather than a broad directive — broad instructions may be returning partial or cosmetic work that isn't being committed
+Verify the Replit workspace is saving and syncing — it's possible work is being done but not persisted to the files visible here
+Implement these components directly in this environment, starting with the GL schema and audit log table, which are the two hardest blockers
