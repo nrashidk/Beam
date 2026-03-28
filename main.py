@@ -222,7 +222,7 @@ PERMISSIONS: dict[tuple, bool] = {
     (Role.BUSINESS_ADMIN, "audit_logs",      "view"):         _T,
     (Role.BUSINESS_ADMIN, "audit_logs",      "export"):       _T,
     (Role.BUSINESS_ADMIN, "team",            "view"):         _T,
-    (Role.BUSINESS_ADMIN, "team",            "manage_users"): _T,  # can invite FINANCE_USER only
+    (Role.BUSINESS_ADMIN, "team",            "manage_users"): _T,  # can invite FINANCE_USER or READ_ONLY
     (Role.BUSINESS_ADMIN, "settings",        "view"):         _T,
     (Role.BUSINESS_ADMIN, "settings",        "edit"):         _F,
     (Role.BUSINESS_ADMIN, "gl",              "view"):         _T,
