@@ -8832,6 +8832,12 @@ def get_adhoc_report(
     if not has_permission(current_user, "reports", "view"):
         raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
 
+    if type.lower() not in ("sales", "purchases", "all"):
+        raise HTTPException(400, "type must be 'sales', 'purchases', or 'all'")
+
+    if format.lower() not in ("json", "xlsx", "pdf", "csv"):
+        raise HTTPException(400, "format must be 'json', 'xlsx', 'pdf', or 'csv'")
+
     if format.lower() in ("xlsx", "pdf", "csv"):
         return export_adhoc_report(
             current_user=current_user, db=db,
@@ -8916,6 +8922,9 @@ def export_adhoc_report(
 
     if not has_permission(current_user, "reports", "export"):
         raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
+
+    if type.lower() not in ("sales", "purchases", "all"):
+        raise HTTPException(400, "type must be 'sales', 'purchases', or 'all'")
 
     if not from_date or not to_date:
         raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
