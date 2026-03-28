@@ -19,4 +19,4 @@ stripe
 Pillow
 reportlab
 defusedxml
-defusedxml
+lxml

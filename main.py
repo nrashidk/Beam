@@ -6769,8 +6769,7 @@ def create_invoice(
         if not payload.total_amount_aed or payload.total_amount_aed <= 0:
             raise HTTPException(
                 422,
-                "total_amount_aed is required for foreign-currency invoices. "
-                "Provide the AED equivalent of the invoice total to comply with FTA reporting requirements.",
+                "total_amount_aed is required for foreign-currency invoices",
             )
         invoice.total_amount_aed = round(payload.total_amount_aed, 2)
     else:
@@ -7676,8 +7675,7 @@ def update_invoice(
             if not data.total_amount_aed or data.total_amount_aed <= 0:
                 raise HTTPException(
                     422,
-                    "total_amount_aed is required for foreign-currency invoices. "
-                    "Provide the AED equivalent of the invoice total to comply with FTA reporting requirements.",
+                    "total_amount_aed is required for foreign-currency invoices",
                 )
             invoice.total_amount_aed = round(data.total_amount_aed, 2)
         else:
@@ -15095,33 +15093,22 @@ def export_vat_return(
         ET.indent(root, space="  ")
         xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
-        # P3-D: Validate the generated XML against the FTA VAT Return XSD schema
+        # P3-D: Validate the generated XML against the FTA VAT Return XSD schema (strictly blocking)
         _xsd_path = os.path.join(os.path.dirname(__file__), "utils", "fta_vat_return_schema.xsd")
-        try:
-            from lxml import etree as _lxml_etree
-            with open(_xsd_path, "rb") as _xf:
-                _xmlschema_doc = _lxml_etree.parse(_xf)
-            _xmlschema = _lxml_etree.XMLSchema(_xmlschema_doc)
-            _doc = _lxml_etree.fromstring(xml_bytes)
-            if not _xmlschema.validate(_doc):
-                _errors = "; ".join(str(e) for e in _xmlschema.error_log)
-                log_audit_event(
-                    db, "VAT_RETURN_XML_INVALID",
-                    user_id=current_user.id, company_id=current_user.company_id,
-                    resource_type="vat_return", resource_id=return_id,
-                    description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
-                )
-                raise HTTPException(500, f"VAT return XML failed FTA schema validation: {_errors[:500]}")
-        except HTTPException:
-            raise
-        except Exception as _xsd_err:
-            # XSD file missing or lxml error — log and continue (do not block download)
+        from lxml import etree as _lxml_etree
+        with open(_xsd_path, "rb") as _xf:
+            _xmlschema_doc = _lxml_etree.parse(_xf)
+        _xmlschema = _lxml_etree.XMLSchema(_xmlschema_doc)
+        _doc = _lxml_etree.fromstring(xml_bytes)
+        if not _xmlschema.validate(_doc):
+            _errors = "; ".join(str(e) for e in _xmlschema.error_log)
             log_audit_event(
-                db, "VAT_RETURN_XML_SCHEMA_WARN",
+                db, "VAT_RETURN_XML_INVALID",
                 user_id=current_user.id, company_id=current_user.company_id,
                 resource_type="vat_return", resource_id=return_id,
-                description=f"VAT return XSD validation skipped: {str(_xsd_err)[:300]}",
+                description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
             )
+            raise HTTPException(500, f"VAT return XML failed FTA schema validation: {_errors[:500]}")
 
         filename = f"vat_return_{period_start}_{period_end}.xml"
         return StreamingResponse(
