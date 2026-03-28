@@ -7146,6 +7146,64 @@ def verify_invoice_payment(
     }
 
 
+def _build_periodic_date_range(period_type: str, year: int, period: int):
+    """
+    Task 21 — compute (start_dt, end_dt, period_label, period_type, period) for
+    weekly / monthly / quarterly / annual period types.
+    Returns (start_dt, end_dt, period_label, normalised_period_type, normalised_period).
+    """
+    from datetime import date, timedelta
+    import calendar
+
+    today = date.today()
+
+    if period_type == "weekly":
+        if year is None:
+            year = today.isocalendar()[0]
+        if period is None:
+            period = today.isocalendar()[1]
+        # ISO week: Monday→Sunday
+        # Jan 4 is always in week 1 of its year
+        jan4 = date(year, 1, 4)
+        week1_monday = jan4 - timedelta(days=jan4.weekday())
+        start_dt = week1_monday + timedelta(weeks=period - 1)
+        end_dt = start_dt + timedelta(days=6)
+        period_label = f"Week {period}, {year} ({start_dt.strftime('%d %b')}–{end_dt.strftime('%d %b %Y')})"
+        return start_dt, end_dt, period_label, "weekly", period
+
+    elif period_type == "quarterly":
+        if period is None:
+            period = (today.month - 1) // 3 + 1
+        if period < 1 or period > 4:
+            raise HTTPException(400, "period must be 1-4 for quarterly reports")
+        start_month = (period - 1) * 3 + 1
+        end_month = start_month + 2
+        start_dt = date(year, start_month, 1)
+        last_day = calendar.monthrange(year, end_month)[1]
+        end_dt = date(year, end_month, last_day)
+        period_label = f"Q{period} {year}"
+        return start_dt, end_dt, period_label, "quarterly", period
+
+    elif period_type == "annual":
+        # Full calendar year — period param unused (always 1)
+        start_dt = date(year, 1, 1)
+        end_dt = date(year, 12, 31)
+        period_label = f"Annual {year}"
+        return start_dt, end_dt, period_label, "annual", 1
+
+    else:
+        # monthly (default / fallback)
+        if period is None:
+            period = today.month
+        if period < 1 or period > 12:
+            raise HTTPException(400, "period must be 1-12 for monthly reports")
+        start_dt = date(year, period, 1)
+        last_day = calendar.monthrange(year, period)[1]
+        end_dt = date(year, period, last_day)
+        period_label = f"{calendar.month_name[period]} {year}"
+        return start_dt, end_dt, period_label, "monthly", period
+
+
 @app.get("/reports/periodic", tags=["Reports"])
 def get_periodic_report(
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -7155,12 +7213,12 @@ def get_periodic_report(
     period: int = None,
 ):
     """
-    Task 11 — Periodic Report: monthly or quarterly invoice summary.
+    Task 11 / Task 21 — Periodic Report: weekly, monthly, quarterly or annual invoice summary.
 
     Query parameters:
-    - period_type: "monthly" (default) or "quarterly"
+    - period_type: "weekly" | "monthly" (default) | "quarterly" | "annual"
     - year: calendar year (default: current year)
-    - period: 1-12 for monthly, 1-4 for quarterly (default: current period)
+    - period: ISO week number for weekly; 1-12 for monthly; 1-4 for quarterly; ignored for annual
 
     Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
     """
@@ -7178,27 +7236,9 @@ def get_periodic_report(
     if year is None:
         year = today.year
 
-    if period_type == "quarterly":
-        if period is None:
-            period = (today.month - 1) // 3 + 1
-        if period < 1 or period > 4:
-            raise HTTPException(400, "period must be 1-4 for quarterly reports")
-        start_month = (period - 1) * 3 + 1
-        end_month = start_month + 2
-        start_dt = date(year, start_month, 1)
-        last_day = calendar.monthrange(year, end_month)[1]
-        end_dt = date(year, end_month, last_day)
-        period_label = f"Q{period} {year}"
-    else:
-        period_type = "monthly"
-        if period is None:
-            period = today.month
-        if period < 1 or period > 12:
-            raise HTTPException(400, "period must be 1-12 for monthly reports")
-        start_dt = date(year, period, 1)
-        last_day = calendar.monthrange(year, period)[1]
-        end_dt = date(year, period, last_day)
-        period_label = f"{calendar.month_name[period]} {year}"
+    start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
+        period_type, year, period
+    )
 
     # Query all non-cancelled invoices in the period
     invoices = (
@@ -7268,6 +7308,292 @@ def get_periodic_report(
         "breakdown_by_type": list(breakdown.values()),
         "generated_at": datetime.utcnow().isoformat(),
     }
+
+
+@app.get("/reports/periodic/export", tags=["Reports"])
+def export_periodic_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period_type: str = "monthly",
+    year: int = None,
+    period: int = None,
+    format: str = "pdf",
+):
+    """
+    Task 21 — Export a periodic report as PDF or XLSX.
+
+    Query parameters:
+    - period_type: "weekly" | "monthly" | "quarterly" | "annual"
+    - year: calendar year (default: current year)
+    - period: period number (see GET /reports/periodic for semantics)
+    - format: "pdf" (default) | "xlsx"
+
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
+    """
+    from datetime import date as _date
+    import calendar
+    import io
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
+        raise HTTPException(403, "Insufficient permissions to export periodic reports")
+
+    today = _date.today()
+    if year is None:
+        year = today.year
+
+    start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
+        period_type, year, period
+    )
+
+    # Query invoices
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.status != InvoiceStatus.CANCELLED,
+            InvoiceDB.issue_date >= start_dt,
+            InvoiceDB.issue_date <= end_dt,
+        )
+        .all()
+    )
+
+    type_labels = {
+        "380": "Tax Invoice",
+        "381": "Credit Note",
+        "383": "Debit Note",
+        "480": "Commercial Invoice",
+        "81": "Simplified Tax Invoice",
+    }
+    breakdown = {}
+    overall = {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
+
+    for inv in invoices:
+        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
+        if type_code not in breakdown:
+            breakdown[type_code] = {
+                "invoice_type_code": type_code,
+                "invoice_type_label": type_labels.get(type_code, type_code),
+                "count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0,
+            }
+        e = breakdown[type_code]
+        e["count"] += 1
+        e["subtotal"] += float(inv.subtotal_amount or 0)
+        e["tax_amount"] += float(inv.tax_amount or 0)
+        e["total_amount"] += float(inv.total_amount or 0)
+        overall["count"] += 1
+        overall["subtotal"] += float(inv.subtotal_amount or 0)
+        overall["tax_amount"] += float(inv.tax_amount or 0)
+        overall["total_amount"] += float(inv.total_amount or 0)
+
+    for row in breakdown.values():
+        row["subtotal"] = round(row["subtotal"], 2)
+        row["tax_amount"] = round(row["tax_amount"], 2)
+        row["total_amount"] = round(row["total_amount"], 2)
+    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
+    breakdown_rows = list(breakdown.values())
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    safe_label = period_label.replace(",", "").replace(" ", "_").replace("–", "-")
+
+    if format.lower() == "xlsx":
+        # ── XLSX export ────────────────────────────────────────────────────────
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Periodic Report"
+
+        # Styling helpers
+        primary_fill = PatternFill("solid", fgColor="0066CC")
+        header_fill = PatternFill("solid", fgColor="E8F0FE")
+        total_fill = PatternFill("solid", fgColor="DBEAFE")
+        white_font = Font(color="FFFFFF", bold=True)
+        bold_font = Font(bold=True)
+        thin = Side(style="thin", color="CCCCCC")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def _set(ws, row, col, value, font=None, fill=None, align="left", number_format=None):
+            cell = ws.cell(row=row, column=col, value=value)
+            if font:
+                cell.font = font
+            if fill:
+                cell.fill = fill
+            cell.alignment = Alignment(horizontal=align, vertical="center")
+            if number_format:
+                cell.number_format = number_format
+            cell.border = border
+            return cell
+
+        # Title block
+        ws.merge_cells("A1:E1")
+        t = ws.cell(row=1, column=1, value="InvoLinks — Periodic Invoice Report")
+        t.font = Font(size=14, bold=True, color="0066CC")
+        t.alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("A2:E2")
+        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}  |  {start_dt.isoformat()} to {end_dt.isoformat()}")
+        t2.alignment = Alignment(horizontal="center")
+        t2.font = Font(italic=True, color="555555")
+
+        ws.merge_cells("A3:E3")
+        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
+        t3.alignment = Alignment(horizontal="center")
+        t3.font = Font(italic=True, size=9, color="888888")
+
+        # Column headers (row 5)
+        headers = ["Invoice Type", "Count", "Net Amount (AED)", "VAT Amount (AED)", "Gross Total (AED)"]
+        for col, h in enumerate(headers, 1):
+            _set(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
+
+        # Data rows
+        for r_idx, row in enumerate(breakdown_rows, 6):
+            _set(ws, r_idx, 1, f"{row['invoice_type_label']} ({row['invoice_type_code']})", font=bold_font, fill=header_fill)
+            _set(ws, r_idx, 2, row["count"], align="center")
+            _set(ws, r_idx, 3, row["subtotal"], number_format="#,##0.00", align="right")
+            _set(ws, r_idx, 4, row["tax_amount"], number_format="#,##0.00", align="right")
+            _set(ws, r_idx, 5, row["total_amount"], number_format="#,##0.00", align="right")
+
+        # Totals row
+        total_row = 6 + len(breakdown_rows)
+        _set(ws, total_row, 1, "TOTAL", font=Font(bold=True, color="0066CC"), fill=total_fill)
+        _set(ws, total_row, 2, overall["count"], font=bold_font, fill=total_fill, align="center")
+        _set(ws, total_row, 3, overall["subtotal"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
+        _set(ws, total_row, 4, overall["tax_amount"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
+        _set(ws, total_row, 5, overall["total_amount"], font=Font(bold=True, size=12, color="0066CC"), fill=total_fill, number_format="#,##0.00", align="right")
+
+        # Column widths
+        ws.column_dimensions["A"].width = 36
+        ws.column_dimensions["B"].width = 10
+        for col in ["C", "D", "E"]:
+            ws.column_dimensions[col].width = 22
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="periodic_report_{safe_label}.xlsx"'},
+        )
+
+    else:
+        # ── PDF export ─────────────────────────────────────────────────────────
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import cm
+            from reportlab.lib import colors as rl_colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        except ImportError:
+            raise HTTPException(500, "reportlab not installed — cannot generate PDF")
+
+        buffer = io.BytesIO()
+        PAGE_WIDTH, PAGE_HEIGHT = A4
+        MARGIN = 2 * cm
+        CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN)
+        PRIMARY = rl_colors.HexColor("#0066CC")
+        LIGHT_BLUE = rl_colors.HexColor("#E8F0FE")
+        TOTAL_BG = rl_colors.HexColor("#DBEAFE")
+        GRAY = rl_colors.HexColor("#666666")
+        DARK = rl_colors.HexColor("#333333")
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=MARGIN, rightMargin=MARGIN,
+            topMargin=MARGIN, bottomMargin=MARGIN,
+            title=f"Periodic Report — {period_label}",
+            author="InvoLinks",
+        )
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle("Title21", fontSize=16, textColor=PRIMARY, fontName="Helvetica-Bold",
+                                   alignment=TA_CENTER, spaceAfter=4))
+        styles.add(ParagraphStyle("Sub21", fontSize=10, textColor=GRAY, alignment=TA_CENTER, spaceAfter=2))
+        styles.add(ParagraphStyle("Small21", fontSize=8, textColor=GRAY, alignment=TA_CENTER, spaceAfter=8))
+
+        story = []
+        story.append(Paragraph("InvoLinks — Periodic Invoice Report", styles["Title21"]))
+        story.append(Paragraph(f"Period: {period_label}  |  {start_dt.isoformat()} to {end_dt.isoformat()}", styles["Sub21"]))
+        story.append(Paragraph(f"Generated: {generated_at}", styles["Small21"]))
+        story.append(Spacer(1, 12))
+
+        # Build table data
+        col_widths = [CONTENT_WIDTH * 0.40, CONTENT_WIDTH * 0.10, CONTENT_WIDTH * 0.17,
+                      CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.16]
+        table_data = [[
+            Paragraph("<b>Invoice Type</b>", styles["Normal"]),
+            Paragraph("<b>Count</b>", styles["Normal"]),
+            Paragraph("<b>Net (AED)</b>", styles["Normal"]),
+            Paragraph("<b>VAT (AED)</b>", styles["Normal"]),
+            Paragraph("<b>Gross (AED)</b>", styles["Normal"]),
+        ]]
+        for row in breakdown_rows:
+            label = f"{row['invoice_type_label']} ({row['invoice_type_code']})"
+            table_data.append([
+                Paragraph(label, styles["Normal"]),
+                Paragraph(str(row["count"]), styles["Normal"]),
+                Paragraph(f"{row['subtotal']:,.2f}", styles["Normal"]),
+                Paragraph(f"{row['tax_amount']:,.2f}", styles["Normal"]),
+                Paragraph(f"<b>{row['total_amount']:,.2f}</b>", styles["Normal"]),
+            ])
+        # Totals row
+        table_data.append([
+            Paragraph("<b>TOTAL</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['count']}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['subtotal']:,.2f}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['tax_amount']:,.2f}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['total_amount']:,.2f}</b>", styles["Normal"]),
+        ])
+
+        tbl = Table(table_data, colWidths=col_widths)
+        n_data = len(table_data)
+        tbl.setStyle(TableStyle([
+            # Header row
+            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            # Data rows
+            ("BACKGROUND", (0, 1), (-1, n_data - 2), rl_colors.white),
+            ("FONTNAME", (0, 1), (-1, n_data - 2), "Helvetica"),
+            ("FONTSIZE", (0, 1), (-1, n_data - 2), 9),
+            ("TOPPADDING", (0, 1), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 0.5, GRAY),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            # Total row
+            ("BACKGROUND", (0, n_data - 1), (-1, n_data - 1), TOTAL_BG),
+            ("FONTNAME", (0, n_data - 1), (-1, n_data - 1), "Helvetica-Bold"),
+            ("TEXTCOLOR", (0, n_data - 1), (0, n_data - 1), PRIMARY),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(
+            f"<font color='#888888' size='8'>This report was generated by InvoLinks for internal FTA compliance purposes. "
+            f"All amounts are in AED. Non-cancelled invoices only.</font>",
+            styles["Normal"],
+        ))
+
+        doc.build(story)
+        buffer.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="periodic_report_{safe_label}.pdf"'},
+        )
 
 
 @app.get("/reports/daily-reconciliation", tags=["Reports"])

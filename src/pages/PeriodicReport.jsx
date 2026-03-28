@@ -5,7 +5,7 @@ import {
   Download,
   FileText,
   TrendingUp,
-  ChevronDown,
+  FileSpreadsheet,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
@@ -22,6 +22,23 @@ const QUARTERS = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct
 const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
+function getISOWeeksInYear(year) {
+  const dec28 = new Date(year, 11, 28);
+  const dayOfWeek = dec28.getDay() || 7;
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeekJan4 = jan4.getDay() || 7;
+  const week = Math.ceil((((dec28 - jan4) / 86400000) + dayOfWeekJan4) / 7);
+  return week;
+}
+
+function currentISOWeek() {
+  const today = new Date();
+  const jan4 = new Date(today.getFullYear(), 0, 4);
+  const dayOfWeekJan4 = jan4.getDay() || 7;
+  const diff = (today - jan4) / 86400000;
+  return Math.ceil((diff + dayOfWeekJan4) / 7);
+}
+
 export default function PeriodicReport() {
   const navigate = useNavigate();
   const [periodType, setPeriodType] = useState("monthly");
@@ -30,12 +47,20 @@ export default function PeriodicReport() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [exporting, setExporting] = useState(null);
+
+  const weeksInYear = getISOWeeksInYear(year);
+  const WEEKS = Array.from({ length: weeksInYear }, (_, i) => i + 1);
 
   useEffect(() => {
     if (periodType === "monthly") {
       setPeriod(new Date().getMonth() + 1);
-    } else {
+    } else if (periodType === "quarterly") {
       setPeriod(Math.floor(new Date().getMonth() / 3) + 1);
+    } else if (periodType === "weekly") {
+      setPeriod(currentISOWeek());
+    } else {
+      setPeriod(1);
     }
   }, [periodType]);
 
@@ -43,9 +68,9 @@ export default function PeriodicReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get("/reports/periodic", {
-        params: { period_type: periodType, year, period },
-      });
+      const params = { period_type: periodType, year };
+      if (periodType !== "annual") params.period = period;
+      const res = await apiClient.get("/reports/periodic", { params });
       setReport(res.data);
     } catch (err) {
       setError(
@@ -102,6 +127,53 @@ export default function PeriodicReport() {
     document.body.removeChild(link);
   };
 
+  const handleExportFile = async (fmt) => {
+    setExporting(fmt);
+    try {
+      const params = { period_type: periodType, year, format: fmt };
+      if (periodType !== "annual") params.period = period;
+      const res = await apiClient.get("/reports/periodic/export", {
+        params,
+        responseType: "blob",
+      });
+      const mimeType =
+        fmt === "xlsx"
+          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : "application/pdf";
+      const blob = new Blob([res.data], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const label = report?.period_label?.replace(/[\s,]/g, "_") || "report";
+      link.href = url;
+      link.download = `periodic_report_${label}.${fmt}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(`Failed to export ${fmt.toUpperCase()}. Please try again.`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const periodLabel = () => {
+    if (periodType === "monthly") return "Month";
+    if (periodType === "quarterly") return "Quarter";
+    if (periodType === "weekly") return "ISO Week";
+    return null;
+  };
+
+  const periodOptions = () => {
+    if (periodType === "monthly")
+      return MONTHS.map((m, i) => ({ value: i + 1, label: m }));
+    if (periodType === "quarterly")
+      return QUARTERS.map((q, i) => ({ value: i + 1, label: q }));
+    if (periodType === "weekly")
+      return WEEKS.map((w) => ({ value: w, label: `Week ${w}` }));
+    return [];
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -115,18 +187,36 @@ export default function PeriodicReport() {
                 Periodic Invoice Report
               </h1>
               <p className="text-sm text-gray-500">
-                Monthly & quarterly invoice summary for FTA compliance
+                Weekly, monthly, quarterly &amp; annual invoice summaries for FTA compliance
               </p>
             </div>
           </div>
           {report && (
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-            >
-              <Download className="h-4 w-4" />
-              Export CSV
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium border border-gray-300"
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </button>
+              <button
+                onClick={() => handleExportFile("xlsx")}
+                disabled={exporting === "xlsx"}
+                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                {exporting === "xlsx" ? "Exporting…" : "Download XLSX"}
+              </button>
+              <button
+                onClick={() => handleExportFile("pdf")}
+                disabled={exporting === "pdf"}
+                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+              >
+                <FileText className="h-4 w-4" />
+                {exporting === "pdf" ? "Exporting…" : "Download PDF"}
+              </button>
+            </div>
           )}
         </div>
 
@@ -142,8 +232,10 @@ export default function PeriodicReport() {
                 onChange={(e) => setPeriodType(e.target.value)}
                 className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               >
+                <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
                 <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
               </select>
             </div>
 
@@ -164,28 +256,24 @@ export default function PeriodicReport() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">
-                {periodType === "monthly" ? "Month" : "Quarter"}
-              </label>
-              <select
-                value={period}
-                onChange={(e) => setPeriod(Number(e.target.value))}
-                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              >
-                {periodType === "monthly"
-                  ? MONTHS.map((m, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {m}
-                      </option>
-                    ))
-                  : QUARTERS.map((q, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        {q}
-                      </option>
-                    ))}
-              </select>
-            </div>
+            {periodType !== "annual" && (
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  {periodLabel()}
+                </label>
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(Number(e.target.value))}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                >
+                  {periodOptions().map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <button
               onClick={fetchReport}
@@ -221,16 +309,14 @@ export default function PeriodicReport() {
               {/* Summary cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 {[
-                  { label: "Total Invoices", value: report.summary.count, prefix: "" },
-                  { label: "Net Amount (AED)", value: fmt(report.summary.subtotal), prefix: "" },
-                  { label: "VAT Collected (AED)", value: fmt(report.summary.tax_amount), prefix: "" },
-                  { label: "Gross Total (AED)", value: fmt(report.summary.total_amount), prefix: "" },
+                  { label: "Total Invoices", value: report.summary.count },
+                  { label: "Net Amount (AED)", value: fmt(report.summary.subtotal) },
+                  { label: "VAT Collected (AED)", value: fmt(report.summary.tax_amount) },
+                  { label: "Gross Total (AED)", value: fmt(report.summary.total_amount) },
                 ].map((card) => (
                   <div key={card.label} className="bg-white rounded-xl border p-4">
                     <p className="text-xs font-medium text-gray-500 mb-1">{card.label}</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      {card.prefix}{card.value}
-                    </p>
+                    <p className="text-xl font-bold text-gray-900">{card.value}</p>
                   </div>
                 ))}
               </div>
