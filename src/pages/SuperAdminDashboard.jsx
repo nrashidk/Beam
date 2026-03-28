@@ -158,6 +158,7 @@ export default function SuperAdminDashboard() {
   const [editingCompany, setEditingCompany] = useState(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [addExtraInvoices, setAddExtraInvoices] = useState(0);
   const [addExtraMonths, setAddExtraMonths] = useState(0);
   const [freePlanType, setFreePlanType] = useState("INVOICE_COUNT"); // INVOICE_COUNT or DURATION
@@ -422,6 +423,39 @@ export default function SuperAdminDashboard() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteCompany() {
+    if (!editingCompany) return;
+    const confirmed = window.confirm(
+      `⚠️ Permanently delete company "${editingCompany.legal_name}"?\n\n` +
+        "This will remove all associated data. This action CANNOT be undone.\n\n" +
+        "Note: deletion is blocked by FTA regulations if the company has invoices within the last 5 years.\n\n" +
+        "Continue?"
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await api.delete(`/admin/companies/${editingCompany.id}`);
+      setSuccessMessage(`Company "${editingCompany.legal_name}" deleted successfully.`);
+      setShowEditModal(false);
+      setEditingCompany(null);
+      window.location.reload();
+    } catch (err) {
+      const status = err.response?.status;
+      const detail = err.response?.data?.detail || "Failed to delete company.";
+      if (status === 409) {
+        alert(
+          `⛔ Deletion blocked by FTA 5-year retention policy.\n\n${detail}\n\n` +
+            "This company has invoices within the last 5 years and cannot be deleted until the retention period has passed."
+        );
+      } else {
+        alert(`Error: ${detail}`);
+      }
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1654,17 +1688,25 @@ export default function SuperAdminDashboard() {
                 <div className="flex gap-2 pt-4 border-t">
                   <Button
                     onClick={saveCompanyChanges}
-                    disabled={saving || resetting}
+                    disabled={saving || resetting || deleting}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                   >
                     {saving ? "Saving..." : "Save All Changes"}
                   </Button>
                   <Button
                     onClick={handleResetTrial}
-                    disabled={saving || resetting}
+                    disabled={saving || resetting || deleting}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                   >
                     {resetting ? "Resetting..." : "🔄 Reset Trial"}
+                  </Button>
+                  <Button
+                    onClick={handleDeleteCompany}
+                    disabled={saving || resetting || deleting}
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    title="Permanently delete this company (blocked if invoices exist within 5 years)"
+                  >
+                    {deleting ? "Deleting..." : "🗑 Delete"}
                   </Button>
                   <Button
                     variant="outline"
@@ -1675,7 +1717,7 @@ export default function SuperAdminDashboard() {
                       setAddExtraMonths(0);
                       setIsSuspended(false);
                     }}
-                    disabled={saving}
+                    disabled={saving || deleting}
                   >
                     Cancel
                   </Button>

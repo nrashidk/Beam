@@ -1654,6 +1654,27 @@ class JournalEntryLineDB(Base):
 # ==================== BACKUP LOG MODEL (Task 29 — P2-E) ====================
 
 
+class CustomerDB(Base):
+    """
+    Task 30 (P3-B): Standalone customer/contact book entry per company.
+    Enables FTA 5-year retention guard on delete.
+    """
+
+    __tablename__ = "customers"
+
+    id = Column(String, primary_key=True, default=lambda: f"cust_{uuid4().hex[:12]}")
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=True, index=True)
+    trn = Column(String, nullable=True)
+    address = Column(Text, nullable=True)
+    city = Column(String, nullable=True)
+    country = Column(String, default="AE")
+    phone = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BackupLogDB(Base):
     """Records every automated and manual backup event with audit metadata."""
 
@@ -8730,6 +8751,666 @@ def export_periodic_report(
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="periodic_report_{safe_label}.pdf"'},
         )
+
+
+# ==================== AD HOC REPORT ENDPOINTS (Task 30 — P3-A) ====================
+
+def _build_adhoc_breakdown(invoices_list, type_labels):
+    """Build the same breakdown-by-type + overall summary structure as the periodic report."""
+    breakdown = {}
+    overall = {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
+    for inv in invoices_list:
+        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
+        if type_code not in breakdown:
+            breakdown[type_code] = {
+                "invoice_type_code": type_code,
+                "invoice_type_label": type_labels.get(type_code, type_code),
+                "count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0,
+            }
+        e = breakdown[type_code]
+        e["count"] += 1
+        e["subtotal"] += float(getattr(inv, "subtotal_amount", 0) or 0)
+        e["tax_amount"] += float(getattr(inv, "tax_amount", 0) or 0)
+        e["total_amount"] += float(getattr(inv, "total_amount", 0) or 0)
+        overall["count"] += 1
+        overall["subtotal"] += float(getattr(inv, "subtotal_amount", 0) or 0)
+        overall["tax_amount"] += float(getattr(inv, "tax_amount", 0) or 0)
+        overall["total_amount"] += float(getattr(inv, "total_amount", 0) or 0)
+    for row in breakdown.values():
+        row["subtotal"] = round(row["subtotal"], 2)
+        row["tax_amount"] = round(row["tax_amount"], 2)
+        row["total_amount"] = round(row["total_amount"], 2)
+    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
+    return list(breakdown.values()), overall
+
+
+@app.get("/reports/adhoc", tags=["Reports"])
+def get_adhoc_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: str = None,
+    to_date: str = None,
+    type: str = "all",
+):
+    """
+    Task 30 (P3-A) — Ad Hoc Report: arbitrary date-range invoice summary.
+
+    Query parameters:
+    - from_date: ISO date string YYYY-MM-DD (required)
+    - to_date:   ISO date string YYYY-MM-DD (required)
+    - type:      "sales" | "purchases" | "all" (default: all)
+
+    Returns the same payload shape as GET /reports/periodic.
+    """
+    from datetime import date as _date
+
+    if not has_permission(current_user, "reports", "view"):
+        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
+
+    if not from_date or not to_date:
+        raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
+
+    try:
+        start_dt = _date.fromisoformat(from_date)
+        end_dt = _date.fromisoformat(to_date)
+    except ValueError:
+        raise HTTPException(400, "from_date and to_date must be valid ISO dates (YYYY-MM-DD)")
+
+    if start_dt > end_dt:
+        raise HTTPException(400, "from_date must not be after to_date")
+
+    type_labels = {
+        "380": "Tax Invoice", "381": "Credit Note", "383": "Debit Note",
+        "480": "Commercial Invoice", "81": "Simplified Tax Invoice",
+    }
+
+    invoices = []
+    if type in ("sales", "all"):
+        invoices += (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.company_id == current_user.company_id,
+                InvoiceDB.status != InvoiceStatus.CANCELLED,
+                InvoiceDB.issue_date >= start_dt,
+                InvoiceDB.issue_date <= end_dt,
+            )
+            .all()
+        )
+    if type in ("purchases", "all"):
+        invoices += (
+            db.query(InwardInvoiceDB)
+            .filter(
+                InwardInvoiceDB.company_id == current_user.company_id,
+                InwardInvoiceDB.invoice_date >= start_dt,
+                InwardInvoiceDB.invoice_date <= end_dt,
+            )
+            .all()
+        )
+
+    breakdown_rows, overall = _build_adhoc_breakdown(invoices, type_labels)
+    period_label = f"Custom Report: {start_dt.isoformat()} to {end_dt.isoformat()}"
+
+    return {
+        "period_type": "adhoc",
+        "period_label": period_label,
+        "start_date": start_dt.isoformat(),
+        "end_date": end_dt.isoformat(),
+        "report_type": type,
+        "summary": overall,
+        "breakdown_by_type": breakdown_rows,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/reports/adhoc/export", tags=["Reports"])
+def export_adhoc_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: str = None,
+    to_date: str = None,
+    type: str = "all",
+    format: str = "xlsx",
+):
+    """
+    Task 30 (P3-A) — Export an ad hoc report as XLSX, PDF, or CSV.
+
+    Query parameters:
+    - from_date, to_date: ISO dates (required)
+    - type:   "sales" | "purchases" | "all"
+    - format: "xlsx" | "pdf" | "csv"
+    """
+    import io
+    from datetime import date as _date
+
+    if not has_permission(current_user, "reports", "export"):
+        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
+
+    if not from_date or not to_date:
+        raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
+
+    try:
+        start_dt = _date.fromisoformat(from_date)
+        end_dt = _date.fromisoformat(to_date)
+    except ValueError:
+        raise HTTPException(400, "from_date and to_date must be valid ISO dates (YYYY-MM-DD)")
+
+    if start_dt > end_dt:
+        raise HTTPException(400, "from_date must not be after to_date")
+
+    if format.lower() not in ("xlsx", "pdf", "csv"):
+        raise HTTPException(400, "format must be 'xlsx', 'pdf', or 'csv'")
+
+    type_labels = {
+        "380": "Tax Invoice", "381": "Credit Note", "383": "Debit Note",
+        "480": "Commercial Invoice", "81": "Simplified Tax Invoice",
+    }
+
+    invoices = []
+    if type in ("sales", "all"):
+        invoices += (
+            db.query(InvoiceDB)
+            .filter(
+                InvoiceDB.company_id == current_user.company_id,
+                InvoiceDB.status != InvoiceStatus.CANCELLED,
+                InvoiceDB.issue_date >= start_dt,
+                InvoiceDB.issue_date <= end_dt,
+            )
+            .all()
+        )
+    if type in ("purchases", "all"):
+        invoices += (
+            db.query(InwardInvoiceDB)
+            .filter(
+                InwardInvoiceDB.company_id == current_user.company_id,
+                InwardInvoiceDB.invoice_date >= start_dt,
+                InwardInvoiceDB.invoice_date <= end_dt,
+            )
+            .all()
+        )
+
+    breakdown_rows, overall = _build_adhoc_breakdown(invoices, type_labels)
+    period_label = f"Custom Report: {start_dt.isoformat()} to {end_dt.isoformat()}"
+    safe_label = f"adhoc_{start_dt.isoformat()}_{end_dt.isoformat()}"
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    if format.lower() == "csv":
+        rows = [
+            ["Ad Hoc Report", period_label],
+            ["Report Type", type],
+            ["Generated At", generated_at],
+            [],
+            ["Invoice Type", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"],
+            *[
+                [
+                    f"{row['invoice_type_label']} ({row['invoice_type_code']})",
+                    row["count"],
+                    row["subtotal"],
+                    row["tax_amount"],
+                    row["total_amount"],
+                ]
+                for row in breakdown_rows
+            ],
+            [],
+            ["TOTAL", overall["count"], overall["subtotal"], overall["tax_amount"], overall["total_amount"]],
+        ]
+        csv_str = "\n".join(",".join(str(c) for c in row) for row in rows)
+        from fastapi.responses import Response
+        return Response(
+            content=csv_str,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.csv"'},
+        )
+
+    if format.lower() == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Ad Hoc Report"
+
+        primary_fill = PatternFill("solid", fgColor="4F46E5")
+        header_fill = PatternFill("solid", fgColor="EEF2FF")
+        total_fill = PatternFill("solid", fgColor="E0E7FF")
+        white_font = Font(color="FFFFFF", bold=True)
+        bold_font = Font(bold=True)
+        thin = Side(style="thin", color="CCCCCC")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def _set(ws, row, col, value, font=None, fill=None, align="left", number_format=None):
+            cell = ws.cell(row=row, column=col, value=value)
+            if font:
+                cell.font = font
+            if fill:
+                cell.fill = fill
+            cell.alignment = Alignment(horizontal=align, vertical="center")
+            if number_format:
+                cell.number_format = number_format
+            cell.border = border
+            return cell
+
+        ws.merge_cells("A1:E1")
+        t = ws.cell(row=1, column=1, value="InvoLinks — Ad Hoc Invoice Report")
+        t.font = Font(size=14, bold=True, color="4F46E5")
+        t.alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("A2:E2")
+        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}  |  Type: {type.capitalize()}")
+        t2.alignment = Alignment(horizontal="center")
+        t2.font = Font(italic=True, color="555555")
+
+        ws.merge_cells("A3:E3")
+        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
+        t3.alignment = Alignment(horizontal="center")
+        t3.font = Font(italic=True, size=9, color="888888")
+
+        headers = ["Invoice Type", "Count", "Net Amount (AED)", "VAT Amount (AED)", "Gross Total (AED)"]
+        for col, h in enumerate(headers, 1):
+            _set(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
+
+        for r_idx, row in enumerate(breakdown_rows, 6):
+            _set(ws, r_idx, 1, f"{row['invoice_type_label']} ({row['invoice_type_code']})", font=bold_font, fill=header_fill)
+            _set(ws, r_idx, 2, row["count"], align="center")
+            _set(ws, r_idx, 3, row["subtotal"], number_format="#,##0.00", align="right")
+            _set(ws, r_idx, 4, row["tax_amount"], number_format="#,##0.00", align="right")
+            _set(ws, r_idx, 5, row["total_amount"], number_format="#,##0.00", align="right")
+
+        total_row = 6 + len(breakdown_rows)
+        _set(ws, total_row, 1, "TOTAL", font=Font(bold=True, color="4F46E5"), fill=total_fill)
+        _set(ws, total_row, 2, overall["count"], font=bold_font, fill=total_fill, align="center")
+        _set(ws, total_row, 3, overall["subtotal"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
+        _set(ws, total_row, 4, overall["tax_amount"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
+        _set(ws, total_row, 5, overall["total_amount"], font=Font(bold=True, size=12, color="4F46E5"), fill=total_fill, number_format="#,##0.00", align="right")
+
+        ws.column_dimensions["A"].width = 36
+        ws.column_dimensions["B"].width = 10
+        for col_letter in ["C", "D", "E"]:
+            ws.column_dimensions[col_letter].width = 22
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.xlsx"'},
+        )
+
+    else:
+        # PDF
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import cm
+            from reportlab.lib import colors as rl_colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_CENTER
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        except ImportError:
+            raise HTTPException(500, "reportlab not installed — cannot generate PDF")
+
+        buffer = io.BytesIO()
+        PAGE_WIDTH, PAGE_HEIGHT = A4
+        MARGIN = 2 * cm
+        CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN)
+        PRIMARY = rl_colors.HexColor("#4F46E5")
+        LIGHT = rl_colors.HexColor("#EEF2FF")
+        TOTAL_BG = rl_colors.HexColor("#E0E7FF")
+        GRAY = rl_colors.HexColor("#666666")
+
+        doc = SimpleDocTemplate(
+            buffer, pagesize=A4,
+            leftMargin=MARGIN, rightMargin=MARGIN,
+            topMargin=MARGIN, bottomMargin=MARGIN,
+            title=f"Ad Hoc Report — {period_label}", author="InvoLinks",
+        )
+        styles = getSampleStyleSheet()
+        styles.add(ParagraphStyle("TitleAH", fontSize=16, textColor=PRIMARY, fontName="Helvetica-Bold",
+                                   alignment=TA_CENTER, spaceAfter=4))
+        styles.add(ParagraphStyle("SubAH", fontSize=10, textColor=GRAY, alignment=TA_CENTER, spaceAfter=2))
+        styles.add(ParagraphStyle("SmallAH", fontSize=8, textColor=GRAY, alignment=TA_CENTER, spaceAfter=8))
+
+        story = [
+            Paragraph("InvoLinks — Ad Hoc Invoice Report", styles["TitleAH"]),
+            Paragraph(f"Period: {period_label}  |  Type: {type.capitalize()}", styles["SubAH"]),
+            Paragraph(f"Generated: {generated_at}", styles["SmallAH"]),
+            Spacer(1, 12),
+        ]
+
+        col_widths = [CONTENT_WIDTH * 0.40, CONTENT_WIDTH * 0.10,
+                      CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.16]
+        table_data = [[
+            Paragraph("<b>Invoice Type</b>", styles["Normal"]),
+            Paragraph("<b>Count</b>", styles["Normal"]),
+            Paragraph("<b>Net (AED)</b>", styles["Normal"]),
+            Paragraph("<b>VAT (AED)</b>", styles["Normal"]),
+            Paragraph("<b>Gross (AED)</b>", styles["Normal"]),
+        ]]
+        for row in breakdown_rows:
+            label = f"{row['invoice_type_label']} ({row['invoice_type_code']})"
+            table_data.append([
+                Paragraph(label, styles["Normal"]),
+                Paragraph(str(row["count"]), styles["Normal"]),
+                Paragraph(f"{row['subtotal']:,.2f}", styles["Normal"]),
+                Paragraph(f"{row['tax_amount']:,.2f}", styles["Normal"]),
+                Paragraph(f"<b>{row['total_amount']:,.2f}</b>", styles["Normal"]),
+            ])
+        table_data.append([
+            Paragraph("<b>TOTAL</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['count']}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['subtotal']:,.2f}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['tax_amount']:,.2f}</b>", styles["Normal"]),
+            Paragraph(f"<b>{overall['total_amount']:,.2f}</b>", styles["Normal"]),
+        ])
+        n_data = len(table_data)
+        tbl = Table(table_data, colWidths=col_widths)
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("BACKGROUND", (0, 1), (-1, n_data - 2), rl_colors.white),
+            ("FONTNAME", (0, 1), (-1, n_data - 2), "Helvetica"),
+            ("FONTSIZE", (0, 1), (-1, n_data - 2), 9),
+            ("TOPPADDING", (0, 1), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 0.5, GRAY),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BACKGROUND", (0, n_data - 1), (-1, n_data - 1), TOTAL_BG),
+            ("FONTNAME", (0, n_data - 1), (-1, n_data - 1), "Helvetica-Bold"),
+            ("TEXTCOLOR", (0, n_data - 1), (0, n_data - 1), PRIMARY),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(
+            f"<font color='#888888' size='8'>This ad hoc report was generated by InvoLinks for FTA compliance. "
+            f"All amounts are in AED. Non-cancelled invoices only.</font>",
+            styles["Normal"],
+        ))
+        doc.build(story)
+        buffer.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.pdf"'},
+        )
+
+
+# ==================== CUSTOMER CRUD ENDPOINTS (Task 30 — P3-B) ====================
+
+FTA_RETENTION_YEARS = 5
+
+
+def _customer_has_retention_invoices(db: Session, company_id: str, customer_name: str, customer_email: Optional[str] = None) -> bool:
+    """Check whether this customer has any sales invoices within the FTA 5-year retention window."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
+    q = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == company_id,
+        InvoiceDB.issue_date >= cutoff,
+    )
+    name_filter = InvoiceDB.customer_name == customer_name
+    if customer_email:
+        from sqlalchemy import or_
+        q = q.filter(or_(name_filter, InvoiceDB.customer_email == customer_email))
+    else:
+        q = q.filter(name_filter)
+    return q.first() is not None
+
+
+@app.get("/customers", tags=["Customers"])
+def list_customers(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    q: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List customer contacts for the current company. Task 30 (P3-B)."""
+    if not current_user.company_id:
+        raise HTTPException(403, "Customer management is not available for platform-level accounts")
+    query = db.query(CustomerDB).filter(CustomerDB.company_id == current_user.company_id)
+    if q:
+        pattern = f"%{q}%"
+        from sqlalchemy import or_
+        query = query.filter(or_(
+            CustomerDB.name.ilike(pattern),
+            CustomerDB.email.ilike(pattern),
+            CustomerDB.trn.ilike(pattern),
+        ))
+    total = query.count()
+    customers = query.order_by(CustomerDB.name).offset(offset).limit(min(limit, 500)).all()
+    return {
+        "total": total,
+        "customers": [
+            {
+                "id": c.id, "name": c.name, "email": c.email, "trn": c.trn,
+                "address": c.address, "city": c.city, "country": c.country,
+                "phone": c.phone,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in customers
+        ],
+    }
+
+
+@app.post("/customers", tags=["Customers"], status_code=201)
+def create_customer(
+    data: dict,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Create a customer contact for the current company. Task 30 (P3-B)."""
+    if not current_user.company_id:
+        raise HTTPException(403, "Customer management is not available for platform-level accounts")
+    name = (data.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Customer name is required")
+
+    customer = CustomerDB(
+        company_id=current_user.company_id,
+        name=name,
+        email=(data.get("email") or "").strip() or None,
+        trn=(data.get("trn") or "").strip() or None,
+        address=data.get("address"),
+        city=data.get("city"),
+        country=data.get("country") or "AE",
+        phone=data.get("phone"),
+    )
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    return {
+        "id": customer.id, "name": customer.name, "email": customer.email,
+        "trn": customer.trn, "country": customer.country,
+        "created_at": customer.created_at.isoformat() if customer.created_at else None,
+    }
+
+
+@app.get("/customers/{customer_id}", tags=["Customers"])
+def get_customer(
+    customer_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Get a single customer contact. Task 30 (P3-B)."""
+    customer = db.query(CustomerDB).filter(
+        CustomerDB.id == customer_id,
+        CustomerDB.company_id == current_user.company_id,
+    ).first()
+    if not customer:
+        raise HTTPException(404, "Customer not found")
+    return {
+        "id": customer.id, "name": customer.name, "email": customer.email,
+        "trn": customer.trn, "address": customer.address, "city": customer.city,
+        "country": customer.country, "phone": customer.phone,
+        "created_at": customer.created_at.isoformat() if customer.created_at else None,
+        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
+    }
+
+
+@app.put("/customers/{customer_id}", tags=["Customers"])
+def update_customer(
+    customer_id: str,
+    data: dict,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Update a customer contact. Task 30 (P3-B)."""
+    customer = db.query(CustomerDB).filter(
+        CustomerDB.id == customer_id,
+        CustomerDB.company_id == current_user.company_id,
+    ).first()
+    if not customer:
+        raise HTTPException(404, "Customer not found")
+
+    if "name" in data:
+        name = (data["name"] or "").strip()
+        if not name:
+            raise HTTPException(400, "Customer name cannot be empty")
+        customer.name = name
+    if "email" in data:
+        customer.email = (data["email"] or "").strip() or None
+    if "trn" in data:
+        customer.trn = (data["trn"] or "").strip() or None
+    if "address" in data:
+        customer.address = data["address"]
+    if "city" in data:
+        customer.city = data["city"]
+    if "country" in data:
+        customer.country = data["country"] or "AE"
+    if "phone" in data:
+        customer.phone = data["phone"]
+    customer.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(customer)
+    return {"id": customer.id, "name": customer.name, "email": customer.email}
+
+
+@app.delete("/customers/{customer_id}", tags=["Customers"])
+def delete_customer(
+    customer_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete a customer contact.
+    Task 30 (P3-B) — FTA 5-year retention guard:
+    Returns HTTP 409 if the customer has invoices issued within the last 5 years.
+    """
+    customer = db.query(CustomerDB).filter(
+        CustomerDB.id == customer_id,
+        CustomerDB.company_id == current_user.company_id,
+    ).first()
+    if not customer:
+        raise HTTPException(404, "Customer not found")
+
+    if _customer_has_retention_invoices(db, current_user.company_id, customer.name, customer.email):
+        log_audit_event(
+            db=db,
+            action="CUSTOMER_DELETE_BLOCKED_RETENTION",
+            user_id=current_user.id,
+            company_id=current_user.company_id,
+            resource_type="customer",
+            resource_id=customer_id,
+            description=(
+                f"Customer delete blocked by FTA 5-year retention policy. "
+                f"Customer: {customer.name} ({customer.email or 'no email'}) "
+                f"has invoices within the last {FTA_RETENTION_YEARS} years."
+            ),
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
+        raise HTTPException(
+            409,
+            "Cannot delete customer with invoices within the 5-year FTA retention period",
+        )
+
+    log_audit_event(
+        db=db,
+        action="CUSTOMER_DELETED",
+        user_id=current_user.id,
+        company_id=current_user.company_id,
+        resource_type="customer",
+        resource_id=customer_id,
+        description=f"Customer deleted: {customer.name} ({customer.email or 'no email'})",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.delete(customer)
+    db.commit()
+    return {"status": "deleted", "id": customer_id}
+
+
+@app.delete("/admin/companies/{company_id}", tags=["Admin"])
+def delete_company(
+    company_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Super-admin: permanently delete a company account.
+    Task 30 (P3-B) — FTA 5-year retention guard:
+    Returns HTTP 409 if the company has any invoices issued within the last 5 years.
+    Applies to all roles including SUPER_ADMIN.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
+    if not company:
+        raise HTTPException(404, "Company not found")
+
+    from datetime import timedelta
+    cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
+    has_recent_invoices = (
+        db.query(InvoiceDB)
+        .filter(InvoiceDB.company_id == company_id, InvoiceDB.issue_date >= cutoff)
+        .first()
+    ) is not None
+
+    if has_recent_invoices:
+        log_audit_event(
+            db=db,
+            action="CUSTOMER_DELETE_BLOCKED_RETENTION",
+            user_id=current_user.id,
+            company_id=company_id,
+            resource_type="company",
+            resource_id=company_id,
+            description=(
+                f"Company delete blocked by FTA 5-year retention policy. "
+                f"Company: {company.legal_name} (id={company_id}) "
+                f"has invoices within the last {FTA_RETENTION_YEARS} years."
+            ),
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
+        raise HTTPException(
+            409,
+            "Cannot delete company with invoices within the 5-year FTA retention period",
+        )
+
+    log_audit_event(
+        db=db,
+        action="COMPANY_DELETED",
+        user_id=current_user.id,
+        company_id=company_id,
+        resource_type="company",
+        resource_id=company_id,
+        description=f"Company permanently deleted by super admin: {company.legal_name} (id={company_id})",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.delete(company)
+    db.commit()
+    return {"status": "deleted", "id": company_id}
 
 
 @app.get("/reports/daily-reconciliation", tags=["Reports"])

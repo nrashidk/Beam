@@ -87,3 +87,18 @@ Detailed explanations preferred.
 -   **boto3 (AWS SES):** Email delivery service.
 -   **arabic-reshaper + python-bidi:** Arabic text shaping and RTL reordering for PDF generation.
 -   **reportlab TTFont (Amiri):** Arabic-script font for bilingual PDF invoice headers (fonts/Amiri-Regular.ttf, fonts/Amiri-Bold.ttf).
+## Task 30: Ad Hoc Reports & Customer Retention Policy (FTA Gap Closure)
+
+### Ad Hoc Report (P3-A)
+- **Backend:** `GET /reports/adhoc` — arbitrary date-range invoice summary (sales, purchases, all)
+- **Export:** `GET /reports/adhoc/export` — XLSX, PDF, CSV exports with same styling as periodic report
+- **Helper:** `_build_adhoc_breakdown()` helper reuses the same invoice aggregation structure as periodic report
+- **Frontend:** PeriodicReport.jsx updated with a second "Custom Date Range" tab (indigo theme, Search icon)
+  - From/To date pickers, Invoice Type filter, inline export buttons (CSV/XLSX/PDF)
+
+### Customer Retention Policy (P3-B)
+- **CustomerDB model** (`customers` table) — per-company contact book: id, company_id, name, email, trn, address, city, country, phone, created_at, updated_at
+- **Customer CRUD:** `GET /customers`, `POST /customers`, `GET /customers/{id}`, `PUT /customers/{id}`, `DELETE /customers/{id}`
+- **FTA 5-year retention guard on `DELETE /customers/{id}`:** Returns HTTP 409 if customer has invoices with issue_date >= NOW()-5yr. Logs `CUSTOMER_DELETE_BLOCKED_RETENTION` to audit log.
+- **Super admin company delete:** `DELETE /admin/companies/{company_id}` — super admin only, FTA retention guard (409 if recent invoices), logs `CUSTOMER_DELETE_BLOCKED_RETENTION` or `COMPANY_DELETED`.
+- **SuperAdminDashboard.jsx:** Delete Company button (red) added to company edit modal with confirmation dialog and 409-specific error message.
