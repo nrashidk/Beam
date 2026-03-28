@@ -3212,12 +3212,13 @@ def verify_hash_chain_integrity(
     # Fetch only immutable (issued) invoices for chain verification.
     # Drafts are excluded because they can still be edited and have no stable
     # hash link — including them would produce noisy false failures.
+    # Must match the status set used in issue_invoice() predecessor selection
+    # so that chain membership is identical in both creation and verification.
     _verify_statuses = [
         InvoiceStatus.ISSUED,
         InvoiceStatus.SENT,
         InvoiceStatus.VIEWED,
         InvoiceStatus.PAID,
-        InvoiceStatus.CANCELLED,  # Cancelled invoices are also immutable
     ]
     q = (
         db.query(InvoiceDB)
