@@ -3196,8 +3196,6 @@ def verify_hash_chain_integrity(
 
     Access: SUPER_ADMIN (any company, optional company_id filter), COMPANY_ADMIN (own company).
     """
-    from utils.crypto_utils import InvoiceCrypto
-
     if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
         raise HTTPException(403, "Only Super Admin or Company Admin can run integrity checks")
 
@@ -3223,8 +3221,6 @@ def verify_hash_chain_integrity(
     invoices = q.all()
     total = len(invoices)
 
-    crypto = InvoiceCrypto()
-
     valid_links = 0
     first_broken_id = None
     first_broken_number = None
@@ -3244,36 +3240,31 @@ def verify_hash_chain_integrity(
                 continue
             prev = chain[i - 1]
 
-            # Build data dicts for hash computation
-            prev_data = {
-                "invoice_number": prev.invoice_number or "",
-                "issue_date": str(prev.issue_date) if prev.issue_date else "",
-                "supplier_trn": prev.supplier_trn or "",
-                "customer_trn": prev.customer_trn or "",
-                "total_amount": str(prev.total_amount or "0.0"),
-                "tax_amount": str(prev.tax_amount or "0.0"),
-                "prev_invoice_hash": prev.prev_invoice_hash or "",
-            }
-            cur_data = {
-                "invoice_number": inv.invoice_number or "",
-                "issue_date": str(inv.issue_date) if inv.issue_date else "",
-                "supplier_trn": inv.supplier_trn or "",
-                "customer_trn": inv.customer_trn or "",
-                "total_amount": str(inv.total_amount or "0.0"),
-                "tax_amount": str(inv.tax_amount or "0.0"),
-                "prev_invoice_hash": inv.prev_invoice_hash or "",
-            }
-
-            # Only verify link if current invoice actually has a prev_invoice_hash set
-            if not inv.prev_invoice_hash:
-                # No hash recorded — skip (could be pre-hash-chain invoice)
+            # Chain rule: current.prev_invoice_hash must equal prev.xml_hash
+            # (issuance sets: invoice.prev_invoice_hash = prev_invoice.xml_hash)
+            #
+            # A missing prev_invoice_hash on a non-first invoice means the link
+            # was never set or was cleared — treat as broken chain.
+            #
+            # A missing prev.xml_hash means the predecessor has no hash to
+            # compare against — skip this pair (pre-hash-chain legacy invoice).
+            if not prev.xml_hash:
+                # Predecessor predates the hash-chain feature; cannot verify link
                 continue
 
-            if crypto.verify_hash_chain(cur_data, prev_data):
+            if not inv.prev_invoice_hash:
+                # Non-first invoice missing expected prev hash — broken chain
+                if integrity_ok:
+                    first_broken_id = inv.id
+                    first_broken_number = inv.invoice_number
+                    first_broken_date = str(inv.issue_date) if inv.issue_date else None
+                integrity_ok = False
+                continue
+
+            if inv.prev_invoice_hash == prev.xml_hash:
                 valid_links += 1
             else:
                 if integrity_ok:
-                    # Record first broken link only
                     first_broken_id = inv.id
                     first_broken_number = inv.invoice_number
                     first_broken_date = str(inv.issue_date) if inv.issue_date else None
