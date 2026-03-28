@@ -3038,8 +3038,10 @@ def startup_event():
             )
             if last_ic:
                 _ic_status = "PASSED ✅" if last_ic.integrity_ok else "FAILED ❌"
+                _ic_scope = "GLOBAL" if last_ic.company_id is None else f"company={last_ic.company_id}"
                 logger.info(
                     f"🔗 Last integrity check: {_ic_status} | "
+                    f"Scope: {_ic_scope} | "
                     f"Date: {last_ic.checked_at.strftime('%Y-%m-%d %H:%M UTC')} | "
                     f"Invoices checked: {last_ic.total_invoices} | "
                     f"Valid links: {last_ic.valid_links}"
@@ -3377,7 +3379,7 @@ def get_integrity_status(
         # global run (company_id IS NULL); fall back to latest any-scope run
         # if no global run exists yet
         global_last = q.filter(IntegrityCheckDB.company_id.is_(None)).first()
-        last = global_last or q.filter(True).first()
+        last = global_last or q.first()
         if not last:
             return {
                 "status": "NEVER_CHECKED",
