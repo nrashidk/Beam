@@ -1064,6 +1064,8 @@ class InwardInvoiceDB(Base):
     tax_amount = Column(Float, nullable=False)
     total_amount = Column(Float, nullable=False)
     amount_due = Column(Float, nullable=False)
+    # AED conversion (mandatory when currency_code != "AED" — FTA P2-A compliance)
+    total_amount_aed = Column(Float, nullable=True)
 
     # Document Storage
     xml_file_path = Column(String, nullable=True)  # Received UBL XML
@@ -2485,6 +2487,9 @@ class InvoiceCreate(BaseModel):
     supply_date: Optional[str] = None  # Task 5: Actual delivery/supply date
     currency_code: str = "AED"
 
+    # AED equivalent (mandatory when currency_code != "AED" — FTA P2-A compliance)
+    total_amount_aed: Optional[float] = None
+
     # Customer details
     customer_name: str
     customer_email: Optional[str] = None
@@ -2563,6 +2568,7 @@ class InvoiceOut(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
+    total_amount_aed: Optional[float] = None  # AED equivalent (P2-A: populated for non-AED invoices)
 
     # Credit note fields
     preceding_invoice_id: Optional[str] = None
@@ -2918,6 +2924,12 @@ def _run_column_migrations():
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_purchases DOUBLE PRECISION DEFAULT 0.0",
         # Task 25: READ_ONLY role enum migration — adds value to PostgreSQL enum type if not present
         "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'READ_ONLY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'role')) THEN ALTER TYPE role ADD VALUE 'READ_ONLY'; END IF; END $$",
+        # Task 27 (P2-A): AED conversion enforcement — add nullable AED column to both invoice tables
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_amount_aed DOUBLE PRECISION",
+        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS total_amount_aed DOUBLE PRECISION",
+        # Backfill: set total_amount_aed = total_amount for existing AED invoices
+        "UPDATE invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
+        "UPDATE inward_invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -6752,6 +6764,18 @@ def create_invoice(
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
 
+    # P2-A: AED conversion enforcement — reject foreign-currency invoices without AED equivalent
+    if (payload.currency_code or "AED").upper() != "AED":
+        if not payload.total_amount_aed or payload.total_amount_aed <= 0:
+            raise HTTPException(
+                422,
+                "total_amount_aed is required for foreign-currency invoices. "
+                "Provide the AED equivalent of the invoice total to comply with FTA reporting requirements.",
+            )
+        invoice.total_amount_aed = round(payload.total_amount_aed, 2)
+    else:
+        invoice.total_amount_aed = invoice.total_amount
+
     from decimal import Decimal
 
     # Credit note validation: must reference matching invoice and not exceed original total
@@ -6878,6 +6902,7 @@ def create_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -7463,6 +7488,7 @@ def get_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -7644,6 +7670,18 @@ def update_invoice(
         invoice.tax_amount = float(total_tax)
         invoice.total_amount = float(subtotal + total_tax)
         invoice.amount_due = float(subtotal + total_tax)
+
+        # P2-A: AED conversion enforcement — reject foreign-currency invoices without AED equivalent
+        if (data.currency_code or "AED").upper() != "AED":
+            if not data.total_amount_aed or data.total_amount_aed <= 0:
+                raise HTTPException(
+                    422,
+                    "total_amount_aed is required for foreign-currency invoices. "
+                    "Provide the AED equivalent of the invoice total to comply with FTA reporting requirements.",
+                )
+            invoice.total_amount_aed = round(data.total_amount_aed, 2)
+        else:
+            invoice.total_amount_aed = invoice.total_amount
 
         # Clear and rebuild tax breakdowns
         db.query(InvoiceTaxBreakdownDB).filter(
@@ -9906,6 +9944,7 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
+        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -12694,6 +12733,7 @@ def generate_fta_audit_file(
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
+                "total_amount_aed": getattr(inv, "total_amount_aed", None),
                 "currency_code": inv.currency_code,
                 "status": inv.status.value,
             }
@@ -12710,6 +12750,7 @@ def generate_fta_audit_file(
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
+                "total_amount_aed": getattr(inv, "total_amount_aed", None),
                 "currency_code": inv.currency_code,
                 "status": inv.status.value,
             }
@@ -15053,6 +15094,35 @@ def export_vat_return(
 
         ET.indent(root, space="  ")
         xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+        # P3-D: Validate the generated XML against the FTA VAT Return XSD schema
+        _xsd_path = os.path.join(os.path.dirname(__file__), "utils", "fta_vat_return_schema.xsd")
+        try:
+            from lxml import etree as _lxml_etree
+            with open(_xsd_path, "rb") as _xf:
+                _xmlschema_doc = _lxml_etree.parse(_xf)
+            _xmlschema = _lxml_etree.XMLSchema(_xmlschema_doc)
+            _doc = _lxml_etree.fromstring(xml_bytes)
+            if not _xmlschema.validate(_doc):
+                _errors = "; ".join(str(e) for e in _xmlschema.error_log)
+                log_audit_event(
+                    db, "VAT_RETURN_XML_INVALID",
+                    user_id=current_user.id, company_id=current_user.company_id,
+                    resource_type="vat_return", resource_id=return_id,
+                    description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
+                )
+                raise HTTPException(500, f"VAT return XML failed FTA schema validation: {_errors[:500]}")
+        except HTTPException:
+            raise
+        except Exception as _xsd_err:
+            # XSD file missing or lxml error — log and continue (do not block download)
+            log_audit_event(
+                db, "VAT_RETURN_XML_SCHEMA_WARN",
+                user_id=current_user.id, company_id=current_user.company_id,
+                resource_type="vat_return", resource_id=return_id,
+                description=f"VAT return XSD validation skipped: {str(_xsd_err)[:300]}",
+            )
+
         filename = f"vat_return_{period_start}_{period_end}.xml"
         return StreamingResponse(
             BytesIO(xml_bytes),

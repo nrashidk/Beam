@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FTA VAT Return XML Schema (InvoLinks internal schema v1.0)
+  Validates the structure of VAT Return XML exports produced by the
+  /vat-return/{id}/export?format=xml endpoint.
+  Aligned with UAE FTA VAT Return Form 301 field requirements.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           elementFormDefault="qualified">
+
+  <!-- Root element -->
+  <xs:element name="VATReturn">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Metadata"            type="MetadataType"/>
+        <xs:element name="TaxpayerInfo"        type="TaxpayerInfoType"/>
+        <xs:element name="SalesAndOutputTax"   type="SalesAndOutputTaxType"/>
+        <xs:element name="PurchasesAndInputTax" type="PurchasesAndInputTaxType"/>
+        <xs:element name="NetVAT"              type="NetVATType"/>
+      </xs:sequence>
+      <xs:attribute name="SchemaVersion" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Metadata block -->
+  <xs:complexType name="MetadataType">
+    <xs:sequence>
+      <xs:element name="SoftwareName"    type="xs:string"/>
+      <xs:element name="SoftwareVersion" type="xs:string"/>
+      <xs:element name="VendorTRN"       type="xs:string"/>
+      <xs:element name="GeneratedAt"     type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Taxpayer info block -->
+  <xs:complexType name="TaxpayerInfoType">
+    <xs:sequence>
+      <xs:element name="CompanyName" type="xs:string"/>
+      <xs:element name="TRN"         type="xs:string"/>
+      <xs:element name="PeriodStart" type="xs:string"/>
+      <xs:element name="PeriodEnd"   type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Reusable box element -->
+  <xs:complexType name="BoxAmountType">
+    <xs:simpleContent>
+      <xs:extension base="xs:decimal">
+        <xs:attribute name="description" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Sales and Output Tax (Boxes 1-7) -->
+  <xs:complexType name="SalesAndOutputTaxType">
+    <xs:sequence>
+      <xs:element name="Box1" type="BoxAmountType"/>
+      <xs:element name="Box2" type="BoxAmountType"/>
+      <xs:element name="Box3" type="BoxAmountType"/>
+      <xs:element name="Box4" type="BoxAmountType"/>
+      <xs:element name="Box5" type="BoxAmountType"/>
+      <xs:element name="Box6" type="BoxAmountType"/>
+      <xs:element name="Box7" type="BoxAmountType"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Purchases and Input Tax (Boxes 8-12) -->
+  <xs:complexType name="PurchasesAndInputTaxType">
+    <xs:sequence>
+      <xs:element name="Box8"  type="BoxAmountType"/>
+      <xs:element name="Box9"  type="BoxAmountType"/>
+      <xs:element name="Box10" type="BoxAmountType"/>
+      <xs:element name="Box11" type="BoxAmountType"/>
+      <xs:element name="Box12" type="BoxAmountType"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Net VAT (Box 13) -->
+  <xs:complexType name="NetVATType">
+    <xs:sequence>
+      <xs:element name="Box13" type="BoxAmountType"/>
+    </xs:sequence>
+  </xs:complexType>
+
+</xs:schema>

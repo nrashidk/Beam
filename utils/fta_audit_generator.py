@@ -297,6 +297,23 @@ class FTAAuditFileGenerator:
             inv_type = inv.get("invoice_type", "TAX_INVOICE")
             vat_rate = _derive_vat_rate(vat, subtotal)
             tax_code = _derive_tax_code(inv_type, vat_rate)
+            currency = (inv.get("currency_code", "AED") or "AED").upper()
+
+            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED
+            if currency != "AED" and inv.get("total_amount_aed"):
+                total_aed = float(inv["total_amount_aed"])
+                # Scale subtotal and VAT proportionally to AED equivalent
+                if total > 0:
+                    aed_ratio = total_aed / total
+                    subtotal_aed = round(subtotal * aed_ratio, 2)
+                    vat_aed = round(vat * aed_ratio, 2)
+                else:
+                    subtotal_aed = 0.0
+                    vat_aed = 0.0
+            else:
+                total_aed = total
+                subtotal_aed = subtotal
+                vat_aed = vat
 
             writer.writerow(
                 {
@@ -306,18 +323,18 @@ class FTAAuditFileGenerator:
                     "CustomerTRN": inv.get("customer_trn", "") or "N/A",
                     "CustomerName": inv.get("customer_name", ""),
                     "CustomerCountry": inv.get("customer_country", "AE"),
-                    "InvoiceValueExclVAT": _amount(subtotal),
-                    "VATAmount": _amount(vat),
-                    "TotalInvoiceValue": _amount(total),
-                    "Currency": inv.get("currency_code", "AED"),
+                    "InvoiceValueExclVAT": _amount(subtotal_aed),
+                    "VATAmount": _amount(vat_aed),
+                    "TotalInvoiceValue": _amount(total_aed),
+                    "Currency": "AED",
                     "TaxCode": tax_code,
                     "VATRatePct": f"{vat_rate:.1f}",
                     "Status": inv.get("status", ""),
                 }
             )
             total_sales += 1
-            total_sales_excl += subtotal
-            total_sales_vat += vat
+            total_sales_excl += subtotal_aed
+            total_sales_vat += vat_aed
 
             bucket = sales_by_code.setdefault(
                 tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
@@ -349,6 +366,22 @@ class FTAAuditFileGenerator:
             inv_type = inv.get("invoice_type", "TAX_INVOICE")
             vat_rate = _derive_vat_rate(vat, subtotal)
             tax_code = _derive_tax_code(inv_type, vat_rate)
+            currency = (inv.get("currency_code", "AED") or "AED").upper()
+
+            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED
+            if currency != "AED" and inv.get("total_amount_aed"):
+                total_aed = float(inv["total_amount_aed"])
+                if total > 0:
+                    aed_ratio = total_aed / total
+                    subtotal_aed = round(subtotal * aed_ratio, 2)
+                    vat_aed = round(vat * aed_ratio, 2)
+                else:
+                    subtotal_aed = 0.0
+                    vat_aed = 0.0
+            else:
+                total_aed = total
+                subtotal_aed = subtotal
+                vat_aed = vat
 
             writer.writerow(
                 {
@@ -358,18 +391,18 @@ class FTAAuditFileGenerator:
                     "SupplierTRN": inv.get("supplier_trn", ""),
                     "SupplierName": inv.get("supplier_name", ""),
                     "SupplierCountry": inv.get("supplier_country", "AE"),
-                    "InvoiceValueExclVAT": _amount(subtotal),
-                    "VATAmount": _amount(vat),
-                    "TotalInvoiceValue": _amount(total),
-                    "Currency": inv.get("currency_code", "AED"),
+                    "InvoiceValueExclVAT": _amount(subtotal_aed),
+                    "VATAmount": _amount(vat_aed),
+                    "TotalInvoiceValue": _amount(total_aed),
+                    "Currency": "AED",
                     "TaxCode": tax_code,
                     "VATRatePct": f"{vat_rate:.1f}",
                     "Status": inv.get("status", ""),
                 }
             )
             total_purchases += 1
-            total_purchase_excl += subtotal
-            total_purchase_vat += vat
+            total_purchase_excl += subtotal_aed
+            total_purchase_vat += vat_aed
 
             bucket = purchase_by_code.setdefault(
                 tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
