@@ -39,7 +39,7 @@ export default function PasswordExpiryBanner() {
       </div>
       <div className="flex items-center gap-3">
         <button
-          onClick={() => navigate("/settings")}
+          onClick={() => navigate("/settings/security")}
           className={`underline font-semibold hover:no-underline text-xs ${
             isUrgent ? "text-red-700" : "text-amber-700"
           }`}

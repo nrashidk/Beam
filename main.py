@@ -2701,6 +2701,9 @@ def _run_column_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false",
         # Task 22: Password expiry policy
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
+        # Task 22: Backfill existing users - use created_at as baseline password age
+        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL AND created_at IS NOT NULL",
+        "UPDATE users SET password_changed_at = NOW() WHERE password_changed_at IS NULL",
         # Task 13: VAT return 13-box breakdown columns
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
@@ -2892,6 +2895,8 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
             company_id=company_id,
             is_owner=True,
             full_name=payload.company_name,  # Use company name as default
+            # Task 22: Initialise password age tracking at registration
+            password_changed_at=datetime.utcnow(),
         )
         db.add(user)
 
@@ -5652,6 +5657,8 @@ def invite_user(
         is_owner=False,
         invited_by=current_user.id,
         must_change_password=True,
+        # Task 22: Initialise password age tracking on invite creation
+        password_changed_at=datetime.utcnow(),
     )
 
     db.add(new_user)
@@ -11850,6 +11857,8 @@ def restore_superadmin(db: Session = Depends(get_db)):
             company_id=None,
             is_owner=False,
             full_name="Super Admin",
+            # Task 22: Initialise password age tracking
+            password_changed_at=datetime.utcnow(),
         )
         db.add(user)
         db.commit()
