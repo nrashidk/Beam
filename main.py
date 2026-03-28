@@ -261,6 +261,11 @@ class UserDB(Base):
     # Task 22: Password expiry policy
     password_changed_at = Column(DateTime, nullable=True)
 
+    @property
+    def password_last_change_date(self):
+        """Alias for password_changed_at for spec compatibility."""
+        return self.password_changed_at
+
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -4016,6 +4021,12 @@ def get_current_user_info(
         "company": None,
         # Task 22: Password policy info for security settings / warning banner
         "password_changed_at": (
+            current_user.password_changed_at.isoformat()
+            if getattr(current_user, "password_changed_at", None)
+            else None
+        ),
+        # Task 22: Alias for spec compatibility
+        "password_last_change_date": (
             current_user.password_changed_at.isoformat()
             if getattr(current_user, "password_changed_at", None)
             else None

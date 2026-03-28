@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { mfaAPI } from "../lib/api";
+import { mfaAPI, apiClient } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Card, CardContent } from "../components/ui/card";
@@ -21,9 +21,12 @@ export default function MFASettings() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [newBackupCodes, setNewBackupCodes] = useState(null);
+  // Task 22: Password security info
+  const [passwordInfo, setPasswordInfo] = useState(null);
 
   useEffect(() => {
     loadMFAStatus();
+    loadPasswordInfo();
   }, []);
 
   const loadMFAStatus = async () => {
@@ -37,6 +40,21 @@ export default function MFASettings() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Task 22: Load password security info from /me
+  const loadPasswordInfo = async () => {
+    try {
+      const resp = await apiClient.get("/me");
+      const { password_changed_at, password_last_change_date, password_expires_in_days, password_expired } = resp.data;
+      setPasswordInfo({
+        password_changed_at: password_changed_at || password_last_change_date,
+        password_expires_in_days,
+        password_expired,
+      });
+    } catch (_) {
+      // Non-critical — password info section simply won't render
     }
   };
 
@@ -143,6 +161,55 @@ export default function MFASettings() {
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                   {error}
                 </div>
+              )}
+
+              {/* Task 22: Password security info card */}
+              {passwordInfo && (
+                <Card>
+                  <CardContent className="p-8">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-3xl">🔑</span>
+                      <h2 className="text-2xl font-bold">Password Security</h2>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Last Changed</p>
+                        <p className="text-sm font-medium text-gray-800">
+                          {passwordInfo.password_changed_at
+                            ? new Date(passwordInfo.password_changed_at).toLocaleDateString("en-AE", { day: "numeric", month: "short", year: "numeric" })
+                            : "Never recorded"}
+                        </p>
+                      </div>
+                      <div className={`rounded-lg p-4 ${
+                        passwordInfo.password_expired
+                          ? "bg-red-50"
+                          : passwordInfo.password_expires_in_days != null && passwordInfo.password_expires_in_days <= 14
+                          ? "bg-amber-50"
+                          : "bg-gray-50"
+                      }`}>
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Expires In</p>
+                        <p className={`text-sm font-medium ${
+                          passwordInfo.password_expired
+                            ? "text-red-700"
+                            : passwordInfo.password_expires_in_days != null && passwordInfo.password_expires_in_days <= 14
+                            ? "text-amber-700"
+                            : "text-gray-800"
+                        }`}>
+                          {passwordInfo.password_expired
+                            ? "Expired — please change now"
+                            : passwordInfo.password_expires_in_days != null
+                            ? `${passwordInfo.password_expires_in_days} days`
+                            : "N/A"}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Policy</p>
+                        <p className="text-sm font-medium text-gray-800">90-day maximum age</p>
+                        <p className="text-xs text-gray-500 mt-1">24-hour minimum between changes</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
 
               <Card>
