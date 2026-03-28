@@ -191,8 +191,25 @@ const ROLE_PERMISSION_SUMMARY = {
   },
 };
 
-function MemberPermissionSummary({ role }) {
-  const summary = ROLE_PERMISSION_SUMMARY[role];
+function buildSummaryFromMatrix(role, matrix) {
+  const rolePerms = matrix && matrix[role];
+  if (!rolePerms) return null;
+  const can = [];
+  const cannot = [];
+  const ACTION_LABELS = { view: "view", create: "create", edit: "edit", delete: "delete", approve: "approve", export: "export", manage_users: "manage users" };
+  for (const [resource, actions] of Object.entries(rolePerms)) {
+    const allowed = Object.entries(actions).filter(([, v]) => v).map(([a]) => ACTION_LABELS[a] || a);
+    const denied = Object.entries(actions).filter(([, v]) => !v).map(([a]) => ACTION_LABELS[a] || a);
+    if (allowed.length > 0) can.push(`${resource}: ${allowed.join(", ")}`);
+    else if (denied.length > 0) cannot.push(resource);
+  }
+  return { can: can.slice(0, 4), cannot: cannot.slice(0, 2) };
+}
+
+function MemberPermissionSummary({ role, permMatrix }) {
+  const summary = permMatrix
+    ? buildSummaryFromMatrix(role, permMatrix)
+    : ROLE_PERMISSION_SUMMARY[role];
   if (!summary) return <span className="text-gray-400 text-xs">—</span>;
   return (
     <div className="text-xs space-y-1 max-w-xs">
@@ -717,7 +734,7 @@ export default function TeamManagement() {
                             {getRoleBadge(member.role)}
                           </td>
                           <td className="py-3 px-4">
-                            <MemberPermissionSummary role={member.role} />
+                            <MemberPermissionSummary role={member.role} permMatrix={permMatrix} />
                           </td>
                           <td className="py-3 px-4 text-gray-600 text-sm">
                             {member.created_at ? (
