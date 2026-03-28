@@ -7745,6 +7745,7 @@ def update_invoice(
             tax_amount=invoice.tax_amount,
             total_amount=invoice.total_amount,
             amount_due=invoice.amount_due,
+            total_amount_aed=getattr(invoice, "total_amount_aed", None),
             preceding_invoice_id=invoice.preceding_invoice_id,
             credit_note_reason=invoice.credit_note_reason,
             xml_file_path=invoice.xml_file_path,
@@ -7781,6 +7782,9 @@ def update_invoice(
                 for tb in invoice.tax_breakdowns
             ],
         )
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to update invoice: {str(e)}")
