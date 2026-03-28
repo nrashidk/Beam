@@ -2876,9 +2876,9 @@ def get_backup_status(
 
     if last_event:
         last_verified_at = last_event.created_at.isoformat()
-        last_verified_by = last_event.user_email if hasattr(last_event, "user_email") else None
-        # Resolve user email from user_id if needed
-        if not last_verified_by and last_event.user_id:
+        # Resolve user email via user_id
+        last_verified_by = None
+        if last_event.user_id:
             u = db.query(UserDB).filter(UserDB.id == last_event.user_id).first()
             last_verified_by = u.email if u else None
         backup_age_hours = round(

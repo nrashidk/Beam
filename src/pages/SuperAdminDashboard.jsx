@@ -161,14 +161,20 @@ export default function SuperAdminDashboard() {
   // Task 24: Backup status state
   const [backupStatus, setBackupStatus] = useState(null);
   const [backupLoading, setBackupLoading] = useState(true);
+  const [backupError, setBackupError] = useState(null);
   const [verifyingBackup, setVerifyingBackup] = useState(false);
+  const [verifyError, setVerifyError] = useState(null);
 
   async function fetchBackupStatus() {
+    setBackupError(null);
     try {
       const res = await api.get("/admin/backup/status");
       setBackupStatus(res.data);
-    } catch {
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Failed to load backup status.";
+      setBackupError(msg);
       setBackupStatus(null);
+      console.error("[BackupStatus] fetch failed:", msg);
     } finally {
       setBackupLoading(false);
     }
@@ -176,11 +182,14 @@ export default function SuperAdminDashboard() {
 
   async function handleVerifyBackup() {
     setVerifyingBackup(true);
+    setVerifyError(null);
     try {
       await api.post("/admin/backup/verify");
       await fetchBackupStatus();
-    } catch {
-      // ignore
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Failed to log backup verification.";
+      setVerifyError(msg);
+      console.error("[BackupVerify] failed:", msg);
     } finally {
       setVerifyingBackup(false);
     }
@@ -797,8 +806,13 @@ export default function SuperAdminDashboard() {
               </div>
             </CardHeader>
             <CardContent>
+              {verifyError && (
+                <p className="text-sm text-red-600 mb-3">{verifyError}</p>
+              )}
               {backupLoading ? (
                 <p className="text-sm text-muted-foreground">Loading backup status…</p>
+              ) : backupError ? (
+                <p className="text-sm text-red-600">{backupError}</p>
               ) : !backupStatus ? (
                 <p className="text-sm text-red-600">Unable to load backup status.</p>
               ) : (
