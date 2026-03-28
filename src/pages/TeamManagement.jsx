@@ -25,6 +25,8 @@ import {
   User,
   Mail,
   Calendar,
+  Check,
+  X,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { usersAPI } from "../lib/api";
@@ -33,6 +35,138 @@ import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 import ConfirmationModal from "../components/ConfirmationModal";
+
+// Task 25: Permission matrix display components
+const ROLE_LABELS = {
+  SUPER_ADMIN:    "Super Admin",
+  COMPANY_ADMIN:  "Company Admin",
+  BUSINESS_ADMIN: "Business Admin",
+  FINANCE_USER:   "Finance User",
+  READ_ONLY:      "Read Only",
+};
+
+const RESOURCE_LABELS = {
+  invoices:        "Invoices",
+  inward_invoices: "Inward Invoices",
+  reports:         "Reports",
+  vat_return:      "VAT Return",
+  audit_logs:      "Audit Logs",
+  team:            "Team",
+  settings:        "Settings",
+  gl:              "General Ledger",
+  archival:        "Archival",
+};
+
+const ACTION_LABELS = {
+  view:         "View",
+  create:       "Create",
+  edit:         "Edit",
+  delete:       "Delete",
+  approve:      "Approve",
+  export:       "Export",
+  manage_users: "Manage Users",
+};
+
+function PermissionMatrixTable({ matrix }) {
+  const roles = ["COMPANY_ADMIN", "BUSINESS_ADMIN", "FINANCE_USER", "READ_ONLY"];
+  const resources = Object.keys(RESOURCE_LABELS);
+  const actions = Object.keys(ACTION_LABELS);
+
+  return (
+    <div className="overflow-x-auto">
+      <p className="text-xs text-gray-500 mb-3">
+        This matrix shows the effective permissions for each role across all resources.
+      </p>
+      {resources.map((resource) => (
+        <div key={resource} className="mb-6">
+          <h4 className="text-sm font-semibold text-gray-800 mb-2">
+            {RESOURCE_LABELS[resource] || resource}
+          </h4>
+          <table className="w-full text-xs border rounded-lg overflow-hidden">
+            <thead>
+              <tr className="bg-gray-50 border-b">
+                <th className="text-left py-2 px-3 font-medium text-gray-600 w-28">Action</th>
+                {roles.map((role) => (
+                  <th key={role} className="text-center py-2 px-3 font-medium text-gray-600">
+                    {ROLE_LABELS[role] || role}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {actions.map((action) => {
+                const hasAny = roles.some(
+                  (role) => matrix.matrix[role]?.[resource]?.[action] !== undefined,
+                );
+                if (!hasAny) return null;
+                return (
+                  <tr key={action} className="border-b last:border-0 hover:bg-gray-50">
+                    <td className="py-2 px-3 text-gray-700">{ACTION_LABELS[action] || action}</td>
+                    {roles.map((role) => {
+                      const val = matrix.matrix[role]?.[resource]?.[action];
+                      if (val === undefined) {
+                        return <td key={role} className="py-2 px-3 text-center text-gray-300">—</td>;
+                      }
+                      return (
+                        <td key={role} className="py-2 px-3 text-center">
+                          {val
+                            ? <Check className="h-3.5 w-3.5 text-emerald-600 mx-auto" />
+                            : <X className="h-3.5 w-3.5 text-red-400 mx-auto" />}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StaticRoleDescriptions() {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-3">
+        <Badge className="bg-purple-600 mt-1">Super Admin</Badge>
+        <div>
+          <p className="font-medium text-gray-900">Platform Administrator</p>
+          <p className="text-sm text-gray-600">Full platform access, can approve companies, view all analytics, manage all users</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-3">
+        <Badge className="bg-blue-600 mt-1">Admin</Badge>
+        <div>
+          <p className="font-medium text-gray-900">Company Administrator</p>
+          <p className="text-sm text-gray-600">Full company access, can invite/remove team members, manage all invoices, branding, and settings</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-3">
+        <Badge className="bg-indigo-600 mt-1">Business Admin</Badge>
+        <div>
+          <p className="font-medium text-gray-900">Business Operations Admin</p>
+          <p className="text-sm text-gray-600">Can manage operational modules and invite finance users for the company team</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-3">
+        <Badge className="bg-green-600 mt-1">Finance User</Badge>
+        <div>
+          <p className="font-medium text-gray-900">Finance Team Member</p>
+          <p className="text-sm text-gray-600">Can create, view, and manage invoices. Cannot invite users or change company settings</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-3">
+        <Badge className="bg-gray-500 mt-1">Read Only</Badge>
+        <div>
+          <p className="font-medium text-gray-900">Read-Only Viewer</p>
+          <p className="text-sm text-gray-600">Can view invoices, reports, audit trail, and GL entries. Cannot create, edit, or approve anything</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function TeamManagement() {
   const navigate = useNavigate();
@@ -49,6 +183,8 @@ export default function TeamManagement() {
   const [error, setError] = useState(null);
   const [tierLimits, setTierLimits] = useState(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+  // Task 25: permission matrix
+  const [permMatrix, setPermMatrix] = useState(null);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     userId: null,
@@ -63,6 +199,7 @@ export default function TeamManagement() {
   useEffect(() => {
     fetchTeamMembers();
     fetchTierLimits();
+    fetchPermMatrix();
   }, []);
 
   const fetchTeamMembers = async () => {
@@ -96,6 +233,16 @@ export default function TeamManagement() {
       setTierLimits(response.data.plan);
     } catch (error) {
       console.error("Failed to fetch tier limits:", error);
+    }
+  };
+
+  // Task 25: fetch permission matrix (admins only; gracefully ignore 403)
+  const fetchPermMatrix = async () => {
+    try {
+      const res = await api.get("/admin/permissions");
+      setPermMatrix(res.data);
+    } catch {
+      setPermMatrix(null);
     }
   };
 
@@ -163,10 +310,11 @@ export default function TeamManagement() {
 
   const getRoleBadge = (role) => {
     const roleMap = {
-      SUPER_ADMIN: { label: "Super Admin", className: "bg-purple-600" },
+      SUPER_ADMIN:   { label: "Super Admin",   className: "bg-purple-600" },
       COMPANY_ADMIN: { label: "Company Admin", className: "bg-blue-600" },
-      BUSINESS_ADMIN: { label: "Business Admin", className: "bg-indigo-600" },
-      FINANCE_USER: { label: "Finance User", className: "bg-green-600" },
+      BUSINESS_ADMIN:{ label: "Business Admin",className: "bg-indigo-600" },
+      FINANCE_USER:  { label: "Finance User",  className: "bg-green-600" },
+      READ_ONLY:     { label: "Read Only",     className: "bg-gray-500" },
     };
     const config = roleMap[role] || { label: role, className: "bg-gray-600" };
     return <Badge className={config.className}>{config.label}</Badge>;
@@ -191,7 +339,7 @@ export default function TeamManagement() {
 
   const canInviteRole = (role) => {
     if (!canManageTeamInvites) return false;
-    if (isBusinessAdmin && role !== "FINANCE_USER") return false;
+    if (isBusinessAdmin && !["FINANCE_USER", "READ_ONLY"].includes(role)) return false;
     if (!tierLimits) return true;
     const counts = getCurrentRoleCounts();
 
@@ -382,6 +530,9 @@ export default function TeamManagement() {
                             </div>
                           </SelectItem>
                         )}
+                        <SelectItem value="READ_ONLY">
+                          Read Only (view access only)
+                        </SelectItem>
                         {!isBusinessAdmin && (
                           <SelectItem value="COMPANY_ADMIN">
                             Company Admin (Owner-level)
@@ -393,6 +544,10 @@ export default function TeamManagement() {
                       <p>
                         <strong>Finance User:</strong> Can create invoices,
                         manage expenses, view financial data
+                      </p>
+                      <p>
+                        <strong>Read Only:</strong> View invoices and reports;
+                        cannot create, edit, or approve anything
                       </p>
                       {!isBusinessAdmin && (
                         <p>
@@ -408,7 +563,7 @@ export default function TeamManagement() {
                       )}
                       {isBusinessAdmin && (
                         <p className="text-blue-600">
-                          Business admins can invite finance users only.
+                          Business admins can invite Finance Users or Read-Only users.
                         </p>
                       )}
                       {tierLimits && (
@@ -570,61 +725,17 @@ export default function TeamManagement() {
             </CardContent>
           </Card>
 
+          {/* Task 25: Permission Matrix Card */}
           <Card>
             <CardHeader>
               <CardTitle>Role Permissions</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <Badge className="bg-purple-600 mt-1">Super Admin</Badge>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      Platform Administrator
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Full platform access, can approve companies, view all
-                      analytics, manage all users
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Badge className="bg-blue-600 mt-1">Admin</Badge>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      Company Administrator
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Full company access, can invite/remove team members,
-                      manage all invoices, branding, and settings
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Badge className="bg-indigo-600 mt-1">Business Admin</Badge>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      Business Operations Admin
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Can manage operational modules and invite finance users
-                      for the company team
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Badge className="bg-green-600 mt-1">Finance User</Badge>
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      Finance Team Member
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      Can create, view, and manage invoices. Cannot invite users
-                      or change company settings
-                    </p>
-                  </div>
-                </div>
-              </div>
+              {permMatrix ? (
+                <PermissionMatrixTable matrix={permMatrix} />
+              ) : (
+                <StaticRoleDescriptions />
+              )}
             </CardContent>
           </Card>
         </div>

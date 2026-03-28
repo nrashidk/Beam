@@ -131,8 +131,186 @@ Base = declarative_base()
 class Role(str, enum.Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     COMPANY_ADMIN = "COMPANY_ADMIN"
-    BUSINESS_ADMIN = "BUSINESS_ADMIN"  # Phase 2: Business Super Admin role
+    BUSINESS_ADMIN = "BUSINESS_ADMIN"
     FINANCE_USER = "FINANCE_USER"
+    READ_ONLY = "READ_ONLY"  # Task 25: view-only role (no create/edit/delete)
+
+
+# ==================== PERMISSION MATRIX (Task 25) ====================
+
+# Structure: PERMISSIONS[(Role, resource, action)] = True | False
+# Resources: invoices, inward_invoices, reports, vat_return, audit_logs, team, settings, gl, archival
+# Actions: view, create, edit, delete, approve, export, manage_users
+
+_T = True
+_F = False
+
+PERMISSIONS: dict[tuple, bool] = {
+    # ── SUPER_ADMIN ─────────────────────────────────────────────────────────
+    (Role.SUPER_ADMIN, "invoices",        "view"):         _T,
+    (Role.SUPER_ADMIN, "invoices",        "create"):       _T,
+    (Role.SUPER_ADMIN, "invoices",        "edit"):         _T,
+    (Role.SUPER_ADMIN, "invoices",        "delete"):       _T,
+    (Role.SUPER_ADMIN, "invoices",        "approve"):      _T,
+    (Role.SUPER_ADMIN, "invoices",        "export"):       _T,
+    (Role.SUPER_ADMIN, "inward_invoices", "view"):         _T,
+    (Role.SUPER_ADMIN, "inward_invoices", "create"):       _T,
+    (Role.SUPER_ADMIN, "inward_invoices", "edit"):         _T,
+    (Role.SUPER_ADMIN, "inward_invoices", "delete"):       _T,
+    (Role.SUPER_ADMIN, "inward_invoices", "approve"):      _T,
+    (Role.SUPER_ADMIN, "reports",         "view"):         _T,
+    (Role.SUPER_ADMIN, "reports",         "export"):       _T,
+    (Role.SUPER_ADMIN, "vat_return",      "view"):         _T,
+    (Role.SUPER_ADMIN, "vat_return",      "create"):       _T,
+    (Role.SUPER_ADMIN, "vat_return",      "export"):       _T,
+    (Role.SUPER_ADMIN, "audit_logs",      "view"):         _T,
+    (Role.SUPER_ADMIN, "audit_logs",      "export"):       _T,
+    (Role.SUPER_ADMIN, "team",            "view"):         _T,
+    (Role.SUPER_ADMIN, "team",            "manage_users"): _T,
+    (Role.SUPER_ADMIN, "settings",        "view"):         _T,
+    (Role.SUPER_ADMIN, "settings",        "edit"):         _T,
+    (Role.SUPER_ADMIN, "gl",              "view"):         _T,
+    (Role.SUPER_ADMIN, "gl",              "edit"):         _T,
+    (Role.SUPER_ADMIN, "archival",        "view"):         _T,
+    (Role.SUPER_ADMIN, "archival",        "create"):       _T,
+
+    # ── COMPANY_ADMIN ────────────────────────────────────────────────────────
+    (Role.COMPANY_ADMIN, "invoices",        "view"):         _T,
+    (Role.COMPANY_ADMIN, "invoices",        "create"):       _T,
+    (Role.COMPANY_ADMIN, "invoices",        "edit"):         _T,
+    (Role.COMPANY_ADMIN, "invoices",        "delete"):       _T,
+    (Role.COMPANY_ADMIN, "invoices",        "approve"):      _T,
+    (Role.COMPANY_ADMIN, "invoices",        "export"):       _T,
+    (Role.COMPANY_ADMIN, "inward_invoices", "view"):         _T,
+    (Role.COMPANY_ADMIN, "inward_invoices", "create"):       _T,
+    (Role.COMPANY_ADMIN, "inward_invoices", "edit"):         _T,
+    (Role.COMPANY_ADMIN, "inward_invoices", "delete"):       _T,
+    (Role.COMPANY_ADMIN, "inward_invoices", "approve"):      _T,
+    (Role.COMPANY_ADMIN, "reports",         "view"):         _T,
+    (Role.COMPANY_ADMIN, "reports",         "export"):       _T,
+    (Role.COMPANY_ADMIN, "vat_return",      "view"):         _T,
+    (Role.COMPANY_ADMIN, "vat_return",      "create"):       _T,
+    (Role.COMPANY_ADMIN, "vat_return",      "export"):       _T,
+    (Role.COMPANY_ADMIN, "audit_logs",      "view"):         _T,
+    (Role.COMPANY_ADMIN, "audit_logs",      "export"):       _T,
+    (Role.COMPANY_ADMIN, "team",            "view"):         _T,
+    (Role.COMPANY_ADMIN, "team",            "manage_users"): _T,
+    (Role.COMPANY_ADMIN, "settings",        "view"):         _T,
+    (Role.COMPANY_ADMIN, "settings",        "edit"):         _T,
+    (Role.COMPANY_ADMIN, "gl",              "view"):         _T,
+    (Role.COMPANY_ADMIN, "gl",              "edit"):         _T,
+    (Role.COMPANY_ADMIN, "archival",        "view"):         _T,
+    (Role.COMPANY_ADMIN, "archival",        "create"):       _T,
+
+    # ── BUSINESS_ADMIN ───────────────────────────────────────────────────────
+    (Role.BUSINESS_ADMIN, "invoices",        "view"):         _T,
+    (Role.BUSINESS_ADMIN, "invoices",        "create"):       _T,
+    (Role.BUSINESS_ADMIN, "invoices",        "edit"):         _T,
+    (Role.BUSINESS_ADMIN, "invoices",        "delete"):       _F,
+    (Role.BUSINESS_ADMIN, "invoices",        "approve"):      _T,
+    (Role.BUSINESS_ADMIN, "invoices",        "export"):       _T,
+    (Role.BUSINESS_ADMIN, "inward_invoices", "view"):         _T,
+    (Role.BUSINESS_ADMIN, "inward_invoices", "create"):       _T,
+    (Role.BUSINESS_ADMIN, "inward_invoices", "edit"):         _T,
+    (Role.BUSINESS_ADMIN, "inward_invoices", "delete"):       _F,
+    (Role.BUSINESS_ADMIN, "inward_invoices", "approve"):      _T,
+    (Role.BUSINESS_ADMIN, "reports",         "view"):         _T,
+    (Role.BUSINESS_ADMIN, "reports",         "export"):       _T,
+    (Role.BUSINESS_ADMIN, "vat_return",      "view"):         _T,
+    (Role.BUSINESS_ADMIN, "vat_return",      "create"):       _F,
+    (Role.BUSINESS_ADMIN, "vat_return",      "export"):       _T,
+    (Role.BUSINESS_ADMIN, "audit_logs",      "view"):         _T,
+    (Role.BUSINESS_ADMIN, "audit_logs",      "export"):       _T,
+    (Role.BUSINESS_ADMIN, "team",            "view"):         _T,
+    (Role.BUSINESS_ADMIN, "team",            "manage_users"): _T,  # can invite FINANCE_USER only
+    (Role.BUSINESS_ADMIN, "settings",        "view"):         _T,
+    (Role.BUSINESS_ADMIN, "settings",        "edit"):         _F,
+    (Role.BUSINESS_ADMIN, "gl",              "view"):         _T,
+    (Role.BUSINESS_ADMIN, "gl",              "edit"):         _F,
+    (Role.BUSINESS_ADMIN, "archival",        "view"):         _T,
+    (Role.BUSINESS_ADMIN, "archival",        "create"):       _F,
+
+    # ── FINANCE_USER ────────────────────────────────────────────────────────
+    (Role.FINANCE_USER, "invoices",        "view"):         _T,
+    (Role.FINANCE_USER, "invoices",        "create"):       _T,
+    (Role.FINANCE_USER, "invoices",        "edit"):         _T,
+    (Role.FINANCE_USER, "invoices",        "delete"):       _F,
+    (Role.FINANCE_USER, "invoices",        "approve"):      _F,
+    (Role.FINANCE_USER, "invoices",        "export"):       _T,
+    (Role.FINANCE_USER, "inward_invoices", "view"):         _T,
+    (Role.FINANCE_USER, "inward_invoices", "create"):       _T,
+    (Role.FINANCE_USER, "inward_invoices", "edit"):         _T,
+    (Role.FINANCE_USER, "inward_invoices", "delete"):       _F,
+    (Role.FINANCE_USER, "inward_invoices", "approve"):      _F,
+    (Role.FINANCE_USER, "reports",         "view"):         _T,
+    (Role.FINANCE_USER, "reports",         "export"):       _T,
+    (Role.FINANCE_USER, "vat_return",      "view"):         _T,
+    (Role.FINANCE_USER, "vat_return",      "create"):       _F,
+    (Role.FINANCE_USER, "vat_return",      "export"):       _F,
+    (Role.FINANCE_USER, "audit_logs",      "view"):         _F,
+    (Role.FINANCE_USER, "audit_logs",      "export"):       _F,
+    (Role.FINANCE_USER, "team",            "view"):         _F,
+    (Role.FINANCE_USER, "team",            "manage_users"): _F,
+    (Role.FINANCE_USER, "settings",        "view"):         _F,
+    (Role.FINANCE_USER, "settings",        "edit"):         _F,
+    (Role.FINANCE_USER, "gl",              "view"):         _T,
+    (Role.FINANCE_USER, "gl",              "edit"):         _F,
+    (Role.FINANCE_USER, "archival",        "view"):         _F,
+    (Role.FINANCE_USER, "archival",        "create"):       _F,
+
+    # ── READ_ONLY ─────────────────────────────────────────────────────────────
+    (Role.READ_ONLY, "invoices",        "view"):         _T,
+    (Role.READ_ONLY, "invoices",        "create"):       _F,
+    (Role.READ_ONLY, "invoices",        "edit"):         _F,
+    (Role.READ_ONLY, "invoices",        "delete"):       _F,
+    (Role.READ_ONLY, "invoices",        "approve"):      _F,
+    (Role.READ_ONLY, "invoices",        "export"):       _T,
+    (Role.READ_ONLY, "inward_invoices", "view"):         _T,
+    (Role.READ_ONLY, "inward_invoices", "create"):       _F,
+    (Role.READ_ONLY, "inward_invoices", "edit"):         _F,
+    (Role.READ_ONLY, "inward_invoices", "delete"):       _F,
+    (Role.READ_ONLY, "inward_invoices", "approve"):      _F,
+    (Role.READ_ONLY, "reports",         "view"):         _T,
+    (Role.READ_ONLY, "reports",         "export"):       _T,
+    (Role.READ_ONLY, "vat_return",      "view"):         _T,
+    (Role.READ_ONLY, "vat_return",      "create"):       _F,
+    (Role.READ_ONLY, "vat_return",      "export"):       _F,
+    (Role.READ_ONLY, "audit_logs",      "view"):         _T,
+    (Role.READ_ONLY, "audit_logs",      "export"):       _F,
+    (Role.READ_ONLY, "team",            "view"):         _F,
+    (Role.READ_ONLY, "team",            "manage_users"): _F,
+    (Role.READ_ONLY, "settings",        "view"):         _F,
+    (Role.READ_ONLY, "settings",        "edit"):         _F,
+    (Role.READ_ONLY, "gl",              "view"):         _T,
+    (Role.READ_ONLY, "gl",              "edit"):         _F,
+    (Role.READ_ONLY, "archival",        "view"):         _F,
+    (Role.READ_ONLY, "archival",        "create"):       _F,
+}
+
+
+def has_permission(user: "UserDB", resource: str, action: str) -> bool:
+    """Return True if the user's role is granted (resource, action) in the matrix."""
+    return PERMISSIONS.get((user.role, resource, action), False)
+
+
+def require_permission(resource: str, action: str):
+    """
+    Returns a FastAPI dependency that raises 403 when the authenticated user
+    lacks the given (resource, action) permission in the matrix.
+
+    Usage:
+        @app.post("/invoices", dependencies=[require_permission("invoices", "create")])
+    """
+    def _check(current_user: "UserDB" = Depends(get_current_user_from_header)):
+        if not has_permission(current_user, resource, action):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Permission denied: '{action}' on '{resource}' "
+                    f"is not allowed for role {current_user.role}"
+                ),
+            )
+    return Depends(_check)
 
 
 class CompanyStatus(str, enum.Enum):
@@ -2952,6 +3130,37 @@ def verify_backup(
     }
 
 
+# ==================== PERMISSION MATRIX ENDPOINT (Task 25) ====================
+
+
+@app.get("/admin/permissions", tags=["Admin"])
+def get_permission_matrix(
+    current_user: UserDB = Depends(get_current_user_from_header),
+):
+    """
+    Return the full role-permission matrix as JSON for FTA audit documentation.
+    Accessible by SUPER_ADMIN and COMPANY_ADMIN.  Task 25.
+    """
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
+        raise HTTPException(403, "Insufficient permissions to view permission matrix")
+
+    # Serialise PERMISSIONS into a nested dict: {role: {resource: {action: bool}}}
+    matrix: dict = {}
+    for (role, resource, action), allowed in PERMISSIONS.items():
+        r_key = role.value
+        matrix.setdefault(r_key, {}).setdefault(resource, {})[action] = allowed
+
+    all_resources = sorted({res for (_, res, _) in PERMISSIONS})
+    all_actions = sorted({act for (_, _, act) in PERMISSIONS})
+
+    return {
+        "roles": [r.value for r in Role],
+        "resources": all_resources,
+        "actions": all_actions,
+        "matrix": matrix,
+    }
+
+
 # ==================== REGISTRATION ENDPOINTS ====================
 
 
@@ -5761,18 +5970,17 @@ def invite_user(
     db: Session = Depends(get_db),
 ):
     """Invite a team member to the company based on inviter role permissions."""
-    allowed_inviter_roles = [
-        Role.COMPANY_ADMIN,
-        Role.SUPER_ADMIN,
-        Role.BUSINESS_ADMIN,
-    ]
-    if current_user.role not in allowed_inviter_roles:
+    # Task 25: permission matrix gate
+    if not has_permission(current_user, "team", "manage_users"):
         raise HTTPException(403, "Only admins can invite users")
 
-    if current_user.role == Role.BUSINESS_ADMIN and payload.role != Role.FINANCE_USER:
+    # BUSINESS_ADMIN can only invite FINANCE_USER or READ_ONLY
+    if current_user.role == Role.BUSINESS_ADMIN and payload.role not in (
+        Role.FINANCE_USER, Role.READ_ONLY
+    ):
         raise HTTPException(
             403,
-            "Business admins can only invite finance users",
+            "Business admins can only invite Finance Users or Read-Only users",
         )
 
     if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
