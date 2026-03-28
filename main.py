@@ -152,7 +152,7 @@ class Role(str, enum.Enum):
 # ==================== PERMISSION MATRIX (Task 25) ====================
 
 # Structure: PERMISSIONS[(Role, resource, action)] = True | False
-# Resources: invoices, inward_invoices, reports, vat_return, audit_logs, team, settings, gl, archival
+# Resources: invoices, inward_invoices, reports, vat_return, audit_logs, team, settings, gl, archival, customers
 # Actions: view, create, edit, delete, approve, export, manage_users
 
 _T = True
@@ -298,6 +298,28 @@ PERMISSIONS: dict[tuple, bool] = {
     (Role.READ_ONLY, "gl",              "edit"):         _F,
     (Role.READ_ONLY, "archival",        "view"):         _F,
     (Role.READ_ONLY, "archival",        "create"):       _F,
+
+    # ── CUSTOMERS (Task 30 — P3-B) — company-scoped contact book ─────────────
+    (Role.SUPER_ADMIN,    "customers", "view"):   _F,   # no company context
+    (Role.SUPER_ADMIN,    "customers", "create"): _F,
+    (Role.SUPER_ADMIN,    "customers", "edit"):   _F,
+    (Role.SUPER_ADMIN,    "customers", "delete"): _F,
+    (Role.COMPANY_ADMIN,  "customers", "view"):   _T,
+    (Role.COMPANY_ADMIN,  "customers", "create"): _T,
+    (Role.COMPANY_ADMIN,  "customers", "edit"):   _T,
+    (Role.COMPANY_ADMIN,  "customers", "delete"): _T,
+    (Role.BUSINESS_ADMIN, "customers", "view"):   _T,
+    (Role.BUSINESS_ADMIN, "customers", "create"): _T,
+    (Role.BUSINESS_ADMIN, "customers", "edit"):   _T,
+    (Role.BUSINESS_ADMIN, "customers", "delete"): _T,
+    (Role.FINANCE_USER,   "customers", "view"):   _T,
+    (Role.FINANCE_USER,   "customers", "create"): _T,
+    (Role.FINANCE_USER,   "customers", "edit"):   _T,
+    (Role.FINANCE_USER,   "customers", "delete"): _F,
+    (Role.READ_ONLY,      "customers", "view"):   _T,
+    (Role.READ_ONLY,      "customers", "create"): _F,
+    (Role.READ_ONLY,      "customers", "edit"):   _F,
+    (Role.READ_ONLY,      "customers", "delete"): _F,
 }
 
 
@@ -8791,6 +8813,7 @@ def get_adhoc_report(
     from_date: str = None,
     to_date: str = None,
     type: str = "all",
+    format: str = "json",
 ):
     """
     Task 30 (P3-A) — Ad Hoc Report: arbitrary date-range invoice summary.
@@ -8799,13 +8822,22 @@ def get_adhoc_report(
     - from_date: ISO date string YYYY-MM-DD (required)
     - to_date:   ISO date string YYYY-MM-DD (required)
     - type:      "sales" | "purchases" | "all" (default: all)
+    - format:    "json" | "xlsx" | "pdf" | "csv"
+                 When format != "json", delegates to the export endpoint.
 
-    Returns the same payload shape as GET /reports/periodic.
+    Returns the same payload shape as GET /reports/periodic (for format=json).
     """
     from datetime import date as _date
 
     if not has_permission(current_user, "reports", "view"):
         raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
+
+    if format.lower() in ("xlsx", "pdf", "csv"):
+        return export_adhoc_report(
+            current_user=current_user, db=db,
+            from_date=from_date, to_date=to_date,
+            type=type, format=format,
+        )
 
     if not from_date or not to_date:
         raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
@@ -9148,21 +9180,31 @@ def export_adhoc_report(
 FTA_RETENTION_YEARS = 5
 
 
-def _customer_has_retention_invoices(db: Session, company_id: str, customer_name: str, customer_email: Optional[str] = None) -> bool:
-    """Check whether this customer has any sales invoices within the FTA 5-year retention window."""
+def _customer_has_retention_invoices(
+    db: Session,
+    company_id: str,
+    customer_name: str,
+    customer_email: Optional[str] = None,
+    customer_trn: Optional[str] = None,
+) -> bool:
+    """
+    Check whether this customer has any sales invoices within the FTA 5-year retention window.
+    Uses TRN (most stable) → email → name in priority order to avoid name-heuristic false negatives.
+    """
     from datetime import timedelta
+    from sqlalchemy import or_
     cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
-    q = db.query(InvoiceDB).filter(
+    base = db.query(InvoiceDB).filter(
         InvoiceDB.company_id == company_id,
         InvoiceDB.issue_date >= cutoff,
     )
-    name_filter = InvoiceDB.customer_name == customer_name
+    conditions = []
+    if customer_trn:
+        conditions.append(InvoiceDB.customer_trn == customer_trn)
     if customer_email:
-        from sqlalchemy import or_
-        q = q.filter(or_(name_filter, InvoiceDB.customer_email == customer_email))
-    else:
-        q = q.filter(name_filter)
-    return q.first() is not None
+        conditions.append(InvoiceDB.customer_email == customer_email)
+    conditions.append(InvoiceDB.customer_name == customer_name)
+    return base.filter(or_(*conditions)).first() is not None
 
 
 @app.get("/customers", tags=["Customers"])
@@ -9174,6 +9216,8 @@ def list_customers(
     offset: int = 0,
 ):
     """List customer contacts for the current company. Task 30 (P3-B)."""
+    if not has_permission(current_user, "customers", "view"):
+        raise HTTPException(403, "Permission denied: view on customers is not allowed for your role")
     if not current_user.company_id:
         raise HTTPException(403, "Customer management is not available for platform-level accounts")
     query = db.query(CustomerDB).filter(CustomerDB.company_id == current_user.company_id)
@@ -9208,6 +9252,8 @@ def create_customer(
     db: Session = Depends(get_db),
 ):
     """Create a customer contact for the current company. Task 30 (P3-B)."""
+    if not has_permission(current_user, "customers", "create"):
+        raise HTTPException(403, "Permission denied: create on customers is not allowed for your role")
     if not current_user.company_id:
         raise HTTPException(403, "Customer management is not available for platform-level accounts")
     name = (data.get("name") or "").strip()
@@ -9241,6 +9287,8 @@ def get_customer(
     db: Session = Depends(get_db),
 ):
     """Get a single customer contact. Task 30 (P3-B)."""
+    if not has_permission(current_user, "customers", "view"):
+        raise HTTPException(403, "Permission denied: view on customers is not allowed for your role")
     customer = db.query(CustomerDB).filter(
         CustomerDB.id == customer_id,
         CustomerDB.company_id == current_user.company_id,
@@ -9264,6 +9312,8 @@ def update_customer(
     db: Session = Depends(get_db),
 ):
     """Update a customer contact. Task 30 (P3-B)."""
+    if not has_permission(current_user, "customers", "edit"):
+        raise HTTPException(403, "Permission denied: edit on customers is not allowed for your role")
     customer = db.query(CustomerDB).filter(
         CustomerDB.id == customer_id,
         CustomerDB.company_id == current_user.company_id,
@@ -9306,6 +9356,8 @@ def delete_customer(
     Task 30 (P3-B) — FTA 5-year retention guard:
     Returns HTTP 409 if the customer has invoices issued within the last 5 years.
     """
+    if not has_permission(current_user, "customers", "delete"):
+        raise HTTPException(403, "Permission denied: delete on customers is not allowed for your role")
     customer = db.query(CustomerDB).filter(
         CustomerDB.id == customer_id,
         CustomerDB.company_id == current_user.company_id,
@@ -9313,7 +9365,7 @@ def delete_customer(
     if not customer:
         raise HTTPException(404, "Customer not found")
 
-    if _customer_has_retention_invoices(db, current_user.company_id, customer.name, customer.email):
+    if _customer_has_retention_invoices(db, current_user.company_id, customer.name, customer.email, customer.trn):
         log_audit_event(
             db=db,
             action="CUSTOMER_DELETE_BLOCKED_RETENTION",
@@ -9371,11 +9423,17 @@ def delete_company(
 
     from datetime import timedelta
     cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
-    has_recent_invoices = (
+    has_recent_sales = (
         db.query(InvoiceDB)
         .filter(InvoiceDB.company_id == company_id, InvoiceDB.issue_date >= cutoff)
         .first()
     ) is not None
+    has_recent_purchases = (
+        db.query(InwardInvoiceDB)
+        .filter(InwardInvoiceDB.company_id == company_id, InwardInvoiceDB.invoice_date >= cutoff)
+        .first()
+    ) is not None
+    has_recent_invoices = has_recent_sales or has_recent_purchases
 
     if has_recent_invoices:
         log_audit_event(
