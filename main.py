@@ -13449,6 +13449,7 @@ def get_vat_return(
 
 _SOFTWARE_NAME = "InvoLinks"
 _SOFTWARE_VERSION = "1.0.0"
+_VENDOR_TRN = os.environ.get("INVOLINKS_VENDOR_TRN", "N/A")
 
 
 @app.get("/vat-return/{return_id}/export", tags=["VAT Return"])
@@ -13552,7 +13553,7 @@ def export_vat_return(
         ws.row_dimensions[7].height = 20
         mrow(7, "Software Version", _SOFTWARE_VERSION)
         ws.row_dimensions[8].height = 20
-        mrow(8, "Vendor TRN", company_trn)
+        mrow(8, "Vendor TRN", _VENDOR_TRN)
 
         ws.row_dimensions[9].height = 8
 
@@ -13630,7 +13631,7 @@ def export_vat_return(
         meta = ET.SubElement(root, "Metadata")
         ET.SubElement(meta, "SoftwareName").text = _SOFTWARE_NAME
         ET.SubElement(meta, "SoftwareVersion").text = _SOFTWARE_VERSION
-        ET.SubElement(meta, "VendorTRN").text = company_trn
+        ET.SubElement(meta, "VendorTRN").text = _VENDOR_TRN
         ET.SubElement(meta, "GeneratedAt").text = datetime.utcnow().isoformat() + "Z"
 
         taxpayer = ET.SubElement(root, "TaxpayerInfo")
