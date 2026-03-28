@@ -25,6 +25,10 @@ import {
   LogOut,
   User,
   Settings,
+  DatabaseBackup,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { adminAPI } from "../lib/api";
@@ -153,6 +157,34 @@ export default function SuperAdminDashboard() {
   const [addExtraMonths, setAddExtraMonths] = useState(0);
   const [freePlanType, setFreePlanType] = useState("INVOICE_COUNT"); // INVOICE_COUNT or DURATION
   const [isSuspended, setIsSuspended] = useState(false);
+
+  // Task 24: Backup status state
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [backupLoading, setBackupLoading] = useState(true);
+  const [verifyingBackup, setVerifyingBackup] = useState(false);
+
+  async function fetchBackupStatus() {
+    try {
+      const res = await api.get("/admin/backup/status");
+      setBackupStatus(res.data);
+    } catch {
+      setBackupStatus(null);
+    } finally {
+      setBackupLoading(false);
+    }
+  }
+
+  async function handleVerifyBackup() {
+    setVerifyingBackup(true);
+    try {
+      await api.post("/admin/backup/verify");
+      await fetchBackupStatus();
+    } catch {
+      // ignore
+    } finally {
+      setVerifyingBackup(false);
+    }
+  }
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -355,6 +387,11 @@ export default function SuperAdminDashboard() {
     }
     fetchPlatformStats();
   }, [fromISO, toISO]);
+
+  // Task 24: Fetch backup status on mount
+  useEffect(() => {
+    fetchBackupStatus();
+  }, []);
 
   const filteredCompanies = useMemo(() => {
     const list = stats?.companies.all || [];
@@ -734,6 +771,82 @@ export default function SuperAdminDashboard() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Task 24: Backup Status Card — super admin only */}
+        <div>
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="flex flex-row items-center gap-2 pb-3">
+              <DatabaseBackup className="h-5 w-5 text-indigo-500" />
+              <CardTitle className="text-base">Database Backup Status</CardTitle>
+              <div className="ml-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={verifyingBackup || backupLoading}
+                  onClick={handleVerifyBackup}
+                  className="text-xs h-8 gap-1.5"
+                >
+                  {verifyingBackup
+                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
+                    : <ShieldCheck className="h-3.5 w-3.5" />}
+                  {verifyingBackup ? "Logging…" : "Mark as Verified"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {backupLoading ? (
+                <p className="text-sm text-muted-foreground">Loading backup status…</p>
+              ) : !backupStatus ? (
+                <p className="text-sm text-red-600">Unable to load backup status.</p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Provider</p>
+                      <p className="text-sm font-medium">{backupStatus.provider}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">RPO Target</p>
+                      <p className="text-sm font-medium">{backupStatus.rpo_target_hours}h</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">RTO Target</p>
+                      <p className="text-sm font-medium">{backupStatus.rto_target_hours}h</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Last Verified</p>
+                      <p className="text-sm font-medium">
+                        {backupStatus.last_verified_at
+                          ? new Date(backupStatus.last_verified_at).toLocaleString()
+                          : "Never"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
+                    backupStatus.within_rpo
+                      ? "bg-emerald-50 text-emerald-800"
+                      : backupStatus.last_verified_at
+                        ? "bg-amber-50 text-amber-800"
+                        : "bg-red-50 text-red-800"
+                  }`}>
+                    {backupStatus.within_rpo
+                      ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                      : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+                    <span>{backupStatus.compliance_note}</span>
+                  </div>
+                  {backupStatus.last_verified_by && (
+                    <p className="text-xs text-muted-foreground">
+                      Last verified by: {backupStatus.last_verified_by}
+                      {backupStatus.backup_age_hours !== null
+                        ? ` · ${backupStatus.backup_age_hours.toFixed(1)}h ago`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

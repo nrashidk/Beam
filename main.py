@@ -2818,8 +2818,138 @@ def startup_event():
     except Exception as _arch_exc:
         logger.warning(f"Archival startup check failed: {_arch_exc}")
 
+    # Task 24: Backup configuration summary
+    _backup_provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
+    _backup_rpo = os.getenv("BACKUP_RPO_HOURS", "24")
+    _backup_rto = os.getenv("BACKUP_RTO_HOURS", "4")
+    logger.info(
+        f"💾 Backup config — Provider: {_backup_provider} | "
+        f"RPO target: {_backup_rpo}h | RTO target: {_backup_rto}h"
+    )
+
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
+
+
+# ==================== BACKUP ENDPOINTS (Task 24) ====================
+
+
+class BackupStatusResponse(BaseModel):
+    provider: str
+    rpo_target_hours: int
+    rto_target_hours: int
+    last_verified_at: Optional[str]
+    last_verified_by: Optional[str]
+    backup_age_hours: Optional[float]
+    within_rpo: bool
+    compliance_note: str
+
+
+@app.get("/admin/backup/status", tags=["Admin"], response_model=BackupStatusResponse)
+def get_backup_status(
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user_from_header),
+):
+    """
+    Return backup configuration metadata and last verification time.
+    Super-admin only.  Task 24.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
+    rpo_hours = int(os.getenv("BACKUP_RPO_HOURS", "24"))
+    rto_hours = int(os.getenv("BACKUP_RTO_HOURS", "4"))
+
+    # Find the most recent BACKUP_VERIFIED audit event
+    last_event = (
+        db.query(AuditLogDB)
+        .filter(AuditLogDB.action == "BACKUP_VERIFIED")
+        .order_by(AuditLogDB.created_at.desc())
+        .first()
+    )
+
+    last_verified_at = None
+    last_verified_by = None
+    backup_age_hours = None
+    within_rpo = False
+
+    if last_event:
+        last_verified_at = last_event.created_at.isoformat()
+        last_verified_by = last_event.user_email if hasattr(last_event, "user_email") else None
+        # Resolve user email from user_id if needed
+        if not last_verified_by and last_event.user_id:
+            u = db.query(UserDB).filter(UserDB.id == last_event.user_id).first()
+            last_verified_by = u.email if u else None
+        backup_age_hours = round(
+            (datetime.utcnow() - last_event.created_at).total_seconds() / 3600, 2
+        )
+        within_rpo = backup_age_hours <= rpo_hours
+
+    compliance_note = (
+        "COMPLIANT — last backup verification within RPO window"
+        if within_rpo
+        else (
+            "UNVERIFIED — no backup verification on record; run POST /admin/backup/verify"
+            if last_verified_at is None
+            else f"AT RISK — last verification {backup_age_hours:.1f}h ago exceeds RPO of {rpo_hours}h"
+        )
+    )
+
+    return BackupStatusResponse(
+        provider=provider,
+        rpo_target_hours=rpo_hours,
+        rto_target_hours=rto_hours,
+        last_verified_at=last_verified_at,
+        last_verified_by=last_verified_by,
+        backup_age_hours=backup_age_hours,
+        within_rpo=within_rpo,
+        compliance_note=compliance_note,
+    )
+
+
+@app.post("/admin/backup/verify", tags=["Admin"])
+def verify_backup(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user_from_header),
+):
+    """
+    Log a BACKUP_VERIFIED audit event with timestamp to create a compliance paper trail.
+    Super-admin only.  Task 24.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
+    rpo_hours = int(os.getenv("BACKUP_RPO_HOURS", "24"))
+
+    ip = request.client.host if request.client else None
+
+    log_audit_event(
+        db=db,
+        action="BACKUP_VERIFIED",
+        user_id=current_user.id,
+        company_id=None,
+        resource_type="system",
+        resource_id="backup",
+        description=(
+            f"Backup recoverability manually verified by {current_user.email}. "
+            f"Provider: {provider} | RPO target: {rpo_hours}h"
+        ),
+        ip_address=ip,
+    )
+    db.commit()
+
+    logger.info(f"BACKUP_VERIFIED logged by {current_user.email}")
+
+    return {
+        "status": "ok",
+        "verified_at": datetime.utcnow().isoformat(),
+        "verified_by": current_user.email,
+        "provider": provider,
+        "message": "Backup verification event logged to audit trail.",
+    }
 
 
 # ==================== REGISTRATION ENDPOINTS ====================
