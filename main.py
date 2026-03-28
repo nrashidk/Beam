@@ -3209,23 +3209,13 @@ def verify_hash_chain_integrity(
 
     ip = request.client.host if request and request.client else None
 
-    # Fetch only immutable (issued) invoices for chain verification.
-    # Drafts are excluded because they can still be edited and have no stable
-    # hash link — including them would produce noisy false failures.
-    # Must match the status set used in issue_invoice() predecessor selection
-    # so that chain membership is identical in both creation and verification.
-    _verify_statuses = [
-        InvoiceStatus.ISSUED,
-        InvoiceStatus.SENT,
-        InvoiceStatus.VIEWED,
-        InvoiceStatus.PAID,
-    ]
+    # Fetch all non-archived invoices for chain verification so no links are
+    # hidden by status transitions (e.g., CANCELLED, OVERDUE).
+    # DRAFT invoices that were never issued have no prev_invoice_hash set, so
+    # they are treated as chain-starts and no link is verified for them.
     q = (
         db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.is_archived == False,
-            InvoiceDB.status.in_(_verify_statuses),
-        )
+        .filter(InvoiceDB.is_archived == False)
         .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
     )
     if target_company_id:
@@ -9065,25 +9055,17 @@ def issue_invoice(
     import json
 
     # Get the immediate predecessor in the chain for the current invoice.
-    # Requirements:
-    # 1. Only link to immutable (issued) invoices — drafts can still be edited,
-    #    which would silently break the chain.
-    # 2. Select the latest invoice whose (issue_date, created_at) is strictly
-    #    before this invoice's position in the chain — same ordering used by the
-    #    verifier — so backdated issuance doesn't produce ordering mismatches.
-    _imm_statuses = [
-        InvoiceStatus.ISSUED,
-        InvoiceStatus.SENT,
-        InvoiceStatus.VIEWED,
-        InvoiceStatus.PAID,
-    ]
-    from sqlalchemy import or_, and_, tuple_
+    # Use the same population as the verifier (all non-archived invoices) to
+    # ensure chain membership and ordering are consistent between creation and
+    # verification. Select the invoice whose (issue_date, created_at) position
+    # is immediately before the current invoice in the sorted chain.
+    from sqlalchemy import or_, and_
     prev_invoice = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
             InvoiceDB.id != invoice.id,
-            InvoiceDB.status.in_(_imm_statuses),
+            InvoiceDB.is_archived == False,
             or_(
                 InvoiceDB.issue_date < invoice.issue_date,
                 and_(
