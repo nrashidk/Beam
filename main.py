@@ -11533,7 +11533,51 @@ def generate_fta_audit_file(
             for inv in inward_invoices
         ]
 
-        # Generate FAF ZIP (4-table CSV + SHA-256 hash, packed into ZIP)
+        # Fetch General Ledger entries for the period
+        gl_journal_entries = (
+            db.query(JournalEntryDB)
+            .filter(
+                JournalEntryDB.company_id == company.id,
+                JournalEntryDB.entry_date >= start_date,
+                JournalEntryDB.entry_date <= end_date,
+                JournalEntryDB.is_posted == True,
+            )
+            .all()
+        )
+
+        gl_entry_ids = [je.id for je in gl_journal_entries]
+        gl_lines = (
+            db.query(JournalEntryLineDB)
+            .filter(JournalEntryLineDB.journal_entry_id.in_(gl_entry_ids))
+            .all()
+            if gl_entry_ids
+            else []
+        )
+
+        lines_by_entry: Dict[str, List[Dict]] = {}
+        for line in gl_lines:
+            lines_by_entry.setdefault(line.journal_entry_id, []).append(
+                {
+                    "account_code": line.account_code or "",
+                    "account_name": line.account_name or "",
+                    "debit_amount": line.debit_amount or 0.0,
+                    "credit_amount": line.credit_amount or 0.0,
+                }
+            )
+
+        gl_data = [
+            {
+                "id": je.id,
+                "entry_date": je.entry_date,
+                "reference_number": je.reference_number or "",
+                "reference_id": je.reference_id or "",
+                "reference_type": je.reference_type or "",
+                "lines": lines_by_entry.get(je.id, []),
+            }
+            for je in gl_journal_entries
+        ]
+
+        # Generate FAF ZIP (5-table CSV + SHA-256 hash, packed into ZIP)
         from utils.fta_audit_generator import FTAAuditFileGenerator
 
         company_data = {
@@ -11543,11 +11587,13 @@ def generate_fta_audit_file(
             "city": company.city,
             "emirate": company.emirate,
             "registration_date": company.registration_date,
+            "period_start": start_date,
+            "period_end": end_date,
         }
 
         generator = FTAAuditFileGenerator(company_data)
         zip_path, stats = generator.generate_faf_zip(
-            outgoing_data, inward_data, output_dir, base_name
+            outgoing_data, inward_data, output_dir, base_name, gl_entries=gl_data
         )
 
         # Update audit file record with stats
@@ -11584,6 +11630,7 @@ def generate_fta_audit_file(
                 "total_customers": audit_file.total_customers,
                 "total_amount": audit_file.total_amount,
                 "total_vat": audit_file.total_vat,
+                "total_gl_lines": stats.get("total_gl_lines", 0),
             },
         }
 

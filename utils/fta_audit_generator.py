@@ -3,11 +3,12 @@ FTA Audit File (FAF) Generator
 ==============================
 Generates UAE Federal Tax Authority compliant audit files in FAF v1.0.0 format.
 
-FAF 4-table structure required by the FTA:
-  [CompanyData]  — entity metadata (1 data row)
-  [SalesData]    — outgoing tax invoices / credit notes
-  [PurchaseData] — inward invoices (purchases)
-  [TaxData]      — tax summary per rate category
+FAF 5-table structure required by the FTA:
+  [CompanyData]     — entity metadata (1 data row), incl. period dates & software ID
+  [SalesData]       — outgoing tax invoices / credit notes
+  [PurchaseData]    — inward invoices (purchases)
+  [TaxData]         — tax summary per rate category
+  [GeneralLedger]   — journal entry lines for the period
 
 Each generated file is accompanied by a SHA-256 hash file (.sha256).
 Both are packed into a ZIP archive returned for download.
@@ -23,6 +24,8 @@ from typing import Any, Dict, List, Tuple
 
 FAF_VERSION = "FAFv1.0.0"
 TAX_AGENCY_NAME = "InvoLinks"
+SOFTWARE_NAME = "InvoLinks"
+SOFTWARE_VERSION = "1.0.0"
 
 # ---------------------------------------------------------------------------
 # Column definitions per table
@@ -37,6 +40,10 @@ COMPANY_DATA_HEADERS = [
     "Address",
     "City",
     "Emirate",
+    "PeriodStart",
+    "PeriodEnd",
+    "SoftwareName",
+    "SoftwareVersion",
 ]
 
 SALES_DATA_HEADERS = [
@@ -80,6 +87,17 @@ TAX_DATA_HEADERS = [
     "TaxableAmountPurchases",
     "VATAmountPurchases",
     "NetVATDue",
+]
+
+GL_DATA_HEADERS = [
+    "EntryDate",
+    "JournalRef",
+    "AccountCode",
+    "AccountName",
+    "Debit",
+    "Credit",
+    "SourceDocRef",
+    "SourceDocType",
 ]
 
 
@@ -139,6 +157,7 @@ class FTAAuditFileGenerator:
         inward_invoices: List[Dict],
         output_dir: str,
         base_name: str,
+        gl_entries: List[Dict] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Build the FAF CSV, compute its SHA-256, pack both into a ZIP.
@@ -149,7 +168,9 @@ class FTAAuditFileGenerator:
         """
         os.makedirs(output_dir, exist_ok=True)
 
-        csv_content, stats = self._build_faf_content(outgoing_invoices, inward_invoices)
+        csv_content, stats = self._build_faf_content(
+            outgoing_invoices, inward_invoices, gl_entries=gl_entries or []
+        )
 
         csv_bytes = csv_content.encode("utf-8")
         sha256_hex = hashlib.sha256(csv_bytes).hexdigest()
@@ -204,7 +225,7 @@ class FTAAuditFileGenerator:
         return stats
 
     # ------------------------------------------------------------------
-    # Core builder — produces the 4-table FAF string
+    # Core builder — produces the 5-table FAF string
     # ------------------------------------------------------------------
 
     def _build_faf_content(
@@ -212,7 +233,11 @@ class FTAAuditFileGenerator:
         outgoing_invoices: List[Dict],
         inward_invoices: List[Dict],
         delimiter: str = ",",
+        gl_entries: List[Dict] = None,
     ) -> Tuple[str, Dict[str, Any]]:
+        if gl_entries is None:
+            gl_entries = []
+
         buf = io.StringIO()
 
         # File-level header metadata
@@ -242,6 +267,10 @@ class FTAAuditFileGenerator:
                 "Address": self.company_data.get("address", ""),
                 "City": self.company_data.get("city", ""),
                 "Emirate": self.company_data.get("emirate", ""),
+                "PeriodStart": _format_date(self.company_data.get("period_start", "")),
+                "PeriodEnd": _format_date(self.company_data.get("period_end", "")),
+                "SoftwareName": SOFTWARE_NAME,
+                "SoftwareVersion": SOFTWARE_VERSION,
             }
         )
         buf.write("\n")
@@ -396,6 +425,35 @@ class FTAAuditFileGenerator:
 
         buf.write("\n")
 
+        # ============================================================
+        # TABLE 5: GeneralLedger
+        # ============================================================
+        buf.write("[GeneralLedger]\n")
+        gl_writer = csv.DictWriter(
+            buf, fieldnames=GL_DATA_HEADERS,
+            delimiter=delimiter, lineterminator="\n"
+        )
+        gl_writer.writeheader()
+
+        total_gl_lines = 0
+        for entry in gl_entries:
+            for line in entry.get("lines", []):
+                gl_writer.writerow(
+                    {
+                        "EntryDate": _format_date(entry.get("entry_date", "")),
+                        "JournalRef": entry.get("reference_number", "") or entry.get("id", ""),
+                        "AccountCode": line.get("account_code", ""),
+                        "AccountName": line.get("account_name", ""),
+                        "Debit": _amount(line.get("debit_amount", 0)),
+                        "Credit": _amount(line.get("credit_amount", 0)),
+                        "SourceDocRef": entry.get("reference_id", "") or "",
+                        "SourceDocType": entry.get("reference_type", "") or "",
+                    }
+                )
+                total_gl_lines += 1
+
+        buf.write("\n")
+
         content = buf.getvalue()
 
         stats: Dict[str, Any] = {
@@ -406,6 +464,7 @@ class FTAAuditFileGenerator:
             "total_suppliers": total_purchases,
             "total_amount": round(total_sales_excl + total_purchase_excl, 2),
             "total_vat": round(total_sales_vat + total_purchase_vat, 2),
+            "total_gl_lines": total_gl_lines,
         }
 
         return content, stats
