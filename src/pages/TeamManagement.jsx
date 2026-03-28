@@ -168,6 +168,50 @@ function StaticRoleDescriptions() {
   );
 }
 
+const ROLE_PERMISSION_SUMMARY = {
+  SUPER_ADMIN: {
+    can: ["Full access to all resources, settings, team, and audit logs"],
+    cannot: [],
+  },
+  COMPANY_ADMIN: {
+    can: ["Invoices (all)", "Reports", "VAT Return", "Audit Logs", "Team", "Settings", "GL", "Archival"],
+    cannot: [],
+  },
+  BUSINESS_ADMIN: {
+    can: ["Invoices (no delete)", "Reports", "VAT Return (view/export)", "Audit Logs", "Team (invite)"],
+    cannot: ["Settings edit", "GL edit", "Archival create", "VAT Return generate"],
+  },
+  FINANCE_USER: {
+    can: ["Invoices (create/edit)", "Inward Invoices (create/edit)", "Reports", "VAT Return (view)", "GL (view)"],
+    cannot: ["Audit Logs", "Settings", "Team", "Archival", "VAT Return generate"],
+  },
+  READ_ONLY: {
+    can: ["Invoices (view/export)", "Inward Invoices (view)", "Reports", "VAT Return (view)", "Audit Logs (view)", "GL (view)"],
+    cannot: ["Create, edit, or delete anything", "Settings", "Team management"],
+  },
+};
+
+function MemberPermissionSummary({ role }) {
+  const summary = ROLE_PERMISSION_SUMMARY[role];
+  if (!summary) return <span className="text-gray-400 text-xs">—</span>;
+  return (
+    <div className="text-xs space-y-1 max-w-xs">
+      {summary.can.map((item, i) => (
+        <div key={i} className="flex items-start gap-1 text-green-700">
+          <Check size={11} className="mt-0.5 shrink-0" />
+          <span>{item}</span>
+        </div>
+      ))}
+      {summary.cannot.slice(0, 2).map((item, i) => (
+        <div key={i} className="flex items-start gap-1 text-red-600">
+          <X size={11} className="mt-0.5 shrink-0" />
+          <span>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function TeamManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -627,6 +671,9 @@ export default function TeamManagement() {
                           Role
                         </th>
                         <th className="text-left py-3 px-4 font-medium text-gray-700">
+                          Effective Permissions
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium text-gray-700">
                           Joined
                         </th>
                         <th className="text-left py-3 px-4 font-medium text-gray-700">
@@ -668,6 +715,9 @@ export default function TeamManagement() {
                           </td>
                           <td className="py-3 px-4">
                             {getRoleBadge(member.role)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <MemberPermissionSummary role={member.role} />
                           </td>
                           <td className="py-3 px-4 text-gray-600 text-sm">
                             {member.created_at ? (

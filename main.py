@@ -7674,14 +7674,10 @@ def get_periodic_report(
     - year: calendar year (default: current year)
     - period: ISO week number for weekly; 1-12 for monthly; 1-4 for quarterly; ignored for annual
 
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER, READ_ONLY
     """
-    if current_user.role not in [
-        Role.COMPANY_ADMIN,
-        Role.BUSINESS_ADMIN,
-        Role.FINANCE_USER,
-    ]:
-        raise HTTPException(403, "Insufficient permissions to view periodic reports")
+    if not has_permission(current_user, "reports", "view"):
+        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
 
     # All year/period defaulting is handled inside _build_periodic_date_range.
     # norm_year is the ISO year for weekly, Gregorian year for all other types.
@@ -7777,16 +7773,12 @@ def export_periodic_report(
     - period: period number (see GET /reports/periodic for semantics)
     - format: "pdf" (default) | "xlsx"
 
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
+    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER, READ_ONLY
     """
     import io
 
-    if current_user.role not in [
-        Role.COMPANY_ADMIN,
-        Role.BUSINESS_ADMIN,
-        Role.FINANCE_USER,
-    ]:
-        raise HTTPException(403, "Insufficient permissions to export periodic reports")
+    if not has_permission(current_user, "reports", "export"):
+        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
 
     # Validate format param explicitly
     if format.lower() not in ("pdf", "xlsx"):
@@ -8060,14 +8052,8 @@ def get_daily_reconciliation_report(
     from sqlalchemy import func
 
     # Check role-based permissions
-    if current_user.role not in [
-        Role.COMPANY_ADMIN,
-        Role.BUSINESS_ADMIN,
-        Role.FINANCE_USER,
-    ]:
-        raise HTTPException(
-            403, "Insufficient permissions to view reconciliation reports"
-        )
+    if not has_permission(current_user, "reports", "view"):
+        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
 
     # Parse date range
     if start_date:
@@ -13977,6 +13963,9 @@ def list_audit_logs(
     """
     from datetime import datetime as dt
 
+    if not has_permission(current_user, "audit_logs", "view"):
+        raise HTTPException(403, "Permission denied: view on audit_logs is not allowed for your role")
+
     q = db.query(AuditLogDB)
 
     if current_user.role != Role.SUPER_ADMIN:
@@ -14059,10 +14048,9 @@ def export_audit_logs(
     import csv as _csv
     import io
 
-    # Authorization: admin-only — FINANCE_USER is explicitly excluded
-    allowed = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]
-    if current_user.role not in allowed:
-        raise HTTPException(403, "Insufficient permissions to export audit logs")
+    # Authorization: governed by permission matrix (FINANCE_USER and READ_ONLY are excluded)
+    if not has_permission(current_user, "audit_logs", "export"):
+        raise HTTPException(403, "Permission denied: export on audit_logs is not allowed for your role")
 
     # Validate format
     if format.lower() not in ("csv", "xlsx"):
