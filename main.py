@@ -7146,10 +7146,22 @@ def verify_invoice_payment(
     }
 
 
-def _build_periodic_date_range(period_type: str, year: int, period: int):
+def _iso_weeks_in_year(year: int) -> int:
+    """Return the number of ISO weeks in the given year (52 or 53)."""
+    from datetime import date
+    # Dec 28 is always in the last ISO week of the year
+    dec28 = date(year, 12, 28)
+    return dec28.isocalendar()[1]
+
+
+def _build_periodic_date_range(period_type: str, year, period):
     """
     Task 21 — compute (start_dt, end_dt, period_label, period_type, period) for
     weekly / monthly / quarterly / annual period types.
+
+    All defaulting (year, period) is done here so callers can always pass raw
+    query-param values (which may be None).
+
     Returns (start_dt, end_dt, period_label, normalised_period_type, normalised_period).
     """
     from datetime import date, timedelta
@@ -7158,12 +7170,24 @@ def _build_periodic_date_range(period_type: str, year: int, period: int):
     today = date.today()
 
     if period_type == "weekly":
+        # ISO week-year: use isocalendar() so year-boundary weeks are correct
+        iso_today = today.isocalendar()
         if year is None:
-            year = today.isocalendar()[0]
+            year = iso_today[0]   # ISO year, NOT Gregorian year
         if period is None:
-            period = today.isocalendar()[1]
-        # ISO week: Monday→Sunday
-        # Jan 4 is always in week 1 of its year
+            # Only default to today's week if we are using today's ISO year
+            if year == iso_today[0]:
+                period = iso_today[1]
+            else:
+                period = 1
+        # Validate week number against actual weeks in that ISO year
+        max_week = _iso_weeks_in_year(year)
+        if period < 1 or period > max_week:
+            raise HTTPException(
+                400,
+                f"period must be 1-{max_week} for weekly reports in year {year}",
+            )
+        # Compute Monday of ISO week 1: Jan 4 is always in week 1
         jan4 = date(year, 1, 4)
         week1_monday = jan4 - timedelta(days=jan4.weekday())
         start_dt = week1_monday + timedelta(weeks=period - 1)
@@ -7172,6 +7196,8 @@ def _build_periodic_date_range(period_type: str, year: int, period: int):
         return start_dt, end_dt, period_label, "weekly", period
 
     elif period_type == "quarterly":
+        if year is None:
+            year = today.year
         if period is None:
             period = (today.month - 1) // 3 + 1
         if period < 1 or period > 4:
@@ -7185,6 +7211,8 @@ def _build_periodic_date_range(period_type: str, year: int, period: int):
         return start_dt, end_dt, period_label, "quarterly", period
 
     elif period_type == "annual":
+        if year is None:
+            year = today.year
         # Full calendar year — period param unused (always 1)
         start_dt = date(year, 1, 1)
         end_dt = date(year, 12, 31)
@@ -7193,6 +7221,8 @@ def _build_periodic_date_range(period_type: str, year: int, period: int):
 
     else:
         # monthly (default / fallback)
+        if year is None:
+            year = today.year
         if period is None:
             period = today.month
         if period < 1 or period > 12:
@@ -7232,10 +7262,7 @@ def get_periodic_report(
     ]:
         raise HTTPException(403, "Insufficient permissions to view periodic reports")
 
-    today = date.today()
-    if year is None:
-        year = today.year
-
+    # All year/period defaulting is handled inside _build_periodic_date_range
     start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
         period_type, year, period
     )
@@ -7341,10 +7368,11 @@ def export_periodic_report(
     ]:
         raise HTTPException(403, "Insufficient permissions to export periodic reports")
 
-    today = _date.today()
-    if year is None:
-        year = today.year
+    # Validate format param explicitly
+    if format.lower() not in ("pdf", "xlsx"):
+        raise HTTPException(400, "format must be 'pdf' or 'xlsx'")
 
+    # All year/period defaulting is handled inside _build_periodic_date_range
     start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
         period_type, year, period
     )
