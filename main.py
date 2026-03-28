@@ -15607,7 +15607,7 @@ def export_general_ledger(
     if reference_type:
         q = q.filter(JournalEntryDB.reference_type == reference_type.upper())
 
-    entries = q.limit(5000).all()
+    entries = q.all()
 
     # Build flat rows — one row per journal entry line
     rows = []
