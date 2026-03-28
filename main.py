@@ -15106,12 +15106,20 @@ def export_vat_return(
         _doc = _lxml_etree.fromstring(xml_bytes)
         if not _xmlschema.validate(_doc):
             _errors = "; ".join(str(e) for e in _xmlschema.error_log)
-            log_audit_event(
-                db, "VAT_RETURN_XML_INVALID",
-                user_id=current_user.id, company_id=current_user.company_id,
-                resource_type="vat_return", resource_id=return_id,
-                description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
-            )
+            # Write audit in a separate independent session so it is committed before the exception
+            _audit_db = SessionLocal()
+            try:
+                log_audit_event(
+                    _audit_db, "VAT_RETURN_XML_INVALID",
+                    user_id=current_user.id, company_id=current_user.company_id,
+                    resource_type="vat_return", resource_id=return_id,
+                    description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
+                )
+                _audit_db.commit()
+            except Exception:
+                pass
+            finally:
+                _audit_db.close()
             raise HTTPException(500, f"VAT return XML failed FTA schema validation: {_errors[:500]}")
 
         filename = f"vat_return_{period_start}_{period_end}.xml"

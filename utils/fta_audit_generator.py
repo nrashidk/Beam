@@ -299,15 +299,23 @@ class FTAAuditFileGenerator:
             tax_code = _derive_tax_code(inv_type, vat_rate)
             currency = (inv.get("currency_code", "AED") or "AED").upper()
 
-            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED
-            if currency != "AED" and inv.get("total_amount_aed"):
-                total_aed = float(inv["total_amount_aed"])
-                # Scale subtotal and VAT proportionally to AED equivalent
-                if total > 0:
-                    aed_ratio = total_aed / total
-                    subtotal_aed = round(subtotal * aed_ratio, 2)
-                    vat_aed = round(vat * aed_ratio, 2)
+            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED.
+            # For AED invoices: use amounts directly.
+            # For non-AED invoices without total_amount_aed: emit zeros (data gap — not compliant to include foreign-currency amounts labeled AED).
+            if currency != "AED":
+                raw_aed = inv.get("total_amount_aed")
+                if raw_aed:
+                    total_aed = float(raw_aed)
+                    if total > 0:
+                        aed_ratio = total_aed / total
+                        subtotal_aed = round(subtotal * aed_ratio, 2)
+                        vat_aed = round(vat * aed_ratio, 2)
+                    else:
+                        subtotal_aed = 0.0
+                        vat_aed = 0.0
                 else:
+                    # Missing AED conversion — emit zeros to avoid reporting foreign-currency amounts as AED
+                    total_aed = 0.0
                     subtotal_aed = 0.0
                     vat_aed = 0.0
             else:
@@ -368,14 +376,23 @@ class FTAAuditFileGenerator:
             tax_code = _derive_tax_code(inv_type, vat_rate)
             currency = (inv.get("currency_code", "AED") or "AED").upper()
 
-            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED
-            if currency != "AED" and inv.get("total_amount_aed"):
-                total_aed = float(inv["total_amount_aed"])
-                if total > 0:
-                    aed_ratio = total_aed / total
-                    subtotal_aed = round(subtotal * aed_ratio, 2)
-                    vat_aed = round(vat * aed_ratio, 2)
+            # P2-A: Use AED equivalent for non-AED invoices so FAF always reports in AED.
+            # For AED invoices: use amounts directly.
+            # For non-AED invoices without total_amount_aed: emit zeros (data gap — not compliant to include foreign-currency amounts labeled AED).
+            if currency != "AED":
+                raw_aed = inv.get("total_amount_aed")
+                if raw_aed:
+                    total_aed = float(raw_aed)
+                    if total > 0:
+                        aed_ratio = total_aed / total
+                        subtotal_aed = round(subtotal * aed_ratio, 2)
+                        vat_aed = round(vat * aed_ratio, 2)
+                    else:
+                        subtotal_aed = 0.0
+                        vat_aed = 0.0
                 else:
+                    # Missing AED conversion — emit zeros to avoid reporting foreign-currency amounts as AED
+                    total_aed = 0.0
                     subtotal_aed = 0.0
                     vat_aed = 0.0
             else:
