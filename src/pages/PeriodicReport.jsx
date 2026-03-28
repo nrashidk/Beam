@@ -20,7 +20,6 @@ const MONTHS = [
 const QUARTERS = ["Q1 (Jan–Mar)", "Q2 (Apr–Jun)", "Q3 (Jul–Sep)", "Q4 (Oct–Dec)"];
 
 const currentYear = new Date().getFullYear();
-const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - i);
 
 /**
  * Returns { isoYear, isoWeek } for a given Date using the standard
@@ -42,14 +41,6 @@ function getISOWeeksInYear(year) {
   return getISOWeekData(new Date(year, 11, 28)).isoWeek;
 }
 
-function currentISOWeek() {
-  return getISOWeekData(new Date()).isoWeek;
-}
-
-function currentISOYear() {
-  return getISOWeekData(new Date()).isoYear;
-}
-
 export default function PeriodicReport() {
   const navigate = useNavigate();
   const [periodType, setPeriodType] = useState("monthly");
@@ -62,6 +53,14 @@ export default function PeriodicReport() {
 
   const weeksInYear = getISOWeeksInYear(year);
   const WEEKS = Array.from({ length: weeksInYear }, (_, i) => i + 1);
+
+  // For weekly mode ensure the selected ISO year is always in the dropdown
+  const isoCurrentYear = getISOWeekData(new Date()).isoYear;
+  const baseYears = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  const YEARS =
+    periodType === "weekly" && !baseYears.includes(isoCurrentYear)
+      ? [isoCurrentYear, ...baseYears].sort((a, b) => b - a)
+      : baseYears;
 
   useEffect(() => {
     if (periodType === "monthly") {

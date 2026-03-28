@@ -7162,7 +7162,9 @@ def _build_periodic_date_range(period_type: str, year, period):
     All defaulting (year, period) is done here so callers can always pass raw
     query-param values (which may be None).
 
-    Returns (start_dt, end_dt, period_label, normalised_period_type, normalised_period).
+    Returns (start_dt, end_dt, period_label, normalised_period_type,
+             normalised_period, normalised_year).
+    normalised_year is the ISO year for weekly reports, Gregorian year for all others.
     """
     from datetime import date, timedelta
     import calendar
@@ -7193,7 +7195,7 @@ def _build_periodic_date_range(period_type: str, year, period):
         start_dt = week1_monday + timedelta(weeks=period - 1)
         end_dt = start_dt + timedelta(days=6)
         period_label = f"Week {period}, {year} ({start_dt.strftime('%d %b')}–{end_dt.strftime('%d %b %Y')})"
-        return start_dt, end_dt, period_label, "weekly", period
+        return start_dt, end_dt, period_label, "weekly", period, year
 
     elif period_type == "quarterly":
         if year is None:
@@ -7208,7 +7210,7 @@ def _build_periodic_date_range(period_type: str, year, period):
         last_day = calendar.monthrange(year, end_month)[1]
         end_dt = date(year, end_month, last_day)
         period_label = f"Q{period} {year}"
-        return start_dt, end_dt, period_label, "quarterly", period
+        return start_dt, end_dt, period_label, "quarterly", period, year
 
     elif period_type == "annual":
         if year is None:
@@ -7217,7 +7219,7 @@ def _build_periodic_date_range(period_type: str, year, period):
         start_dt = date(year, 1, 1)
         end_dt = date(year, 12, 31)
         period_label = f"Annual {year}"
-        return start_dt, end_dt, period_label, "annual", 1
+        return start_dt, end_dt, period_label, "annual", 1, year
 
     else:
         # monthly (default / fallback)
@@ -7231,7 +7233,7 @@ def _build_periodic_date_range(period_type: str, year, period):
         last_day = calendar.monthrange(year, period)[1]
         end_dt = date(year, period, last_day)
         period_label = f"{calendar.month_name[period]} {year}"
-        return start_dt, end_dt, period_label, "monthly", period
+        return start_dt, end_dt, period_label, "monthly", period, year
 
 
 @app.get("/reports/periodic", tags=["Reports"])
@@ -7252,9 +7254,6 @@ def get_periodic_report(
 
     Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
     """
-    from datetime import date
-    import calendar
-
     if current_user.role not in [
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
@@ -7262,12 +7261,11 @@ def get_periodic_report(
     ]:
         raise HTTPException(403, "Insufficient permissions to view periodic reports")
 
-    # All year/period defaulting is handled inside _build_periodic_date_range
-    start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
-        period_type, year, period
+    # All year/period defaulting is handled inside _build_periodic_date_range.
+    # norm_year is the ISO year for weekly, Gregorian year for all other types.
+    start_dt, end_dt, period_label, period_type, period, norm_year = (
+        _build_periodic_date_range(period_type, year, period)
     )
-    # Use start_dt.year for response metadata so it is never None
-    _resp_year = start_dt.year
 
     # Query all non-cancelled invoices in the period
     invoices = (
@@ -7329,7 +7327,7 @@ def get_periodic_report(
     return {
         "period_type": period_type,
         "period_label": period_label,
-        "year": _resp_year,
+        "year": norm_year,
         "period": period,
         "start_date": start_dt.isoformat(),
         "end_date": end_dt.isoformat(),
@@ -7359,8 +7357,6 @@ def export_periodic_report(
 
     Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
     """
-    from datetime import date as _date
-    import calendar
     import io
 
     if current_user.role not in [
@@ -7375,8 +7371,8 @@ def export_periodic_report(
         raise HTTPException(400, "format must be 'pdf' or 'xlsx'")
 
     # All year/period defaulting is handled inside _build_periodic_date_range
-    start_dt, end_dt, period_label, period_type, period = _build_periodic_date_range(
-        period_type, year, period
+    start_dt, end_dt, period_label, period_type, period, _norm_year = (
+        _build_periodic_date_range(period_type, year, period)
     )
 
     # Query invoices
