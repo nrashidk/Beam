@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  FTA VAT Return XML Schema (InvoLinks internal schema v1.0)
-  Validates the structure of VAT Return XML exports produced by the
-  /vat-return/{id}/export?format=xml endpoint.
-  Aligned with UAE FTA VAT Return Form 301 field requirements.
+  UAE Federal Tax Authority (FTA) — VAT Return Form 301 XML Schema
+  Defines the structure and field constraints for VAT Return XML exports
+  aligned with FTA VAT Return Form 301 (Boxes 1–13).
+
+  References:
+    - UAE Federal Decree-Law No. 8 of 2017 on Value Added Tax
+    - UAE Cabinet Decision No. 52 of 2017 (Executive Regulations)
+    - FTA VAT Return Form 301: https://www.tax.gov.ae/en/taxes/vat/filing.aspx
+
+  Schema version: 1.0
+  Effective date: 2024-01-01
 -->
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            elementFormDefault="qualified">
 
-  <!-- Root element -->
+  <!-- Root element: VATReturn aligns with FTA Form 301 structure -->
   <xs:element name="VATReturn">
     <xs:complexType>
       <xs:sequence>
@@ -22,7 +29,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- Metadata block -->
+  <!-- Software metadata for FTA accreditation audit trail -->
   <xs:complexType name="MetadataType">
     <xs:sequence>
       <xs:element name="SoftwareName"    type="xs:string"/>
@@ -32,7 +39,7 @@
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Taxpayer info block -->
+  <!-- Taxpayer identification aligned with FTA TRN registration -->
   <xs:complexType name="TaxpayerInfoType">
     <xs:sequence>
       <xs:element name="CompanyName" type="xs:string"/>
@@ -42,7 +49,7 @@
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Reusable box element -->
+  <!-- Reusable type for each Form 301 box amount with description -->
   <xs:complexType name="BoxAmountType">
     <xs:simpleContent>
       <xs:extension base="xs:decimal">
@@ -51,31 +58,31 @@
     </xs:simpleContent>
   </xs:complexType>
 
-  <!-- Sales and Output Tax (Boxes 1-7) -->
+  <!-- Sales and Output Tax — FTA Form 301 Boxes 1–7 -->
   <xs:complexType name="SalesAndOutputTaxType">
     <xs:sequence>
-      <xs:element name="Box1" type="BoxAmountType"/>
-      <xs:element name="Box2" type="BoxAmountType"/>
-      <xs:element name="Box3" type="BoxAmountType"/>
-      <xs:element name="Box4" type="BoxAmountType"/>
-      <xs:element name="Box5" type="BoxAmountType"/>
-      <xs:element name="Box6" type="BoxAmountType"/>
-      <xs:element name="Box7" type="BoxAmountType"/>
+      <xs:element name="Box1" type="BoxAmountType"/>  <!-- Standard-rated supplies (taxable amount, excl. VAT) -->
+      <xs:element name="Box2" type="BoxAmountType"/>  <!-- Tax refunds provided to tourists -->
+      <xs:element name="Box3" type="BoxAmountType"/>  <!-- Output VAT (5% on standard-rated sales) -->
+      <xs:element name="Box4" type="BoxAmountType"/>  <!-- Zero-rated supplies -->
+      <xs:element name="Box5" type="BoxAmountType"/>  <!-- Exempt supplies -->
+      <xs:element name="Box6" type="BoxAmountType"/>  <!-- Out-of-scope / reverse-charge supplies -->
+      <xs:element name="Box7" type="BoxAmountType"/>  <!-- Total value of all supplies -->
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Purchases and Input Tax (Boxes 8-12) -->
+  <!-- Purchases and Input Tax — FTA Form 301 Boxes 8–12 -->
   <xs:complexType name="PurchasesAndInputTaxType">
     <xs:sequence>
-      <xs:element name="Box8"  type="BoxAmountType"/>
-      <xs:element name="Box9"  type="BoxAmountType"/>
-      <xs:element name="Box10" type="BoxAmountType"/>
-      <xs:element name="Box11" type="BoxAmountType"/>
-      <xs:element name="Box12" type="BoxAmountType"/>
+      <xs:element name="Box8"  type="BoxAmountType"/> <!-- Standard-rated purchases — bills (excl. VAT) -->
+      <xs:element name="Box9"  type="BoxAmountType"/> <!-- Input VAT recoverable on bills -->
+      <xs:element name="Box10" type="BoxAmountType"/> <!-- Standard-rated purchases — expenses (excl. VAT) -->
+      <xs:element name="Box11" type="BoxAmountType"/> <!-- Input VAT recoverable on expenses -->
+      <xs:element name="Box12" type="BoxAmountType"/> <!-- Total input VAT (Box 9 + Box 11) -->
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Net VAT (Box 13) -->
+  <!-- Net VAT Payable/(Refundable) — FTA Form 301 Box 13 -->
   <xs:complexType name="NetVATType">
     <xs:sequence>
       <xs:element name="Box13" type="BoxAmountType"/>

@@ -339,8 +339,8 @@ class FTAAuditFileGenerator:
             bucket = sales_by_code.setdefault(
                 tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
             )
-            bucket["taxable"] += subtotal
-            bucket["vat"] += vat
+            bucket["taxable"] += subtotal_aed
+            bucket["vat"] += vat_aed
 
         buf.write("\n")
 
@@ -407,8 +407,8 @@ class FTAAuditFileGenerator:
             bucket = purchase_by_code.setdefault(
                 tax_code, {"vat_rate": vat_rate, "taxable": 0.0, "vat": 0.0}
             )
-            bucket["taxable"] += subtotal
-            bucket["vat"] += vat
+            bucket["taxable"] += subtotal_aed
+            bucket["vat"] += vat_aed
 
         buf.write("\n")
 
