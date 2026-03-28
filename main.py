@@ -13712,10 +13712,14 @@ def export_audit_logs(
     import csv as _csv
     import io
 
-    # Authorization: only admins / super-admins
-    allowed = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]
+    # Authorization: admin-only — FINANCE_USER is explicitly excluded
+    allowed = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]
     if current_user.role not in allowed:
         raise HTTPException(403, "Insufficient permissions to export audit logs")
+
+    # Validate format
+    if format.lower() not in ("csv", "xlsx"):
+        raise HTTPException(400, "Invalid format. Supported values: csv, xlsx")
 
     # Build query identical to list_audit_logs but without pagination
     q = db.query(AuditLogDB)

@@ -172,7 +172,18 @@ export default function AuditTrail() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e.response?.data?.detail || `Failed to export audit log as ${fmt.toUpperCase()}.`);
+      // Blob responses don't have a parsed JSON body — parse it manually
+      if (e.response?.data instanceof Blob) {
+        try {
+          const text = await e.response.data.text();
+          const parsed = JSON.parse(text);
+          setError(parsed.detail || `Failed to export audit log as ${fmt.toUpperCase()}.`);
+        } catch {
+          setError(`Failed to export audit log as ${fmt.toUpperCase()}.`);
+        }
+      } else {
+        setError(e.response?.data?.detail || `Failed to export audit log as ${fmt.toUpperCase()}.`);
+      }
     } finally {
       setExporting(null);
     }
