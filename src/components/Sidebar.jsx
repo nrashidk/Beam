@@ -50,7 +50,9 @@ export default function Sidebar() {
     { path: "/bulk-import", icon: Upload, label: "Bulk Import" },
     { path: "/expense-tracker", icon: Receipt, label: "Expense Tracker" },
     { path: "/finance", icon: BarChart3, label: "Finance" },
+    { path: "/vat-return", icon: ClipboardList, label: "VAT Return" },
     { path: "/audit-files", icon: FileCheck, label: "FTA Audit" },
+    { path: "/audit-trail", icon: ShieldCheck, label: "Audit Trail" },
     { path: "/invoices", icon: FileText, label: "Invoices" },
     { path: "/payment-verification", icon: CheckCircle, label: "Payment Verification" },
     { path: "/settings/peppol", icon: Network, label: "PEPPOL" },
@@ -58,10 +60,8 @@ export default function Sidebar() {
     { path: "/reconciliation", icon: FileSpreadsheet, label: "Reconciliation" },
     { path: "/reports/periodic", icon: CalendarDays, label: "Periodic Report" },
     { path: "/data-archival", icon: Archive, label: "Data Archival" },
-    { path: "/audit-trail", icon: ShieldCheck, label: "Audit Trail" },
     { path: "/settings/security", icon: Shield, label: "Security" },
     { path: "/settings/team", icon: Users, label: "Team" },
-    { path: "/vat-return", icon: ClipboardList, label: "VAT Return" },
     { path: "/settings/vat", icon: Percent, label: "VAT Settings" },
   ];
 
