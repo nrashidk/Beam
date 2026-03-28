@@ -46,18 +46,21 @@ def _backup_sqlite(db_path: str, out_path: Path) -> None:
 
 
 def _backup_postgres(db_url: str, out_path: Path) -> None:
-    """Shell out to pg_dump and pipe through gzip."""
-    with gzip.open(out_path, "wb") as gz:
-        result = subprocess.run(
-            ["pg_dump", "--no-password", db_url],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+    """
+    Shell out to pg_dump using custom format (binary), then gzip-wrap it.
+    Custom format is required so the archive can be restored with pg_restore.
+    """
+    result = subprocess.run(
+        ["pg_dump", "--no-password", "--format=custom", db_url],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"pg_dump failed (exit {result.returncode}): "
+            + result.stderr.decode("utf-8", errors="replace")[:500]
         )
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"pg_dump failed (exit {result.returncode}): "
-                + result.stderr.decode("utf-8", errors="replace")[:500]
-            )
+    with gzip.open(out_path, "wb") as gz:
         gz.write(result.stdout)
 
 

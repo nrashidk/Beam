@@ -2963,6 +2963,16 @@ def _run_column_migrations():
         # Backfill: set total_amount_aed = total_amount for existing AED invoices
         "UPDATE invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
         "UPDATE inward_invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
+        # Task 29 (P2-E): backup_logs table — ensure all columns exist (safe for existing envs)
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS filename VARCHAR",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS checksum_sha256 VARCHAR(64)",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS storage_path VARCHAR",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS status VARCHAR(10) DEFAULT 'PENDING'",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS error_message TEXT",
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS triggered_by VARCHAR",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -3451,19 +3461,27 @@ def restore_backup(
             conn.close()
             Path(tmp_sql).unlink(missing_ok=True)
         elif "postgresql" in db_url.lower() or "postgres" in db_url.lower():
-            import gzip
+            import gzip, tempfile
 
-            result = subprocess.run(
-                ["psql", "--no-password", db_url],
-                input=gzip.open(dump_file, "rb").read(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(
-                    "psql restore failed: "
-                    + result.stderr.decode("utf-8", errors="replace")[:500]
+            with tempfile.NamedTemporaryFile(suffix=".dump", delete=False) as tmp:
+                tmp_path = tmp.name
+                with gzip.open(dump_file, "rb") as gz:
+                    tmp.write(gz.read())
+
+            try:
+                result = subprocess.run(
+                    ["pg_restore", "--no-password", "--clean", "--if-exists",
+                     "--dbname", db_url, tmp_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
+                if result.returncode != 0:
+                    raise RuntimeError(
+                        "pg_restore failed: "
+                        + result.stderr.decode("utf-8", errors="replace")[:500]
+                    )
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
         else:
             raise HTTPException(400, "Unsupported database type for restore")
 

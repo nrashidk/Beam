@@ -1037,6 +1037,7 @@ export default function SuperAdminDashboard() {
                         <th className="text-left px-3 py-2 font-medium">Filename</th>
                         <th className="text-left px-3 py-2 font-medium">Status</th>
                         <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Size</th>
+                        <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">SHA-256</th>
                         <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Triggered By</th>
                         <th className="text-left px-3 py-2 font-medium">Completed</th>
                       </tr>
@@ -1061,6 +1062,11 @@ export default function SuperAdminDashboard() {
                           </td>
                           <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">
                             {log.file_size_bytes ? `${(log.file_size_bytes / 1024).toFixed(1)} KB` : "—"}
+                          </td>
+                          <td className="px-3 py-2 hidden lg:table-cell font-mono text-muted-foreground">
+                            {log.checksum_sha256
+                              ? <span title={log.checksum_sha256}>{log.checksum_sha256.slice(0, 12)}…</span>
+                              : "—"}
                           </td>
                           <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">
                             {log.triggered_by || "scheduler"}

@@ -79,3 +79,7 @@ certificate_info.txt
 *.key
 *.crt
 *.csr
+
+# Database backup dumps
+backups/
+*.sql.gz
