@@ -84,6 +84,7 @@ from utils.email_service import email_service
 # Bulk Import utilities
 from utils.bulk_import import BulkImportValidator
 import pandas as pd
+import io
 from io import BytesIO
 
 # VAT Utilities (Phase 1)
@@ -15380,7 +15381,7 @@ def export_trial_balance(
         raise HTTPException(400, "User has no associated company")
 
     company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
-    company_name = company.company_name if company else "InvoLinks"
+    company_name = company.legal_name if company else "InvoLinks"
 
     accounts = (
         db.query(AccountDB)
@@ -15593,7 +15594,7 @@ def export_general_ledger(
         raise HTTPException(400, "User has no associated company")
 
     company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
-    company_name = company.company_name if company else "InvoLinks"
+    company_name = company.legal_name if company else "InvoLinks"
 
     q = (
         db.query(JournalEntryDB)
