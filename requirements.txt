@@ -21,3 +21,4 @@ reportlab
 defusedxml
 lxml
 apscheduler
+boto3

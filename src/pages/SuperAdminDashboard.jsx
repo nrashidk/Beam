@@ -177,6 +177,8 @@ export default function SuperAdminDashboard() {
   const [showBackupLogs, setShowBackupLogs] = useState(false);
   const [triggeringBackup, setTriggeringBackup] = useState(false);
   const [triggerError, setTriggerError] = useState(null);
+  const [restoringBackupId, setRestoringBackupId] = useState(null);
+  const [restoreError, setRestoreError] = useState(null);
 
   // Task 26: Integrity check state
   const [integrityStatus, setIntegrityStatus] = useState(null);
@@ -240,6 +242,26 @@ export default function SuperAdminDashboard() {
       console.error("[BackupTrigger] failed:", msg);
     } finally {
       setTriggeringBackup(false);
+    }
+  }
+
+  async function handleRestoreBackup(backupId, filename) {
+    if (!confirm(
+      `⚠️ RESTORE DATABASE from backup:\n\n"${filename}"\n\n` +
+      `This will overwrite the current database. This action cannot be undone.\n\n` +
+      `Type OK to continue.`
+    )) return;
+    setRestoringBackupId(backupId);
+    setRestoreError(null);
+    try {
+      await api.post(`/admin/backup/restore?backup_id=${encodeURIComponent(backupId)}`);
+      alert("Database restore completed successfully.");
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Restore failed.";
+      setRestoreError(msg);
+      console.error("[BackupRestore] failed:", msg);
+    } finally {
+      setRestoringBackupId(null);
     }
   }
 
@@ -996,6 +1018,12 @@ export default function SuperAdminDashboard() {
                   <span>{triggerError}</span>
                 </div>
               )}
+              {restoreError && (
+                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg p-3">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>Restore failed: {restoreError}</span>
+                </div>
+              )}
               {backupLogsError && !backupLogsLoading && (
                 <p className="text-xs text-red-600">{backupLogsError}</p>
               )}
@@ -1040,6 +1068,7 @@ export default function SuperAdminDashboard() {
                         <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">SHA-256</th>
                         <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Triggered By</th>
                         <th className="text-left px-3 py-2 font-medium">Completed</th>
+                        <th className="text-left px-3 py-2 font-medium">Restore</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -1075,6 +1104,22 @@ export default function SuperAdminDashboard() {
                             {log.completed_at
                               ? new Date(log.completed_at).toLocaleString()
                               : "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {log.status === "SUCCESS" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={restoringBackupId === log.id}
+                                onClick={() => handleRestoreBackup(log.id, log.filename)}
+                                className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Restore database from this backup"
+                              >
+                                {restoringBackupId === log.id
+                                  ? <RefreshCcw className="h-3 w-3 animate-spin" />
+                                  : "Restore"}
+                              </Button>
+                            )}
                           </td>
                         </tr>
                       ))}

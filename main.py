@@ -2926,6 +2926,10 @@ else:
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# Task 29 (P2-E): Module-level scheduler handle so it can be shut down cleanly
+_backup_scheduler = None
+
+
 def _run_column_migrations():
     """Add new columns to existing tables without affecting data (Task 2)."""
     migrations = [
@@ -3109,6 +3113,7 @@ def startup_event():
         logger.warning(f"Integrity check startup log failed: {_ic_exc}")
 
     # Task 29 (P2-E): Start the APScheduler daily backup job
+    global _backup_scheduler
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
         from apscheduler.triggers.cron import CronTrigger
@@ -3142,8 +3147,8 @@ def startup_event():
         else:
             minute, hour, day, month, day_of_week = "0", "2", "*", "*", "*"
 
-        _scheduler = BackgroundScheduler()
-        _scheduler.add_job(
+        _backup_scheduler = BackgroundScheduler()
+        _backup_scheduler.add_job(
             _scheduled_backup,
             CronTrigger(
                 minute=minute, hour=hour, day=day,
@@ -3153,7 +3158,7 @@ def startup_event():
             replace_existing=True,
             misfire_grace_time=3600,
         )
-        _scheduler.start()
+        _backup_scheduler.start()
         logger.info(
             f"📅 Daily backup scheduler started — cron: {cron_expr} "
             f"(BACKUP_DIR={os.getenv('BACKUP_DIR', './backups')})"
@@ -3163,6 +3168,15 @@ def startup_event():
 
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
+
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """Gracefully stop the backup scheduler on app shutdown."""
+    global _backup_scheduler
+    if _backup_scheduler is not None and _backup_scheduler.running:
+        _backup_scheduler.shutdown(wait=False)
+        logger.info("📅 Backup scheduler stopped.")
 
 
 # ==================== BACKUP ENDPOINTS (Task 24) ====================
