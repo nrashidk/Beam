@@ -3209,24 +3209,15 @@ def verify_hash_chain_integrity(
 
     ip = request.client.host if request and request.client else None
 
-    # Chain membership: all non-archived invoices that have been issued
-    # (immutable states: ISSUED, SENT, VIEWED, PAID, CANCELLED).
-    # Drafts are intentionally excluded — they have no chain link until issuance
-    # and are still mutable, so including them would produce false failures.
-    # Cancelled invoices ARE included to prevent chain gaps when an issued
-    # invoice is later cancelled.
-    _CHAIN_STATUSES = [
-        InvoiceStatus.ISSUED,
-        InvoiceStatus.SENT,
-        InvoiceStatus.VIEWED,
-        InvoiceStatus.PAID,
-        InvoiceStatus.CANCELLED,
-    ]
+    # Chain membership: all non-archived invoices that are post-draft.
+    # Excludes only DRAFT (mutable, never issued, no hash link).
+    # OVERDUE, CANCELLED and all other post-issuance statuses are included
+    # so that status transitions never create chain gaps or hide broken links.
     q = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.is_archived == False,
-            InvoiceDB.status.in_(_CHAIN_STATUSES),
+            InvoiceDB.status != InvoiceStatus.DRAFT,
         )
         .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
     )
@@ -9067,17 +9058,9 @@ def issue_invoice(
     import json
 
     # Get the immediate predecessor in the hash chain for the current invoice.
-    # Chain membership mirrors the verifier: non-archived ISSUED/SENT/VIEWED/
-    # PAID/CANCELLED invoices only. Drafts are excluded (mutable, no link yet).
-    # Using the same (issue_date ASC, created_at ASC) ordering as the verifier
-    # ensures backdating never causes ordering mismatches.
-    _CHAIN_STATUSES_ISSUE = [
-        InvoiceStatus.ISSUED,
-        InvoiceStatus.SENT,
-        InvoiceStatus.VIEWED,
-        InvoiceStatus.PAID,
-        InvoiceStatus.CANCELLED,
-    ]
+    # Chain membership mirrors the verifier: all non-archived, non-draft
+    # invoices (ISSUED/SENT/VIEWED/PAID/OVERDUE/CANCELLED). Using the same
+    # ordering (issue_date, created_at) as the verifier ensures consistency.
     from sqlalchemy import or_, and_
     prev_invoice = (
         db.query(InvoiceDB)
@@ -9085,7 +9068,7 @@ def issue_invoice(
             InvoiceDB.company_id == current_user.company_id,
             InvoiceDB.id != invoice.id,
             InvoiceDB.is_archived == False,
-            InvoiceDB.status.in_(_CHAIN_STATUSES_ISSUE),
+            InvoiceDB.status != InvoiceStatus.DRAFT,
             or_(
                 InvoiceDB.issue_date < invoice.issue_date,
                 and_(
