@@ -13693,6 +13693,138 @@ def list_audit_logs(
     }
 
 
+@app.get("/audit-logs/export", tags=["Audit Trail"])
+def export_audit_logs(
+    format: str = "csv",
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 23 — Export filtered audit log as CSV or XLSX (admin-only, authenticated).
+    Accepts the same filter parameters as GET /audit-logs but returns a downloadable file
+    containing ALL matching records (no pagination).
+    """
+    from datetime import datetime as dt
+    import csv as _csv
+    import io
+
+    # Authorization: only admins / super-admins
+    allowed = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]
+    if current_user.role not in allowed:
+        raise HTTPException(403, "Insufficient permissions to export audit logs")
+
+    # Build query identical to list_audit_logs but without pagination
+    q = db.query(AuditLogDB)
+    if current_user.role != Role.SUPER_ADMIN:
+        if not current_user.company_id:
+            raise HTTPException(400, "User has no associated company")
+        q = q.filter(AuditLogDB.company_id == current_user.company_id)
+
+    if action:
+        q = q.filter(AuditLogDB.action == action.upper())
+    if resource_type:
+        q = q.filter(AuditLogDB.resource_type == resource_type.lower())
+    if from_date:
+        try:
+            q = q.filter(AuditLogDB.created_at >= dt.strptime(from_date, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(400, "Invalid from_date format. Use YYYY-MM-DD")
+    if to_date:
+        try:
+            from datetime import timedelta as _td2
+            _to = dt.strptime(to_date, "%Y-%m-%d") + _td2(days=1)
+            q = q.filter(AuditLogDB.created_at < _to)
+        except ValueError:
+            raise HTTPException(400, "Invalid to_date format. Use YYYY-MM-DD")
+
+    logs = q.order_by(AuditLogDB.created_at.desc()).all()
+
+    # Enrich with user emails
+    user_ids = list({log.user_id for log in logs if log.user_id})
+    user_email_map: dict = {}
+    if user_ids:
+        users = db.query(UserDB).filter(UserDB.id.in_(user_ids)).all()
+        user_email_map = {u.id: u.email for u in users}
+
+    # Build rows
+    COLUMNS = ["timestamp", "user_email", "action", "resource_type", "resource_id",
+               "old_value", "new_value", "description", "ip_address"]
+
+    rows = [
+        {
+            "timestamp": log.created_at.isoformat() if log.created_at else "",
+            "user_email": user_email_map.get(log.user_id, log.user_id or ""),
+            "action": log.action or "",
+            "resource_type": log.resource_type or "",
+            "resource_id": log.resource_id or "",
+            "old_value": log.old_value or "",
+            "new_value": log.new_value or "",
+            "description": log.description or "",
+            "ip_address": log.ip_address or "",
+        }
+        for log in logs
+    ]
+
+    # Build filename base
+    date_suffix = dt.utcnow().strftime("%Y%m%d_%H%M%S")
+    base_name = f"audit_log_{date_suffix}"
+
+    if format.lower() == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+        except ImportError:
+            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Audit Log"
+
+        # Header row — bold with light blue fill
+        header_fill = PatternFill("solid", fgColor="D0E4FF")
+        for col_idx, col_name in enumerate(COLUMNS, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=col_name.replace("_", " ").title())
+            cell.font = Font(bold=True)
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+        # Data rows
+        for row_idx, row in enumerate(rows, start=2):
+            for col_idx, col_name in enumerate(COLUMNS, start=1):
+                ws.cell(row=row_idx, column=col_idx, value=row[col_name])
+
+        # Auto-width columns
+        for col_cells in ws.columns:
+            max_len = max((len(str(cell.value)) if cell.value else 0) for cell in col_cells)
+            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{base_name}.xlsx"'},
+        )
+
+    else:
+        # Default: CSV
+        output = io.StringIO()
+        writer = _csv.DictWriter(output, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+        csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel compatibility
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{base_name}.csv"'},
+        )
+
+
 @app.get("/audit-logs/actions", tags=["Audit Trail"])
 def list_audit_actions(
     current_user: UserDB = Depends(get_current_user_from_header),

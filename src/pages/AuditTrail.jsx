@@ -14,6 +14,8 @@ import {
   Download,
   Plus,
   CheckCircle,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 
 function actionColor(action) {
@@ -107,6 +109,7 @@ export default function AuditTrail() {
   const [error, setError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [availableActions, setAvailableActions] = useState(KNOWN_ACTIONS);
+  const [exporting, setExporting] = useState(null); // 'csv' | 'xlsx' | null
 
   const LIMIT = 25;
 
@@ -140,6 +143,40 @@ export default function AuditTrail() {
   }, [fromDate, toDate, action, resourceType]);
 
   useEffect(() => { load(1); }, [load]);
+
+  // Task 23: Download export file (CSV or XLSX) with current filters applied
+  const downloadExport = async (fmt) => {
+    setExporting(fmt);
+    try {
+      const params = new URLSearchParams({ format: fmt });
+      if (fromDate) params.append("from_date", fromDate);
+      if (toDate) params.append("to_date", toDate);
+      if (action) params.append("action", action);
+      if (resourceType) params.append("resource_type", resourceType);
+
+      const response = await apiClient.get(`/audit-logs/export?${params.toString()}`, {
+        responseType: "blob",
+      });
+
+      const ext = fmt === "xlsx" ? "xlsx" : "csv";
+      const contentDisposition = response.headers["content-disposition"] || "";
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `audit_log.${ext}`;
+
+      const url = URL.createObjectURL(new Blob([response.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.response?.data?.detail || `Failed to export audit log as ${fmt.toUpperCase()}.`);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   const totalPages = Math.ceil(total / LIMIT);
 
@@ -196,6 +233,32 @@ export default function AuditTrail() {
                 {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Filter className="h-3.5 w-3.5" />}
                 Apply Filter
               </button>
+
+              {/* Task 23: Export buttons */}
+              <div className="ml-auto flex items-end gap-2">
+                <button
+                  onClick={() => downloadExport("csv")}
+                  disabled={exporting === "csv" || loading}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                  title="Download filtered audit log as CSV"
+                >
+                  {exporting === "csv"
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <FileText className="h-3.5 w-3.5" />}
+                  CSV
+                </button>
+                <button
+                  onClick={() => downloadExport("xlsx")}
+                  disabled={exporting === "xlsx" || loading}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-green-400 text-green-700 bg-white rounded-lg text-sm hover:bg-green-50 disabled:opacity-50 transition-colors"
+                  title="Download filtered audit log as XLSX"
+                >
+                  {exporting === "xlsx"
+                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    : <FileSpreadsheet className="h-3.5 w-3.5" />}
+                  XLSX
+                </button>
+              </div>
             </div>
           </div>
 
