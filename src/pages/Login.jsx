@@ -23,7 +23,11 @@ export default function Login() {
     const result = await login(email, password);
 
     if (result.success && !result.mfaRequired) {
-      navigate("/dashboard");
+      if (result.passwordChangeRequired) {
+        navigate("/force-change-password");
+      } else {
+        navigate("/dashboard");
+      }
     } else if (result.success && result.mfaRequired) {
       setLoading(false);
     } else {

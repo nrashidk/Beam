@@ -143,7 +143,15 @@ export const AuthProvider = ({ children }) => {
         setUser(userData);
       }
 
-      return { success: true, mfaRequired: false };
+      // Task 20: Propagate forced password change flag
+      const passwordChangeRequired = !!data.password_change_required;
+      if (passwordChangeRequired) {
+        localStorage.setItem("force_password_change", "true");
+      } else {
+        localStorage.removeItem("force_password_change");
+      }
+
+      return { success: true, mfaRequired: false, passwordChangeRequired };
     } catch (error) {
       return {
         success: false,

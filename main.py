@@ -255,6 +255,9 @@ class UserDB(Base):
     failed_login_count = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
 
+    # Task 20: Forced password change on first login
+    must_change_password = Column(Boolean, default=False)
+
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -2673,6 +2676,8 @@ def _run_column_migrations():
         # Task 12: Data archival columns
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        # Task 20: Forced password change on first login
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false",
         # Task 13: VAT return 13-box breakdown columns
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
@@ -3383,6 +3388,7 @@ class MFALoginResponse(BaseModel):
     user_id: Optional[str] = None
     company_id: Optional[str] = None
     role: Optional[str] = None
+    password_change_required: Optional[bool] = False
 
 
 @app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
@@ -3434,6 +3440,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             resource_type="user", resource_id=user.id,
             description=f"User {user.email} logged in",
         )
+        password_change_required = bool(getattr(user, "must_change_password", False))
         db.commit()
         return MFALoginResponse(
             mfa_required=False,
@@ -3445,6 +3452,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             user_id=user.id,
             company_id=user.company_id,
             role=user.role.value,
+            password_change_required=password_change_required,
         )
 
     # Try company authentication (with MFA support)
@@ -5566,6 +5574,7 @@ def invite_user(
         company_id=current_user.company_id,
         is_owner=False,
         invited_by=current_user.id,
+        must_change_password=True,
     )
 
     db.add(new_user)
@@ -13056,12 +13065,22 @@ def change_password(
     _save_password_history(current_user.id, new_hash, db)
     current_user.password_hash = new_hash
 
-    # 5. Audit trail
+    # 5. Clear forced password change flag if set (Task 20)
+    was_forced = bool(getattr(current_user, "must_change_password", False))
+    current_user.must_change_password = False
+
+    # 6. Audit trail
+    audit_action = "FORCED_PASSWORD_CHANGED" if was_forced else "PASSWORD_CHANGED"
+    audit_description = (
+        f"User {current_user.email} completed mandatory password change on first login"
+        if was_forced
+        else f"User {current_user.email} changed their password"
+    )
     log_audit_event(
-        db, "PASSWORD_CHANGED",
+        db, audit_action,
         user_id=current_user.id, company_id=current_user.company_id,
         resource_type="user", resource_id=current_user.id,
-        description=f"User {current_user.email} changed their password",
+        description=audit_description,
     )
 
     db.commit()

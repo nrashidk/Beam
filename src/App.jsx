@@ -45,8 +45,9 @@ import AdvancedAnalytics from "./pages/AdvancedAnalytics";
 import CompanyManagement from "./pages/CompanyManagement";
 import CompanySettings from "./pages/CompanySettings";
 import ExpenseTracker from "./pages/ExpenseTracker";
+import ForceChangePassword from "./pages/ForceChangePassword";
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, allowForceChange = false }) {
   try {
     const { isAuthenticated, loading } = useAuth();
 
@@ -58,7 +59,16 @@ function ProtectedRoute({ children }) {
       );
     }
 
-    return isAuthenticated ? children : <Navigate to="/login" replace />;
+    if (!isAuthenticated) {
+      return <Navigate to="/login" replace />;
+    }
+
+    // Task 20: If forced password change is required, only allow the force-change page
+    if (!allowForceChange && localStorage.getItem("force_password_change") === "true") {
+      return <Navigate to="/force-change-password" replace />;
+    }
+
+    return children;
   } catch (error) {
     // Fallback if useAuth fails (provider not mounted yet)
     console.error("ProtectedRoute error:", error);
@@ -440,6 +450,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <ExpenseTracker />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/force-change-password"
+              element={
+                <ProtectedRoute allowForceChange={true}>
+                  <ForceChangePassword />
                 </ProtectedRoute>
               }
             />
