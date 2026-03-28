@@ -1253,6 +1253,26 @@ class AuditLogDB(Base):
     user = relationship("UserDB", backref="audit_logs")
 
 
+class IntegrityCheckDB(Base):
+    """Stores the result of each hash chain integrity verification run (Task 26)."""
+
+    __tablename__ = "integrity_checks"
+
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), nullable=True, index=True)
+    performed_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    total_invoices = Column(Integer, nullable=False, default=0)
+    valid_links = Column(Integer, nullable=False, default=0)
+    integrity_ok = Column(Boolean, nullable=False, default=False)
+    first_broken_invoice_id = Column(String, nullable=True)
+    first_broken_invoice_number = Column(String, nullable=True)
+    first_broken_invoice_date = Column(String, nullable=True)
+
+    company = relationship("CompanyDB", backref="integrity_checks")
+    user = relationship("UserDB", backref="integrity_checks")
+
+
 class VATReturnDB(Base):
     """VAT Return — stores computed FTA VAT returns per period (Task 9)."""
 
@@ -3007,6 +3027,30 @@ def startup_event():
         f"RPO target: {_backup_rpo}h | RTO target: {_backup_rto}h"
     )
 
+    # Task 26: Last integrity check summary
+    try:
+        _ic_db = SessionLocal()
+        try:
+            last_ic = (
+                _ic_db.query(IntegrityCheckDB)
+                .order_by(IntegrityCheckDB.checked_at.desc())
+                .first()
+            )
+            if last_ic:
+                _ic_status = "PASSED ✅" if last_ic.integrity_ok else "FAILED ❌"
+                logger.info(
+                    f"🔗 Last integrity check: {_ic_status} | "
+                    f"Date: {last_ic.checked_at.strftime('%Y-%m-%d %H:%M UTC')} | "
+                    f"Invoices checked: {last_ic.total_invoices} | "
+                    f"Valid links: {last_ic.valid_links}"
+                )
+            else:
+                logger.info("🔗 Integrity check: No prior check on record. Run GET /admin/integrity/verify.")
+        finally:
+            _ic_db.close()
+    except Exception as _ic_exc:
+        logger.warning(f"Integrity check startup log failed: {_ic_exc}")
+
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
 
@@ -3129,6 +3173,221 @@ def verify_backup(
         "verified_by": current_user.email,
         "provider": provider,
         "message": "Backup verification event logged to audit trail.",
+    }
+
+
+# ==================== DATA INTEGRITY ENDPOINTS (Task 26) ====================
+
+
+@app.get("/admin/integrity/verify", tags=["Admin"])
+def verify_hash_chain_integrity(
+    company_id: Optional[str] = None,
+    request: Request = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 26 — Verify the SHA-256 hash chain integrity for all non-archived invoices.
+
+    Walks invoices ordered by issue_date (then created_at for tie-breaking), recomputes
+    each invoice's hash from its canonical fields, and checks that the following invoice's
+    prev_invoice_hash matches. Returns total checked, valid link count, and the first
+    broken link (if any). Logs INTEGRITY_CHECK_PASSED or INTEGRITY_CHECK_FAILED.
+
+    Access: SUPER_ADMIN (any company, optional company_id filter), COMPANY_ADMIN (own company).
+    """
+    from utils.crypto_utils import InvoiceCrypto
+
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
+        raise HTTPException(403, "Only Super Admin or Company Admin can run integrity checks")
+
+    # Determine which company to check
+    if current_user.role == Role.SUPER_ADMIN and company_id:
+        target_company_id = company_id
+    elif current_user.role == Role.COMPANY_ADMIN:
+        target_company_id = current_user.company_id
+    else:
+        target_company_id = None  # SUPER_ADMIN with no filter → all companies
+
+    ip = request.client.host if request and request.client else None
+
+    # Fetch invoices ordered by issue_date, then created_at for stability
+    q = (
+        db.query(InvoiceDB)
+        .filter(InvoiceDB.is_archived == False)
+        .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
+    )
+    if target_company_id:
+        q = q.filter(InvoiceDB.company_id == target_company_id)
+
+    invoices = q.all()
+    total = len(invoices)
+
+    crypto = InvoiceCrypto()
+
+    valid_links = 0
+    first_broken_id = None
+    first_broken_number = None
+    first_broken_date = None
+    integrity_ok = True
+
+    # Group by company to maintain per-company chains
+    from collections import defaultdict
+    by_company: dict[str, list] = defaultdict(list)
+    for inv in invoices:
+        by_company[inv.company_id or "__none__"].append(inv)
+
+    for _cid, chain in by_company.items():
+        for i, inv in enumerate(chain):
+            if i == 0:
+                # First invoice in the chain — no previous to verify against
+                continue
+            prev = chain[i - 1]
+
+            # Build data dicts for hash computation
+            prev_data = {
+                "invoice_number": prev.invoice_number or "",
+                "issue_date": str(prev.issue_date) if prev.issue_date else "",
+                "supplier_trn": prev.supplier_trn or "",
+                "customer_trn": prev.customer_trn or "",
+                "total_amount": str(prev.total_amount or "0.0"),
+                "tax_amount": str(prev.tax_amount or "0.0"),
+                "prev_invoice_hash": prev.prev_invoice_hash or "",
+            }
+            cur_data = {
+                "invoice_number": inv.invoice_number or "",
+                "issue_date": str(inv.issue_date) if inv.issue_date else "",
+                "supplier_trn": inv.supplier_trn or "",
+                "customer_trn": inv.customer_trn or "",
+                "total_amount": str(inv.total_amount or "0.0"),
+                "tax_amount": str(inv.tax_amount or "0.0"),
+                "prev_invoice_hash": inv.prev_invoice_hash or "",
+            }
+
+            # Only verify link if current invoice actually has a prev_invoice_hash set
+            if not inv.prev_invoice_hash:
+                # No hash recorded — skip (could be pre-hash-chain invoice)
+                continue
+
+            if crypto.verify_hash_chain(cur_data, prev_data):
+                valid_links += 1
+            else:
+                if integrity_ok:
+                    # Record first broken link only
+                    first_broken_id = inv.id
+                    first_broken_number = inv.invoice_number
+                    first_broken_date = str(inv.issue_date) if inv.issue_date else None
+                integrity_ok = False
+
+    # Persist the result
+    check_record = IntegrityCheckDB(
+        id=f"ic_{uuid4().hex[:16]}",
+        company_id=target_company_id,
+        performed_by_user_id=current_user.id,
+        checked_at=datetime.utcnow(),
+        total_invoices=total,
+        valid_links=valid_links,
+        integrity_ok=integrity_ok,
+        first_broken_invoice_id=first_broken_id,
+        first_broken_invoice_number=first_broken_number,
+        first_broken_invoice_date=first_broken_date,
+    )
+    db.add(check_record)
+
+    # Audit event
+    audit_action = "INTEGRITY_CHECK_PASSED" if integrity_ok else "INTEGRITY_CHECK_FAILED"
+    desc_parts = [
+        f"Hash chain integrity check by {current_user.email}.",
+        f"Total invoices checked: {total}.",
+        f"Valid links: {valid_links}.",
+    ]
+    if not integrity_ok:
+        desc_parts.append(
+            f"First broken link: invoice {first_broken_number} (ID={first_broken_id}, date={first_broken_date})."
+        )
+    log_audit_event(
+        db=db,
+        action=audit_action,
+        user_id=current_user.id,
+        company_id=target_company_id,
+        resource_type="system",
+        resource_id=check_record.id,
+        description=" ".join(desc_parts),
+        ip_address=ip,
+    )
+    db.commit()
+
+    logger.info(
+        f"{audit_action}: company={target_company_id or 'ALL'} "
+        f"total={total} valid_links={valid_links} by={current_user.email}"
+    )
+
+    result = {
+        "integrity_ok": integrity_ok,
+        "total_invoices_checked": total,
+        "valid_links": valid_links,
+        "checked_at": check_record.checked_at.isoformat(),
+        "checked_by": current_user.email,
+        "company_id": target_company_id,
+    }
+    if not integrity_ok:
+        result["first_broken_link"] = {
+            "invoice_id": first_broken_id,
+            "invoice_number": first_broken_number,
+            "invoice_date": first_broken_date,
+        }
+    return result
+
+
+@app.get("/admin/integrity/status", tags=["Admin"])
+def get_integrity_status(
+    company_id: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 26 — Return the most recent integrity check result for a company (or system-wide).
+
+    Used by the Super Admin dashboard to show current integrity posture without re-running.
+    """
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
+        raise HTTPException(403, "Only Super Admin or Company Admin can view integrity status")
+
+    target_company_id = (
+        company_id if (current_user.role == Role.SUPER_ADMIN and company_id)
+        else current_user.company_id if current_user.role == Role.COMPANY_ADMIN
+        else None
+    )
+
+    q = db.query(IntegrityCheckDB).order_by(IntegrityCheckDB.checked_at.desc())
+    if target_company_id:
+        q = q.filter(IntegrityCheckDB.company_id == target_company_id)
+    last = q.first()
+
+    if not last:
+        return {
+            "status": "NEVER_CHECKED",
+            "message": "No integrity check has been performed yet. Run GET /admin/integrity/verify.",
+            "last_checked_at": None,
+            "integrity_ok": None,
+            "total_invoices": None,
+            "valid_links": None,
+            "first_broken_link": None,
+        }
+
+    return {
+        "status": "PASSED" if last.integrity_ok else "FAILED",
+        "last_checked_at": last.checked_at.isoformat(),
+        "integrity_ok": last.integrity_ok,
+        "total_invoices": last.total_invoices,
+        "valid_links": last.valid_links,
+        "checked_by_user_id": last.performed_by_user_id,
+        "company_id": last.company_id,
+        "first_broken_link": {
+            "invoice_id": last.first_broken_invoice_id,
+            "invoice_number": last.first_broken_invoice_number,
+            "invoice_date": last.first_broken_invoice_date,
+        } if not last.integrity_ok else None,
     }
 
 

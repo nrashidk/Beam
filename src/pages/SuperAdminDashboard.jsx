@@ -29,6 +29,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
+  Link2,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { adminAPI } from "../lib/api";
@@ -165,6 +167,12 @@ export default function SuperAdminDashboard() {
   const [verifyingBackup, setVerifyingBackup] = useState(false);
   const [verifyError, setVerifyError] = useState(null);
 
+  // Task 26: Integrity check state
+  const [integrityStatus, setIntegrityStatus] = useState(null);
+  const [integrityLoading, setIntegrityLoading] = useState(true);
+  const [integrityError, setIntegrityError] = useState(null);
+  const [runningIntegrity, setRunningIntegrity] = useState(false);
+
   async function fetchBackupStatus() {
     setBackupError(null);
     try {
@@ -192,6 +200,41 @@ export default function SuperAdminDashboard() {
       console.error("[BackupVerify] failed:", msg);
     } finally {
       setVerifyingBackup(false);
+    }
+  }
+
+  async function fetchIntegrityStatus() {
+    setIntegrityError(null);
+    try {
+      const res = await api.get("/admin/integrity/status");
+      setIntegrityStatus(res.data);
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Failed to load integrity status.";
+      setIntegrityError(msg);
+      setIntegrityStatus(null);
+    } finally {
+      setIntegrityLoading(false);
+    }
+  }
+
+  async function handleRunIntegrityCheck() {
+    setRunningIntegrity(true);
+    setIntegrityError(null);
+    try {
+      const res = await api.get("/admin/integrity/verify");
+      setIntegrityStatus({
+        status: res.data.integrity_ok ? "PASSED" : "FAILED",
+        last_checked_at: res.data.checked_at,
+        integrity_ok: res.data.integrity_ok,
+        total_invoices: res.data.total_invoices_checked,
+        valid_links: res.data.valid_links,
+        first_broken_link: res.data.first_broken_link || null,
+      });
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Failed to run integrity check.";
+      setIntegrityError(msg);
+    } finally {
+      setRunningIntegrity(false);
     }
   }
 
@@ -400,6 +443,11 @@ export default function SuperAdminDashboard() {
   // Task 24: Fetch backup status on mount
   useEffect(() => {
     fetchBackupStatus();
+  }, []);
+
+  // Task 26: Fetch integrity status on mount
+  useEffect(() => {
+    fetchIntegrityStatus();
   }, []);
 
   const filteredCompanies = useMemo(() => {
@@ -859,6 +907,86 @@ export default function SuperAdminDashboard() {
                         : ""}
                     </p>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Task 26: Data Integrity Hash Chain Status Card */}
+        <div>
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="flex flex-row items-center gap-2 pb-3">
+              <Link2 className="h-5 w-5 text-violet-500" />
+              <CardTitle className="text-base">Hash Chain Integrity</CardTitle>
+              <div className="ml-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={runningIntegrity}
+                  onClick={handleRunIntegrityCheck}
+                  className="text-xs h-8 gap-1.5"
+                >
+                  {runningIntegrity
+                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
+                    : <ShieldCheck className="h-3.5 w-3.5" />}
+                  {runningIntegrity ? "Verifying…" : "Run Integrity Check"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {integrityError && (
+                <p className="text-sm text-red-600 mb-3">{integrityError}</p>
+              )}
+              {integrityLoading ? (
+                <p className="text-sm text-muted-foreground">Loading integrity status…</p>
+              ) : !integrityStatus || integrityStatus.status === "NEVER_CHECKED" ? (
+                <div className="flex items-start gap-2 rounded-lg p-3 text-sm bg-gray-50 text-gray-700">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-gray-500" />
+                  <span>No integrity check has been run yet. Click "Run Integrity Check" to verify the hash chain.</span>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Status</p>
+                      <p className={`text-sm font-semibold ${integrityStatus.integrity_ok ? "text-emerald-600" : "text-red-600"}`}>
+                        {integrityStatus.integrity_ok ? "PASSED" : "FAILED"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Invoices Checked</p>
+                      <p className="text-sm font-medium">{integrityStatus.total_invoices ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Valid Links</p>
+                      <p className="text-sm font-medium">{integrityStatus.valid_links ?? "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Last Checked</p>
+                      <p className="text-sm font-medium">
+                        {integrityStatus.last_checked_at
+                          ? new Date(integrityStatus.last_checked_at).toLocaleString()
+                          : "Never"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
+                    integrityStatus.integrity_ok
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "bg-red-50 text-red-800"
+                  }`}>
+                    {integrityStatus.integrity_ok
+                      ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                      : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+                    <span>
+                      {integrityStatus.integrity_ok
+                        ? "All invoice hash links verified — chain is intact and tamper-evident."
+                        : integrityStatus.first_broken_link
+                          ? `Chain broken at invoice ${integrityStatus.first_broken_link.invoice_number} (${integrityStatus.first_broken_link.invoice_date}). Possible tampering detected.`
+                          : "Hash chain integrity failure detected. Please investigate."}
+                    </span>
+                  </div>
                 </div>
               )}
             </CardContent>
