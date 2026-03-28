@@ -192,7 +192,8 @@ const ROLE_PERMISSION_SUMMARY = {
 };
 
 function buildSummaryFromMatrix(role, matrix) {
-  const rolePerms = matrix && matrix[role];
+  const matrixData = matrix && (matrix.matrix || matrix);
+  const rolePerms = matrixData && matrixData[role];
   if (!rolePerms) return null;
   const can = [];
   const cannot = [];
