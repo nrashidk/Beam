@@ -3681,6 +3681,13 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
     # Update last verified timestamp
     user.mfa_last_verified_at = datetime.utcnow()
     user.last_login = datetime.utcnow()
+    log_audit_event(
+        db, "USER_LOGIN",
+        user_id=user.id, company_id=user.company_id,
+        resource_type="user", resource_id=user.id,
+        description=f"User {user.email} logged in (MFA verified)",
+    )
+    password_change_required = bool(getattr(user, "must_change_password", False))
     db.commit()
 
     # Create full access token and refresh token
@@ -3697,6 +3704,7 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
         user_id=user.id,
         company_id=user.company_id,
         role=user.role.value,
+        password_change_required=password_change_required,
     )
 
 
@@ -5598,6 +5606,56 @@ def invite_user(
         "email": payload.email,
         "temporary_password": temp_password,
         "message": "User invited successfully",
+    }
+
+
+@app.post("/users/{user_id}/reset-password", tags=["Users"])
+@app.post("/company/users/{user_id}/reset-password", tags=["Users"])
+def admin_reset_user_password(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Admin resets a team member's password.
+    Sets a temporary password and flags the account for mandatory change on next login (Task 20).
+    """
+    allowed_roles = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]
+    if current_user.role not in allowed_roles:
+        raise HTTPException(403, "Only admins can reset user passwords")
+
+    target_user = db.query(UserDB).filter(UserDB.id == user_id).first()
+    if not target_user:
+        raise HTTPException(404, "User not found")
+
+    # Must be in the same company (unless super admin)
+    if current_user.role != Role.SUPER_ADMIN:
+        if target_user.company_id != current_user.company_id:
+            raise HTTPException(403, "Cannot reset password for users outside your company")
+
+    # Business admins can only reset finance users
+    if current_user.role == Role.BUSINESS_ADMIN and target_user.role != Role.FINANCE_USER:
+        raise HTTPException(403, "Business admins can only reset Finance User passwords")
+
+    temp_password = generate_temp_password(16)
+    target_user.password_hash = get_password_hash(temp_password)
+    target_user.must_change_password = True
+
+    log_audit_event(
+        db, "PASSWORD_CHANGED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="user", resource_id=target_user.id,
+        description=f"Admin {current_user.email} reset password for {target_user.email} — forced change on next login",
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "user_id": user_id,
+        "email": target_user.email,
+        "temporary_password": temp_password,
+        "message": "Password reset successfully. User must change password on next login.",
     }
 
 

@@ -26,7 +26,7 @@ export default function MFAVerificationModal({ onSuccess }) {
     const result = await verifyMFA(code, method);
 
     if (result.success) {
-      onSuccess();
+      onSuccess(result);
     } else {
       setError(result.error);
     }

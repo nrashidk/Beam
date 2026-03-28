@@ -36,8 +36,12 @@ export default function Login() {
     }
   };
 
-  const handleMFASuccess = () => {
-    navigate("/dashboard");
+  const handleMFASuccess = (result) => {
+    if (result?.passwordChangeRequired) {
+      navigate("/force-change-password");
+    } else {
+      navigate("/dashboard");
+    }
   };
 
   return (

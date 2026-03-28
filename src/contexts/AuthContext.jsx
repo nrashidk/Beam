@@ -196,7 +196,15 @@ export const AuthProvider = ({ children }) => {
       setMfaMethod(null);
       setUserEmail(null);
 
-      return { success: true };
+      // Task 20: Propagate forced password change flag for MFA users too
+      const passwordChangeRequired = !!response.data.password_change_required;
+      if (passwordChangeRequired) {
+        localStorage.setItem("force_password_change", "true");
+      } else {
+        localStorage.removeItem("force_password_change");
+      }
+
+      return { success: true, passwordChangeRequired };
     } catch (error) {
       return {
         success: false,
