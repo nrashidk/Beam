@@ -98,6 +98,18 @@ from utils.vat_utils import (
 # Stripe payment processing
 import stripe
 
+# P3-D: Cache parsed FTA VAT Return XSD schema at module load to avoid reparsing per request
+# The UAE FTA does not publish a formal XSD for VAT Return Form 301 (it is a web-form submission);
+# this schema is authored to match Form 301 field structure and is used to validate XML exports.
+try:
+    from lxml import etree as _lxml_etree
+    _FTA_VAT_XSD_PATH = os.path.join(os.path.dirname(__file__), "utils", "fta_vat_return_schema.xsd")
+    with open(_FTA_VAT_XSD_PATH, "rb") as _f:
+        _FTA_VAT_XSD = _lxml_etree.XMLSchema(_lxml_etree.parse(_f))
+except Exception as _xsd_load_err:
+    _lxml_etree = None  # type: ignore
+    _FTA_VAT_XSD = None
+
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 # Allow overriding artifact root via env to avoid issues when working directory differs
@@ -15098,14 +15110,12 @@ def export_vat_return(
         xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
 
         # P3-D: Validate the generated XML against the FTA VAT Return XSD schema (strictly blocking)
-        _xsd_path = os.path.join(os.path.dirname(__file__), "utils", "fta_vat_return_schema.xsd")
-        from lxml import etree as _lxml_etree
-        with open(_xsd_path, "rb") as _xf:
-            _xmlschema_doc = _lxml_etree.parse(_xf)
-        _xmlschema = _lxml_etree.XMLSchema(_xmlschema_doc)
+        # Use module-level cached schema to avoid reparsing per request
+        if _FTA_VAT_XSD is None or _lxml_etree is None:
+            raise HTTPException(500, "FTA VAT Return XSD schema could not be loaded at startup — XML export unavailable")
         _doc = _lxml_etree.fromstring(xml_bytes)
-        if not _xmlschema.validate(_doc):
-            _errors = "; ".join(str(e) for e in _xmlschema.error_log)
+        if not _FTA_VAT_XSD.validate(_doc):
+            _errors = "; ".join(str(e) for e in _FTA_VAT_XSD.error_log)
             # Write audit in a separate independent session so it is committed before the exception
             _audit_db = SessionLocal()
             try:
