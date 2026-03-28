@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Sidebar from "../components/Sidebar";
 import { apiClient } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 import {
   Shield,
   RefreshCw,
@@ -93,6 +94,9 @@ const KNOWN_ACTIONS = [
 ];
 
 export default function AuditTrail() {
+  const { user } = useAuth();
+  const isAdmin = user && ["COMPANY_ADMIN", "SUPER_ADMIN", "BUSINESS_ADMIN"].includes(user.role);
+
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(today.getDate() - 30);
@@ -245,31 +249,33 @@ export default function AuditTrail() {
                 Apply Filter
               </button>
 
-              {/* Task 23: Export buttons */}
-              <div className="ml-auto flex items-end gap-2">
-                <button
-                  onClick={() => downloadExport("csv")}
-                  disabled={exporting === "csv" || loading}
-                  className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                  title="Download filtered audit log as CSV"
-                >
-                  {exporting === "csv"
-                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    : <FileText className="h-3.5 w-3.5" />}
-                  CSV
-                </button>
-                <button
-                  onClick={() => downloadExport("xlsx")}
-                  disabled={exporting === "xlsx" || loading}
-                  className="flex items-center gap-1.5 px-4 py-2 border border-green-400 text-green-700 bg-white rounded-lg text-sm hover:bg-green-50 disabled:opacity-50 transition-colors"
-                  title="Download filtered audit log as XLSX"
-                >
-                  {exporting === "xlsx"
-                    ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    : <FileSpreadsheet className="h-3.5 w-3.5" />}
-                  XLSX
-                </button>
-              </div>
+              {/* Task 23: Export buttons — only shown to admin roles */}
+              {isAdmin && (
+                <div className="ml-auto flex items-end gap-2">
+                  <button
+                    onClick={() => downloadExport("csv")}
+                    disabled={exporting === "csv" || loading}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 bg-white rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                    title="Download filtered audit log as CSV"
+                  >
+                    {exporting === "csv"
+                      ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      : <FileText className="h-3.5 w-3.5" />}
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => downloadExport("xlsx")}
+                    disabled={exporting === "xlsx" || loading}
+                    className="flex items-center gap-1.5 px-4 py-2 border border-green-400 text-green-700 bg-white rounded-lg text-sm hover:bg-green-50 disabled:opacity-50 transition-colors"
+                    title="Download filtered audit log as XLSX"
+                  >
+                    {exporting === "xlsx"
+                      ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      : <FileSpreadsheet className="h-3.5 w-3.5" />}
+                    XLSX
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
