@@ -15318,6 +15318,473 @@ def get_gl_summary(
     return {"from_date": from_date, "to_date": to_date, "accounts": summary}
 
 
+# ==================== GL ENTRY GUARD ENDPOINTS (Task 28 — P2-D) ====================
+
+
+@app.put("/journal-entries/{entry_id}", tags=["General Ledger"])
+def guard_journal_entry_update(
+    entry_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """P2-D: Posted journal entries cannot be modified. Always returns 403."""
+    log_audit_event(
+        db, "JOURNAL_ENTRY_EDIT_BLOCKED",
+        user_id=current_user.id,
+        company_id=current_user.company_id,
+        resource_type="journal_entry",
+        resource_id=entry_id,
+        description=f"Attempt to edit journal entry {entry_id} blocked (FTA compliance — posted entries are immutable)",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    raise HTTPException(403, "Posted journal entries cannot be modified")
+
+
+@app.delete("/journal-entries/{entry_id}", tags=["General Ledger"])
+def guard_journal_entry_delete(
+    entry_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """P2-D: Posted journal entries cannot be deleted. Always returns 403."""
+    log_audit_event(
+        db, "JOURNAL_ENTRY_DELETE_BLOCKED",
+        user_id=current_user.id,
+        company_id=current_user.company_id,
+        resource_type="journal_entry",
+        resource_id=entry_id,
+        description=f"Attempt to delete journal entry {entry_id} blocked (FTA compliance — posted entries are immutable)",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    raise HTTPException(403, "Posted journal entries cannot be modified")
+
+
+# ==================== TRIAL BALANCE EXPORT (Task 28 — P2-C) ====================
+
+
+@app.get("/reports/trial-balance/export", tags=["General Ledger"])
+def export_trial_balance(
+    format: str = "xlsx",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    account_type: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export trial balance data as XLSX or PDF for the requested period."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    company_name = company.company_name if company else "InvoLinks"
+
+    accounts = (
+        db.query(AccountDB)
+        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
+        .order_by(AccountDB.account_code)
+        .all()
+    )
+
+    rows = []
+    for acc in accounts:
+        if account_type and acc.account_type != account_type.upper():
+            continue
+        q = (
+            db.query(JournalEntryLineDB)
+            .join(JournalEntryDB, JournalEntryLineDB.journal_entry_id == JournalEntryDB.id)
+            .filter(
+                JournalEntryLineDB.account_id == acc.id,
+                JournalEntryDB.company_id == current_user.company_id,
+                JournalEntryDB.is_posted == True,
+            )
+        )
+        if from_date:
+            q = q.filter(JournalEntryDB.entry_date >= from_date)
+        if to_date:
+            q = q.filter(JournalEntryDB.entry_date <= to_date)
+        lines = q.all()
+        total_debit = round(sum(l.debit_amount or 0 for l in lines), 2)
+        total_credit = round(sum(l.credit_amount or 0 for l in lines), 2)
+        if total_debit == 0 and total_credit == 0:
+            continue
+        rows.append({
+            "account_code": acc.account_code,
+            "account_name": acc.account_name,
+            "account_type": acc.account_type,
+            "total_debit": total_debit,
+            "total_credit": total_credit,
+            "net_balance": round(total_debit - total_credit, 2),
+        })
+
+    period_label = f"{from_date or 'inception'} to {to_date or 'today'}"
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    safe_label = (from_date or "all").replace("-", "") + "_" + (to_date or "today").replace("-", "")
+
+    if format.lower() == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            raise HTTPException(500, "openpyxl not installed")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Trial Balance"
+
+        primary_fill = PatternFill("solid", fgColor="4F46E5")
+        header_fill = PatternFill("solid", fgColor="EEF2FF")
+        total_fill = PatternFill("solid", fgColor="C7D2FE")
+        white_font = Font(color="FFFFFF", bold=True)
+        bold_font = Font(bold=True)
+        thin = Side(style="thin", color="CCCCCC")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def _cell(ws, row, col, value, font=None, fill=None, align="left", nfmt=None):
+            c = ws.cell(row=row, column=col, value=value)
+            if font: c.font = font
+            if fill: c.fill = fill
+            c.alignment = Alignment(horizontal=align, vertical="center")
+            if nfmt: c.number_format = nfmt
+            c.border = border
+            return c
+
+        ws.merge_cells("A1:F1")
+        t = ws.cell(row=1, column=1, value=f"{company_name} — Trial Balance")
+        t.font = Font(size=14, bold=True, color="4F46E5")
+        t.alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("A2:F2")
+        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}")
+        t2.alignment = Alignment(horizontal="center")
+        t2.font = Font(italic=True, color="555555")
+
+        ws.merge_cells("A3:F3")
+        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
+        t3.alignment = Alignment(horizontal="center")
+        t3.font = Font(italic=True, size=9, color="888888")
+
+        headers = ["Account Code", "Account Name", "Account Type", "Total Debit (AED)", "Total Credit (AED)", "Net Balance (AED)"]
+        for col, h in enumerate(headers, 1):
+            _cell(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
+
+        total_dr = total_cr = 0.0
+        for r_idx, row in enumerate(rows, 6):
+            _cell(ws, r_idx, 1, row["account_code"], font=Font(name="Courier New"))
+            _cell(ws, r_idx, 2, row["account_name"])
+            _cell(ws, r_idx, 3, row["account_type"])
+            _cell(ws, r_idx, 4, row["total_debit"], nfmt="#,##0.00", align="right")
+            _cell(ws, r_idx, 5, row["total_credit"], nfmt="#,##0.00", align="right")
+            nb = row["net_balance"]
+            _cell(ws, r_idx, 6, nb, nfmt="#,##0.00", align="right",
+                  font=Font(bold=False, color="CC0000" if nb < 0 else "000000"))
+            total_dr += row["total_debit"]
+            total_cr += row["total_credit"]
+
+        tr = 6 + len(rows)
+        _cell(ws, tr, 1, "TOTALS", font=Font(bold=True, color="4F46E5"), fill=total_fill)
+        _cell(ws, tr, 2, "", fill=total_fill)
+        _cell(ws, tr, 3, "", fill=total_fill)
+        _cell(ws, tr, 4, round(total_dr, 2), font=bold_font, fill=total_fill, nfmt="#,##0.00", align="right")
+        _cell(ws, tr, 5, round(total_cr, 2), font=bold_font, fill=total_fill, nfmt="#,##0.00", align="right")
+        _cell(ws, tr, 6, round(total_dr - total_cr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
+
+        ws.column_dimensions["A"].width = 14
+        ws.column_dimensions["B"].width = 34
+        ws.column_dimensions["C"].width = 14
+        for col in ["D", "E", "F"]:
+            ws.column_dimensions[col].width = 22
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="trial_balance_{safe_label}.xlsx"'},
+        )
+
+    elif format.lower() == "pdf":
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.units import cm
+            from reportlab.lib import colors as rl_colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        except ImportError:
+            raise HTTPException(500, "reportlab not installed")
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+                                 leftMargin=1.5 * cm, rightMargin=1.5 * cm)
+        styles = getSampleStyleSheet()
+        el = []
+        el.append(Paragraph(f"<b>{company_name} — Trial Balance</b>", styles["Title"]))
+        el.append(Paragraph(f"Period: {period_label}", styles["Normal"]))
+        el.append(Paragraph(f"Generated: {generated_at}", ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=rl_colors.grey)))
+        el.append(Spacer(1, 0.4 * cm))
+
+        tbl_data = [["Code", "Account Name", "Type", "Total Debit (AED)", "Total Credit (AED)", "Net Balance (AED)"]]
+        total_dr = total_cr = 0.0
+        for row in rows:
+            tbl_data.append([
+                row["account_code"],
+                row["account_name"],
+                row["account_type"],
+                f"{row['total_debit']:,.2f}",
+                f"{row['total_credit']:,.2f}",
+                f"{row['net_balance']:,.2f}",
+            ])
+            total_dr += row["total_debit"]
+            total_cr += row["total_credit"]
+        tbl_data.append(["TOTALS", "", "", f"{total_dr:,.2f}", f"{total_cr:,.2f}", f"{total_dr - total_cr:,.2f}"])
+
+        tbl = Table(tbl_data, colWidths=[2.5 * cm, 9 * cm, 2.5 * cm, 4 * cm, 4 * cm, 4 * cm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#4F46E5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 9),
+            ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
+            ("ALIGN", (0, 0), (2, -1), "LEFT"),
+            ("BACKGROUND", (0, -1), (-1, -1), rl_colors.HexColor("#C7D2FE")),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [rl_colors.white, rl_colors.HexColor("#F5F5FF")]),
+            ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#CCCCCC")),
+            ("FONTSIZE", (0, 1), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        el.append(tbl)
+
+        doc.build(el)
+        buf.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="trial_balance_{safe_label}.pdf"'},
+        )
+    else:
+        raise HTTPException(400, "format must be 'xlsx' or 'pdf'")
+
+
+# ==================== GENERAL LEDGER EXPORT (Task 28 — P2-C) ====================
+
+
+@app.get("/reports/general-ledger/export", tags=["General Ledger"])
+def export_general_ledger(
+    format: str = "xlsx",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    account_id: Optional[str] = None,
+    reference_type: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export general ledger journal entries as XLSX or PDF."""
+    if not current_user.company_id:
+        raise HTTPException(400, "User has no associated company")
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
+    company_name = company.company_name if company else "InvoLinks"
+
+    q = (
+        db.query(JournalEntryDB)
+        .filter(JournalEntryDB.company_id == current_user.company_id)
+        .order_by(JournalEntryDB.entry_date.desc())
+    )
+    if from_date:
+        q = q.filter(JournalEntryDB.entry_date >= from_date)
+    if to_date:
+        q = q.filter(JournalEntryDB.entry_date <= to_date)
+    if reference_type:
+        q = q.filter(JournalEntryDB.reference_type == reference_type.upper())
+
+    entries = q.limit(5000).all()
+
+    # Build flat rows — one row per journal entry line
+    rows = []
+    for entry in entries:
+        for line in entry.lines:
+            if account_id and line.account_id != account_id:
+                continue
+            rows.append({
+                "entry_date": str(entry.entry_date),
+                "reference": entry.reference_number or entry.reference_id or "",
+                "reference_type": entry.reference_type or "",
+                "description": entry.description or "",
+                "is_posted": "Posted" if entry.is_posted else "Draft",
+                "account_code": line.account_code or "",
+                "account_name": line.account_name or "",
+                "line_description": line.description or "",
+                "debit_amount": line.debit_amount or 0.0,
+                "credit_amount": line.credit_amount or 0.0,
+            })
+
+    period_label = f"{from_date or 'inception'} to {to_date or 'today'}"
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    safe_label = (from_date or "all").replace("-", "") + "_" + (to_date or "today").replace("-", "")
+
+    if format.lower() == "xlsx":
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            raise HTTPException(500, "openpyxl not installed")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "General Ledger"
+
+        primary_fill = PatternFill("solid", fgColor="4F46E5")
+        alt_fill = PatternFill("solid", fgColor="F5F5FF")
+        total_fill = PatternFill("solid", fgColor="C7D2FE")
+        white_font = Font(color="FFFFFF", bold=True)
+        bold_font = Font(bold=True)
+        thin = Side(style="thin", color="CCCCCC")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        def _cell(ws, row, col, value, font=None, fill=None, align="left", nfmt=None):
+            c = ws.cell(row=row, column=col, value=value)
+            if font: c.font = font
+            if fill: c.fill = fill
+            c.alignment = Alignment(horizontal=align, vertical="center")
+            if nfmt: c.number_format = nfmt
+            c.border = border
+            return c
+
+        ws.merge_cells("A1:J1")
+        t = ws.cell(row=1, column=1, value=f"{company_name} — General Ledger")
+        t.font = Font(size=14, bold=True, color="4F46E5")
+        t.alignment = Alignment(horizontal="center")
+
+        ws.merge_cells("A2:J2")
+        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}")
+        t2.alignment = Alignment(horizontal="center")
+        t2.font = Font(italic=True, color="555555")
+
+        ws.merge_cells("A3:J3")
+        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
+        t3.alignment = Alignment(horizontal="center")
+        t3.font = Font(italic=True, size=9, color="888888")
+
+        hdrs = ["Date", "Reference", "Ref Type", "Entry Description", "Status",
+                "Account Code", "Account Name", "Line Description", "Debit (AED)", "Credit (AED)"]
+        for col, h in enumerate(hdrs, 1):
+            _cell(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
+
+        total_dr = total_cr = 0.0
+        for r_idx, row in enumerate(rows, 6):
+            fill = alt_fill if r_idx % 2 == 0 else None
+            _cell(ws, r_idx, 1, row["entry_date"], fill=fill)
+            _cell(ws, r_idx, 2, row["reference"], font=Font(name="Courier New"), fill=fill)
+            _cell(ws, r_idx, 3, row["reference_type"], fill=fill)
+            _cell(ws, r_idx, 4, row["description"], fill=fill)
+            _cell(ws, r_idx, 5, row["is_posted"], fill=fill)
+            _cell(ws, r_idx, 6, row["account_code"], font=Font(name="Courier New"), fill=fill)
+            _cell(ws, r_idx, 7, row["account_name"], fill=fill)
+            _cell(ws, r_idx, 8, row["line_description"], fill=fill)
+            _cell(ws, r_idx, 9, row["debit_amount"], nfmt="#,##0.00", align="right", fill=fill)
+            _cell(ws, r_idx, 10, row["credit_amount"], nfmt="#,##0.00", align="right", fill=fill)
+            total_dr += row["debit_amount"]
+            total_cr += row["credit_amount"]
+
+        tr = 6 + len(rows)
+        for col in range(1, 9):
+            _cell(ws, tr, col, "TOTALS" if col == 1 else "", font=bold_font, fill=total_fill)
+        _cell(ws, tr, 9, round(total_dr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
+        _cell(ws, tr, 10, round(total_cr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
+
+        col_widths = [12, 16, 14, 30, 8, 14, 24, 24, 16, 16]
+        for i, w in enumerate(col_widths, 1):
+            ws.column_dimensions[chr(ord("A") + i - 1)].width = w
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="general_ledger_{safe_label}.xlsx"'},
+        )
+
+    elif format.lower() == "pdf":
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.units import cm
+            from reportlab.lib import colors as rl_colors
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.enums import TA_LEFT, TA_CENTER
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        except ImportError:
+            raise HTTPException(500, "reportlab not installed")
+
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+                                 leftMargin=1.5 * cm, rightMargin=1.5 * cm)
+        styles = getSampleStyleSheet()
+        el = []
+        el.append(Paragraph(f"<b>{company_name} — General Ledger</b>", styles["Title"]))
+        el.append(Paragraph(f"Period: {period_label}", styles["Normal"]))
+        el.append(Paragraph(f"Generated: {generated_at}", ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=rl_colors.grey)))
+        el.append(Spacer(1, 0.4 * cm))
+
+        tbl_data = [["Date", "Reference", "Type", "Description", "Status", "Account", "Debit (AED)", "Credit (AED)"]]
+        total_dr = total_cr = 0.0
+        for row in rows:
+            tbl_data.append([
+                row["entry_date"],
+                row["reference"],
+                row["reference_type"],
+                (row["description"] or "")[:40],
+                row["is_posted"],
+                row["account_code"],
+                f"{row['debit_amount']:,.2f}",
+                f"{row['credit_amount']:,.2f}",
+            ])
+            total_dr += row["debit_amount"]
+            total_cr += row["credit_amount"]
+        tbl_data.append(["TOTALS", "", "", "", "", "", f"{total_dr:,.2f}", f"{total_cr:,.2f}"])
+
+        tbl = Table(tbl_data, colWidths=[2.5 * cm, 3.5 * cm, 3 * cm, 6 * cm, 2 * cm, 2.5 * cm, 3.5 * cm, 3.5 * cm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#4F46E5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 8),
+            ("ALIGN", (6, 0), (-1, -1), "RIGHT"),
+            ("ALIGN", (0, 0), (5, -1), "LEFT"),
+            ("BACKGROUND", (0, -1), (-1, -1), rl_colors.HexColor("#C7D2FE")),
+            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [rl_colors.white, rl_colors.HexColor("#F5F5FF")]),
+            ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#CCCCCC")),
+            ("FONTSIZE", (0, 1), (-1, -1), 7),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        el.append(tbl)
+
+        doc.build(el)
+        buf.seek(0)
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            buf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="general_ledger_{safe_label}.pdf"'},
+        )
+    else:
+        raise HTTPException(400, "format must be 'xlsx' or 'pdf'")
+
+
 # ==================== REACT APP SERVING ====================
 # These routes MUST be last to avoid intercepting API routes
 

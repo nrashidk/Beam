@@ -11,6 +11,8 @@ import {
   Search,
   Filter,
   ArrowUpDown,
+  FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 
 function fmt(val) {
@@ -186,8 +188,31 @@ function JournalEntries() {
   const [expandedId, setExpandedId] = useState(null);
   const [entryDetail, setEntryDetail] = useState({});
   const [detailLoading, setDetailLoading] = useState({});
+  const [exporting, setExporting] = useState("");
 
   const LIMIT = 20;
+
+  const handleExport = useCallback(async (format) => {
+    setExporting(format);
+    try {
+      const params = { format, from_date: fromDate, to_date: toDate };
+      if (refType) params.reference_type = refType;
+      const res = await apiClient.get("/reports/general-ledger/export", {
+        params,
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `general_ledger_${fromDate}_${toDate}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.response?.data?.detail || `Export failed: ${e.message}`);
+    } finally {
+      setExporting("");
+    }
+  }, [fromDate, toDate, refType]);
 
   const load = useCallback(async (pg = 1) => {
     setLoading(true);
@@ -251,11 +276,23 @@ function JournalEntries() {
             ))}
           </select>
         </div>
-        <div className="flex items-end">
+        <div className="flex items-end gap-2">
           <button onClick={() => load(1)} disabled={loading}
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
             {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Filter className="h-3.5 w-3.5" />}
             Apply
+          </button>
+          <button onClick={() => handleExport("xlsx")} disabled={!!exporting || loading}
+            className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+            title="Export as Excel spreadsheet">
+            {exporting === "xlsx" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+            Export XLSX
+          </button>
+          <button onClick={() => handleExport("pdf")} disabled={!!exporting || loading}
+            className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
+            title="Export as PDF">
+            {exporting === "pdf" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            Export PDF
           </button>
         </div>
       </div>
@@ -385,6 +422,29 @@ function TrialBalance() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [typeFilter, setTypeFilter] = useState("ALL");
+  const [exporting, setExporting] = useState("");
+
+  const handleExport = useCallback(async (format) => {
+    setExporting(format);
+    try {
+      const params = { format, from_date: fromDate, to_date: toDate };
+      if (typeFilter !== "ALL") params.account_type = typeFilter;
+      const res = await apiClient.get("/reports/trial-balance/export", {
+        params,
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `trial_balance_${fromDate}_${toDate}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e.response?.data?.detail || `Export failed: ${e.message}`);
+    } finally {
+      setExporting("");
+    }
+  }, [fromDate, toDate, typeFilter]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -439,6 +499,18 @@ function TrialBalance() {
           className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
           {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <BarChart3 className="h-3.5 w-3.5" />}
           Generate
+        </button>
+        <button onClick={() => handleExport("xlsx")} disabled={!!exporting || loading}
+          className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50"
+          title="Export as Excel spreadsheet">
+          {exporting === "xlsx" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+          Export XLSX
+        </button>
+        <button onClick={() => handleExport("pdf")} disabled={!!exporting || loading}
+          className="flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
+          title="Export as PDF">
+          {exporting === "pdf" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+          Export PDF
         </button>
       </div>
 
