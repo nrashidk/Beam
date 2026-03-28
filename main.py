@@ -2896,6 +2896,8 @@ def _run_column_migrations():
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS reverse_charge_vat DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_purchases DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_purchases DOUBLE PRECISION DEFAULT 0.0",
+        # Task 25: READ_ONLY role enum migration — adds value to PostgreSQL enum type if not present
+        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'READ_ONLY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'role')) THEN ALTER TYPE role ADD VALUE 'READ_ONLY'; END IF; END $$",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -4433,8 +4435,8 @@ def update_company_profile(
     db: Session = Depends(get_db),
 ):
     """Update company profile (Company Admin only)"""
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Only company admins can update company profile")
+    if not has_permission(current_user, "settings", "edit"):
+        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
 
     if not current_user.company_id:
         raise HTTPException(400, "User is not associated with a company")
@@ -6205,13 +6207,13 @@ def calculate_line_item_totals(
     }
 
 
-@app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut)
+@app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut,
+          dependencies=[require_permission("invoices", "create")])
 def create_invoice(
     payload: InvoiceCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Create a new invoice"""
     # Get company
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -6911,8 +6913,8 @@ def archive_old_invoices(
     """
     from datetime import date, timedelta
 
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
-        raise HTTPException(403, "Only Company Admin or Business Admin can archive invoices")
+    if not has_permission(current_user, "archival", "create"):
+        raise HTTPException(403, "Permission denied: archive invoices is not allowed for your role")
 
     if years_old < 1:
         raise HTTPException(400, "years_old must be at least 1")
@@ -7017,8 +7019,8 @@ def restore_archived_invoice(
 
     Role Access: COMPANY_ADMIN, BUSINESS_ADMIN only.
     """
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
-        raise HTTPException(403, "Only Company Admin or Business Admin can restore invoices")
+    if not has_permission(current_user, "archival", "create"):
+        raise HTTPException(403, "Permission denied: restore archived invoices is not allowed for your role")
 
     invoice = (
         db.query(InvoiceDB)
@@ -7193,7 +7195,8 @@ def get_invoice(
     )
 
 
-@app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
+@app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut,
+         dependencies=[require_permission("invoices", "edit")])
 def update_invoice(
     invoice_id: str,
     data: InvoiceCreate,
@@ -8720,6 +8723,8 @@ def issue_invoice(
     - Saves XML to file system
     - Updates status to ISSUED
     """
+    if not has_permission(current_user, "invoices", "approve"):
+        raise HTTPException(403, "Permission denied: issue invoices is not allowed for your role")
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -9172,6 +9177,8 @@ def cancel_invoice(
     db: Session = Depends(get_db),
 ):
     """Cancel an invoice"""
+    if not has_permission(current_user, "invoices", "delete"):
+        raise HTTPException(403, "Permission denied: cancel invoices is not allowed for your role")
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -10878,6 +10885,8 @@ def approve_inward_invoice(
 
     This changes the status to APPROVED and records the approver
     """
+    if not has_permission(current_user, "inward_invoices", "approve"):
+        raise HTTPException(403, "Permission denied: approve on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -10941,6 +10950,8 @@ def reject_inward_invoice(
     """
     Reject inward invoice with reason
     """
+    if not has_permission(current_user, "inward_invoices", "approve"):
+        raise HTTPException(403, "Permission denied: reject on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -10991,6 +11002,8 @@ def match_inward_invoice_to_po(
 
     This updates the matching_status and calculates variances
     """
+    if not has_permission(current_user, "inward_invoices", "edit"):
+        raise HTTPException(403, "Permission denied: edit on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -12250,6 +12263,8 @@ def generate_fta_audit_file(
 
     UAE Federal Tax Authority compliant audit file with invoice-level detail.
     """
+    if not has_permission(current_user, "audit_logs", "export"):
+        raise HTTPException(403, "Permission denied: export on audit_logs is not allowed for your role")
     # Verify company exists and is active
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -12627,6 +12642,8 @@ def update_peppol_settings(
     db: Session = Depends(get_db),
 ):
     """Update PEPPOL configuration for the company"""
+    if not has_permission(current_user, "settings", "edit"):
+        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )
@@ -12768,12 +12785,8 @@ def update_vat_settings(
     db: Session = Depends(get_db),
 ):
     """Update VAT registration configuration for the company"""
-    if current_user.role not in [
-        Role.COMPANY_ADMIN,
-        Role.SUPER_ADMIN,
-        Role.BUSINESS_ADMIN,
-    ]:
-        raise HTTPException(403, "Only admins can update VAT settings")
+    if not has_permission(current_user, "settings", "edit"):
+        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
 
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -12848,12 +12861,8 @@ async def upload_vat_certificate(
     db: Session = Depends(get_db),
 ):
     """Upload VAT registration certificate (PDF only)"""
-    if current_user.role not in [
-        Role.COMPANY_ADMIN,
-        Role.SUPER_ADMIN,
-        Role.BUSINESS_ADMIN,
-    ]:
-        raise HTTPException(403, "Only admins can upload VAT certificates")
+    if not has_permission(current_user, "settings", "edit"):
+        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
 
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -13437,9 +13446,9 @@ async def download_vendor_template(format: str = "csv"):
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
 
-@app.post("/invoices/bulk-import", tags=["Bulk Import"])
-@app.post("/bulk/import/invoices", tags=["Bulk Import"])
-@app.post("/api/bulk/import/invoices", tags=["Bulk Import"])
+@app.post("/invoices/bulk-import", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
+@app.post("/bulk/import/invoices", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
+@app.post("/api/bulk/import/invoices", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
 async def bulk_import_invoices(
     file: UploadFile = File(...),
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -14207,6 +14216,9 @@ def generate_vat_return(
     from decimal import Decimal
     from datetime import datetime as dt
     from utils.vat_utils import calculate_vat_return
+
+    if not has_permission(current_user, "vat_return", "create"):
+        raise HTTPException(403, "Permission denied: create on vat_return is not allowed for your role")
 
     if not current_user.company_id:
         raise HTTPException(400, "User has no associated company")
