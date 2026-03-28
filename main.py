@@ -3209,10 +3209,22 @@ def verify_hash_chain_integrity(
 
     ip = request.client.host if request and request.client else None
 
-    # Fetch invoices ordered by issue_date, then created_at for stability
+    # Fetch only immutable (issued) invoices for chain verification.
+    # Drafts are excluded because they can still be edited and have no stable
+    # hash link — including them would produce noisy false failures.
+    _verify_statuses = [
+        InvoiceStatus.ISSUED,
+        InvoiceStatus.SENT,
+        InvoiceStatus.VIEWED,
+        InvoiceStatus.PAID,
+        InvoiceStatus.CANCELLED,  # Cancelled invoices are also immutable
+    ]
     q = (
         db.query(InvoiceDB)
-        .filter(InvoiceDB.is_archived == False)
+        .filter(
+            InvoiceDB.is_archived == False,
+            InvoiceDB.status.in_(_verify_statuses),
+        )
         .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
     )
     if target_company_id:
@@ -9051,29 +9063,37 @@ def issue_invoice(
     from utils.ubl_xml_generator import generate_invoice_xml
     import json
 
-    # Get previous ISSUED invoice for chain linkage.
+    # Get the immediate predecessor in the chain for the current invoice.
     # Requirements:
     # 1. Only link to immutable (issued) invoices — drafts can still be edited,
     #    which would silently break the chain.
-    # 2. Use issue_date ASC, created_at ASC ordering to match the verifier, so
-    #    backdated invoices don't cause ordering mismatches during verification.
+    # 2. Select the latest invoice whose (issue_date, created_at) is strictly
+    #    before this invoice's position in the chain — same ordering used by the
+    #    verifier — so backdated issuance doesn't produce ordering mismatches.
+    _imm_statuses = [
+        InvoiceStatus.ISSUED,
+        InvoiceStatus.SENT,
+        InvoiceStatus.VIEWED,
+        InvoiceStatus.PAID,
+    ]
+    from sqlalchemy import or_, and_, tuple_
     prev_invoice = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.id != invoice.id,  # Exclude current invoice
-            InvoiceDB.status.in_([
-                InvoiceStatus.ISSUED,
-                InvoiceStatus.SENT,
-                InvoiceStatus.VIEWED,
-                InvoiceStatus.PAID,
-            ]),
+            InvoiceDB.id != invoice.id,
+            InvoiceDB.status.in_(_imm_statuses),
+            or_(
+                InvoiceDB.issue_date < invoice.issue_date,
+                and_(
+                    InvoiceDB.issue_date == invoice.issue_date,
+                    InvoiceDB.created_at < invoice.created_at,
+                ),
+            ),
         )
-        .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
-        .all()
+        .order_by(InvoiceDB.issue_date.desc(), InvoiceDB.created_at.desc())
+        .first()
     )
-    # Take the last element — the predecessor in the sorted chain
-    prev_invoice = prev_invoice[-1] if prev_invoice else None
 
     if prev_invoice:
         # Compute canonical hash of previous invoice for hash chain linking.
