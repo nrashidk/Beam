@@ -3221,6 +3221,11 @@ def verify_hash_chain_integrity(
     invoices = q.all()
     total = len(invoices)
 
+    from utils.crypto_utils import InvoiceCrypto
+    from collections import defaultdict
+
+    _verifier = InvoiceCrypto()
+
     valid_links = 0
     first_broken_id = None
     first_broken_number = None
@@ -3228,7 +3233,6 @@ def verify_hash_chain_integrity(
     integrity_ok = True
 
     # Group by company to maintain per-company chains
-    from collections import defaultdict
     by_company: dict[str, list] = defaultdict(list)
     for inv in invoices:
         by_company[inv.company_id or "__none__"].append(inv)
@@ -3240,20 +3244,23 @@ def verify_hash_chain_integrity(
                 continue
             prev = chain[i - 1]
 
-            # Chain rule: current.prev_invoice_hash must equal prev.xml_hash
-            # (issuance sets: invoice.prev_invoice_hash = prev_invoice.xml_hash)
-            #
-            # A missing prev_invoice_hash on a non-first invoice means the link
-            # was never set or was cleared — treat as broken chain.
-            #
-            # A missing prev.xml_hash means the predecessor has no hash to
-            # compare against — skip this pair (pre-hash-chain legacy invoice).
-            if not prev.xml_hash:
-                # Predecessor predates the hash-chain feature; cannot verify link
-                continue
+            # Independent recomputation: build canonical dict from the previous
+            # invoice's DB fields, compute SHA-256 hash, and compare against
+            # the current invoice's stored prev_invoice_hash.
+            # This detects tampering even if both stored hash fields are altered.
+            prev_canonical = {
+                "invoice_number": prev.invoice_number or "",
+                "issue_date": str(prev.issue_date) if prev.issue_date else "",
+                "supplier_trn": prev.supplier_trn or "",
+                "customer_trn": prev.customer_trn or "",
+                "total_amount": str(prev.total_amount or "0.0"),
+                "tax_amount": str(prev.tax_amount or "0.0"),
+                "prev_invoice_hash": prev.prev_invoice_hash or "",
+            }
+            expected_hash = _verifier.compute_invoice_hash(prev_canonical)
 
+            # A missing prev_invoice_hash on a non-first invoice — broken chain
             if not inv.prev_invoice_hash:
-                # Non-first invoice missing expected prev hash — broken chain
                 if integrity_ok:
                     first_broken_id = inv.id
                     first_broken_number = inv.invoice_number
@@ -3261,7 +3268,7 @@ def verify_hash_chain_integrity(
                 integrity_ok = False
                 continue
 
-            if inv.prev_invoice_hash == prev.xml_hash:
+            if inv.prev_invoice_hash == expected_hash:
                 valid_links += 1
             else:
                 if integrity_ok:
@@ -9050,8 +9057,21 @@ def issue_invoice(
         .first()
     )
 
-    if prev_invoice and prev_invoice.xml_hash:
-        invoice.prev_invoice_hash = prev_invoice.xml_hash
+    if prev_invoice:
+        # Compute canonical hash of previous invoice for hash chain linking.
+        # Using compute_invoice_hash (SHA-256 of canonical fields) so that
+        # the integrity verifier can independently recompute it from DB fields.
+        _chain_crypto = get_crypto_instance()
+        _prev_canonical = {
+            "invoice_number": prev_invoice.invoice_number or "",
+            "issue_date": str(prev_invoice.issue_date) if prev_invoice.issue_date else "",
+            "supplier_trn": prev_invoice.supplier_trn or "",
+            "customer_trn": prev_invoice.customer_trn or "",
+            "total_amount": str(prev_invoice.total_amount or "0.0"),
+            "tax_amount": str(prev_invoice.tax_amount or "0.0"),
+            "prev_invoice_hash": prev_invoice.prev_invoice_hash or "",
+        }
+        invoice.prev_invoice_hash = _chain_crypto.compute_invoice_hash(_prev_canonical)
 
     # Prepare invoice data for XML generation
     invoice_data = {
