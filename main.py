@@ -1651,6 +1651,26 @@ class JournalEntryLineDB(Base):
     account = relationship("AccountDB", backref="journal_entry_lines")
 
 
+# ==================== BACKUP LOG MODEL (Task 29 — P2-E) ====================
+
+
+class BackupLogDB(Base):
+    """Records every automated and manual backup event with audit metadata."""
+
+    __tablename__ = "backup_logs"
+
+    id = Column(String, primary_key=True, default=lambda: f"bkp_{uuid4().hex[:12]}")
+    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    filename = Column(String, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    checksum_sha256 = Column(String(64), nullable=True)
+    storage_path = Column(String, nullable=True)
+    status = Column(String(10), nullable=False, default="PENDING")  # SUCCESS / FAILED / PENDING
+    error_message = Column(Text, nullable=True)
+    triggered_by = Column(String, nullable=True)  # "scheduler" | user email | "restore"
+
+
 # Create tables
 Base.metadata.create_all(engine)
 
@@ -3078,6 +3098,59 @@ def startup_event():
     except Exception as _ic_exc:
         logger.warning(f"Integrity check startup log failed: {_ic_exc}")
 
+    # Task 29 (P2-E): Start the APScheduler daily backup job
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        from utils.backup_engine import run_backup
+
+        def _scheduled_backup():
+            """Run a backup and persist the BackupLogDB record."""
+            result = run_backup(triggered_by="scheduler")
+            _sched_db = SessionLocal()
+            try:
+                log_entry = BackupLogDB(
+                    started_at=result["started_at"],
+                    completed_at=result["completed_at"],
+                    filename=result["filename"],
+                    file_size_bytes=result["file_size_bytes"],
+                    checksum_sha256=result["checksum_sha256"],
+                    storage_path=result["storage_path"],
+                    status="SUCCESS" if result["success"] else "FAILED",
+                    error_message=result["error_message"],
+                    triggered_by=result["triggered_by"],
+                )
+                _sched_db.add(log_entry)
+                _sched_db.commit()
+            finally:
+                _sched_db.close()
+
+        cron_expr = os.getenv("BACKUP_SCHEDULE_CRON", "0 2 * * *")
+        cron_parts = cron_expr.split()
+        if len(cron_parts) == 5:
+            minute, hour, day, month, day_of_week = cron_parts
+        else:
+            minute, hour, day, month, day_of_week = "0", "2", "*", "*", "*"
+
+        _scheduler = BackgroundScheduler()
+        _scheduler.add_job(
+            _scheduled_backup,
+            CronTrigger(
+                minute=minute, hour=hour, day=day,
+                month=month, day_of_week=day_of_week,
+            ),
+            id="daily_db_backup",
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+        _scheduler.start()
+        logger.info(
+            f"📅 Daily backup scheduler started — cron: {cron_expr} "
+            f"(BACKUP_DIR={os.getenv('BACKUP_DIR', './backups')})"
+        )
+    except Exception as _sched_exc:
+        logger.error(f"❌ Backup scheduler failed to start: {_sched_exc}")
+
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
 
@@ -3201,6 +3274,238 @@ def verify_backup(
         "provider": provider,
         "message": "Backup verification event logged to audit trail.",
     }
+
+
+# ==================== BACKUP MANAGEMENT ENDPOINTS (Task 29 — P2-E) ====================
+
+
+@app.post("/admin/backup/trigger", tags=["Admin"])
+def trigger_backup(
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Run an on-demand backup immediately.
+    Super-admin only. Task 29 P2-E.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    from utils.backup_engine import run_backup
+
+    result = run_backup(triggered_by=current_user.email)
+
+    log_entry = BackupLogDB(
+        started_at=result["started_at"],
+        completed_at=result["completed_at"],
+        filename=result["filename"],
+        file_size_bytes=result["file_size_bytes"],
+        checksum_sha256=result["checksum_sha256"],
+        storage_path=result["storage_path"],
+        status="SUCCESS" if result["success"] else "FAILED",
+        error_message=result["error_message"],
+        triggered_by=result["triggered_by"],
+    )
+    db.add(log_entry)
+    db.commit()
+    db.refresh(log_entry)
+
+    log_audit_event(
+        db=db,
+        action="BACKUP_TRIGGERED",
+        user_id=current_user.id,
+        company_id=None,
+        resource_type="system",
+        resource_id=log_entry.id,
+        description=(
+            f"On-demand backup triggered by {current_user.email}. "
+            f"Status: {log_entry.status} | File: {log_entry.filename}"
+        ),
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
+    if not result["success"]:
+        raise HTTPException(500, f"Backup failed: {result['error_message']}")
+
+    return {
+        "id": log_entry.id,
+        "status": log_entry.status,
+        "filename": log_entry.filename,
+        "file_size_bytes": log_entry.file_size_bytes,
+        "checksum_sha256": log_entry.checksum_sha256,
+        "storage_path": log_entry.storage_path,
+        "started_at": log_entry.started_at.isoformat() if log_entry.started_at else None,
+        "completed_at": log_entry.completed_at.isoformat() if log_entry.completed_at else None,
+        "triggered_by": log_entry.triggered_by,
+    }
+
+
+@app.get("/admin/backup/logs", tags=["Admin"])
+def get_backup_logs(
+    limit: int = 30,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the last `limit` backup log entries ordered by most recent first.
+    Super-admin only. Task 29 P2-E.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    logs = (
+        db.query(BackupLogDB)
+        .order_by(BackupLogDB.started_at.desc())
+        .limit(max(1, min(limit, 200)))
+        .all()
+    )
+
+    return {
+        "count": len(logs),
+        "logs": [
+            {
+                "id": l.id,
+                "status": l.status,
+                "filename": l.filename,
+                "file_size_bytes": l.file_size_bytes,
+                "checksum_sha256": l.checksum_sha256,
+                "storage_path": l.storage_path,
+                "started_at": l.started_at.isoformat() if l.started_at else None,
+                "completed_at": l.completed_at.isoformat() if l.completed_at else None,
+                "triggered_by": l.triggered_by,
+                "error_message": l.error_message,
+            }
+            for l in logs
+        ],
+    }
+
+
+@app.post("/admin/backup/restore", tags=["Admin"])
+def restore_backup(
+    request: Request,
+    backup_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Restore the database from a local backup file identified by backup_id.
+    Restore is admin-triggered only — requires explicit confirmation via backup_id.
+    Super-admin only. Task 29 P2-E.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super admin access required")
+
+    log_entry = db.query(BackupLogDB).filter(BackupLogDB.id == backup_id).first()
+    if not log_entry:
+        raise HTTPException(404, "Backup log entry not found")
+    if log_entry.status != "SUCCESS":
+        raise HTTPException(400, "Can only restore from a SUCCESS backup")
+
+    storage_path = log_entry.storage_path
+    if not storage_path or storage_path.startswith("s3://"):
+        raise HTTPException(
+            400,
+            "Restore from S3 is not supported in this environment. "
+            "Download the dump and restore manually.",
+        )
+
+    import subprocess
+    from pathlib import Path
+
+    dump_file = Path(storage_path)
+    if not dump_file.exists():
+        raise HTTPException(404, f"Backup file not found on disk: {storage_path}")
+
+    db_url = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
+
+    log_audit_event(
+        db=db,
+        action="BACKUP_RESTORE_INITIATED",
+        user_id=current_user.id,
+        company_id=None,
+        resource_type="system",
+        resource_id=backup_id,
+        description=(
+            f"Database restore initiated by {current_user.email}. "
+            f"Source: {log_entry.filename} | SHA-256: {log_entry.checksum_sha256}"
+        ),
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
+    try:
+        if "sqlite" in db_url.lower():
+            import gzip, sqlite3
+
+            sqlite_file = db_url.replace("sqlite:///", "").replace("sqlite://", "")
+            sqlite_file = os.path.abspath(sqlite_file)
+            tmp_sql = sqlite_file + ".restore.sql"
+            with gzip.open(dump_file, "rt", encoding="utf-8") as gz:
+                sql = gz.read()
+            with open(tmp_sql, "w", encoding="utf-8") as f:
+                f.write(sql)
+            conn = sqlite3.connect(sqlite_file)
+            conn.executescript(sql)
+            conn.close()
+            Path(tmp_sql).unlink(missing_ok=True)
+        elif "postgresql" in db_url.lower() or "postgres" in db_url.lower():
+            import gzip
+
+            result = subprocess.run(
+                ["psql", "--no-password", db_url],
+                input=gzip.open(dump_file, "rb").read(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "psql restore failed: "
+                    + result.stderr.decode("utf-8", errors="replace")[:500]
+                )
+        else:
+            raise HTTPException(400, "Unsupported database type for restore")
+
+        log_audit_event(
+            db=db,
+            action="BACKUP_RESTORE_COMPLETED",
+            user_id=current_user.id,
+            company_id=None,
+            resource_type="system",
+            resource_id=backup_id,
+            description=(
+                f"Database restore COMPLETED by {current_user.email}. "
+                f"Source: {log_entry.filename}"
+            ),
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
+
+        return {
+            "status": "restored",
+            "backup_id": backup_id,
+            "filename": log_entry.filename,
+            "restored_by": current_user.email,
+            "restored_at": datetime.utcnow().isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_msg = str(exc)
+        log_audit_event(
+            db=db,
+            action="BACKUP_RESTORE_FAILED",
+            user_id=current_user.id,
+            company_id=None,
+            resource_type="system",
+            resource_id=backup_id,
+            description=f"Restore FAILED for {log_entry.filename}: {error_msg}",
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
+        raise HTTPException(500, f"Restore failed: {error_msg}")
 
 
 # ==================== DATA INTEGRITY ENDPOINTS (Task 26) ====================

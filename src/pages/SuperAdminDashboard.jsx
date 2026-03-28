@@ -31,6 +31,9 @@ import {
   CheckCircle2,
   Link2,
   XCircle,
+  Database,
+  HardDriveDownload,
+  History,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { adminAPI } from "../lib/api";
@@ -167,6 +170,14 @@ export default function SuperAdminDashboard() {
   const [verifyingBackup, setVerifyingBackup] = useState(false);
   const [verifyError, setVerifyError] = useState(null);
 
+  // Task 29: Backup management state
+  const [backupLogs, setBackupLogs] = useState([]);
+  const [backupLogsLoading, setBackupLogsLoading] = useState(true);
+  const [backupLogsError, setBackupLogsError] = useState(null);
+  const [showBackupLogs, setShowBackupLogs] = useState(false);
+  const [triggeringBackup, setTriggeringBackup] = useState(false);
+  const [triggerError, setTriggerError] = useState(null);
+
   // Task 26: Integrity check state
   const [integrityStatus, setIntegrityStatus] = useState(null);
   const [integrityLoading, setIntegrityLoading] = useState(true);
@@ -200,6 +211,35 @@ export default function SuperAdminDashboard() {
       console.error("[BackupVerify] failed:", msg);
     } finally {
       setVerifyingBackup(false);
+    }
+  }
+
+  async function fetchBackupLogs() {
+    setBackupLogsLoading(true);
+    setBackupLogsError(null);
+    try {
+      const res = await api.get("/admin/backup/logs?limit=30");
+      setBackupLogs(res.data.logs || []);
+    } catch (err) {
+      setBackupLogsError(err.response?.data?.detail || "Failed to load backup logs.");
+    } finally {
+      setBackupLogsLoading(false);
+    }
+  }
+
+  async function handleRunBackupNow() {
+    if (!confirm("Run a full database backup now? This may take a few seconds.")) return;
+    setTriggeringBackup(true);
+    setTriggerError(null);
+    try {
+      await api.post("/admin/backup/trigger");
+      await fetchBackupLogs();
+    } catch (err) {
+      const msg = err.response?.data?.detail || "Backup failed.";
+      setTriggerError(msg);
+      console.error("[BackupTrigger] failed:", msg);
+    } finally {
+      setTriggeringBackup(false);
     }
   }
 
@@ -444,6 +484,11 @@ export default function SuperAdminDashboard() {
   // Task 24: Fetch backup status on mount
   useEffect(() => {
     fetchBackupStatus();
+  }, []);
+
+  // Task 29: Fetch backup logs on mount
+  useEffect(() => {
+    fetchBackupLogs();
   }, []);
 
   // Task 26: Fetch integrity status on mount
@@ -908,6 +953,127 @@ export default function SuperAdminDashboard() {
                         : ""}
                     </p>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Task 29: Backup Management Card */}
+        <div>
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="flex flex-row items-center gap-2 pb-3">
+              <Database className="h-5 w-5 text-indigo-500" />
+              <CardTitle className="text-base">Backup Management</CardTitle>
+              <div className="ml-auto flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={triggeringBackup}
+                  onClick={handleRunBackupNow}
+                  className="text-xs h-8 gap-1.5"
+                >
+                  {triggeringBackup
+                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
+                    : <HardDriveDownload className="h-3.5 w-3.5" />}
+                  {triggeringBackup ? "Running…" : "Run Backup Now"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setShowBackupLogs((v) => !v); if (!showBackupLogs) fetchBackupLogs(); }}
+                  className="text-xs h-8 gap-1.5"
+                >
+                  <History className="h-3.5 w-3.5" />
+                  {showBackupLogs ? "Hide Logs" : "View Logs"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              {triggerError && (
+                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg p-3">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{triggerError}</span>
+                </div>
+              )}
+              {backupLogsError && !backupLogsLoading && (
+                <p className="text-xs text-red-600">{backupLogsError}</p>
+              )}
+              {backupLogsLoading && (
+                <p className="text-sm text-muted-foreground animate-pulse">Loading backup history…</p>
+              )}
+              {!backupLogsLoading && backupLogs.length === 0 && (
+                <p className="text-sm text-muted-foreground">No automated backups yet. Click "Run Backup Now" to create the first one.</p>
+              )}
+              {!backupLogsLoading && backupLogs.length > 0 && (
+                <div className="flex items-center gap-3 text-sm">
+                  {backupLogs[0].status === "SUCCESS"
+                    ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                    : <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
+                  <div>
+                    <span className="font-medium">Last backup: </span>
+                    <span className={backupLogs[0].status === "SUCCESS" ? "text-green-700" : "text-red-600"}>
+                      {backupLogs[0].status}
+                    </span>
+                    {backupLogs[0].completed_at && (
+                      <span className="text-muted-foreground ml-1">
+                        · {new Date(backupLogs[0].completed_at).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  {backupLogs[0].file_size_bytes && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {(backupLogs[0].file_size_bytes / 1024).toFixed(1)} KB
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {showBackupLogs && !backupLogsLoading && backupLogs.length > 0 && (
+                <div className="mt-2 rounded-lg border overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Filename</th>
+                        <th className="text-left px-3 py-2 font-medium">Status</th>
+                        <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Size</th>
+                        <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Triggered By</th>
+                        <th className="text-left px-3 py-2 font-medium">Completed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {backupLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-muted/30">
+                          <td className="px-3 py-2 font-mono truncate max-w-[140px]" title={log.filename}>
+                            {log.filename}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                              log.status === "SUCCESS"
+                                ? "bg-green-50 text-green-700"
+                                : "bg-red-50 text-red-700"
+                            }`}>
+                              {log.status === "SUCCESS"
+                                ? <CheckCircle2 className="h-3 w-3" />
+                                : <AlertTriangle className="h-3 w-3" />}
+                              {log.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">
+                            {log.file_size_bytes ? `${(log.file_size_bytes / 1024).toFixed(1)} KB` : "—"}
+                          </td>
+                          <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">
+                            {log.triggered_by || "scheduler"}
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground">
+                            {log.completed_at
+                              ? new Date(log.completed_at).toLocaleString()
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </CardContent>
