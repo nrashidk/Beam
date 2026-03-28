@@ -3430,7 +3430,12 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 role=user.role.value,
             )
         # No MFA - return access and refresh tokens directly
-        access_token = create_access_token(data={"sub": user.id, "type": "user"})
+        password_change_required = bool(getattr(user, "must_change_password", False))
+        access_token = create_access_token(data={
+            "sub": user.id,
+            "type": "user",
+            "password_change_required": password_change_required,
+        })
         refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
         # Update last login
         user.last_login = datetime.utcnow()
@@ -3440,7 +3445,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             resource_type="user", resource_id=user.id,
             description=f"User {user.email} logged in",
         )
-        password_change_required = bool(getattr(user, "must_change_password", False))
         db.commit()
         return MFALoginResponse(
             mfa_required=False,
@@ -3691,7 +3695,11 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
     db.commit()
 
     # Create full access token and refresh token
-    access_token = create_access_token(data={"sub": user.id, "type": "user"})
+    access_token = create_access_token(data={
+        "sub": user.id,
+        "type": "user",
+        "password_change_required": password_change_required,
+    })
     refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
 
     return MFALoginResponse(
