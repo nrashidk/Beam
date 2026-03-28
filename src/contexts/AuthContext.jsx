@@ -45,6 +45,8 @@ export const AuthProvider = ({ children }) => {
   const [tempToken, setTempToken] = useState(null);
   const [mfaMethod, setMfaMethod] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
+  // Task 22: Password expiry warning
+  const [passwordExpiresInDays, setPasswordExpiresInDays] = useState(null);
   const inactivityTimerRef = useRef(null);
 
   useEffect(() => {
@@ -98,6 +100,10 @@ export const AuthProvider = ({ children }) => {
           };
           localStorage.setItem("user", JSON.stringify(userObj));
           setUser(userObj);
+          // Task 22: Update password expiry warning state
+          if (profile.password_expires_in_days != null) {
+            setPasswordExpiresInDays(profile.password_expires_in_days);
+          }
         } catch (err) {
           // Fallback to cached userData if /me fails
           try {
@@ -150,6 +156,10 @@ export const AuthProvider = ({ children }) => {
         };
         localStorage.setItem("user", JSON.stringify(userObj));
         setUser(userObj);
+        // Task 22: Store password expiry info
+        if (profile.password_expires_in_days != null) {
+          setPasswordExpiresInDays(profile.password_expires_in_days);
+        }
       } catch (err) {
         // Fallback to minimal user info if /me fails
         const userData = {
@@ -202,6 +212,10 @@ export const AuthProvider = ({ children }) => {
         };
         localStorage.setItem("user", JSON.stringify(userObj));
         setUser(userObj);
+        // Task 22: Store password expiry info
+        if (profile.password_expires_in_days != null) {
+          setPasswordExpiresInDays(profile.password_expires_in_days);
+        }
       } catch (err) {
         // If /me fails, fall back to minimal response data
         const { user_id, company_id, company_name, role } = response.data;
@@ -308,6 +322,8 @@ export const AuthProvider = ({ children }) => {
     mfaRequired,
     mfaMethod,
     userEmail,
+    // Task 22: Password expiry warning
+    passwordExpiresInDays,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -29,6 +29,7 @@ import {
 import { format } from "date-fns";
 import Sidebar from "../components/Sidebar";
 import PageLoader from "../components/PageLoader";
+import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import CompanyInfoEditDialog from "../components/CompanyInfoEditDialog";
 
 export default function BusinessDashboard() {
@@ -81,6 +82,8 @@ export default function BusinessDashboard() {
 
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Task 22: Password expiry warning banner */}
+          <PasswordExpiryBanner />
           {/* Header */}
           <div className="flex justify-between items-center mb-8">
             <div>

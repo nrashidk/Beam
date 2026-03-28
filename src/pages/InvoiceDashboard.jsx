@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import InvoiceDeliveryActions from "../components/InvoiceDeliveryActions";
 import Sidebar from "../components/Sidebar";
+import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import PageLoader from "../components/PageLoader";
 
 export default function InvoiceDashboard() {
@@ -361,6 +362,8 @@ export default function InvoiceDashboard() {
 
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Task 22: Password expiry warning banner */}
+          <PasswordExpiryBanner />
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>

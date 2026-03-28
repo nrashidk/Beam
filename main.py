@@ -258,6 +258,9 @@ class UserDB(Base):
     # Task 20: Forced password change on first login
     must_change_password = Column(Boolean, default=False)
 
+    # Task 22: Password expiry policy
+    password_changed_at = Column(DateTime, nullable=True)
+
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -1448,6 +1451,11 @@ MAX_FAILED_LOGINS = 5       # Lock after N consecutive failures
 LOCKOUT_MINUTES = 30        # Lock duration
 PASSWORD_HISTORY_DEPTH = 5  # Number of past hashes to retain per user
 
+# Task 22: Password expiry policy (env-configurable)
+PASSWORD_MAX_AGE_DAYS = int(os.environ.get("PASSWORD_MAX_AGE_DAYS", "90"))
+PASSWORD_MIN_AGE_HOURS = int(os.environ.get("PASSWORD_MIN_AGE_HOURS", "24"))
+PASSWORD_EXPIRY_WARNING_DAYS = 14  # Show warning banner this many days before expiry
+
 
 def validate_password_complexity(password: str) -> None:
     """
@@ -1473,6 +1481,19 @@ def validate_password_complexity(password: str) -> None:
         errors.append("a special character")
     if errors:
         raise ValueError(f"Password must contain: {', '.join(errors)}")
+
+
+def _check_password_expiry(user: "UserDB"):
+    """
+    Task 22 — Check password age against policy.
+    Returns (is_expired: bool, days_until_expiry: int | None).
+    days_until_expiry is None when no password_changed_at is recorded.
+    """
+    if not getattr(user, "password_changed_at", None):
+        return False, None
+    age_days = (datetime.utcnow() - user.password_changed_at).days
+    days_until_expiry = PASSWORD_MAX_AGE_DAYS - age_days
+    return days_until_expiry <= 0, days_until_expiry
 
 
 def _save_password_history(user_id: str, password_hash: str, db: Session) -> None:
@@ -2678,6 +2699,8 @@ def _run_column_migrations():
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
         # Task 20: Forced password change on first login
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false",
+        # Task 22: Password expiry policy
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
         # Task 13: VAT return 13-box breakdown columns
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
         "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
@@ -3389,6 +3412,9 @@ class MFALoginResponse(BaseModel):
     company_id: Optional[str] = None
     role: Optional[str] = None
     password_change_required: Optional[bool] = False
+    # Task 22: Password expiry fields
+    password_expired: Optional[bool] = False
+    password_expires_in_days: Optional[int] = None
 
 
 @app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
@@ -3430,6 +3456,16 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 role=user.role.value,
             )
         # No MFA - return access and refresh tokens directly
+        # Task 22: Check password expiry before issuing token
+        _pw_expired, _pw_days_left = _check_password_expiry(user)
+        if _pw_expired:
+            user.must_change_password = True
+            log_audit_event(
+                db, "PASSWORD_EXPIRED_FORCED_CHANGE",
+                user_id=user.id, company_id=user.company_id,
+                resource_type="user", resource_id=user.id,
+                description=f"Password for {user.email} expired — forced change required",
+            )
         password_change_required = bool(getattr(user, "must_change_password", False))
         access_token = create_access_token(data={
             "sub": user.id,
@@ -3457,6 +3493,8 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             company_id=user.company_id,
             role=user.role.value,
             password_change_required=password_change_required,
+            password_expired=_pw_expired,
+            password_expires_in_days=_pw_days_left,
         )
 
     # Try company authentication (with MFA support)
@@ -3691,6 +3729,16 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
         resource_type="user", resource_id=user.id,
         description=f"User {user.email} logged in (MFA verified)",
     )
+    # Task 22: Check password expiry at MFA-verify step too
+    _pw_expired_mfa, _pw_days_left_mfa = _check_password_expiry(user)
+    if _pw_expired_mfa:
+        user.must_change_password = True
+        log_audit_event(
+            db, "PASSWORD_EXPIRED_FORCED_CHANGE",
+            user_id=user.id, company_id=user.company_id,
+            resource_type="user", resource_id=user.id,
+            description=f"Password for {user.email} expired — forced change required",
+        )
     password_change_required = bool(getattr(user, "must_change_password", False))
     db.commit()
 
@@ -3713,6 +3761,8 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
         company_id=user.company_id,
         role=user.role.value,
         password_change_required=password_change_required,
+        password_expired=_pw_expired_mfa,
+        password_expires_in_days=_pw_days_left_mfa,
     )
 
 
@@ -3951,11 +4001,22 @@ def get_current_user_info(
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )
 
+    # Task 22: Compute days until password expires for frontend warning banner
+    _pw_expired_me, _pw_days_left_me = _check_password_expiry(current_user)
+
     response = {
         "user_id": current_user.id,
         "email": current_user.email,
         "role": current_user.role.value,
         "company": None,
+        # Task 22: Password policy info for security settings / warning banner
+        "password_changed_at": (
+            current_user.password_changed_at.isoformat()
+            if getattr(current_user, "password_changed_at", None)
+            else None
+        ),
+        "password_expires_in_days": _pw_days_left_me,
+        "password_expired": _pw_expired_me,
     }
 
     if company:
@@ -13458,7 +13519,21 @@ def change_password(
     - Current password must be correct
     - New password must meet complexity requirements (Task 2)
     - New password must not match any of the last 5 passwords (Task 2)
+    - Minimum password age (Task 22): cannot change more than once per PASSWORD_MIN_AGE_HOURS
     """
+    # 0. Task 22: Minimum password age — skip this check for forced/expired changes
+    was_forced = bool(getattr(current_user, "must_change_password", False))
+    if not was_forced:
+        pw_changed_at = getattr(current_user, "password_changed_at", None)
+        if pw_changed_at is not None:
+            hours_since_last_change = (datetime.utcnow() - pw_changed_at).total_seconds() / 3600
+            if hours_since_last_change < PASSWORD_MIN_AGE_HOURS:
+                remaining_hours = int(PASSWORD_MIN_AGE_HOURS - hours_since_last_change) + 1
+                raise HTTPException(
+                    429,
+                    f"Password was changed too recently. Please wait {remaining_hours} hour(s) before changing again.",
+                )
+
     # 1. Verify current password
     if not current_user.password_hash or not verify_password(
         current_password, current_user.password_hash
@@ -13483,14 +13558,16 @@ def change_password(
     _save_password_history(current_user.id, new_hash, db)
     current_user.password_hash = new_hash
 
-    # 5. Clear forced password change flag if set (Task 20)
-    was_forced = bool(getattr(current_user, "must_change_password", False))
+    # 5. Update password_changed_at timestamp (Task 22)
+    current_user.password_changed_at = datetime.utcnow()
+
+    # 6. Clear forced password change flag if set (Task 20)
     current_user.must_change_password = False
 
-    # 6. Audit trail
+    # 7. Audit trail
     audit_action = "FORCED_PASSWORD_CHANGED" if was_forced else "PASSWORD_CHANGED"
     audit_description = (
-        f"User {current_user.email} completed mandatory password change on first login"
+        f"User {current_user.email} completed mandatory password change"
         if was_forced
         else f"User {current_user.email} changed their password"
     )
@@ -13502,7 +13579,11 @@ def change_password(
     )
 
     db.commit()
-    return {"success": True, "message": "Password changed successfully"}
+    return {
+        "success": True,
+        "message": "Password changed successfully",
+        "password_changed_at": current_user.password_changed_at.isoformat(),
+    }
 
 
 # ==================== TASK 1: AUDIT LOG ENDPOINTS ====================

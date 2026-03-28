@@ -33,6 +33,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import Sidebar from "../components/Sidebar";
+import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 import apiClient from "../lib/api";
@@ -306,6 +307,8 @@ export default function FinanceDashboard() {
       <div className="flex-1 ml-64">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <BackToDashboard />
+          {/* Task 22: Password expiry warning banner */}
+          <PasswordExpiryBanner />
 
           <div className="flex items-center justify-between mb-6">
             <div>

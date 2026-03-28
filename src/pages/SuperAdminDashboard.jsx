@@ -30,6 +30,7 @@ import { format } from "date-fns";
 import api, { adminAPI } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import AdminLayout from "../components/AdminLayout";
+import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -469,6 +470,8 @@ export default function SuperAdminDashboard() {
   return (
     <AdminLayout navigation={navigationButtons}>
       <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
+        {/* Task 22: Password expiry warning banner */}
+        <PasswordExpiryBanner />
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
