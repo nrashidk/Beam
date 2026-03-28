@@ -22,6 +22,22 @@ const isTokenExpired = (token) => {
   }
 };
 
+// Task 20: Hydrate force_password_change flag from JWT claim
+const hydrateForceChangeFromToken = (token) => {
+  if (!token) return;
+  try {
+    const padding = 4 - (token.split(".")[1].length % 4);
+    const payload = JSON.parse(atob(token.split(".")[1] + "=".repeat(padding % 4)));
+    if (payload.password_change_required === true) {
+      localStorage.setItem("force_password_change", "true");
+    } else {
+      localStorage.removeItem("force_password_change");
+    }
+  } catch (_) {
+    // Ignore decoding errors
+  }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +57,9 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
         return;
       }
+
+      // Task 20: Sync force_password_change flag from JWT claim on bootstrap
+      hydrateForceChangeFromToken(token);
 
       // Check if access token is expired
       if (isTokenExpired(token)) {
