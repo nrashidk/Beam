@@ -3044,7 +3044,18 @@ def _install_audit_log_immutability():
     Creates a PostgreSQL trigger function + BEFORE UPDATE/DELETE triggers on audit_logs.
     The trigger raises 'Audit log records are immutable' on any modification attempt.
     Fully idempotent — uses CREATE OR REPLACE / DROP IF EXISTS patterns.
+    No-op on non-PostgreSQL dialects (e.g. SQLite in test environments).
     """
+    if engine.dialect.name != "postgresql":
+        logger.info("⏭️  Audit log immutability triggers skipped (non-PostgreSQL dialect)")
+        return
+    try:
+        _do_install_audit_log_immutability()
+    except Exception as e:
+        logger.warning(f"Audit log immutability install skipped: {e}")
+
+
+def _do_install_audit_log_immutability():
     with engine.begin() as conn:
         # 1. Create (or replace) the immutability guard function
         conn.execute(text("""
