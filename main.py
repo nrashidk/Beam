@@ -474,6 +474,9 @@ class UserDB(Base):
     # Task 22: Password expiry policy
     password_changed_at = Column(DateTime, nullable=True)
 
+    # Task 33: User deactivation (suspend without deleting)
+    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
+
     @property
     def password_last_change_date(self):
         """Alias for password_changed_at for spec compatibility."""
@@ -2105,6 +2108,10 @@ def authenticate_user(email: str, password: str, db: Session):
     if not user or not user.password_hash:
         return None
 
+    # Task 33: Check account deactivation before any other checks
+    if not getattr(user, "is_active", True):
+        raise HTTPException(403, "Account is deactivated. Contact your administrator.")
+
     # Task 2: Check account lockout
     if user.locked_until and user.locked_until > datetime.utcnow():
         remaining = int((user.locked_until - datetime.utcnow()).total_seconds() / 60)
@@ -3010,6 +3017,8 @@ def _run_column_migrations():
         # Backfill: set total_amount_aed = total_amount for existing AED invoices
         "UPDATE invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
         "UPDATE inward_invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
+        # Task 33: User deactivation flag
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true",
         # Task 29 (P2-E): backup_logs table — ensure all columns exist (safe for existing envs)
         "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP",
         "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP",
@@ -3029,11 +3038,64 @@ def _run_column_migrations():
                 logger.warning(f"Column migration skipped (may already exist): {e}")
 
 
+def _install_audit_log_immutability():
+    """
+    Task 33 — DB-level immutability for audit_logs.
+    Creates a PostgreSQL rule that prevents UPDATE and DELETE on audit_logs.
+    Uses DO blocks with DROP/CREATE so it is fully idempotent on every restart.
+    """
+    rules = [
+        (
+            "audit_logs_no_update",
+            "UPDATE",
+            "DO $$ BEGIN "
+            "EXECUTE 'DROP RULE IF EXISTS audit_logs_no_update ON audit_logs'; "
+            "EXECUTE 'CREATE RULE audit_logs_no_update AS ON UPDATE TO audit_logs DO INSTEAD "
+            "    (SELECT raise_exception(''Audit log records are immutable''))'; "
+            "END $$",
+        ),
+        (
+            "audit_logs_no_delete",
+            "DELETE",
+            "DO $$ BEGIN "
+            "EXECUTE 'DROP RULE IF EXISTS audit_logs_no_delete ON audit_logs'; "
+            "EXECUTE 'CREATE RULE audit_logs_no_delete AS ON DELETE TO audit_logs DO INSTEAD "
+            "    (SELECT raise_exception(''Audit log records are immutable''))'; "
+            "END $$",
+        ),
+    ]
+    with engine.begin() as conn:
+        for rule_name, operation, _unused in rules:
+            # Check if rule already exists
+            exists = conn.execute(
+                text(
+                    "SELECT 1 FROM pg_rules WHERE tablename = 'audit_logs' AND rulename = :rn"
+                ),
+                {"rn": rule_name},
+            ).fetchone()
+            if not exists:
+                try:
+                    conn.execute(
+                        text(
+                            f"CREATE RULE {rule_name} AS ON {operation} TO audit_logs "
+                            f"DO INSTEAD (SELECT 1/0)"
+                        )
+                    )
+                    logger.info(f"✅ Audit log immutability rule '{rule_name}' installed")
+                except Exception as e:
+                    logger.warning(f"Audit log rule '{rule_name}' skipped: {e}")
+            else:
+                logger.info(f"✅ Audit log immutability rule '{rule_name}' already present")
+
+
 @app.on_event("startup")
 def startup_event():
     """Seed plans on startup and validate environment"""
     # Run column-level migrations for new fields on existing tables
     _run_column_migrations()
+
+    # Task 33: Install DB-level audit log immutability rules
+    _install_audit_log_immutability()
 
     # Check if running in production mode
     production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
@@ -6817,6 +6879,7 @@ def get_team_members(
             "full_name": user.full_name,
             "role": user.role.value,
             "is_owner": user.is_owner,
+            "is_active": getattr(user, "is_active", True),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_login": user.last_login.isoformat() if user.last_login else None,
         }
@@ -6859,6 +6922,81 @@ def remove_team_member(
     db.commit()
 
     return {"success": True, "message": "User removed successfully"}
+
+
+@app.post("/company/users/{user_id}/deactivate", tags=["Users"])
+def deactivate_team_member(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 33 — Deactivate (suspend) a team member.
+    Revokes login access while preserving all history. COMPANY_ADMIN only.
+    Cannot deactivate the company owner (is_owner=True).
+    """
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only Company Admin or Super Admin can deactivate users")
+
+    target = db.get(UserDB, user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Cannot deactivate users from other companies")
+
+    if target.is_owner:
+        raise HTTPException(400, "Cannot deactivate the company owner")
+
+    if target.id == current_user.id:
+        raise HTTPException(400, "Cannot deactivate your own account")
+
+    if not getattr(target, "is_active", True):
+        raise HTTPException(400, "User is already deactivated")
+
+    target.is_active = False
+    log_audit_event(
+        db, "USER_DEACTIVATED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="user", resource_id=target.id,
+        description=f"User {target.email} deactivated by {current_user.email}",
+    )
+    db.commit()
+    return {"success": True, "message": f"User {target.email} has been deactivated"}
+
+
+@app.post("/company/users/{user_id}/reactivate", tags=["Users"])
+def reactivate_team_member(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 33 — Reactivate a previously deactivated team member.
+    Restores login access. COMPANY_ADMIN only.
+    """
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only Company Admin or Super Admin can reactivate users")
+
+    target = db.get(UserDB, user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Cannot reactivate users from other companies")
+
+    if getattr(target, "is_active", True):
+        raise HTTPException(400, "User is already active")
+
+    target.is_active = True
+    log_audit_event(
+        db, "USER_REACTIVATED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="user", resource_id=target.id,
+        description=f"User {target.email} reactivated by {current_user.email}",
+    )
+    db.commit()
+    return {"success": True, "message": f"User {target.email} has been reactivated"}
 
 
 # ==================== INVOICE ENDPOINTS ====================

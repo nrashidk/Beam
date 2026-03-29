@@ -27,6 +27,8 @@ import {
   Calendar,
   Check,
   X,
+  UserX,
+  UserCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { usersAPI } from "../lib/api";
@@ -347,20 +349,55 @@ export default function TeamManagement() {
       confirmText: "Remove",
       cancelText: "Cancel",
       type: "danger",
+      action: "remove",
+    });
+  };
+
+  const handleDeactivateUser = (userId, userName) => {
+    setConfirmModal({
+      isOpen: true,
+      userId,
+      userName,
+      title: "Deactivate User",
+      message: `Deactivating ${userName} will immediately revoke their login access. Their data and history will be preserved. You can reactivate them at any time.`,
+      confirmText: "Deactivate",
+      cancelText: "Cancel",
+      type: "warning",
+      action: "deactivate",
+    });
+  };
+
+  const handleReactivateUser = (userId, userName) => {
+    setConfirmModal({
+      isOpen: true,
+      userId,
+      userName,
+      title: "Reactivate User",
+      message: `Reactivating ${userName} will restore their login access to the system.`,
+      confirmText: "Reactivate",
+      cancelText: "Cancel",
+      type: "default",
+      action: "reactivate",
     });
   };
 
   const executeRemoveAction = async () => {
-    const { userId } = confirmModal;
+    const { userId, action } = confirmModal;
     setConfirmModal({ ...confirmModal, isOpen: false });
 
     setRemoveLoading(true);
     try {
-      await usersAPI.removeUser(userId);
+      if (action === "deactivate") {
+        await api.post(`/company/users/${userId}/deactivate`);
+      } else if (action === "reactivate") {
+        await api.post(`/company/users/${userId}/reactivate`);
+      } else {
+        await usersAPI.removeUser(userId);
+      }
       fetchTeamMembers();
     } catch (error) {
-      console.error("Failed to remove user:", error);
-      setError(error.response?.data?.detail || "Failed to remove user");
+      console.error(`Failed to ${action || "remove"} user:`, error);
+      setError(error.response?.data?.detail || `Failed to ${action || "remove"} user`);
     } finally {
       setRemoveLoading(false);
     }
@@ -703,24 +740,30 @@ export default function TeamManagement() {
                       </tr>
                     </thead>
                     <tbody>
-                      {teamMembers.map((member) => (
+                      {teamMembers.map((member) => {
+                        const isDeactivated = member.is_active === false;
+                        const isSelf = member.id === user?.id;
+                        const displayName = member.full_name || member.email.split("@")[0];
+                        return (
                         <tr
                           key={member.id}
-                          className="border-b hover:bg-gray-50"
+                          className={`border-b hover:bg-gray-50 ${isDeactivated ? "opacity-60 bg-gray-50" : ""}`}
                         >
                           <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <User size={16} className="text-gray-400" />
-                              <span className="font-medium">
-                                {member.full_name || member.email.split("@")[0]}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <User size={16} className={isDeactivated ? "text-gray-300" : "text-gray-400"} />
+                              <span className={`font-medium ${isDeactivated ? "text-gray-400 line-through" : ""}`}>
+                                {displayName}
                               </span>
                               {member.is_owner && (
-                                <Badge
-                                  variant="outline"
-                                  className="text-xs gap-1"
-                                >
+                                <Badge variant="outline" className="text-xs gap-1">
                                   <Shield size={12} />
                                   Owner
+                                </Badge>
+                              )}
+                              {isDeactivated && (
+                                <Badge className="text-xs bg-gray-200 text-gray-600 hover:bg-gray-200">
+                                  Deactivated
                                 </Badge>
                               )}
                             </div>
@@ -741,10 +784,7 @@ export default function TeamManagement() {
                             {member.created_at ? (
                               <div className="flex items-center gap-2">
                                 <Calendar size={14} className="text-gray-400" />
-                                {format(
-                                  new Date(member.created_at),
-                                  "MMM d, yyyy",
-                                )}
+                                {format(new Date(member.created_at), "MMM d, yyyy")}
                               </div>
                             ) : (
                               "—"
@@ -752,40 +792,57 @@ export default function TeamManagement() {
                           </td>
                           <td className="py-3 px-4 text-gray-600 text-sm">
                             {member.last_login
-                              ? format(
-                                  new Date(member.last_login),
-                                  "MMM d, yyyy",
-                                )
+                              ? format(new Date(member.last_login), "MMM d, yyyy")
                               : "Never"}
                           </td>
                           <td className="py-3 px-4 text-right">
-                            {!member.is_owner && member.id !== user?.id && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  handleRemoveUser(
-                                    member.id,
-                                    member.full_name || member.email,
-                                  )
-                                }
-                                className="text-red-600 hover:bg-red-50 gap-2"
-                              >
-                                <Trash2 size={14} />
-                                Remove
-                              </Button>
-                            )}
                             {member.is_owner && (
-                              <span className="text-xs text-gray-500">
-                                Cannot remove owner
-                              </span>
+                              <span className="text-xs text-gray-500">Cannot modify owner</span>
                             )}
-                            {member.id === user?.id && !member.is_owner && (
+                            {isSelf && !member.is_owner && (
                               <span className="text-xs text-gray-500">You</span>
+                            )}
+                            {!member.is_owner && !isSelf && (
+                              <div className="flex items-center justify-end gap-2">
+                                {isDeactivated ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleReactivateUser(member.id, displayName)}
+                                    className="text-green-700 hover:bg-green-50 gap-2"
+                                    disabled={removeLoading}
+                                  >
+                                    <UserCheck size={14} />
+                                    Reactivate
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDeactivateUser(member.id, displayName)}
+                                    className="text-amber-600 hover:bg-amber-50 gap-2"
+                                    disabled={removeLoading}
+                                  >
+                                    <UserX size={14} />
+                                    Deactivate
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleRemoveUser(member.id, displayName)}
+                                  className="text-red-600 hover:bg-red-50 gap-2"
+                                  disabled={removeLoading}
+                                >
+                                  <Trash2 size={14} />
+                                  Remove
+                                </Button>
+                              </div>
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
