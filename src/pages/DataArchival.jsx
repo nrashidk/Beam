@@ -3,8 +3,11 @@ import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle } from "lucide
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function DataArchival() {
+  const { user } = useAuth();
+  const canExportArchive = user?.role === "SUPER_ADMIN" || user?.role === "COMPANY_ADMIN";
   const [archivedInvoices, setArchivedInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [archiving, setArchiving] = useState(false);
@@ -205,7 +208,7 @@ export default function DataArchival() {
                   </span>
                 )}
               </h3>
-              {archivedInvoices.length > 0 && (
+              {archivedInvoices.length > 0 && canExportArchive && (
                 <button
                   onClick={handleExportXlsx}
                   disabled={exporting}
