@@ -711,44 +711,25 @@ export default function TeamManagement() {
                     Click "Invite Team Member" to add your first team member
                   </p>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Name
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Email
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Role
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Effective Permissions
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Joined
-                        </th>
-                        <th className="text-left py-3 px-4 font-medium text-gray-700">
-                          Last Login
-                        </th>
-                        <th className="text-right py-3 px-4 font-medium text-gray-700">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teamMembers.map((member) => {
-                        const isDeactivated = member.is_active === false;
-                        const isSelf = member.id === user?.id;
-                        const displayName = member.full_name || member.email.split("@")[0];
-                        return (
-                        <tr
-                          key={member.id}
-                          className={`border-b hover:bg-gray-50 ${isDeactivated ? "opacity-60 bg-gray-50" : ""}`}
-                        >
+              ) : (() => {
+                const activeMembers = teamMembers.filter((m) => m.is_active !== false);
+                const deactivatedMembers = teamMembers.filter((m) => m.is_active === false);
+                const tableColHeaders = (isGrey) => (
+                  <tr className={`border-b ${isGrey ? "border-gray-200 bg-gray-100" : ""}`}>
+                    {["Name","Email","Role","Effective Permissions","Joined","Last Login"].map((h) => (
+                      <th key={h} className={`text-left py-3 px-4 font-medium ${isGrey ? "text-gray-500" : "text-gray-700"}`}>{h}</th>
+                    ))}
+                    <th className={`text-right py-3 px-4 font-medium ${isGrey ? "text-gray-500" : "text-gray-700"}`}>Actions</th>
+                  </tr>
+                );
+                const renderRow = (member, isDeactivated) => {
+                  const isSelf = member.id === user?.id;
+                  const displayName = member.full_name || member.email.split("@")[0];
+                  return (
+                  <tr
+                    key={member.id}
+                    className="border-b hover:bg-gray-50"
+                  >
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2 flex-wrap">
                               <User size={16} className={isDeactivated ? "text-gray-300" : "text-gray-400"} />
@@ -840,13 +821,40 @@ export default function TeamManagement() {
                               </div>
                             )}
                           </td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                  </tr>
+                  );
+                };
+                return (
+                  <div className="space-y-6">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>{tableColHeaders(false)}</thead>
+                        <tbody>
+                          {activeMembers.length === 0 ? (
+                            <tr><td colSpan={7} className="py-6 text-center text-gray-400 text-sm">No active members</td></tr>
+                          ) : activeMembers.map((m) => renderRow(m, false))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {deactivatedMembers.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <UserX size={16} className="text-gray-400" />
+                          <h3 className="text-sm font-semibold text-gray-600">
+                            Deactivated Members ({deactivatedMembers.length})
+                          </h3>
+                        </div>
+                        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-gray-50">
+                          <table className="w-full opacity-75">
+                            <thead>{tableColHeaders(true)}</thead>
+                            <tbody>{deactivatedMembers.map((m) => renderRow(m, true))}</tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 

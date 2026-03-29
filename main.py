@@ -3041,51 +3041,46 @@ def _run_column_migrations():
 def _install_audit_log_immutability():
     """
     Task 33 — DB-level immutability for audit_logs.
-    Creates a PostgreSQL rule that prevents UPDATE and DELETE on audit_logs.
-    Uses DO blocks with DROP/CREATE so it is fully idempotent on every restart.
+    Creates a PostgreSQL trigger function + BEFORE UPDATE/DELETE triggers on audit_logs.
+    The trigger raises 'Audit log records are immutable' on any modification attempt.
+    Fully idempotent — uses CREATE OR REPLACE / DROP IF EXISTS patterns.
     """
-    rules = [
-        (
-            "audit_logs_no_update",
-            "UPDATE",
-            "DO $$ BEGIN "
-            "EXECUTE 'DROP RULE IF EXISTS audit_logs_no_update ON audit_logs'; "
-            "EXECUTE 'CREATE RULE audit_logs_no_update AS ON UPDATE TO audit_logs DO INSTEAD "
-            "    (SELECT raise_exception(''Audit log records are immutable''))'; "
-            "END $$",
-        ),
-        (
-            "audit_logs_no_delete",
-            "DELETE",
-            "DO $$ BEGIN "
-            "EXECUTE 'DROP RULE IF EXISTS audit_logs_no_delete ON audit_logs'; "
-            "EXECUTE 'CREATE RULE audit_logs_no_delete AS ON DELETE TO audit_logs DO INSTEAD "
-            "    (SELECT raise_exception(''Audit log records are immutable''))'; "
-            "END $$",
-        ),
-    ]
     with engine.begin() as conn:
-        for rule_name, operation, _unused in rules:
-            # Check if rule already exists
-            exists = conn.execute(
-                text(
-                    "SELECT 1 FROM pg_rules WHERE tablename = 'audit_logs' AND rulename = :rn"
-                ),
-                {"rn": rule_name},
-            ).fetchone()
-            if not exists:
-                try:
-                    conn.execute(
-                        text(
-                            f"CREATE RULE {rule_name} AS ON {operation} TO audit_logs "
-                            f"DO INSTEAD (SELECT 1/0)"
-                        )
-                    )
-                    logger.info(f"✅ Audit log immutability rule '{rule_name}' installed")
-                except Exception as e:
-                    logger.warning(f"Audit log rule '{rule_name}' skipped: {e}")
-            else:
-                logger.info(f"✅ Audit log immutability rule '{rule_name}' already present")
+        # 1. Create (or replace) the immutability guard function
+        conn.execute(text("""
+            CREATE OR REPLACE FUNCTION audit_logs_immutability_guard()
+            RETURNS TRIGGER LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Audit log records are immutable';
+            END;
+            $$
+        """))
+
+        # 2. Drop old rules from the previous implementation (idempotent cleanup)
+        conn.execute(text("DROP RULE IF EXISTS audit_logs_no_update ON audit_logs"))
+        conn.execute(text("DROP RULE IF EXISTS audit_logs_no_delete ON audit_logs"))
+
+        # 3. BEFORE UPDATE trigger — idempotent via DROP IF EXISTS + CREATE
+        conn.execute(text(
+            "DROP TRIGGER IF EXISTS audit_logs_no_update ON audit_logs"
+        ))
+        conn.execute(text("""
+            CREATE TRIGGER audit_logs_no_update
+            BEFORE UPDATE ON audit_logs
+            FOR EACH ROW EXECUTE FUNCTION audit_logs_immutability_guard()
+        """))
+
+        # 4. BEFORE DELETE trigger — idempotent via DROP IF EXISTS + CREATE
+        conn.execute(text(
+            "DROP TRIGGER IF EXISTS audit_logs_no_delete ON audit_logs"
+        ))
+        conn.execute(text("""
+            CREATE TRIGGER audit_logs_no_delete
+            BEFORE DELETE ON audit_logs
+            FOR EACH ROW EXECUTE FUNCTION audit_logs_immutability_guard()
+        """))
+
+    logger.info("✅ Audit log immutability triggers installed (UPDATE/DELETE blocked)")
 
 
 @app.on_event("startup")
@@ -6733,6 +6728,7 @@ class UserOut(BaseModel):
     full_name: Optional[str]
     role: str
     is_owner: bool
+    is_active: bool = True
     created_at: str
     last_login: Optional[str]
 
@@ -6984,6 +6980,9 @@ def reactivate_team_member(
 
     if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Cannot reactivate users from other companies")
+
+    if target.is_owner:
+        raise HTTPException(400, "Cannot reactivate the company owner")
 
     if getattr(target, "is_active", True):
         raise HTTPException(400, "User is already active")
