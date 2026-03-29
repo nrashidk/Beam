@@ -15805,11 +15805,12 @@ def generate_vat_return(
             (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
         )
 
-    # --- Box 2: Tax refunds — VAT on credit notes and debit notes issued in period ---
+    # --- Box 2: Tax refunds — VAT on credit notes (381) and debit notes (383) in period ---
+    # FTA Form 301 Box 2 covers only standard tax adjustments (types 381 and 383).
+    # Out-of-scope credit notes (type 81) are excluded because they carry no VAT.
     credit_debit_note_types = [
-        InvoiceType.TAX_CREDIT_NOTE,
-        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
-        InvoiceType.DEBIT_NOTE,
+        InvoiceType.TAX_CREDIT_NOTE,   # 381
+        InvoiceType.DEBIT_NOTE,        # 383
     ]
     credit_debit_notes = (
         db.query(InvoiceDB)
@@ -15833,7 +15834,7 @@ def generate_vat_return(
             ExpenseDB.company_id == current_user.company_id,
             ExpenseDB.expense_date >= start_date,
             ExpenseDB.expense_date <= end_date,
-            ExpenseDB.vat_amount > 0,
+            ExpenseDB.vat_amount != 0,
         )
         .all()
     )
