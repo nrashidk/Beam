@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Archive, RotateCcw, AlertTriangle, CheckCircle } from "lucide-react";
+import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
@@ -79,6 +79,28 @@ export default function DataArchival() {
       );
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportXlsx = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const res = await apiClient.get("/invoices/archive/export", { responseType: "blob" });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "archived_invoices.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError("Failed to export archived invoices.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -183,6 +205,16 @@ export default function DataArchival() {
                   </span>
                 )}
               </h3>
+              {archivedInvoices.length > 0 && (
+                <button
+                  onClick={handleExportXlsx}
+                  disabled={exporting}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  {exporting ? "Exporting..." : "Export XLSX"}
+                </button>
+              )}
             </div>
 
             {loading ? (

@@ -49,6 +49,7 @@ COMPANY_DATA_HEADERS = [
 SALES_DATA_HEADERS = [
     "TransactionID",
     "InvoiceDate",
+    "SupplyDate",
     "InvoiceType",
     "CustomerTRN",
     "CustomerName",
@@ -65,6 +66,7 @@ SALES_DATA_HEADERS = [
 PURCHASE_DATA_HEADERS = [
     "TransactionID",
     "InvoiceDate",
+    "SupplyDate",
     "InvoiceType",
     "SupplierTRN",
     "SupplierName",
@@ -323,10 +325,13 @@ class FTAAuditFileGenerator:
                 subtotal_aed = subtotal
                 vat_aed = vat
 
+            issue_date = inv.get("issue_date", "")
+            supply_date_val = inv.get("supply_date") or issue_date
             writer.writerow(
                 {
                     "TransactionID": inv.get("invoice_number", ""),
-                    "InvoiceDate": _format_date(inv.get("issue_date", "")),
+                    "InvoiceDate": _format_date(issue_date),
+                    "SupplyDate": _format_date(supply_date_val),
                     "InvoiceType": inv_type,
                     "CustomerTRN": inv.get("customer_trn", "") or "N/A",
                     "CustomerName": inv.get("customer_name", ""),
@@ -400,10 +405,13 @@ class FTAAuditFileGenerator:
                 subtotal_aed = subtotal
                 vat_aed = vat
 
+            inv_date = inv.get("invoice_date", "")
+            purch_supply_date = inv.get("supply_date") or inv_date
             writer.writerow(
                 {
                     "TransactionID": inv.get("supplier_invoice_number", ""),
-                    "InvoiceDate": _format_date(inv.get("invoice_date", "")),
+                    "InvoiceDate": _format_date(inv_date),
+                    "SupplyDate": _format_date(purch_supply_date),
                     "InvoiceType": inv_type,
                     "SupplierTRN": inv.get("supplier_trn", ""),
                     "SupplierName": inv.get("supplier_name", ""),

@@ -7731,6 +7731,76 @@ def get_archival_status(
     }
 
 
+@app.get("/invoices/archive/export", tags=["Invoices"])
+def export_archived_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 32 — Bulk export all archived invoices for this company as an XLSX file.
+    Requires reports.export permission.
+    """
+    if not has_permission(current_user, "reports", "export"):
+        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
+
+    import io
+    import openpyxl
+    from fastapi.responses import StreamingResponse
+
+    archived = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.is_archived == True,
+        )
+        .order_by(InvoiceDB.archived_at.desc())
+        .all()
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Archived Invoices"
+
+    headers = [
+        "Invoice Number",
+        "Issue Date",
+        "Supply Date",
+        "Customer Name",
+        "Customer TRN",
+        "Total Amount",
+        "Tax Amount",
+        "Currency",
+        "Status",
+        "Archived At",
+    ]
+    ws.append(headers)
+
+    for inv in archived:
+        ws.append([
+            inv.invoice_number,
+            inv.issue_date.isoformat() if inv.issue_date else "",
+            inv.supply_date.isoformat() if getattr(inv, "supply_date", None) else "",
+            inv.customer_name or "",
+            inv.customer_trn or "",
+            inv.total_amount,
+            inv.tax_amount,
+            inv.currency_code or "AED",
+            inv.status.value if inv.status else "",
+            inv.archived_at.isoformat() if inv.archived_at else "",
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"archived_invoices_{current_user.company_id}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/invoices/{invoice_id}/restore", tags=["Invoices"])
 def restore_archived_invoice(
     invoice_id: str,
@@ -13826,6 +13896,7 @@ def generate_fta_audit_file(
             {
                 "invoice_number": inv.invoice_number,
                 "issue_date": inv.issue_date,
+                "supply_date": getattr(inv, "supply_date", None),
                 "invoice_type": inv.invoice_type.value,
                 "customer_trn": inv.customer_trn,
                 "customer_name": inv.customer_name,
