@@ -1,0 +1,286 @@
+FTA Tax Accounting Software Accreditation — Gap Analysis Report
+System: InvoLinks (Beam)
+Analysis Date: 2026-03-29
+Codebase: FastAPI backend (main.py — 13,672 lines) + 12 utility modules + React 19 frontend (72 components)
+Database: PostgreSQL via SQLAlchemy ORM
+
+1. FTA AUDIT FILE (FAF) EXPORT
+1.1 FTA Audit File — Overall Structure
+The FAF generator (utils/fta_audit_generator.py) exists and produces a ZIP file containing a FAFv1.0.0.csv plus a .sha256 integrity file. However, the current 4-table structure is:
+
+FTA Requirement	Implemented?	Notes
+[CompanyData]	⚠️ Partial	Present but missing period start/end dates
+[SalesData] (Supply Listing)	⚠️ Partial	Present; see §1.3 below
+[PurchaseData] (Purchase Listing)	⚠️ Partial	Present; see §1.2 below
+[GeneralLedgerData]	❌ Not found	Entirely absent from FAF generator
+Non-editable output	⚠️ Partial	SHA-256 hash provides integrity check, but CSV inside ZIP remains technically editable; no file-level write protection or digital signature applied to the CSV itself
+1.2 Company Information Table
+Current columns: TaxAgencyName, FAFVersion, TRN, CompanyName, RegistrationDate, Address, City, Emirate
+
+Field	Status
+TRN	✅ Present
+Tax Agency Name	✅ Present (hardcoded as "InvoLinks")
+FAF Version	✅ Present (FAFv1.0.0)
+Company Legal Name	✅ Present
+Registration Date	✅ Present
+Address / City / Emirate	✅ Present
+Period Start Date	❌ Not in table (date range used to generate the FAF is not embedded in the CompanyData row)
+Period End Date	❌ Not in table
+Software Product Name	❌ Not present as a distinct column (only FAFVersion)
+Software Version Number	❌ Not present
+1.3 Purchase Listing Table ([PurchaseData])
+Current columns: TransactionID, InvoiceDate, InvoiceType, SupplierTRN, SupplierName, SupplierCountry, InvoiceValueExclVAT, VATAmount, TotalInvoiceValue, Currency, TaxCode, VATRatePct, Status
+
+Field	Status
+Supplier TRN	✅ Present (SupplierTRN)
+Invoice Date	✅ Present (InvoiceDate)
+VAT Amount	✅ Present (VATAmount)
+Invoice Value excl. VAT	✅ Present
+Total Invoice Value	✅ Present
+Tax Code	✅ Present
+VAT amounts strictly in AED	⚠️ Currency stored per invoice (currency_code) — no AED conversion enforcement at FAF export time; multi-currency invoices may appear in foreign currencies
+Supplier Invoice Number (original)	⚠️ Uses supplier_invoice_number from InwardInvoiceDB, but if field is blank the FAF row is effectively empty
+Supply Date (date goods/services received)	❌ Not a column in PurchaseData — only InvoiceDate
+1.4 Supply Listing Table ([SalesData])
+Current columns: TransactionID, InvoiceDate, InvoiceType, CustomerTRN, CustomerName, CustomerCountry, InvoiceValueExclVAT, VATAmount, TotalInvoiceValue, Currency, TaxCode, VATRatePct, Status
+
+Field	Status
+Customer TRN	✅ Present (defaults to "N/A" for B2C)
+Invoice Date	✅ Present
+VAT Amount	✅ Present
+Invoice details	✅ Present
+VAT amounts in AED	⚠️ Same multi-currency gap as Purchase Listing
+Supply Date	❌ Not included in SalesData table even though supply_date column exists in InvoiceDB
+1.5 General Ledger Table
+Status: ❌ Not found / needs to be built
+
+The codebase has a fully functional General Ledger module (JournalEntryDB, JournalEntryLineDB, chart of accounts, double-entry auto-generation for invoices and purchases) but none of this data is exported into the FAF. The FTA-required [GeneralLedgerData] table with debit/credit entries and source document references is entirely missing from fta_audit_generator.py.
+
+Required GL table columns per FTA spec:
+
+TransactionDate, TransactionID, TransactionType, AccountCode, AccountName, DebitAmount, CreditAmount, Description, SourceDocumentType, SourceDocumentReference
+2. VAT RETURN FILE GENERATION
+2.1 VAT Return Calculation (13-box)
+Box	Description	Status
+Box 1	Standard-rated sales (excl. VAT)	✅ Calculated from InvoiceTaxBreakdownDB
+Box 2	Tax refunds provided	⚠️ Hardcoded to 0.0 — not derived from credit notes
+Box 3	Output VAT (5% on Box 1)	✅ Correct
+Box 4	Zero-rated sales	✅ Calculated
+Box 5	Exempt supplies	✅ Calculated
+Box 6	Out-of-scope / reverse charge	✅ Calculated (combined)
+Box 7	Total sales	✅ Sum of Boxes 1+4+5+6
+Box 8	Standard-rated purchases excl. VAT	✅ Calculated
+Box 9	Input VAT on standard-rated purchases	✅ Calculated
+Box 10	Purchase expenses	⚠️ Hardcoded to 0.0 — expenses VAT not aggregated into VAT return
+Box 11	Input VAT on expenses	⚠️ Hardcoded to 0.0 (flagged in code as "handled separately")
+Box 12	Total input VAT	⚠️ Under-reported because Box 10/11 are zero
+Box 13	Net VAT payable/refundable	⚠️ Correct formula but inflated if Box 12 is under-counted
+2.2 VAT Return File Export
+Requirement	Status
+Export as .xlsx	❌ Not found — only JSON API response from /vat-return/generate
+Export as .xml	❌ Not found — no XML export endpoint for VAT return data
+Download endpoint	❌ No /vat-return/{id}/download endpoint exists
+Embed vendor TRN in file	❌ Not applicable since no file is generated
+Embed company name in file	❌ Same — no file
+Embed software name in file	❌ Same
+Embed software version in file	❌ Same
+Embed client TRN in file	❌ Same
+Summary: The 13-box VAT return calculation is well-implemented and stored in the database, but there is zero file export capability. The FTA accreditation requirement mandates machine-readable files in both .xlsx and .xml formats with embedded metadata. This is a high-priority gap.
+
+3. TAX INVOICE COMPLIANCE (UAE VAT Law)
+3.1 Mandatory VAT Fields on Invoices
+Mandatory Field	Status	Notes
+Sequential invoice number	✅ Present	Auto-generated
+Issue date	✅ Present	issue_date
+Supply date	✅ Present	supply_date column in InvoiceDB
+Supplier name	✅ Present	supplier_name (non-nullable)
+Supplier TRN	⚠️ Partial	Column exists but nullable — FTA requires it on all tax invoices when VAT-registered; no backend enforcement that VAT-registered companies must have TRN on invoice
+Customer name	✅ Present	customer_name (non-nullable)
+Customer TRN	✅ Conditional	Required only for full invoices (>AED 10,000) — correctly classified
+Description of goods/services	✅ Present	item_name, item_description per line
+Quantity + unit price	✅ Present	Per line item
+Taxable amount per line	✅ Present	line_extension_amount
+Tax category per line	✅ Present	SR, ZR, ES, RC, OP
+VAT rate	✅ Present	5%, 0%, N/A
+VAT amount	✅ Present	tax_amount at invoice and line level
+Total amount incl. VAT	✅ Present	total_amount
+Amount in AED (if foreign currency)	✅ Present	total_amount_aed with conversion tracking
+"TAX INVOICE" label in English	✅ Present	Generated correctly in PDF/UBL
+Arabic translation	⚠️ Partial	Arabic font support (Amiri) exists, get_invoice_type_label() returns Arabic label, but Arabic rendering on PDF needs verification against FTA sample
+UBL 2.1 / PINT-AE XML compliance	✅ Present	utils/ubl_xml_generator.py — PINT-AE spec
+Digital signature chain	✅ Present	RSA-2048, hash chain linking prev invoice
+3.2 Credit Note / Debit Note
+Requirement	Status
+Credit Note issuance (type 381)	✅ Present — references preceding invoice via preceding_invoice_id
+Debit Note issuance (type 383)	✅ Present
+Mandatory reason field	✅ Present — credit_note_reason is mandatory for credit notes (status 400 if absent)
+Adjustment to original invoice amount_due	✅ Present — credit/debit notes update original invoice's amount_due
+Block editing posted invoice without CN	✅ Present — PUT /invoices/{id} returns 409 for non-DRAFT invoices
+Require credit note before cancellation	✅ Present — cancellation of ISSUED invoices enforces pre-existing credit note check
+Credit note VAT reversal in Box 2	❌ Not linked — Box 2 is hardcoded 0.0; credit note tax amounts are not fed into VAT return Box 2
+4. INTERNAL CONTROLS
+4.1 Password Security
+Requirement	Status
+Minimum length	⚠️ 8 characters (validate_password_complexity) — FTA accreditation typically requires ≥8; some auditors expect ≥10 or 12
+Uppercase letter required	✅ Enforced
+Lowercase letter required	✅ Enforced
+Digit required	✅ Enforced
+Special character required	✅ Enforced
+Password history (prevent reuse)	✅ Last 5 passwords stored in PasswordHistoryDB and checked
+Forced password change on first login	❌ Not found — UserDB has no must_change_password flag; invited users receive a temp password by email but there is no mechanism to enforce a change on first login; flag exists only in printed console messages
+Account lockout after failed attempts	✅ 5 failed attempts triggers lockout via locked_until field
+MFA support	✅ TOTP + email OTP, backup codes, admin enforcement
+4.2 Audit Trail
+Requirement	Status
+Who changed what	✅ AuditLogDB stores user_id, action, resource_type, resource_id
+When it was changed	✅ created_at timestamp
+Previous value	✅ old_value field (JSON snapshot before mutation)
+New value	✅ new_value field
+IP address logging	✅ ip_address column populated
+Audit log immutability	⚠️ No DB-level constraint prevents deletion/update of audit log rows; relies on application-level write-only pattern
+Coverage completeness	⚠️ Not all data mutations are audited — journal entry creation/edits, account changes, GL modifications, user role changes, and company settings changes are NOT in the audit log
+4.3 Prevention of Editing/Deleting Posted Entries
+Requirement	Status
+Block editing posted invoices	✅ PUT /invoices/{id} returns 409 unless status is DRAFT
+Block deleting posted invoices	✅ Cancellation of ISSUED invoices requires prior credit note
+Block editing posted journal entries	❌ No edit/delete endpoint exists for journal entries, but is_posted=True flag is set at creation with no documented update endpoint — needs explicit enforcement
+Block manual GL manipulation	⚠️ No PUT /journal-entries/{id} or DELETE /journal-entries/{id} endpoint found, but this protection is by omission, not by explicit rule
+4.4 No Automatic Purging of Customer Data
+Requirement	Status
+No auto-delete of customer records	✅ No purge/TTL logic found in codebase; no scheduled delete jobs
+FTA 5-year data retention	✅ Archive mechanism enforces retention — invoices only become eligible for archive after 5 years
+No auto-purging of audit logs	✅ No TTL found for AuditLogDB
+Archived data cannot be permanently deleted	⚠️ /invoices/archive moves invoices to archive state; no endpoint to hard-delete, but the model supports it (no DB-level delete restriction)
+4.5 Concurrent File Update Prevention
+Requirement	Status
+Invoice concurrent edit prevention	✅ ETag / If-Match header (optimistic locking, version column in InvoiceDB)
+Concurrent update on other resources	⚠️ ETag locking only implemented for invoices; other resources (company settings, users, GL entries) have no optimistic locking
+Database-level row locking	⚠️ No SELECT FOR UPDATE or explicit row-lock usage found
+5. USER MANAGEMENT
+5.1 Role Hierarchy
+Requirement	Status
+Hierarchy of user roles	✅ SUPER_ADMIN > COMPANY_ADMIN > BUSINESS_ADMIN > FINANCE_USER
+Multiple profiles with different access rights	✅ Role-based access enforced per endpoint via current_user.role checks
+SUPER_ADMIN (platform-wide)	✅ Full platform access
+COMPANY_ADMIN	✅ Full company access
+BUSINESS_ADMIN	⚠️ Partially implemented — described as "Phase 2, team-level admin"; some endpoints check for it but behaviour is inconsistent
+FINANCE_USER	✅ Read-heavy; restricted create/delete
+Fine-grained permission matrix	⚠️ Permissions are checked inline per endpoint; no centralised permission matrix or permission table in DB; adding custom permissions requires code changes
+User profile deactivation	⚠️ UserDB has no is_active / is_deactivated column for users (company records have a status but individual users do not); only deletion (DELETE /company/users/{id}) is supported
+6. REPORTING
+Requirement	Status
+Weekly reports	❌ Not found — /reports/periodic supports only monthly and quarterly
+Monthly reports	✅ Present via /reports/periodic?period_type=monthly
+Quarterly reports	✅ Present via /reports/periodic?period_type=quarterly
+Annual reports	❌ Not found — no period_type=annual or /reports/annual endpoint
+Ad hoc report generation	⚠️ The /reports/periodic endpoint is parameterised (year + period), but there is no free date-range report picker or custom filter builder for reports
+Downloadable report files	❌ All report endpoints return JSON only; no CSV, PDF, or XLSX download for periodic/annual reports
+Reports in standard/agreed formats	❌ FTA requires reports in agreed formats (typically PDF or XLSX); JSON API responses are not acceptable as report files
+Analytics / advanced dashboards	✅ Present (/analytics, /reports/profit-loss, /reports/cash-flow) but JSON-only
+Daily reconciliation	✅ DailyReconciliation.jsx component + backend endpoint
+Trial balance	✅ /gl-summary with debits/credits per account
+7. DATA ARCHIVAL & BACKUP
+Requirement	Status
+Archival mechanism for past years	✅ /invoices/archive — marks invoices as archived after FTA-mandated period
+Restoration mechanism	✅ /invoices/{id}/restore endpoint
+FTA 5-year retention policy	✅ Enforced — invoices eligible only after N years (default 5)
+Archival status inspection	✅ /invoices/archive/status endpoint
+In-application database backup	❌ No backup/restore mechanism within application code; relies entirely on cloud provider (Neon PostgreSQL) for automated backups
+Backup verification	❌ No integrity check or restore-test functionality in the application
+Data integrity over extended periods	⚠️ SHA-256 hashes exist for FAF files and UBL XML, and there is an invoice hash chain; but no periodic background integrity verification process
+XML file persistence for invoices	✅ UBL XML stored on disk with xml_hash for verification
+Archive data export	⚠️ Archived invoices can be viewed but cannot be exported in bulk for long-term offline storage
+SUMMARY DASHBOARD
+Category	✅ Compliant	⚠️ Partial	❌ Missing
+FAF — Structure	3 tables	1 table (CompanyData)	GL Table
+FAF — Field completeness	Core fields	Period dates, AED enforcement	Software version column
+VAT Return — Calculation	Boxes 1,3–9,13	Boxes 2,10,11,12	—
+VAT Return — File export	—	—	All file formats
+Tax Invoice fields	All core fields	Arabic rendering, TRN enforcement	—
+Credit/Debit Notes	Full workflow	Box 2 VAT link	—
+Password controls	Complexity, history, lockout	Min length may need review	Forced change on first login
+Audit trail	Who/when/old/new	Coverage gaps	DB immutability
+Posted entry protection	Invoice editing	GL journal edit lock	—
+Auto-purge prevention	✅ No purge found	Permanent delete guard	—
+Concurrency control	Invoice ETag	Other resources	—
+User management	4 roles, RBAC	BUSINESS_ADMIN, user deactivation	Permission matrix
+Reporting	Monthly, quarterly	Ad hoc	Weekly, annual, file export
+Data archival	Archive/restore, retention	Bulk archive export	DB backup in-app
+PRIORITISED DEVELOPMENT BACKLOG
+PRIORITY 1 — Critical (Blocks FTA Accreditation)
+VAT Return File Export (.xlsx + .xml)
+
+Build GET /vat-return/{id}/download?format=xlsx and ?format=xml
+Embed: company TRN, client TRN, company name, software name + version number, period dates into file metadata
+Implement correct Box 10/11 (expense VAT) aggregation so Box 12/13 are accurate
+Link credit note VAT amounts to Box 2
+FAF General Ledger Table
+
+Extend fta_audit_generator.py to include [GeneralLedgerData] section querying JournalEntryDB + JournalEntryLineDB
+Columns: TransactionDate, TransactionID, TransactionType, AccountCode, AccountName, DebitAmount (AED), CreditAmount (AED), Description, SourceDocumentType, SourceDocumentReference
+FAF CompanyData — Period Dates + Software Version
+
+Add PeriodStart, PeriodEnd, SoftwareName, SoftwareVersion to COMPANY_DATA_HEADERS
+Populate from the date range passed to generate_faf_zip()
+Forced Password Change on First Login
+
+Add must_change_password: Boolean column to UserDB
+Set True when user is created via invite flow
+On login, if must_change_password=True, return HTTP 403 with {"require_password_change": true} instead of issuing tokens
+Build POST /auth/set-initial-password endpoint that clears the flag
+PRIORITY 2 — High (Required for Accreditation Audit)
+FAF Currency Enforcement (AED)
+
+At FAF generation time, use total_amount_aed / subtotal_amount × exchange_rate to populate VATAmount and InvoiceValueExclVAT in AED regardless of currency_code
+Supply Date in FAF Tables
+
+Add SupplyDate column to both [SalesData] and [PurchaseData] tables using supply_date (already in InvoiceDB)
+Weekly and Annual Reports
+
+Extend /reports/periodic to support period_type=weekly and period_type=annual
+Add GET /reports/annual?year=YYYY endpoint
+Report File Downloads
+
+Add ?format=pdf, ?format=xlsx, ?format=csv query parameter support to all report endpoints
+Implement XLSX export using existing openpyxl dependency
+Implement PDF export using existing reportlab dependency
+Audit Trail Coverage Gaps
+
+Add log_audit_event() calls for: user role changes, company settings updates, journal entry creation, GL account changes, team member removal
+PRIORITY 3 — Medium (Strengthens Compliance Posture)
+Audit Log Immutability at DB Level
+
+Add RULE or TRIGGER in PostgreSQL to prevent UPDATE/DELETE on audit_logs table
+Or use append-only table pattern with row-level security
+User Account Deactivation
+
+Add is_active: Boolean (default True) to UserDB
+Block login for deactivated users without deleting records
+BUSINESS_ADMIN Role — Complete Implementation
+
+Define explicit permission set for BUSINESS_ADMIN vs COMPANY_ADMIN
+Ensure all endpoints handle the role consistently (currently some endpoints skip it)
+Journal Entry Edit/Delete Locks
+
+Add explicit PUT /journal-entries/{id} endpoint with enforcement that is_posted=True entries cannot be modified
+Add DELETE /journal-entries/{id} endpoint that only allows deletion of unposted entries
+Concurrency Locking — Extend Beyond Invoices
+
+Apply version-based optimistic locking to CompanyDB, InwardInvoiceDB, VATReturnDB
+PRIORITY 4 — Lower (Accreditation Best Practice)
+In-Application Backup Mechanism
+
+Add admin endpoint POST /admin/backup/trigger to initiate a database dump to object storage (S3/R2)
+Add GET /admin/backup/list and POST /admin/backup/restore endpoints
+Document backup schedule and recovery point objective (RPO)
+Bulk Archive Export
+
+Add GET /invoices/archive/export?format=xlsx to allow bulk download of archived invoice records for offline long-term storage
+FAF Non-Editability Enhancement
+
+Consider generating the FAF CSV as a password-protected XLSX (using openpyxl workbook protection) or PDF/A in addition to the current CSV+SHA256+ZIP approach, to more clearly satisfy the "non-editable" FTA requirement
+Ad Hoc Report Builder
+
+Add a parameterised report endpoint accepting arbitrary from_date, to_date, invoice type, tax code, and customer/supplier filter for genuine ad hoc generation
+End of Report
+
