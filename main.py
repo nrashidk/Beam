@@ -14061,6 +14061,7 @@ def generate_fta_audit_file(
                 InvoiceDB.issue_date <= end_date,
                 InvoiceDB.status != InvoiceStatus.DRAFT,  # Exclude drafts
                 InvoiceDB.status != InvoiceStatus.CANCELLED,  # Exclude cancelled
+                InvoiceDB.is_archived == False,  # Exclude archived (T34)
             )
             .all()
         )
@@ -14073,6 +14074,7 @@ def generate_fta_audit_file(
                 InwardInvoiceDB.invoice_date >= start_date,
                 InwardInvoiceDB.invoice_date <= end_date,
                 InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED,
+                InwardInvoiceDB.is_archived == False,  # Exclude archived (T34)
             )
             .all()
         )
