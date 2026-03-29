@@ -8018,6 +8018,153 @@ def restore_archived_invoice(
     }
 
 
+# ==================== FISCAL YEAR BULK ARCHIVAL (Task 36 — P2-6) ====================
+
+
+class FiscalYearArchivalRequest(BaseModel):
+    year: int
+    dry_run: bool = False
+
+
+@app.post("/admin/archive/fiscal-year", tags=["Admin"])
+def archive_fiscal_year(
+    body: FiscalYearArchivalRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Task 36 — Fiscal Year Bulk Archival.
+
+    Archives (or previews, when dry_run=true) all records belonging to a completed
+    fiscal year (Jan 1 – Dec 31 of the given year) in a single atomic transaction:
+
+    - Invoices: PAID or CANCELLED status, issue_date within the year
+    - Journal Entries: entry_date within the year
+    - Expenses: expense_date within the year
+    - Inward Invoices: invoice_date within the year
+
+    dry_run=true returns counts without making any database changes.
+    Only SUPER_ADMIN and COMPANY_ADMIN may call this endpoint.
+    Logs a single FISCAL_YEAR_ARCHIVAL audit event (skipped on dry_run).
+    """
+    from datetime import date as _date
+
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
+        raise HTTPException(403, "Only Super Admin or Company Admin can perform fiscal year archival")
+
+    current_year = _date.today().year
+    if body.year >= current_year:
+        raise HTTPException(400, f"Cannot archive the current or a future year ({body.year}). Only completed fiscal years may be archived.")
+    if body.year < 1990:
+        raise HTTPException(400, "Year must be 1990 or later")
+
+    company_id = current_user.company_id
+    if not company_id:
+        raise HTTPException(400, "User has no associated company")
+
+    year_start = _date(body.year, 1, 1)
+    year_end = _date(body.year, 12, 31)
+    now = datetime.utcnow()
+
+    # -- Count / collect records for each type --
+
+    invoices_q = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == company_id,
+        InvoiceDB.is_archived == False,
+        InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
+        InvoiceDB.issue_date >= year_start,
+        InvoiceDB.issue_date <= year_end,
+    )
+
+    journal_entries_q = db.query(JournalEntryDB).filter(
+        JournalEntryDB.company_id == company_id,
+        JournalEntryDB.is_archived == False,
+        JournalEntryDB.entry_date >= year_start,
+        JournalEntryDB.entry_date <= year_end,
+    )
+
+    expenses_q = db.query(ExpenseDB).filter(
+        ExpenseDB.company_id == company_id,
+        ExpenseDB.is_archived == False,
+        ExpenseDB.expense_date >= year_start,
+        ExpenseDB.expense_date <= year_end,
+    )
+
+    inward_invoices_q = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.company_id == company_id,
+        InwardInvoiceDB.is_archived == False,
+        InwardInvoiceDB.invoice_date >= year_start,
+        InwardInvoiceDB.invoice_date <= year_end,
+    )
+
+    invoice_count = invoices_q.count()
+    journal_entry_count = journal_entries_q.count()
+    expense_count = expenses_q.count()
+    inward_invoice_count = inward_invoices_q.count()
+    total_count = invoice_count + journal_entry_count + expense_count + inward_invoice_count
+
+    if body.dry_run:
+        return {
+            "dry_run": True,
+            "year": body.year,
+            "year_start": year_start.isoformat(),
+            "year_end": year_end.isoformat(),
+            "counts": {
+                "invoices": invoice_count,
+                "journal_entries": journal_entry_count,
+                "expenses": expense_count,
+                "inward_invoices": inward_invoice_count,
+                "total": total_count,
+            },
+            "message": f"Preview: {total_count} record(s) would be archived for FY{body.year}.",
+        }
+
+    # -- Apply archival in one transaction --
+    for inv in invoices_q.all():
+        inv.is_archived = True
+        inv.archived_at = now
+
+    for je in journal_entries_q.all():
+        je.is_archived = True
+        je.archived_at = now
+
+    for exp in expenses_q.all():
+        exp.is_archived = True
+        exp.archived_at = now
+
+    for ii in inward_invoices_q.all():
+        ii.is_archived = True
+        ii.archived_at = now
+
+    log_audit_event(
+        db, "FISCAL_YEAR_ARCHIVAL",
+        user_id=current_user.id, company_id=company_id,
+        resource_type="fiscal_year", resource_id=str(body.year),
+        description=(
+            f"FY{body.year} bulk archival: {invoice_count} invoices, "
+            f"{journal_entry_count} journal entries, {expense_count} expenses, "
+            f"{inward_invoice_count} inward invoices archived."
+        ),
+    )
+
+    db.commit()
+
+    return {
+        "dry_run": False,
+        "year": body.year,
+        "year_start": year_start.isoformat(),
+        "year_end": year_end.isoformat(),
+        "counts": {
+            "invoices": invoice_count,
+            "journal_entries": journal_entry_count,
+            "expenses": expense_count,
+            "inward_invoices": inward_invoice_count,
+            "total": total_count,
+        },
+        "message": f"FY{body.year} archival complete — {total_count} record(s) archived.",
+    }
+
+
 @app.get("/invoices/pending-payment", tags=["Invoices"])
 def get_pending_payment_invoices(
     current_user: UserDB = Depends(get_current_user_from_header),

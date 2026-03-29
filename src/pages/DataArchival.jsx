@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldX, Upload } from "lucide-react";
+import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldX, Upload, CalendarDays } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
@@ -22,6 +22,15 @@ export default function DataArchival() {
   const [fafVerifyResult, setFafVerifyResult] = useState(null);
   const [fafVerifyError, setFafVerifyError] = useState(null);
   const fafFileInputRef = useRef(null);
+
+  const currentYear = new Date().getFullYear();
+  const availableYears = Array.from({ length: currentYear - 1990 }, (_, i) => currentYear - 1 - i);
+  const [fyYear, setFyYear] = useState(currentYear - 1);
+  const [fyPreview, setFyPreview] = useState(null);
+  const [fyPreviewing, setFyPreviewing] = useState(false);
+  const [fyArchiving, setFyArchiving] = useState(false);
+  const [fyResult, setFyResult] = useState(null);
+  const [fyError, setFyError] = useState(null);
 
   const fetchArchived = async () => {
     setLoading(true);
@@ -117,6 +126,44 @@ export default function DataArchival() {
     typeof n === "number"
       ? n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : "0.00";
+
+  const handleFyYearChange = (val) => {
+    setFyYear(Number(val));
+    setFyPreview(null);
+    setFyResult(null);
+    setFyError(null);
+  };
+
+  const handleFyPreview = async () => {
+    setFyPreviewing(true);
+    setFyPreview(null);
+    setFyResult(null);
+    setFyError(null);
+    try {
+      const res = await apiClient.post("/admin/archive/fiscal-year", { year: fyYear, dry_run: true });
+      setFyPreview(res.data);
+    } catch (err) {
+      setFyError(err.response?.data?.detail || "Preview failed. Please try again.");
+    } finally {
+      setFyPreviewing(false);
+    }
+  };
+
+  const handleFyArchive = async () => {
+    if (!window.confirm(`This will permanently archive all records for FY${fyYear}. This cannot be undone in bulk. Continue?`)) return;
+    setFyArchiving(true);
+    setFyError(null);
+    try {
+      const res = await apiClient.post("/admin/archive/fiscal-year", { year: fyYear, dry_run: false });
+      setFyResult(res.data);
+      setFyPreview(null);
+      await Promise.all([fetchArchived(), fetchStatus()]);
+    } catch (err) {
+      setFyError(err.response?.data?.detail || "Archival failed. Please try again.");
+    } finally {
+      setFyArchiving(false);
+    }
+  };
 
   const handleVerifyFAF = async () => {
     if (!fafVerifyFile) return;
@@ -221,6 +268,94 @@ export default function DataArchival() {
               </div>
             )}
           </div>
+
+          {/* Fiscal Year Archival Wizard */}
+          {canExportArchive && (
+            <div className="bg-white rounded-xl border p-5 mb-6">
+              <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-amber-600" />
+                Fiscal Year Archival
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Archive <strong>all</strong> records (invoices, journal entries, expenses, and inward invoices)
+                for a completed fiscal year in one operation. Preview the counts before committing.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Fiscal Year</label>
+                  <select
+                    value={fyYear}
+                    onChange={(e) => handleFyYearChange(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+                  >
+                    {availableYears.map((y) => (
+                      <option key={y} value={y}>FY{y}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end gap-2">
+                  <button
+                    onClick={handleFyPreview}
+                    disabled={fyPreviewing || fyArchiving}
+                    className="flex items-center gap-2 px-4 py-2 border border-amber-500 text-amber-700 rounded-lg text-sm font-medium hover:bg-amber-50 disabled:opacity-50"
+                  >
+                    {fyPreviewing ? <Archive className="h-4 w-4 animate-pulse" /> : <Archive className="h-4 w-4" />}
+                    {fyPreviewing ? "Checking…" : "Preview"}
+                  </button>
+                  {fyPreview && (
+                    <button
+                      onClick={handleFyArchive}
+                      disabled={fyArchiving || fyPreviewing}
+                      className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      <Archive className="h-4 w-4" />
+                      {fyArchiving ? "Archiving…" : `Archive FY${fyYear}`}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {fyPreview && !fyResult && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+                  <p className="font-semibold mb-2">Preview — FY{fyPreview.year} ({fyPreview.year_start} to {fyPreview.year_end})</p>
+                  <ul className="space-y-1 text-sm">
+                    <li>Invoices (paid/cancelled): <strong>{fyPreview.counts.invoices}</strong></li>
+                    <li>Journal entries: <strong>{fyPreview.counts.journal_entries}</strong></li>
+                    <li>Expenses: <strong>{fyPreview.counts.expenses}</strong></li>
+                    <li>Inward invoices: <strong>{fyPreview.counts.inward_invoices}</strong></li>
+                    <li className="pt-1 border-t border-amber-300 font-semibold">Total: {fyPreview.counts.total} record(s)</li>
+                  </ul>
+                  {fyPreview.counts.total === 0 && (
+                    <p className="mt-2 text-amber-600 italic">No unarchived records found for FY{fyPreview.year}.</p>
+                  )}
+                </div>
+              )}
+
+              {fyResult && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
+                  <p className="font-semibold mb-2 flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    FY{fyResult.year} Archival Complete
+                  </p>
+                  <ul className="space-y-1 text-sm">
+                    <li>Invoices: <strong>{fyResult.counts.invoices}</strong></li>
+                    <li>Journal entries: <strong>{fyResult.counts.journal_entries}</strong></li>
+                    <li>Expenses: <strong>{fyResult.counts.expenses}</strong></li>
+                    <li>Inward invoices: <strong>{fyResult.counts.inward_invoices}</strong></li>
+                    <li className="pt-1 border-t border-green-300 font-semibold">Total archived: {fyResult.counts.total}</li>
+                  </ul>
+                </div>
+              )}
+
+              {fyError && (
+                <div className="mt-2 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                  <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                  {fyError}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* FAF Integrity Verification */}
           <div className="bg-white rounded-xl border p-5 mb-6">
