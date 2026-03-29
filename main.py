@@ -15805,7 +15805,44 @@ def generate_vat_return(
             (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
         )
 
-    purchase_expenses_vat = Decimal("0.00")  # Box 11 (expenses VAT handled separately)
+    # --- Box 2: Tax refunds — VAT on credit notes and debit notes issued in period ---
+    credit_debit_note_types = [
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+        InvoiceType.DEBIT_NOTE,
+    ]
+    credit_debit_notes = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            InvoiceDB.issue_date >= start_date,
+            InvoiceDB.issue_date <= end_date,
+            InvoiceDB.invoice_type.in_(credit_debit_note_types),
+            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+        )
+        .all()
+    )
+    tax_refunds_provided = sum(
+        (Decimal(str(cn.tax_amount or 0)) for cn in credit_debit_notes), Decimal("0.00")
+    )
+
+    # --- Box 10 & 11: Expenses with VAT in period ---
+    expenses_in_period = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.company_id == current_user.company_id,
+            ExpenseDB.expense_date >= start_date,
+            ExpenseDB.expense_date <= end_date,
+            ExpenseDB.vat_amount > 0,
+        )
+        .all()
+    )
+    purchase_expenses_net = sum(
+        (Decimal(str(exp.amount or 0)) for exp in expenses_in_period), Decimal("0.00")
+    )
+    purchase_expenses_vat = sum(
+        (Decimal(str(exp.vat_amount or 0)) for exp in expenses_in_period), Decimal("0.00")
+    )
 
     # Call the protected utility function (MUST NOT BE MODIFIED)
     result = calculate_vat_return(
@@ -15828,7 +15865,7 @@ def generate_vat_return(
         total_purchase_invoices=len(purchase_invoices),
         # Sales / output side
         standard_rated_sales=float(box1_std_taxable),
-        tax_refunds_provided=0.0,
+        tax_refunds_provided=float(tax_refunds_provided),
         output_vat=float(result["output_vat"]),
         zero_rated_sales=float(box4_zero_rated),
         exempt_sales=float(box5_exempt),
@@ -15838,7 +15875,7 @@ def generate_vat_return(
         # Purchases / input side
         standard_rated_purchases=float(box8_std_purchases),
         input_vat_bills=float(result["input_vat_bills"]),
-        purchase_expenses=0.0,
+        purchase_expenses=float(purchase_expenses_net),
         input_vat_expenses=float(result["input_vat_expenses"]),
         total_input_vat=float(result["total_input_vat"]),
         zero_rated_purchases=float(box_zero_rated_purch),
@@ -15870,7 +15907,7 @@ def generate_vat_return(
         "total_purchase_invoices": len(purchase_invoices),
         # Sales boxes
         "box1_standard_rated_sales": float(box1_std_taxable),
-        "box2_tax_refunds": 0.0,
+        "box2_tax_refunds": float(tax_refunds_provided),
         "box3_output_vat": float(result["output_vat"]),
         "box4_zero_rated_sales": float(box4_zero_rated),
         "box5_exempt_sales": float(box5_exempt),
@@ -15880,7 +15917,7 @@ def generate_vat_return(
         # Purchase boxes
         "box8_standard_rated_purchases": float(box8_std_purchases),
         "box9_input_vat_bills": float(result["input_vat_bills"]),
-        "box10_purchase_expenses": 0.0,
+        "box10_purchase_expenses": float(purchase_expenses_net),
         "box11_input_vat_expenses": float(result["input_vat_expenses"]),
         "box12_total_input_vat": float(result["total_input_vat"]),
         "zero_rated_purchases": float(box_zero_rated_purch),
