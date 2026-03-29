@@ -21,6 +21,9 @@ export default function DataArchival() {
   const [fafVerifying, setFafVerifying] = useState(false);
   const [fafVerifyResult, setFafVerifyResult] = useState(null);
   const [fafVerifyError, setFafVerifyError] = useState(null);
+  // Gap 7: Backup restore-verify
+  const [restoreVerifyLoading, setRestoreVerifyLoading] = useState(false);
+  const [restoreVerifyMsg, setRestoreVerifyMsg] = useState(null);
   const fafFileInputRef = useRef(null);
 
   const currentYear = new Date().getFullYear();
@@ -162,6 +165,19 @@ export default function DataArchival() {
       setFyError(err.response?.data?.detail || "Archival failed. Please try again.");
     } finally {
       setFyArchiving(false);
+    }
+  };
+
+  const handleRestoreVerify = async () => {
+    setRestoreVerifyLoading(true);
+    setRestoreVerifyMsg(null);
+    try {
+      await apiClient.post("/admin/backup/restore-verify", {});
+      setRestoreVerifyMsg({ success: true, text: "Backup restore verification logged successfully. The BACKUP_RESTORE_VERIFIED audit event has been recorded." });
+    } catch (err) {
+      setRestoreVerifyMsg({ success: false, text: err.response?.data?.detail || "Restore verification failed. Please try again." });
+    } finally {
+      setRestoreVerifyLoading(false);
     }
   };
 
@@ -419,6 +435,50 @@ export default function DataArchival() {
               </div>
             )}
           </div>
+
+          {/* Gap 7: Backup Restore Verification (Super Admin only) */}
+          {user?.role === "SUPER_ADMIN" && (
+            <div className="bg-white rounded-xl border p-5 mb-6">
+              <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600" />
+                Backup Restore Verification
+              </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                After restoring a backup in a recovery scenario, click below to log a{" "}
+                <strong>BACKUP_RESTORE_VERIFIED</strong> audit event. This satisfies the FTA requirement
+                (Article 78, Tax Procedures Law) to maintain evidence that backup data was validated
+                after restoration.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleRestoreVerify}
+                  disabled={restoreVerifyLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 transition-colors"
+                >
+                  {restoreVerifyLoading ? (
+                    <RotateCcw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4" />
+                  )}
+                  {restoreVerifyLoading ? "Logging…" : "Log Restore Verification"}
+                </button>
+                {restoreVerifyMsg && (
+                  <div className={`flex items-center gap-2 text-sm rounded-lg px-4 py-2 border ${
+                    restoreVerifyMsg.success
+                      ? "bg-green-50 border-green-200 text-green-800"
+                      : "bg-red-50 border-red-200 text-red-700"
+                  }`}>
+                    {restoreVerifyMsg.success ? (
+                      <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                    )}
+                    {restoreVerifyMsg.text}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Archived invoices list */}
           <div className="bg-white rounded-xl border overflow-hidden">

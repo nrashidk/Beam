@@ -1,0 +1,319 @@
+InvoLinks.ae — FTA Tax Accounting Software Accreditation Gap Analysis Report
+Date: March 29, 2026
+Codebase: InvoLinks (Beam) — FastAPI backend + React frontend
+Analysis Scope: UAE Federal Tax Authority (FTA) Tax Accounting Software Accreditation Requirements
+
+1. FTA AUDIT FILE (FAF) EXPORT
+1.1 Company Information Table
+✅ Present and compliant
+
+utils/fta_audit_generator.py implements FTAAuditFileGenerator class
+[CompanyData] table contains: TaxAgencyName, FAFVersion, TRN, CompanyName, RegistrationDate, Address, City, Emirate, PeriodStart, PeriodEnd, SoftwareName, SoftwareVersion
+FAF version string FAFv1.0.0 hardcoded; TAX_AGENCY_NAME = "InvoLinks", SOFTWARE_NAME = "InvoLinks", SOFTWARE_VERSION = "1.0.0"
+Period start/end dates populated from the user-selected date range
+1.2 Purchase Listing Table
+✅ Present and compliant
+
+[PurchaseData] table present with all required columns: TransactionID, InvoiceDate, SupplyDate, InvoiceType, SupplierTRN, SupplierName, SupplierCountry, InvoiceValueExclVAT, VATAmount, TotalInvoiceValue, Currency, TaxCode, VATRatePct, Status
+All amounts normalised to AED (non-AED invoices use total_amount_aed conversion ratio)
+Missing AED equivalent emits zeros rather than reporting foreign-currency amounts as AED
+⚠️ Gap: If a supplier invoice is recorded without total_amount_aed and is in a non-AED currency, the row is emitted with all-zero amounts. There is no validation at data-entry time enforcing that total_amount_aed is populated for non-AED inward invoices.
+
+1.3 Supply Listing Table
+✅ Present and compliant
+
+[SalesData] table present with all required columns including CustomerTRN, CustomerName, CustomerCountry, invoice dates, VAT amounts in AED
+Tax code derivation covers SR, ZR, EX, OOS categories
+Supply date (delivery date) field supported and populated
+1.4 General Ledger Table
+✅ Present and compliant
+
+[GeneralLedger] table present: EntryDate, JournalRef, AccountCode, AccountName, Debit, Credit, SourceDocRef, SourceDocType
+Double-entry journal entries auto-created on invoice issue and purchase approval (create_journal_entry_for_invoice, create_journal_entry_for_purchase)
+JournalEntryDB and JournalEntryLineDB models exist in DB schema with is_posted flag
+⚠️ Gap: GL entries for expenses and manual journal entries may not consistently carry a SourceDocRef linking back to the originating document. Auto-created entries from invoices do carry reference_type/reference_id; manually created entries depend on user input.
+
+1.5 Output Format — Non-Editable CSV
+✅ Present and compliant
+
+FAF is generated as a .csv file packed with a companion SHA-256 hash file (.sha256) inside a .zip archive
+The CSV is a server-generated binary stream — it is not an editable spreadsheet
+SHA-256 integrity verification endpoint exists (POST /audit-files/verify) allowing tamper detection
+DB-level immutability trigger on audit_logs table prevents post-generation alteration of audit records
+2. VAT RETURN FILE GENERATION
+2.1 Export in XLSX and XML Formats
+✅ Present and compliant
+
+export_vat_return() endpoint (GET /vat-return/{id}/export?format=xlsx|xml) handles both formats
+XLSX: formatted with openpyxl, section headers, box highlighting, company metadata embedded
+XML: well-formed XML with VATReturn root, Metadata, TaxpayerInfo, SalesAndOutputTax, PurchasesAndInputTax, NetVAT sections
+XML is validated against a custom FTA VAT Return XSD schema (utils/fta_vat_return_schema.xsd) at export time — fails with HTTP 500 if validation fails
+2.2 Embedded Required Metadata
+✅ Present and compliant
+
+Vendor TRN: _VENDOR_TRN = os.environ.get("INVOLINKS_VENDOR_TRN", "N/A") — embedded in both XLSX and XML
+Company Name: populated from CompanyDB.legal_name
+Software Name: "InvoLinks" — hardcoded constant
+Software Version: "1.0.0" — hardcoded constant
+Client TRN: populated from CompanyDB.trn
+Period Start/End: from VATReturnDB.period_start / period_end
+⚠️ Gap: _VENDOR_TRN defaults to the string literal "N/A" if the environment variable INVOLINKS_VENDOR_TRN is not set. In a production FTA-accredited deployment this must be the actual InvoLinks vendor TRN (15-digit). There is no startup validation enforcing this is set to a valid TRN.
+
+2.3 All VAT Return Boxes Coverage
+✅ Present and compliant
+
+All 13 FTA Form 301 boxes are implemented:
+Box 1: Standard-rated supplies (taxable amount excl. VAT)
+Box 2: Tax refunds provided to tourists
+Box 3: Output VAT (5%)
+Box 4: Zero-rated supplies
+Box 5: Exempt supplies
+Box 6: Out-of-scope / reverse-charge supplies
+Box 7: Total value of all supplies
+Box 8: Standard-rated purchases — bills (excl. VAT)
+Box 9: Input VAT recoverable on bills
+Box 10: Standard-rated purchases — expenses (excl. VAT)
+Box 11: Input VAT recoverable on expenses
+Box 12: Total input VAT (Box 9 + Box 11)
+Box 13: Net VAT payable / refundable
+Reverse-charge VAT tracked separately in reverse_charge_vat column
+Historical VAT returns stored and accessible for re-export
+⚠️ Gap: Box 2 (Tax Refunds Provided to Tourists) is always returned as 0.0 — there is no data-capture mechanism in the system for tourist refund transactions. If the client operates in retail tourism (e.g., airports), this box will always be incorrect.
+
+3. TAX INVOICE COMPLIANCE (UAE VAT LAW)
+3.1 Mandatory VAT Fields
+✅ Present and compliant
+
+Invoice Number: sequential, unique per company, type-prefixed (e.g., INV-, CN-, DN-)
+Issue Date: mandatory DATE NOT NULL in schema
+Supplier TRN: supplier_trn field on invoice
+Supplier Name: supplier_name NOT NULL
+Supplier Address: supplier_address
+Customer TRN: customer_trn (required for full tax invoices ≥ AED 10,000 via classify_invoice_type())
+Tax Category: per-line tax_category (S/Z/E/O) — NOT NULL
+Tax Amount: per-line tax_amount
+Taxable Amount: per-line line_extension_amount
+Total Amount incl. VAT: total_amount
+Currency: currency_code (default AED)
+Invoice Type: UBL document type codes — 380 (Tax Invoice), 381 (Credit Note), 480 (Debit Note), 81 (Simplified)
+Supply Date: supply_date column (optional but captured when provided)
+Preceding Invoice Reference: preceding_invoice_id (mandatory for credit/debit notes, enforced)
+⚠️ Gap: supply_date is schema-optional (nullable=True). The FTA requires the supply date on a full tax invoice if it differs from the invoice date — there is no UI enforcement requiring users to enter it.
+
+⚠️ Gap: Arabic translation of the invoice label (فاتورة ضريبية) is defined in vat_utils.py but it is unclear whether the PDF invoice template (utils/pdf_invoice_generator.py) renders the bilingual header as required by UAE VAT law (Art. 59 — invoices must be in Arabic or bilingual).
+
+3.2 Credit Note / Debit Note Issuance
+✅ Present and compliant
+
+Credit Note (type 381) and Debit Note (type 480) supported
+preceding_invoice_id is validated — system checks the referenced invoice exists and belongs to the same company
+credit_note_reason field is mandatory for credit notes (enforced at creation)
+Debit notes can only be issued against a posted invoice (enforced at line 7411)
+A posted invoice can only be cancelled after a credit note is issued (enforced at line 11059)
+Journal entries automatically reverse on credit note posting
+4. INTERNAL CONTROLS
+4.1 Password Security Controls
+✅ Present and compliant
+
+Complexity: validate_password_complexity() enforces: min 8 chars, uppercase, lowercase, digit, special character
+History: _save_password_history() / _check_password_history() — last 5 passwords retained and checked; reuse blocked (PASSWORD_HISTORY_DEPTH = 5)
+Forced change on first login: must_change_password flag — set True on user creation (line 6809), on admin-reset (line 6868); enforced redirect to ForceChangePassword page
+Expiry: PASSWORD_MAX_AGE_DAYS = 90 (env-configurable); PasswordExpiryBanner component shows 14-day warning
+Account lockout: After 5 failed attempts, locked for 30 minutes (MAX_FAILED_LOGINS = 5, LOCKOUT_MINUTES = 30)
+MFA: TOTP + Email OTP supported (opt-in per company; admin can mandate)
+⚠️ Gap: Minimum password age (PASSWORD_MIN_AGE_HOURS = 24) is defined but it is unclear if this is actually enforced in the password-change endpoint. Review main.py:15854 — the check for PASSWORD_MIN_AGE_HOURS should be verified to be actively blocking premature changes.
+
+4.2 Audit Trails
+✅ Present and compliant
+
+AuditLogDB table captures: action, user_id, user_email, company_id, resource_type, resource_id, description, old_value (JSON), new_value (JSON), created_at, ip_address
+log_audit_event() called throughout the codebase for all significant operations
+Known logged events include: FAF_GENERATED, INVOICE_ISSUED, INVOICE_UPDATED, INVOICE_CANCELLED, INVOICE_PAID, INVOICE_PDF_DOWNLOADED, VAT_RETURN_GENERATED, USER_LOGIN, PASSWORD_CHANGED, BACKUP_VERIFIED, INVOICES_ARCHIVED, INVOICE_RESTORED
+Old/new value diff stored as JSON blobs, visible in the UI (expandable rows)
+DB-level immutability: PostgreSQL triggers audit_logs_no_update and audit_logs_no_delete installed at startup — any UPDATE or DELETE on audit_logs raises 'Audit log records are immutable'
+Audit log export available in CSV and XLSX formats (admin roles only)
+5-year retention policy stated in UI compliance note
+⚠️ Gap: Some bulk operations (e.g., bulk import utils/bulk_import.py) may not generate individual audit log entries per record — only aggregate events may be logged. Individual record-level audit trails for bulk-imported invoices need verification.
+
+4.3 Prevention of Editing/Deleting Posted Entries
+✅ Present and compliant
+
+Issued invoices cannot be directly edited — the system requires a credit note to correct them (enforced at line 8341)
+Posted journal entries (is_posted = True) cannot be edited or deleted (enforced at lines 16966 and 16987 with audit log entry)
+ISSUED, SENT, VIEWED, PAID invoice statuses block direct modification
+Cancellation of a posted invoice requires a prior credit note (enforced at line 11059)
+4.4 No Automatic Purging of Customer Data
+✅ Present and compliant
+
+FTA 5-year retention policy enforced: DELETE /customers/{id} is blocked if the customer has any invoices within the 5-year window (line 9775: "Cannot delete customer with invoices within the 5-year FTA retention period")
+Similarly, company-level delete is blocked (line 9845)
+No scheduled job or automatic purge routine found in the codebase for customer/invoice data
+4.5 Concurrent File Update Prevention
+⚠️ Partially present
+
+SQLAlchemy uses default READ COMMITTED isolation — no explicit SELECT FOR UPDATE (pessimistic locking) found in the codebase
+FastAPI is async but the DB sessions use synchronous SQLAlchemy — concurrent requests against the same record could theoretically cause race conditions
+No application-level mutex, advisory locks, or optimistic locking (e.g., version column) implemented for invoice updates
+❌ Gap: No explicit concurrent update prevention mechanism. Under concurrent load, two users editing the same draft invoice simultaneously could cause a last-write-wins overwrite without either user receiving a conflict error. Row-level locking (SELECT ... FOR UPDATE) or optimistic concurrency (ETag/version) is not implemented.
+
+5. USER MANAGEMENT
+5.1 Hierarchy of User Roles
+✅ Present and compliant
+
+Five-level role hierarchy implemented:
+SUPER_ADMIN — platform-level access to all companies
+COMPANY_ADMIN — full access within the company
+BUSINESS_ADMIN — operational access (cannot create VAT returns, cannot export audit logs)
+FINANCE_USER — view-only on VAT returns and audit logs; can create invoices
+READ_ONLY — view + export only; no create/edit/delete/approve
+5.2 Multiple Profiles with Different Access Rights
+✅ Present and compliant
+
+Full permission matrix defined across 5 roles × 10+ resources × 7 actions
+has_permission(user, resource, action) enforced on every API endpoint
+Permission matrix visible in TeamManagement UI with role-resource-action grid
+Role assignment enforced at invite time (admin cannot invite above their own role)
+TeamManagement.jsx exposes full permissions grid to admins
+6. REPORTING
+6.1 Weekly, Monthly, Quarterly, Annual Reports
+✅ Present and compliant
+
+GET /reports/periodic supports period_type values: "weekly" | "monthly" | "quarterly" | "annual"
+Weekly reports use ISO week numbers
+Reports include: invoice count, net amount, VAT collected, gross total, breakdown by invoice type
+PeriodicReport.jsx frontend supports all four period types with dropdowns for year/quarter/month/week
+6.2 Ad Hoc Report Generation
+✅ Present and compliant
+
+GET /reports/adhoc and GET /reports/adhoc/export endpoints support arbitrary date-range filtering
+Export formats: CSV, XLSX, PDF
+Filter by: date range, invoice type
+6.3 Reports in Standard / Agreed Formats
+⚠️ Partially present
+
+Periodic reports export to XLSX and CSV
+VAT Return exports to XLSX and XML
+FAF exports to CSV (zipped)
+Ad hoc reports export to CSV, XLSX, PDF
+⚠️ Gap: There is no scheduled/automated report delivery (e.g., auto-email report at end of quarter). Reports must be manually triggered. FTA accreditation may not require automated delivery but it is worth noting for enterprise clients.
+
+7. DATA ARCHIVAL & BACKUP
+7.1 Archival Mechanism for Past Years Data
+✅ Present and compliant
+
+POST /invoices/archive?years_old=N — archives all paid/cancelled invoices older than N years
+POST /admin/archive/fiscal-year — full fiscal-year archival wizard covering invoices, journal entries, expenses, and inward invoices (with dry-run preview)
+archived_at timestamp captured on archived records
+Archived invoices hidden from daily lists but visible in DataArchival page
+archivalStatus endpoint reports how many records are eligible for archival
+FAF integrity verification endpoint allows uploading a previously exported ZIP to verify SHA-256 hash
+7.2 Restoration Mechanism
+✅ Present and compliant
+
+POST /invoices/{id}/restore — individual invoice restoration
+UI shows all archived invoices with a "Restore" button
+Audit log entry created on restore (INVOICE_RESTORED)
+7.3 Data Integrity Over Extended Periods
+✅ Present and compliant
+
+Automated daily backups via utils/backup_engine.py (APScheduler)
+Supports SQLite (Python sqlite3.iterdump() + gzip) and PostgreSQL (pg_dump --format=custom)
+SHA-256 checksum computed per backup file and stored in backup_logs table
+Optional S3 upload (BACKUP_S3_BUCKET env var)
+BackupLogDB records: started_at, completed_at, filename, file_size_bytes, checksum_sha256, storage_path, status, error_message, triggered_by
+BACKUP_VERIFIED audit log event created when backup integrity is checked
+On-demand backup trigger endpoint available
+⚠️ Gap: There is no documented restoration test procedure — the backup engine can produce dumps but there is no automated restore-and-verify job that confirms the backup is actually restorable. FTA accreditation typically requires demonstration of a tested recovery procedure.
+
+SUMMARY COMPLIANCE MATRIX
+Category	Requirement	Status
+FAF Export	All 5-table structure (Company, Sales, Purchase, Tax, GL)	✅ Present
+Company table with TRN, Tax Agency, period dates, software version	✅ Present
+Purchase table with supplier TRN, invoice dates, VAT in AED	✅ Present
+Supply table with customer TRN, invoice details, VAT in AED	✅ Present
+General Ledger with debit/credit entries, source doc references	✅ Present
+Non-editable CSV output with SHA-256 integrity	✅ Present
+VAT Return	Export in .xlsx format	✅ Present
+Export in .xml format	✅ Present
+Embeds vendor TRN, company name, software name/version, client TRN	⚠️ Vendor TRN defaults to "N/A" if env var unset
+All 13 VAT return boxes (Box 1–13)	✅ Present
+Standard rated, zero rated, exempt, reverse charge	✅ Present
+Tourist refund (Box 2)	❌ Always zero — no capture mechanism
+Tax Invoice	All mandatory VAT fields on invoices	✅ Present
+Bilingual (Arabic/English) invoice	⚠️ Label defined, PDF rendering needs verification
+Supply date enforcement	⚠️ Schema optional, not UI-enforced
+Credit note issuance with reason	✅ Present
+Debit note issuance against posted invoices	✅ Present
+Internal Controls	Password complexity	✅ Present
+Password history (last 5)	✅ Present
+Forced change on first login	✅ Present
+Password expiry (90 days)	✅ Present
+Account lockout after failed attempts	✅ Present
+Audit trail (who, what, when, before/after)	✅ Present
+Immutable audit log (DB triggers)	✅ Present
+Prevention of editing posted entries	✅ Present
+Prevention of deleting posted journal entries	✅ Present
+No auto-purging of customer data (5-year retention)	✅ Present
+Concurrent update prevention	❌ Not implemented
+User Management	Role hierarchy (5 levels)	✅ Present
+Multiple profiles with different access rights	✅ Present
+Reporting	Weekly reports	✅ Present
+Monthly reports	✅ Present
+Quarterly reports	✅ Present
+Annual reports	✅ Present
+Ad hoc report generation	✅ Present
+Standard export formats (CSV, XLSX, PDF)	✅ Present
+Archival & Backup	Archival for past years	✅ Present
+Restoration mechanism	✅ Present
+Data integrity (SHA-256 checksums)	✅ Present
+Tested recovery procedure	❌ Not demonstrated
+PRIORITIZED DEVELOPMENT ROADMAP FOR FTA ACCREDITATION
+Priority 1 — Blocking / Critical (Must fix before submission)
+Set INVOLINKS_VENDOR_TRN in production — The vendor TRN embedded in every VAT Return export defaults to "N/A". Add startup validation that INVOLINKS_VENDOR_TRN is set and is a valid 15-digit TRN. Without this, every exported VAT Return file contains an invalid vendor TRN, which will fail FTA review.
+
+Concurrent update prevention — Implement optimistic locking on invoices and journal entries (add a version integer column; increment on update; reject requests where client version ≠ DB version with HTTP 409 Conflict). This is a security and data-integrity control the FTA explicitly lists under internal controls.
+
+AED conversion enforcement for non-AED inward invoices — Add mandatory total_amount_aed validation at the POST /inward-invoices endpoint when currency_code != "AED". Currently, missing AED amounts silently produce zero-value rows in the FAF Purchase table — an auditor reviewing the FAF would see incomplete purchase data.
+
+Priority 2 — High (Required for full compliance)
+Box 2 Tourist Refund capture — If any client operates in a tourism retail context, a data-entry mechanism for tourist VAT refund transactions must be built. This could be a simple dedicated endpoint/form that adds refund amounts to VATReturnDB.tax_refunds_provided. Without it, Box 2 is always zero — acceptable only if no tourist refunds are issued.
+
+Bilingual invoice PDF verification — Confirm that utils/pdf_invoice_generator.py renders both Arabic (فاتورة ضريبية) and English (TAX INVOICE) invoice headers as required by UAE VAT Executive Regulations Article 59. If the PDF only shows English, this is a legal non-compliance for invoices issued to UAE-registered businesses.
+
+Supply date UI enforcement — Add front-end and API validation that flags (or enforces) supply_date on full tax invoices (≥ AED 10,000) when it differs from the invoice issue date. Currently the field is optional at every level.
+
+Restore-and-verify backup procedure — Document and implement a scheduled restore test (e.g., monthly restore to a test environment with schema validation). Log the result as a BACKUP_RESTORE_VERIFIED audit event. FTA accreditation assessors will ask to demonstrate that backups are actually recoverable.
+
+Priority 3 — Medium (Recommended before formal assessment)
+Minimum password age enforcement — Verify that PASSWORD_MIN_AGE_HOURS = 24 is actively checked in the POST /users/change-password endpoint (around main.py:15854). If the check is defined but not enforced, the password history control can be bypassed by rapid cycling.
+
+Bulk import individual audit entries — Ensure utils/bulk_import.py creates one audit log entry per imported invoice record (not just a single aggregate event), so the audit trail covers all data-entry vectors.
+
+Manual GL entry source document reference — Add a required source_document_ref field to the manual journal entry creation form/API, so all GL entries in the FAF have a traceable source document reference (not just auto-created entries from invoices).
+
+Automated quarterly VAT return reminder — The FTA requires quarterly filings. Consider adding a scheduled notification (email or in-app banner) 7 days before a quarterly VAT return is due. This is not a hard technical requirement but supports compliance hygiene.
+
+Priority 4 — Low / Enhancement
+Scheduled report delivery — Add optional email delivery of period-end reports for enterprise clients who require automated reporting evidence for their own internal controls audits.
+
+Vendor TRN startup health check — Add a /health endpoint check that validates all required FTA-specific environment variables (INVOLINKS_VENDOR_TRN, JWT_SECRET_KEY not default, etc.) and surfaces warnings in the admin dashboard.
+
+Overall Assessment: InvoLinks is substantially compliant with FTA accreditation requirements. The core FAF generation, VAT Return filing, invoice compliance, audit trail, user management, and archival systems are all implemented and functional. The remaining gaps are primarily in edge-case data integrity (concurrent updates, AED conversion enforcement), one missing box in the VAT return (Box 2), and operational readiness items (vendor TRN configuration, backup restore verification). Resolving Priorities 1–3 should achieve full FTA accreditation readiness.
+
+The background exploration agent has now completed — its findings are fully consistent with the detailed analysis already reported above. The report stands as delivered.
+
+To summarize the key takeaways:
+
+InvoLinks is substantially FTA-ready. Most of the required functionality is implemented and functional. The critical gaps requiring immediate attention before accreditation submission are:
+
+#	Gap	Severity
+1	INVOLINKS_VENDOR_TRN defaults to "N/A" — must be a real 15-digit TRN	🔴 Blocking
+2	No concurrent update prevention (no row-level locking or optimistic concurrency)	🔴 Blocking
+3	Non-AED inward invoices silently emit zero amounts in FAF if total_amount_aed is missing	🔴 Blocking
+4	Box 2 (Tourist Refunds) always zero — no data capture mechanism	🟡 High
+5	Bilingual PDF invoice rendering (Arabic + English) needs verification	🟡 High
+6	Supply date not UI-enforced on full tax invoices	🟡 High
+7	No automated backup restore-and-verify procedure	🟡 High
+8	Minimum password age may not be enforced in the change-password endpoint	🟠 Medium
+9	Bulk import may only log aggregate events, not per-record audit entries	🟠 Medium
+10	Manual GL entries may lack source document reference	🟠 Medium

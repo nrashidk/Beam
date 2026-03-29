@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Calendar,
   Download,
+  Users,
 } from "lucide-react";
 
 function fmt(val) {
@@ -48,6 +49,10 @@ export default function VATReturn() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [downloading, setDownloading] = useState({});
+  // Gap 4: Tourist refund (Box 2) input
+  const [touristRefundAmount, setTouristRefundAmount] = useState("");
+  const [touristRefundLoading, setTouristRefundLoading] = useState(false);
+  const [touristRefundMsg, setTouristRefundMsg] = useState("");
 
   useEffect(() => {
     fetchHistory();
@@ -97,16 +102,35 @@ export default function VATReturn() {
     setError("");
     setResult(null);
     setGenerating(true);
+    setTouristRefundMsg("");
     try {
       const res = await apiClient.post("/vat-return/generate", null, {
         params: { period_start: periodStart, period_end: periodEnd },
       });
       setResult(res.data);
+      setTouristRefundAmount(String(res.data.box2_tax_refunds || "0"));
       fetchHistory();
     } catch (e) {
       setError(e.response?.data?.detail || "Failed to generate VAT return. Please try again.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleTouristRefundUpdate() {
+    if (!result?.return_id) return;
+    const amount = parseFloat(touristRefundAmount) || 0;
+    setTouristRefundLoading(true);
+    setTouristRefundMsg("");
+    try {
+      const res = await apiClient.post(`/vat-returns/${result.return_id}/tourist-refund`, { amount });
+      setResult((prev) => ({ ...prev, box2_tax_refunds: res.data.tax_refunds_provided, box13_net_vat_payable: res.data.net_vat_payable }));
+      setTouristRefundMsg(`✅ Box 2 updated to ${fmt(res.data.tax_refunds_provided)}`);
+      fetchHistory();
+    } catch (e) {
+      setTouristRefundMsg(`❌ ${e.response?.data?.detail || "Update failed"}`);
+    } finally {
+      setTouristRefundLoading(false);
     }
   }
 
@@ -267,6 +291,46 @@ export default function VATReturn() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Gap 4: Box 2 Tourist Refund Input */}
+              {result.return_id && (
+                <div className="px-6 py-4 bg-amber-50 border-t border-amber-100">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2 text-amber-800">
+                      <Users className="h-4 w-4" />
+                      <span className="text-sm font-semibold">Box 2 — Tourist VAT Refunds</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-1 min-w-48">
+                      <span className="text-xs text-amber-700">AED</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={touristRefundAmount}
+                        onChange={(e) => setTouristRefundAmount(e.target.value)}
+                        className="w-36 px-3 py-1.5 text-sm border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-400 bg-white"
+                        placeholder="0.00"
+                      />
+                      <button
+                        onClick={handleTouristRefundUpdate}
+                        disabled={touristRefundLoading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                      >
+                        {touristRefundLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                        Update Box 2
+                      </button>
+                    </div>
+                    {touristRefundMsg && (
+                      <span className={`text-xs font-medium ${touristRefundMsg.startsWith("✅") ? "text-green-700" : "text-red-600"}`}>
+                        {touristRefundMsg}
+                      </span>
+                    )}
+                    <p className="w-full text-xs text-amber-600 mt-1">
+                      Enter the total AED value of VAT refunds issued to tourists during this period. Only relevant for retail businesses at tourist locations (e.g., airports).
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex gap-8 text-sm text-gray-600">

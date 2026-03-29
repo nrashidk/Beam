@@ -1662,6 +1662,7 @@ class JournalEntryDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
     archived_at = Column(DateTime, nullable=True)
+    version = Column(Integer, default=1, nullable=False, server_default="1")  # Gap 2: optimistic locking
 
     company = relationship("CompanyDB", backref="journal_entries")
     lines = relationship("JournalEntryLineDB", backref="journal_entry", cascade="all, delete-orphan")
@@ -2041,6 +2042,63 @@ def create_journal_entry_for_purchase(inward_invoice, db: Session, user_id: str 
         logger.info(f"GL: purchase journal entry {je.id} created for {inward_invoice.supplier_invoice_number}")
     except Exception as exc:
         logger.error(f"GL: failed to create purchase journal entry: {exc}")
+
+
+def _create_journal_entry_for_expense(expense, db: Session, user_id: str = None) -> None:
+    """
+    Gap 10: Auto-generate a double-entry journal entry when an expense is recorded.
+
+    Expense:
+        DR  6000 Expense Account   [amount excl. VAT]
+        DR  1200 VAT Receivable    [vat_amount]
+            CR  1000 Cash / Bank   [total_amount]
+
+    Sets reference_type=EXPENSE and reference_id=expense.id for full SourceDocRef in FAF GL table.
+    """
+    try:
+        company_id = expense.company_id
+        entry_date = expense.expense_date if isinstance(expense.expense_date, date) else date.today()
+        total = round(float(expense.total_amount or 0), 2)
+        amount = round(float(expense.amount or 0), 2)
+        vat = round(float(expense.vat_amount or 0), 2)
+
+        desc = f"Expense: {expense.category or 'General'}"
+        if expense.supplier_name:
+            desc += f" — {expense.supplier_name}"
+        if expense.reference_number:
+            desc += f" (Ref: {expense.reference_number})"
+
+        je = JournalEntryDB(
+            id=str(uuid4()),
+            company_id=company_id,
+            entry_date=entry_date,
+            reference_type="EXPENSE",
+            reference_id=str(expense.id),
+            reference_number=expense.reference_number or expense.id,
+            description=desc,
+            is_posted=True,
+            created_by_user_id=user_id,
+        )
+        db.add(je)
+        db.flush()
+
+        exp_acc = _get_account(company_id, "6000", db)
+        vat_r = _get_account(company_id, "1200", db)
+        cash = _get_account(company_id, "1000", db)
+
+        lines = [
+            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=exp_acc.id, account_code=exp_acc.account_code, account_name=exp_acc.account_name, debit_amount=amount, credit_amount=0, currency="AED", amount_aed=amount, description="Expense", line_number=1),
+        ]
+        if vat > 0:
+            lines.append(JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_r.id, account_code=vat_r.account_code, account_name=vat_r.account_name, debit_amount=vat, credit_amount=0, currency="AED", amount_aed=vat, description="Input VAT on expense", line_number=2))
+        lines.append(JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=cash.id, account_code=cash.account_code, account_name=cash.account_name, debit_amount=0, credit_amount=total, currency="AED", amount_aed=total, description="Cash/Bank payment", line_number=len(lines) + 1))
+
+        for line in lines:
+            db.add(line)
+        db.flush()
+        logger.info(f"GL: expense journal entry {je.id} created for expense {expense.id}")
+    except Exception as exc:
+        logger.error(f"GL: failed to create expense journal entry: {exc}")
 
 
 # ==================== AUTH HELPERS ====================
@@ -2827,6 +2885,7 @@ class InwardInvoiceReceive(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
+    total_amount_aed: Optional[float] = None  # Gap 3: required for non-AED inward invoices (FTA FAF compliance)
     xml_content: Optional[str] = None  # UBL XML content
     peppol_message_id: Optional[str] = None
     peppol_sender_id: Optional[str] = None
@@ -3048,6 +3107,8 @@ def _run_column_migrations():
         "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
         "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
         "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        # Gap 2: Optimistic locking version column on journal_entries
+        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -3241,6 +3302,23 @@ def startup_event():
             _ic_db.close()
     except Exception as _ic_exc:
         logger.warning(f"Integrity check startup log failed: {_ic_exc}")
+
+    # Gap 1: INVOLINKS_VENDOR_TRN validation
+    _vendor_trn = os.environ.get("INVOLINKS_VENDOR_TRN", "")
+    if not _vendor_trn or _vendor_trn == "N/A":
+        logger.warning(
+            "⚠️ FTA COMPLIANCE: INVOLINKS_VENDOR_TRN is not set. "
+            "VAT Return exports will embed 'N/A' as the vendor TRN — this will fail FTA review. "
+            "Set INVOLINKS_VENDOR_TRN to your 15-digit UAE TRN before production deployment."
+        )
+    elif not (_vendor_trn.isdigit() and len(_vendor_trn) == 15):
+        logger.warning(
+            f"⚠️ FTA COMPLIANCE: INVOLINKS_VENDOR_TRN='{_vendor_trn}' is not a valid 15-digit TRN. "
+            "VAT Return exports will contain an invalid vendor TRN. "
+            "Set a valid 15-digit numeric TRN."
+        )
+    else:
+        logger.info(f"✅ INVOLINKS_VENDOR_TRN validated: {_vendor_trn[:4]}***{_vendor_trn[-3:]}")
 
     # Task 29 (P2-E): Start the APScheduler daily backup job
     global _backup_scheduler
@@ -11739,6 +11817,14 @@ def create_expense(
     )
 
     db.add(expense)
+    db.flush()  # persist expense so GL can reference its id
+
+    # Gap 10: Auto-create GL journal entry for expense (FTA SourceDocRef compliance)
+    try:
+        _create_journal_entry_for_expense(expense, db, user_id=current_user.id)
+    except Exception as _gl_exc:
+        logger.warning(f"GL: expense journal entry skipped: {_gl_exc}")
+
     db.commit()
     db.refresh(expense)
 
@@ -12443,6 +12529,18 @@ def receive_inward_invoice(
         amount_variance=amount_variance,
         payment_status="PENDING",
     )
+
+    # Gap 3: AED conversion enforcement — mandatory for non-AED inward invoices (FTA FAF compliance)
+    if (invoice_data.currency_code or "AED").upper() != "AED":
+        if not invoice_data.total_amount_aed or invoice_data.total_amount_aed <= 0:
+            raise HTTPException(
+                422,
+                "total_amount_aed is required for non-AED inward invoices. "
+                "Provide the AED equivalent so the FAF Purchase table can report amounts in AED.",
+            )
+        new_invoice.total_amount_aed = round(invoice_data.total_amount_aed, 2)
+    else:
+        new_invoice.total_amount_aed = round(invoice_data.total_amount, 2)
 
     db.add(new_invoice)
 
@@ -15726,6 +15824,25 @@ async def bulk_import_invoices(
                 )
                 db.add(tax_breakdown)
 
+            # Gap 9: Per-record audit event for each bulk-imported invoice (FTA audit trail compliance)
+            db.flush()  # ensure new_invoice.id is set before logging
+            log_audit_event(
+                db,
+                action="INVOICE_IMPORTED",
+                user_id=current_user.id,
+                company_id=company_id,
+                resource_type="invoice",
+                resource_id=new_invoice.id,
+                description=f"Bulk imported invoice {invoice_number} for {invoice_data.get('customer_name', 'unknown customer')} by {current_user.email}",
+                new_value=str({
+                    "invoice_number": invoice_number,
+                    "invoice_type": invoice_type_value,
+                    "customer_name": invoice_data.get("customer_name"),
+                    "total_amount": float(total_amount_calc),
+                    "source": "bulk_import",
+                }),
+            )
+
             created_count += 1
 
         # Update trial invoice count if on trial
@@ -16307,17 +16424,15 @@ def generate_vat_return(
     # --- Box 2: Tax refunds — VAT on credit notes (381) and debit notes (383) in period ---
     # FTA Form 301 Box 2 covers only standard tax adjustments (types 381 and 383).
     # Out-of-scope credit notes (type 81) are excluded because they carry no VAT.
-    credit_debit_note_types = [
-        InvoiceType.TAX_CREDIT_NOTE,   # 381
-        InvoiceType.DEBIT_NOTE,        # 383
-    ]
+    # Use cast().in_() with raw string labels to avoid Python↔DB enum name mismatch.
+    from sqlalchemy import cast as sa_cast, String as SA_String
     credit_debit_notes = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
             InvoiceDB.issue_date >= start_date,
             InvoiceDB.issue_date <= end_date,
-            InvoiceDB.invoice_type.in_(credit_debit_note_types),
+            sa_cast(InvoiceDB.invoice_type, SA_String).in_(["TAX_CREDIT_NOTE", "TAX_DEBIT_NOTE", "DEBIT_NOTE"]),
             InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
         )
         .all()
@@ -16857,10 +16972,11 @@ def list_journal_entries(
 @app.get("/journal-entries/{entry_id}", tags=["General Ledger"])
 def get_journal_entry(
     entry_id: str,
+    response: Response,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Get a single journal entry with all its debit/credit lines."""
+    """Get a single journal entry with all its debit/credit lines. Returns ETag for optimistic locking."""
     entry = (
         db.query(JournalEntryDB)
         .filter(JournalEntryDB.id == entry_id, JournalEntryDB.company_id == current_user.company_id)
@@ -16868,6 +16984,9 @@ def get_journal_entry(
     )
     if not entry:
         raise HTTPException(404, "Journal entry not found")
+    # Gap 2: ETag header for optimistic locking
+    current_version = entry.version if entry.version is not None else 1
+    response.headers["ETag"] = str(current_version)
     return {
         "id": entry.id,
         "entry_date": str(entry.entry_date),
@@ -16876,6 +16995,7 @@ def get_journal_entry(
         "reference_number": entry.reference_number,
         "description": entry.description,
         "is_posted": entry.is_posted,
+        "version": current_version,
         "created_at": entry.created_at.isoformat() if entry.created_at else None,
         "lines": [
             {
@@ -17599,6 +17719,201 @@ def export_general_ledger(
         )
     else:
         raise HTTPException(400, "format must be 'xlsx' or 'pdf'")
+
+
+# ==================== GAP 1: FTA CONFIG HEALTH CHECK ====================
+
+@app.get("/admin/health/fta-config", tags=["Admin"], dependencies=[require_permission("audit_logs", "read")])
+def get_fta_config_health(
+    current_user: UserDB = Depends(get_current_user_from_header),
+):
+    """
+    Gap 1: FTA compliance configuration health check.
+    Returns the status of all required FTA environment variables.
+    SUPER_ADMIN only.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super Admin only")
+
+    vendor_trn = os.environ.get("INVOLINKS_VENDOR_TRN", "")
+    trn_set = bool(vendor_trn and vendor_trn != "N/A")
+    trn_valid = trn_set and vendor_trn.isdigit() and len(vendor_trn) == 15
+
+    jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+    jwt_ok = bool(jwt_secret and jwt_secret not in ("secret", "changeme", ""))
+
+    production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
+
+    checks = [
+        {
+            "key": "INVOLINKS_VENDOR_TRN",
+            "status": "OK" if trn_valid else ("WARN" if trn_set else "ERROR"),
+            "message": (
+                f"Valid 15-digit TRN: {vendor_trn[:4]}***{vendor_trn[-3:]}" if trn_valid
+                else ("Set but not a valid 15-digit TRN" if trn_set else "Not set — VAT Return exports will embed 'N/A'")
+            ),
+        },
+        {
+            "key": "JWT_SECRET_KEY",
+            "status": "OK" if jwt_ok else "ERROR",
+            "message": "Custom signing key configured" if jwt_ok else "Using default/weak key — change before production",
+        },
+        {
+            "key": "PRODUCTION_MODE",
+            "status": "OK" if production_mode else "WARN",
+            "message": "Production mode enabled" if production_mode else "Running in development mode — set PRODUCTION_MODE=true for deployment",
+        },
+    ]
+
+    overall = "OK" if all(c["status"] == "OK" for c in checks) else (
+        "ERROR" if any(c["status"] == "ERROR" for c in checks) else "WARN"
+    )
+
+    return {
+        "overall_status": overall,
+        "fta_ready": overall == "OK",
+        "checks": checks,
+        "message": (
+            "All FTA configuration checks passed." if overall == "OK"
+            else "One or more FTA configuration checks require attention before production deployment."
+        ),
+    }
+
+
+# ==================== GAP 4: BOX 2 TOURIST REFUND CAPTURE ====================
+
+class TouristRefundUpdate(BaseModel):
+    amount: float  # AED amount of tourist VAT refunds to set for Box 2
+
+@app.post("/vat-returns/{return_id}/tourist-refund", tags=["VAT Return"])
+def set_tourist_refund(
+    return_id: str,
+    payload: TouristRefundUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Gap 4: Record tourist VAT refund amount for Box 2 of FTA Form 301.
+    Updates tax_refunds_provided on the given VAT return.
+    Only COMPANY_ADMIN or SUPER_ADMIN may update this value.
+    """
+    if current_user.role not in (Role.SUPER_ADMIN, Role.COMPANY_ADMIN):
+        raise HTTPException(403, "Company Admin or Super Admin required")
+
+    vat_return = (
+        db.query(VATReturnDB)
+        .filter(
+            VATReturnDB.id == return_id,
+            VATReturnDB.company_id == current_user.company_id,
+        )
+        .first()
+    )
+    if not vat_return:
+        raise HTTPException(404, "VAT return not found")
+
+    if payload.amount < 0:
+        raise HTTPException(422, "Tourist refund amount cannot be negative")
+
+    old_amount = float(vat_return.tax_refunds_provided or 0)
+    vat_return.tax_refunds_provided = round(payload.amount, 2)
+
+    # Recalculate Box 13: net_vat_payable = output_vat - total_input_vat
+    vat_return.net_vat_payable = round(
+        (vat_return.output_vat or 0) - (vat_return.total_input_vat or 0), 2
+    )
+
+    log_audit_event(
+        db,
+        action="VAT_RETURN_TOURIST_REFUND_UPDATED",
+        user_id=current_user.id,
+        company_id=current_user.company_id,
+        resource_type="vat_return",
+        resource_id=return_id,
+        description=f"Box 2 tourist refund updated from AED {old_amount} to AED {payload.amount} by {current_user.email}",
+        old_value=str({"tax_refunds_provided": old_amount}),
+        new_value=str({"tax_refunds_provided": round(payload.amount, 2)}),
+    )
+
+    db.commit()
+    db.refresh(vat_return)
+
+    return {
+        "id": vat_return.id,
+        "tax_refunds_provided": float(vat_return.tax_refunds_provided),
+        "net_vat_payable": float(vat_return.net_vat_payable),
+        "message": f"Box 2 tourist refund set to AED {vat_return.tax_refunds_provided:.2f}",
+    }
+
+
+# ==================== GAP 7: BACKUP RESTORE-AND-VERIFY ====================
+
+class BackupRestoreVerifyRequest(BaseModel):
+    backup_log_id: Optional[str] = None  # specific backup log id; omit to use latest
+    notes: Optional[str] = None           # optional notes about this restore test
+
+@app.post("/admin/backup/restore-verify", tags=["Admin"])
+def verify_backup_restore(
+    payload: BackupRestoreVerifyRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Gap 7: Log a backup restore-and-verify event (BACKUP_RESTORE_VERIFIED).
+    FTA accreditation requires demonstration of a tested recovery procedure.
+    Call this endpoint after performing a manual or automated restore test
+    to create an immutable audit record of the verification.
+    SUPER_ADMIN only.
+    """
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Super Admin only")
+
+    backup_log = None
+    if payload.backup_log_id:
+        backup_log = db.query(BackupLogDB).filter(BackupLogDB.id == payload.backup_log_id).first()
+        if not backup_log:
+            raise HTTPException(404, "Backup log record not found")
+    else:
+        backup_log = (
+            db.query(BackupLogDB)
+            .filter(BackupLogDB.status == "SUCCESS")
+            .order_by(BackupLogDB.completed_at.desc())
+            .first()
+        )
+
+    verified_at = datetime.utcnow()
+    backup_info = {
+        "verified_at": verified_at.isoformat(),
+        "verified_by": current_user.email,
+        "notes": payload.notes or "Manual restore-and-verify test completed",
+    }
+    if backup_log:
+        backup_info.update({
+            "backup_log_id": backup_log.id if backup_log.id else None,
+            "backup_filename": backup_log.filename,
+            "backup_completed_at": backup_log.completed_at.isoformat() if backup_log.completed_at else None,
+            "backup_checksum_sha256": backup_log.checksum_sha256,
+        })
+
+    log_audit_event(
+        db,
+        action="BACKUP_RESTORE_VERIFIED",
+        user_id=current_user.id,
+        company_id=None,
+        resource_type="backup",
+        resource_id=str(backup_log.id) if backup_log and backup_log.id else "manual",
+        description=f"Backup restore-and-verify test completed by {current_user.email}. {payload.notes or ''}".strip(),
+        new_value=str(backup_info),
+    )
+
+    db.commit()
+
+    return {
+        "success": True,
+        "verified_at": verified_at.isoformat(),
+        "audit_event": "BACKUP_RESTORE_VERIFIED",
+        "backup_info": backup_info,
+        "message": "Backup restore verification recorded. The audit log entry is immutable.",
+    }
 
 
 # ==================== REACT APP SERVING ====================

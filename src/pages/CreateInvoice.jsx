@@ -856,11 +856,21 @@ export default function CreateInvoice() {
                     onChange={(e) =>
                       setFormData({ ...formData, supply_date: e.target.value || null })
                     }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
+                      !formData.supply_date && calculateTotal() >= 10000
+                        ? "border-amber-400 bg-amber-50"
+                        : "border-gray-300"
+                    }`}
                   />
-                  <p className="mt-1 text-xs text-gray-400">
-                    FTA UBL cac:Delivery/cbc:ActualDeliveryDate
-                  </p>
+                  {!formData.supply_date && calculateTotal() >= 10000 ? (
+                    <p className="mt-1 text-xs text-amber-600 font-medium">
+                      ⚠️ FTA requires supply date on full tax invoices ≥ AED 10,000 when it differs from the issue date.
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-gray-400">
+                      FTA UBL cac:Delivery/cbc:ActualDeliveryDate
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
