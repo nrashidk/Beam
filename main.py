@@ -1156,6 +1156,10 @@ class InwardInvoiceDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Archival
+    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
+    archived_at = Column(DateTime, nullable=True)
+
     # Relationships
     company = relationship(
         "CompanyDB", foreign_keys=[company_id], backref="inward_invoices"
@@ -1551,6 +1555,10 @@ class ExpenseDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Archival
+    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
+    archived_at = Column(DateTime, nullable=True)
+
     # Relationships
     company = relationship("CompanyDB", backref="expenses")
 
@@ -1652,6 +1660,8 @@ class JournalEntryDB(Base):
     is_posted = Column(Boolean, default=True)
     created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
+    archived_at = Column(DateTime, nullable=True)
 
     company = relationship("CompanyDB", backref="journal_entries")
     lines = relationship("JournalEntryLineDB", backref="journal_entry", cascade="all, delete-orphan")
@@ -2909,6 +2919,8 @@ class InwardInvoiceListOut(BaseModel):
     received_at: str
     matching_status: MatchingStatus
     po_id: Optional[str]
+    is_archived: bool = False
+    archived_at: Optional[str] = None
 
 
 class InwardInvoiceApprove(BaseModel):
@@ -3029,6 +3041,13 @@ def _run_column_migrations():
         "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS status VARCHAR(10) DEFAULT 'PENDING'",
         "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS error_message TEXT",
         "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS triggered_by VARCHAR",
+        # Task 34: GL, Expense & Inward Invoice archival
+        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
+        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
     ]
     with engine.begin() as conn:
         for sql in migrations:
@@ -11594,6 +11613,7 @@ def create_expense(
 def list_expenses(
     month: str = None,  # "2025-10" for October 2025
     category: str = None,
+    include_archived: bool = False,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -11603,8 +11623,12 @@ def list_expenses(
     Filters:
     - month: "2025-10" for October 2025
     - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
+    - include_archived: include archived expenses (default false)
     """
     query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
+
+    if not include_archived:
+        query = query.filter(ExpenseDB.is_archived == False)
 
     # Filter by month
     if month:
@@ -11645,6 +11669,8 @@ def list_expenses(
                 "supplier_name": exp.supplier_name,
                 "reference_number": exp.reference_number,
                 "notes": exp.notes,
+                "is_archived": exp.is_archived,
+                "archived_at": exp.archived_at.isoformat() if exp.archived_at else None,
                 "created_at": exp.created_at.isoformat(),
             }
             for exp in expenses
@@ -12407,6 +12433,7 @@ def list_inward_invoices(
     status: Optional[str] = None,
     supplier_trn: Optional[str] = None,
     matching_status: Optional[str] = None,
+    include_archived: bool = False,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -12417,10 +12444,14 @@ def list_inward_invoices(
     - status: Filter by invoice status (RECEIVED, PENDING_REVIEW, APPROVED, etc.)
     - supplier_trn: Filter by supplier TRN
     - matching_status: Filter by PO matching status
+    - include_archived: include archived invoices (default false)
     """
     query = db.query(InwardInvoiceDB).filter(
         InwardInvoiceDB.company_id == current_user.company_id
     )
+
+    if not include_archived:
+        query = query.filter(InwardInvoiceDB.is_archived == False)
 
     if status:
         query = query.filter(InwardInvoiceDB.status == status)
@@ -12445,6 +12476,8 @@ def list_inward_invoices(
             received_at=inv.received_at.isoformat(),
             matching_status=inv.matching_status,
             po_id=inv.po_id,
+            is_archived=inv.is_archived,
+            archived_at=inv.archived_at.isoformat() if inv.archived_at else None,
         )
         for inv in invoices
     ]
@@ -14090,7 +14123,7 @@ def generate_fta_audit_file(
             for inv in inward_invoices
         ]
 
-        # Fetch General Ledger entries for the period
+        # Fetch General Ledger entries for the period (exclude archived — T34)
         gl_journal_entries = (
             db.query(JournalEntryDB)
             .filter(
@@ -14098,6 +14131,7 @@ def generate_fta_audit_file(
                 JournalEntryDB.entry_date >= start_date,
                 JournalEntryDB.entry_date <= end_date,
                 JournalEntryDB.is_posted == True,
+                JournalEntryDB.is_archived == False,
             )
             .all()
         )
@@ -16546,6 +16580,7 @@ def list_journal_entries(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     reference_type: Optional[str] = None,
+    include_archived: bool = False,
     page: int = 1,
     limit: int = 50,
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -16555,6 +16590,8 @@ def list_journal_entries(
     if not current_user.company_id:
         raise HTTPException(400, "User has no associated company")
     q = db.query(JournalEntryDB).filter(JournalEntryDB.company_id == current_user.company_id)
+    if not include_archived:
+        q = q.filter(JournalEntryDB.is_archived == False)
     if from_date:
         q = q.filter(JournalEntryDB.entry_date >= from_date)
     if to_date:
@@ -16576,6 +16613,8 @@ def list_journal_entries(
                 "reference_number": e.reference_number,
                 "description": e.description,
                 "is_posted": e.is_posted,
+                "is_archived": e.is_archived,
+                "archived_at": e.archived_at.isoformat() if e.archived_at else None,
                 "created_at": e.created_at.isoformat() if e.created_at else None,
             }
             for e in entries
@@ -16718,6 +16757,195 @@ def guard_journal_entry_delete(
     )
     db.commit()
     raise HTTPException(403, "Posted journal entries cannot be modified")
+
+
+# ==================== ARCHIVAL ENDPOINTS (Task 34 — P2-4) ====================
+
+
+@app.post("/journal-entries/{entry_id}/archive", tags=["General Ledger"])
+def archive_journal_entry(
+    entry_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Archive a journal entry (COMPANY_ADMIN / SUPER_ADMIN only). Archived entries are hidden from normal views."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can archive journal entries")
+    entry = db.query(JournalEntryDB).filter(
+        JournalEntryDB.id == entry_id,
+        JournalEntryDB.company_id == current_user.company_id,
+    ).first()
+    if not entry:
+        raise HTTPException(404, "Journal entry not found")
+    if entry.is_archived:
+        raise HTTPException(409, "Journal entry is already archived")
+    entry.is_archived = True
+    entry.archived_at = datetime.utcnow()
+    log_audit_event(
+        db, "JOURNAL_ENTRY_ARCHIVED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="journal_entry", resource_id=entry_id,
+        description=f"Journal entry {entry_id} archived",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Journal entry archived", "id": entry_id, "archived_at": entry.archived_at.isoformat()}
+
+
+@app.post("/journal-entries/{entry_id}/restore", tags=["General Ledger"])
+def restore_journal_entry(
+    entry_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Restore an archived journal entry (COMPANY_ADMIN / SUPER_ADMIN only)."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can restore journal entries")
+    entry = db.query(JournalEntryDB).filter(
+        JournalEntryDB.id == entry_id,
+        JournalEntryDB.company_id == current_user.company_id,
+    ).first()
+    if not entry:
+        raise HTTPException(404, "Journal entry not found")
+    if not entry.is_archived:
+        raise HTTPException(409, "Journal entry is not archived")
+    entry.is_archived = False
+    entry.archived_at = None
+    log_audit_event(
+        db, "JOURNAL_ENTRY_RESTORED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="journal_entry", resource_id=entry_id,
+        description=f"Journal entry {entry_id} restored from archive",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Journal entry restored", "id": entry_id}
+
+
+@app.post("/expenses/{expense_id}/archive", tags=["Expenses"])
+def archive_expense(
+    expense_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Archive an expense record (COMPANY_ADMIN / SUPER_ADMIN only)."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can archive expenses")
+    expense = db.query(ExpenseDB).filter(
+        ExpenseDB.id == expense_id,
+        ExpenseDB.company_id == current_user.company_id,
+    ).first()
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+    if expense.is_archived:
+        raise HTTPException(409, "Expense is already archived")
+    expense.is_archived = True
+    expense.archived_at = datetime.utcnow()
+    log_audit_event(
+        db, "EXPENSE_ARCHIVED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="expense", resource_id=expense_id,
+        description=f"Expense {expense_id} archived",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Expense archived", "id": expense_id, "archived_at": expense.archived_at.isoformat()}
+
+
+@app.post("/expenses/{expense_id}/restore", tags=["Expenses"])
+def restore_expense(
+    expense_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Restore an archived expense (COMPANY_ADMIN / SUPER_ADMIN only)."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can restore expenses")
+    expense = db.query(ExpenseDB).filter(
+        ExpenseDB.id == expense_id,
+        ExpenseDB.company_id == current_user.company_id,
+    ).first()
+    if not expense:
+        raise HTTPException(404, "Expense not found")
+    if not expense.is_archived:
+        raise HTTPException(409, "Expense is not archived")
+    expense.is_archived = False
+    expense.archived_at = None
+    log_audit_event(
+        db, "EXPENSE_RESTORED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="expense", resource_id=expense_id,
+        description=f"Expense {expense_id} restored from archive",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Expense restored", "id": expense_id}
+
+
+@app.post("/inward-invoices/{invoice_id}/archive", tags=["AP Management"])
+def archive_inward_invoice(
+    invoice_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Archive an inward invoice (COMPANY_ADMIN / SUPER_ADMIN only)."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can archive inward invoices")
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id,
+    ).first()
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    if invoice.is_archived:
+        raise HTTPException(409, "Inward invoice is already archived")
+    invoice.is_archived = True
+    invoice.archived_at = datetime.utcnow()
+    log_audit_event(
+        db, "INWARD_INVOICE_ARCHIVED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="inward_invoice", resource_id=invoice_id,
+        description=f"Inward invoice {invoice_id} archived",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Inward invoice archived", "id": invoice_id, "archived_at": invoice.archived_at.isoformat()}
+
+
+@app.post("/inward-invoices/{invoice_id}/restore", tags=["AP Management"])
+def restore_inward_invoice(
+    invoice_id: str,
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Restore an archived inward invoice (COMPANY_ADMIN / SUPER_ADMIN only)."""
+    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
+        raise HTTPException(403, "Only company admins can restore inward invoices")
+    invoice = db.query(InwardInvoiceDB).filter(
+        InwardInvoiceDB.id == invoice_id,
+        InwardInvoiceDB.company_id == current_user.company_id,
+    ).first()
+    if not invoice:
+        raise HTTPException(404, "Inward invoice not found")
+    if not invoice.is_archived:
+        raise HTTPException(409, "Inward invoice is not archived")
+    invoice.is_archived = False
+    invoice.archived_at = None
+    log_audit_event(
+        db, "INWARD_INVOICE_RESTORED",
+        user_id=current_user.id, company_id=current_user.company_id,
+        resource_type="inward_invoice", resource_id=invoice_id,
+        description=f"Inward invoice {invoice_id} restored from archive",
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+    return {"message": "Inward invoice restored", "id": invoice_id}
 
 
 # ==================== TRIAL BALANCE EXPORT (Task 28 — P2-C) ====================

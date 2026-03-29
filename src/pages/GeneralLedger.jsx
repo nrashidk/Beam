@@ -180,6 +180,7 @@ function JournalEntries() {
   const [fromDate, setFromDate] = useState(fmtDate(firstOfMonth));
   const [toDate, setToDate] = useState(fmtDate(today));
   const [refType, setRefType] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [entries, setEntries] = useState([]);
@@ -230,6 +231,7 @@ function JournalEntries() {
     try {
       const params = { from_date: fromDate, to_date: toDate, page: pg, limit: LIMIT };
       if (refType) params.reference_type = refType;
+      if (includeArchived) params.include_archived = true;
       const res = await apiClient.get("/journal-entries", { params });
       setEntries(res.data.journal_entries || []);
       setTotal(res.data.total || 0);
@@ -239,7 +241,7 @@ function JournalEntries() {
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate, refType]);
+  }, [fromDate, toDate, refType, includeArchived]);
 
   useEffect(() => { load(1); }, [load]);
 
@@ -286,6 +288,17 @@ function JournalEntries() {
             ))}
           </select>
         </div>
+        <div className="flex items-end pb-1">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-600 select-none">
+            <input
+              type="checkbox"
+              checked={includeArchived}
+              onChange={(e) => setIncludeArchived(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            Include Archived
+          </label>
+        </div>
         <div className="flex items-end gap-2">
           <button onClick={() => load(1)} disabled={loading}
             className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
@@ -331,7 +344,8 @@ function JournalEntries() {
                 <tbody className="divide-y divide-gray-100">
                   {entries.map((e) => (
                     <>
-                      <tr key={e.id} className="hover:bg-gray-50 cursor-pointer"
+                      <tr key={e.id}
+                        className={`cursor-pointer ${e.is_archived ? "bg-gray-50 opacity-60 hover:opacity-80" : "hover:bg-gray-50"}`}
                         onClick={() => toggleEntry(e.id)}>
                         <td className="px-4 py-3 text-gray-400">
                           {expandedId === e.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -344,11 +358,14 @@ function JournalEntries() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">{e.description || "—"}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 flex items-center gap-2">
                           {e.is_posted ? (
                             <span className="text-xs text-green-600 font-medium">Posted</span>
                           ) : (
                             <span className="text-xs text-amber-500">Draft</span>
+                          )}
+                          {e.is_archived && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-500 font-medium">Archived</span>
                           )}
                         </td>
                       </tr>
