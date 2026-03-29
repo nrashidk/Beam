@@ -13916,11 +13916,19 @@ def generate_fta_audit_file(
             for inv in outgoing_invoices
         ]
 
+        # Build GRN receipt_date map: grn_id -> receipt_date (used as SupplyDate for inward invoices)
+        grn_ids = [inv.grn_id for inv in inward_invoices if inv.grn_id]
+        grn_receipt_map: dict = {}
+        if grn_ids:
+            grns = db.query(GoodsReceiptDB).filter(GoodsReceiptDB.id.in_(grn_ids)).all()
+            grn_receipt_map = {grn.id: grn.receipt_date for grn in grns}
+
         inward_data = [
             {
                 "supplier_invoice_number": inv.supplier_invoice_number,
                 "invoice_date": inv.invoice_date,
-                "supply_date": getattr(inv, "supply_date", None),  # InwardInvoiceDB has no supply_date; falls back to invoice_date in FAF generator
+                # Use GRN receipt_date as the equivalent supply/delivery date; falls back to invoice_date in FAF generator when None
+                "supply_date": grn_receipt_map.get(inv.grn_id) if inv.grn_id else None,
                 "invoice_type": inv.invoice_type.value,
                 "supplier_trn": inv.supplier_trn,
                 "supplier_name": inv.supplier_name,
