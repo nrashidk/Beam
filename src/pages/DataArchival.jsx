@@ -88,7 +88,7 @@ export default function DataArchival() {
     setExporting(true);
     setError(null);
     try {
-      const res = await apiClient.get("/invoices/archive/export", { responseType: "blob" });
+      const res = await apiClient.get("/invoices/archive/export", { params: { format: "xlsx" }, responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
       a.href = url;

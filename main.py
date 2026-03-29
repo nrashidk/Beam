@@ -7733,15 +7733,18 @@ def get_archival_status(
 
 @app.get("/invoices/archive/export", tags=["Invoices"])
 def export_archived_invoices(
+    format: str = "xlsx",
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
     """
     Task 32 — Bulk export all archived invoices for this company as an XLSX file.
-    Requires reports.export permission.
+    Requires COMPANY_ADMIN or above. Only format=xlsx is supported.
     """
-    if not has_permission(current_user, "reports", "export"):
-        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
+    if format.lower() != "xlsx":
+        raise HTTPException(400, "Unsupported format. Only format=xlsx is supported.")
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Permission denied: only Company Admin or above can export archived invoices")
 
     import io
     import openpyxl
@@ -13915,6 +13918,7 @@ def generate_fta_audit_file(
             {
                 "supplier_invoice_number": inv.supplier_invoice_number,
                 "invoice_date": inv.invoice_date,
+                "supply_date": getattr(inv, "supply_date", None),  # InwardInvoiceDB has no supply_date; falls back to invoice_date in FAF generator
                 "invoice_type": inv.invoice_type.value,
                 "supplier_trn": inv.supplier_trn,
                 "supplier_name": inv.supplier_name,
