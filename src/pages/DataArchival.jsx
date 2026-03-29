@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldX, Upload } from "lucide-react";
 import Sidebar from "../components/Sidebar";
 import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
@@ -16,6 +16,12 @@ export default function DataArchival() {
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
   const [archivalStatus, setArchivalStatus] = useState(null);
+
+  const [fafVerifyFile, setFafVerifyFile] = useState(null);
+  const [fafVerifying, setFafVerifying] = useState(false);
+  const [fafVerifyResult, setFafVerifyResult] = useState(null);
+  const [fafVerifyError, setFafVerifyError] = useState(null);
+  const fafFileInputRef = useRef(null);
 
   const fetchArchived = async () => {
     setLoading(true);
@@ -112,6 +118,25 @@ export default function DataArchival() {
       ? n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : "0.00";
 
+  const handleVerifyFAF = async () => {
+    if (!fafVerifyFile) return;
+    setFafVerifying(true);
+    setFafVerifyResult(null);
+    setFafVerifyError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", fafVerifyFile);
+      const res = await apiClient.post("/audit-files/verify", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setFafVerifyResult(res.data);
+    } catch (err) {
+      setFafVerifyError(err.response?.data?.detail || "Verification failed. Please try again.");
+    } finally {
+      setFafVerifying(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -193,6 +218,69 @@ export default function DataArchival() {
               <div className="mt-4 flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                 {error}
+              </div>
+            )}
+          </div>
+
+          {/* FAF Integrity Verification */}
+          <div className="bg-white rounded-xl border p-5 mb-6">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-indigo-600" />
+              Verify FAF Integrity
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Upload a previously exported FAF <strong>.zip</strong> file to confirm its SHA-256 hash matches
+              the embedded checksum — ensuring the file has not been tampered with since export.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={fafFileInputRef}
+                type="file"
+                accept=".zip"
+                className="hidden"
+                onChange={(e) => {
+                  setFafVerifyFile(e.target.files?.[0] || null);
+                  setFafVerifyResult(null);
+                  setFafVerifyError(null);
+                }}
+              />
+              <button
+                onClick={() => fafFileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Upload className="h-4 w-4" />
+                {fafVerifyFile ? fafVerifyFile.name : "Choose FAF .zip…"}
+              </button>
+              <button
+                onClick={handleVerifyFAF}
+                disabled={!fafVerifyFile || fafVerifying}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {fafVerifying ? "Verifying…" : "Verify Integrity"}
+              </button>
+            </div>
+
+            {fafVerifyError && (
+              <div className="mt-4 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                <ShieldX className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                {fafVerifyError}
+              </div>
+            )}
+
+            {fafVerifyResult && (
+              <div className={`mt-4 rounded-lg border px-4 py-3 text-sm ${fafVerifyResult.valid ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+                <div className="flex items-center gap-2 font-semibold mb-2">
+                  {fafVerifyResult.valid
+                    ? <><ShieldCheck className="h-4 w-4" /> Integrity Verified — File is authentic</>
+                    : <><ShieldX className="h-4 w-4" /> Hash Mismatch — File may have been tampered with</>
+                  }
+                </div>
+                <div className="space-y-1 font-mono text-xs break-all opacity-80">
+                  <div><span className="font-sans font-medium not-italic">Expected:&nbsp;</span>{fafVerifyResult.expected_hash}</div>
+                  <div><span className="font-sans font-medium not-italic">Computed:&nbsp;</span>{fafVerifyResult.computed_hash}</div>
+                  <div><span className="font-sans font-medium not-italic">File:&nbsp;</span><span className="font-sans">{fafVerifyResult.csv_filename}</span></div>
+                </div>
               </div>
             )}
           </div>

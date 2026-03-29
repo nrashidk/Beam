@@ -14312,6 +14312,89 @@ def download_audit_file(
     )
 
 
+# ==================== FAF HASH VERIFICATION (Task 35 — P2-5) ====================
+
+
+@app.post("/audit-files/verify", tags=["FTA Audit"])
+async def verify_faf_integrity(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """
+    Verify the integrity of a previously exported FAF ZIP file.
+
+    Accepts a FAF .zip upload, extracts the CSV and its embedded SHA-256 hash file,
+    recomputes the hash, and confirms whether they match.
+
+    Returns:
+      {
+        "valid": true|false,
+        "filename": "...",
+        "csv_filename": "...",
+        "computed_hash": "...",
+        "expected_hash": "..."
+      }
+    """
+    import zipfile as zf_module
+
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        raise HTTPException(400, "Uploaded file must be a .zip FAF archive")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(400, "Uploaded file is empty")
+
+    try:
+        with zf_module.ZipFile(io.BytesIO(content)) as zf:
+            names = zf.namelist()
+
+            # Find the CSV and the hash file
+            csv_names = [n for n in names if n.lower().endswith(".csv")]
+            sha_names = [n for n in names if n.lower().endswith(".sha256")]
+
+            if not csv_names:
+                raise HTTPException(422, "No CSV file found inside the ZIP")
+            if not sha_names:
+                raise HTTPException(422, "No .sha256 hash file found inside the ZIP")
+
+            csv_filename = csv_names[0]
+            sha_filename = sha_names[0]
+
+            csv_bytes = zf.read(csv_filename)
+            sha_bytes = zf.read(sha_filename)
+
+        # Parse expected hash — format is "{hash}  {filename}\n"
+        sha_text = sha_bytes.decode("utf-8", errors="replace").strip()
+        expected_hash = sha_text.split()[0] if sha_text else ""
+
+        # Recompute hash
+        computed_hash = hashlib.sha256(csv_bytes).hexdigest()
+
+        valid = computed_hash == expected_hash
+
+        log_audit_event(
+            db, "FAF_INTEGRITY_VERIFIED",
+            user_id=current_user.id, company_id=current_user.company_id,
+            resource_type="audit_file", resource_id=None,
+            description=f"FAF integrity check: {'PASS' if valid else 'FAIL'} — file: {file.filename}",
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
+
+        return {
+            "valid": valid,
+            "filename": file.filename,
+            "csv_filename": csv_filename,
+            "computed_hash": computed_hash,
+            "expected_hash": expected_hash,
+        }
+
+    except zf_module.BadZipFile:
+        raise HTTPException(422, "Uploaded file is not a valid ZIP archive")
+
+
 # ==================== PEPPOL SETTINGS ====================
 
 
