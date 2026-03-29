@@ -7743,8 +7743,10 @@ def export_archived_invoices(
     """
     if format.lower() != "xlsx":
         raise HTTPException(400, "Unsupported format. Only format=xlsx is supported.")
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Permission denied: only Company Admin or above can export archived invoices")
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Permission denied: only Company Admin or Super Admin can export archived invoices")
+    if not has_permission(current_user, "reports", "export"):
+        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
 
     import io
     import openpyxl
