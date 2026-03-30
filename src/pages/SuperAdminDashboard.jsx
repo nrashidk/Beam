@@ -126,6 +126,15 @@ function buildCompaniesCsv(rows) {
   return [header.join(","), ...lines].join("\n");
 }
 
+function renderPlanUsage(company) {
+  if (company.free_plan_type === "DURATION") {
+    const months = company.free_plan_duration_months || 0;
+    return months === 1 ? "1 month" : `${months} months`;
+  }
+
+  return `${company.invoicesUsed || 0}/${company.invoicesLimit || 0}`;
+}
+
 export default function SuperAdminDashboard() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
@@ -879,22 +888,6 @@ export default function SuperAdminDashboard() {
                         : "▼"
                       : ""}
                   </th>
-                  <th
-                    className="px-4 py-3 font-medium cursor-pointer"
-                    onClick={() => {
-                      setSortBy("vat");
-                      setSortDir(
-                        sortBy === "vat"
-                          ? sortDir === "asc"
-                            ? "desc"
-                            : "asc"
-                          : "desc",
-                      );
-                    }}
-                  >
-                    VAT{" "}
-                    {sortBy === "vat" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-                  </th>
                   <th className="px-4 py-3 font-medium">Manage</th>
                 </tr>
               </thead>
@@ -923,14 +916,7 @@ export default function SuperAdminDashboard() {
                         ? `AED ${Number(c.revenue ?? c.revenue_aed ?? c.arpu ?? 0).toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                         : "—"}
                     </td>
-                    <td className="px-4 py-3">{`${c.invoicesUsed || 0}/${c.invoicesLimit || 0}`}</td>
-                    <td className="px-4 py-3">
-                      {c.vatCompliant ? (
-                        <Badge className="bg-emerald-600">Compliant</Badge>
-                      ) : (
-                        <Badge variant="secondary">Review</Badge>
-                      )}
-                    </td>
+                    <td className="px-4 py-3">{renderPlanUsage(c)}</td>
                     <td className="px-4 py-3">
                       <Button
                         size="sm"
