@@ -25,7 +25,6 @@ from fastapi import (
     HTTPException,
     Depends,
     Form,
-    Request,
     Response,
     Header,
     Cookie,
@@ -49,7 +48,6 @@ from sqlalchemy import (
     Text,
     func,
     or_,
-    text,
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
@@ -84,7 +82,6 @@ from utils.email_service import email_service
 # Bulk Import utilities
 from utils.bulk_import import BulkImportValidator
 import pandas as pd
-import io
 from io import BytesIO
 
 # VAT Utilities (Phase 1)
@@ -99,18 +96,6 @@ from utils.vat_utils import (
 # Stripe payment processing
 import stripe
 
-# P3-D: Cache parsed FTA VAT Return XSD schema at module load to avoid reparsing per request
-# The UAE FTA does not publish a formal XSD for VAT Return Form 301 (it is a web-form submission);
-# this schema is authored to match Form 301 field structure and is used to validate XML exports.
-try:
-    from lxml import etree as _lxml_etree
-    _FTA_VAT_XSD_PATH = os.path.join(os.path.dirname(__file__), "utils", "fta_vat_return_schema.xsd")
-    with open(_FTA_VAT_XSD_PATH, "rb") as _f:
-        _FTA_VAT_XSD = _lxml_etree.XMLSchema(_lxml_etree.parse(_f))
-except Exception as _xsd_load_err:
-    _lxml_etree = None  # type: ignore
-    _FTA_VAT_XSD = None
-
 # ==================== CONFIG ====================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 # Allow overriding artifact root via env to avoid issues when working directory differs
@@ -121,9 +106,8 @@ os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 # JWT settings
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "involinks-secret-key-change-in-production")
 ALGORITHM = "HS256"
-_jwt_expiry_hours = float(os.getenv("JWT_EXPIRY_HOURS", "24"))  # default 24 h; override via JWT_EXPIRY_HOURS (FTA Article 9.1 session control)
-ACCESS_TOKEN_EXPIRE_MINUTES = max(15, int(_jwt_expiry_hours * 60))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_DAYS", "1"))
+ACCESS_TOKEN_EXPIRE_MINUTES = 15
+REFRESH_TOKEN_EXPIRE_DAYS = 1
 
 # Password hashing (using bcrypt directly to avoid passlib issues)
 
@@ -144,208 +128,8 @@ Base = declarative_base()
 class Role(str, enum.Enum):
     SUPER_ADMIN = "SUPER_ADMIN"
     COMPANY_ADMIN = "COMPANY_ADMIN"
-    BUSINESS_ADMIN = "BUSINESS_ADMIN"
+    BUSINESS_ADMIN = "BUSINESS_ADMIN"  # Phase 2: Business Super Admin role
     FINANCE_USER = "FINANCE_USER"
-    READ_ONLY = "READ_ONLY"  # Task 25: view-only role (no create/edit/delete)
-
-
-# ==================== PERMISSION MATRIX (Task 25) ====================
-
-# Structure: PERMISSIONS[(Role, resource, action)] = True | False
-# Resources: invoices, inward_invoices, reports, vat_return, audit_logs, team, settings, gl, archival, customers
-# Actions: view, create, edit, delete, approve, export, manage_users
-
-_T = True
-_F = False
-
-PERMISSIONS: dict[tuple, bool] = {
-    # ── SUPER_ADMIN ─────────────────────────────────────────────────────────
-    (Role.SUPER_ADMIN, "invoices",        "view"):         _T,
-    (Role.SUPER_ADMIN, "invoices",        "create"):       _T,
-    (Role.SUPER_ADMIN, "invoices",        "edit"):         _T,
-    (Role.SUPER_ADMIN, "invoices",        "delete"):       _T,
-    (Role.SUPER_ADMIN, "invoices",        "approve"):      _T,
-    (Role.SUPER_ADMIN, "invoices",        "export"):       _T,
-    (Role.SUPER_ADMIN, "inward_invoices", "view"):         _T,
-    (Role.SUPER_ADMIN, "inward_invoices", "create"):       _T,
-    (Role.SUPER_ADMIN, "inward_invoices", "edit"):         _T,
-    (Role.SUPER_ADMIN, "inward_invoices", "delete"):       _T,
-    (Role.SUPER_ADMIN, "inward_invoices", "approve"):      _T,
-    (Role.SUPER_ADMIN, "reports",         "view"):         _T,
-    (Role.SUPER_ADMIN, "reports",         "export"):       _T,
-    (Role.SUPER_ADMIN, "vat_return",      "view"):         _T,
-    (Role.SUPER_ADMIN, "vat_return",      "create"):       _T,
-    (Role.SUPER_ADMIN, "vat_return",      "export"):       _T,
-    (Role.SUPER_ADMIN, "audit_logs",      "view"):         _T,
-    (Role.SUPER_ADMIN, "audit_logs",      "export"):       _T,
-    (Role.SUPER_ADMIN, "team",            "view"):         _T,
-    (Role.SUPER_ADMIN, "team",            "manage_users"): _T,
-    (Role.SUPER_ADMIN, "settings",        "view"):         _T,
-    (Role.SUPER_ADMIN, "settings",        "edit"):         _T,
-    (Role.SUPER_ADMIN, "gl",              "view"):         _T,
-    (Role.SUPER_ADMIN, "gl",              "edit"):         _T,
-    (Role.SUPER_ADMIN, "archival",        "view"):         _T,
-    (Role.SUPER_ADMIN, "archival",        "create"):       _T,
-
-    # ── COMPANY_ADMIN ────────────────────────────────────────────────────────
-    (Role.COMPANY_ADMIN, "invoices",        "view"):         _T,
-    (Role.COMPANY_ADMIN, "invoices",        "create"):       _T,
-    (Role.COMPANY_ADMIN, "invoices",        "edit"):         _T,
-    (Role.COMPANY_ADMIN, "invoices",        "delete"):       _T,
-    (Role.COMPANY_ADMIN, "invoices",        "approve"):      _T,
-    (Role.COMPANY_ADMIN, "invoices",        "export"):       _T,
-    (Role.COMPANY_ADMIN, "inward_invoices", "view"):         _T,
-    (Role.COMPANY_ADMIN, "inward_invoices", "create"):       _T,
-    (Role.COMPANY_ADMIN, "inward_invoices", "edit"):         _T,
-    (Role.COMPANY_ADMIN, "inward_invoices", "delete"):       _T,
-    (Role.COMPANY_ADMIN, "inward_invoices", "approve"):      _T,
-    (Role.COMPANY_ADMIN, "reports",         "view"):         _T,
-    (Role.COMPANY_ADMIN, "reports",         "export"):       _T,
-    (Role.COMPANY_ADMIN, "vat_return",      "view"):         _T,
-    (Role.COMPANY_ADMIN, "vat_return",      "create"):       _T,
-    (Role.COMPANY_ADMIN, "vat_return",      "export"):       _T,
-    (Role.COMPANY_ADMIN, "audit_logs",      "view"):         _T,
-    (Role.COMPANY_ADMIN, "audit_logs",      "export"):       _T,
-    (Role.COMPANY_ADMIN, "team",            "view"):         _T,
-    (Role.COMPANY_ADMIN, "team",            "manage_users"): _T,
-    (Role.COMPANY_ADMIN, "settings",        "view"):         _T,
-    (Role.COMPANY_ADMIN, "settings",        "edit"):         _T,
-    (Role.COMPANY_ADMIN, "gl",              "view"):         _T,
-    (Role.COMPANY_ADMIN, "gl",              "edit"):         _T,
-    (Role.COMPANY_ADMIN, "archival",        "view"):         _T,
-    (Role.COMPANY_ADMIN, "archival",        "create"):       _T,
-
-    # ── BUSINESS_ADMIN ───────────────────────────────────────────────────────
-    (Role.BUSINESS_ADMIN, "invoices",        "view"):         _T,
-    (Role.BUSINESS_ADMIN, "invoices",        "create"):       _T,
-    (Role.BUSINESS_ADMIN, "invoices",        "edit"):         _T,
-    (Role.BUSINESS_ADMIN, "invoices",        "delete"):       _F,
-    (Role.BUSINESS_ADMIN, "invoices",        "approve"):      _T,
-    (Role.BUSINESS_ADMIN, "invoices",        "export"):       _T,
-    (Role.BUSINESS_ADMIN, "inward_invoices", "view"):         _T,
-    (Role.BUSINESS_ADMIN, "inward_invoices", "create"):       _T,
-    (Role.BUSINESS_ADMIN, "inward_invoices", "edit"):         _T,
-    (Role.BUSINESS_ADMIN, "inward_invoices", "delete"):       _F,
-    (Role.BUSINESS_ADMIN, "inward_invoices", "approve"):      _T,
-    (Role.BUSINESS_ADMIN, "reports",         "view"):         _T,
-    (Role.BUSINESS_ADMIN, "reports",         "export"):       _T,
-    (Role.BUSINESS_ADMIN, "vat_return",      "view"):         _T,
-    (Role.BUSINESS_ADMIN, "vat_return",      "create"):       _F,
-    (Role.BUSINESS_ADMIN, "vat_return",      "export"):       _T,
-    (Role.BUSINESS_ADMIN, "audit_logs",      "view"):         _T,
-    (Role.BUSINESS_ADMIN, "audit_logs",      "export"):       _T,
-    (Role.BUSINESS_ADMIN, "team",            "view"):         _T,
-    (Role.BUSINESS_ADMIN, "team",            "manage_users"): _T,  # can invite FINANCE_USER or READ_ONLY
-    (Role.BUSINESS_ADMIN, "settings",        "view"):         _T,
-    (Role.BUSINESS_ADMIN, "settings",        "edit"):         _F,
-    (Role.BUSINESS_ADMIN, "gl",              "view"):         _T,
-    (Role.BUSINESS_ADMIN, "gl",              "edit"):         _F,
-    (Role.BUSINESS_ADMIN, "archival",        "view"):         _T,
-    (Role.BUSINESS_ADMIN, "archival",        "create"):       _F,
-
-    # ── FINANCE_USER ────────────────────────────────────────────────────────
-    (Role.FINANCE_USER, "invoices",        "view"):         _T,
-    (Role.FINANCE_USER, "invoices",        "create"):       _T,
-    (Role.FINANCE_USER, "invoices",        "edit"):         _T,
-    (Role.FINANCE_USER, "invoices",        "delete"):       _F,
-    (Role.FINANCE_USER, "invoices",        "approve"):      _F,
-    (Role.FINANCE_USER, "invoices",        "export"):       _T,
-    (Role.FINANCE_USER, "inward_invoices", "view"):         _T,
-    (Role.FINANCE_USER, "inward_invoices", "create"):       _T,
-    (Role.FINANCE_USER, "inward_invoices", "edit"):         _T,
-    (Role.FINANCE_USER, "inward_invoices", "delete"):       _F,
-    (Role.FINANCE_USER, "inward_invoices", "approve"):      _F,
-    (Role.FINANCE_USER, "reports",         "view"):         _T,
-    (Role.FINANCE_USER, "reports",         "export"):       _T,
-    (Role.FINANCE_USER, "vat_return",      "view"):         _T,
-    (Role.FINANCE_USER, "vat_return",      "create"):       _F,
-    (Role.FINANCE_USER, "vat_return",      "export"):       _F,
-    (Role.FINANCE_USER, "audit_logs",      "view"):         _F,
-    (Role.FINANCE_USER, "audit_logs",      "export"):       _F,
-    (Role.FINANCE_USER, "team",            "view"):         _F,
-    (Role.FINANCE_USER, "team",            "manage_users"): _F,
-    (Role.FINANCE_USER, "settings",        "view"):         _F,
-    (Role.FINANCE_USER, "settings",        "edit"):         _F,
-    (Role.FINANCE_USER, "gl",              "view"):         _T,
-    (Role.FINANCE_USER, "gl",              "edit"):         _F,
-    (Role.FINANCE_USER, "archival",        "view"):         _F,
-    (Role.FINANCE_USER, "archival",        "create"):       _F,
-
-    # ── READ_ONLY ─────────────────────────────────────────────────────────────
-    (Role.READ_ONLY, "invoices",        "view"):         _T,
-    (Role.READ_ONLY, "invoices",        "create"):       _F,
-    (Role.READ_ONLY, "invoices",        "edit"):         _F,
-    (Role.READ_ONLY, "invoices",        "delete"):       _F,
-    (Role.READ_ONLY, "invoices",        "approve"):      _F,
-    (Role.READ_ONLY, "invoices",        "export"):       _T,
-    (Role.READ_ONLY, "inward_invoices", "view"):         _T,
-    (Role.READ_ONLY, "inward_invoices", "create"):       _F,
-    (Role.READ_ONLY, "inward_invoices", "edit"):         _F,
-    (Role.READ_ONLY, "inward_invoices", "delete"):       _F,
-    (Role.READ_ONLY, "inward_invoices", "approve"):      _F,
-    (Role.READ_ONLY, "reports",         "view"):         _T,
-    (Role.READ_ONLY, "reports",         "export"):       _T,
-    (Role.READ_ONLY, "vat_return",      "view"):         _T,
-    (Role.READ_ONLY, "vat_return",      "create"):       _F,
-    (Role.READ_ONLY, "vat_return",      "export"):       _F,
-    (Role.READ_ONLY, "audit_logs",      "view"):         _T,
-    (Role.READ_ONLY, "audit_logs",      "export"):       _F,
-    (Role.READ_ONLY, "team",            "view"):         _F,
-    (Role.READ_ONLY, "team",            "manage_users"): _F,
-    (Role.READ_ONLY, "settings",        "view"):         _F,
-    (Role.READ_ONLY, "settings",        "edit"):         _F,
-    (Role.READ_ONLY, "gl",              "view"):         _T,
-    (Role.READ_ONLY, "gl",              "edit"):         _F,
-    (Role.READ_ONLY, "archival",        "view"):         _F,
-    (Role.READ_ONLY, "archival",        "create"):       _F,
-
-    # ── CUSTOMERS (Task 30 — P3-B) — company-scoped contact book ─────────────
-    (Role.SUPER_ADMIN,    "customers", "view"):   _F,   # no company context
-    (Role.SUPER_ADMIN,    "customers", "create"): _F,
-    (Role.SUPER_ADMIN,    "customers", "edit"):   _F,
-    (Role.SUPER_ADMIN,    "customers", "delete"): _F,
-    (Role.COMPANY_ADMIN,  "customers", "view"):   _T,
-    (Role.COMPANY_ADMIN,  "customers", "create"): _T,
-    (Role.COMPANY_ADMIN,  "customers", "edit"):   _T,
-    (Role.COMPANY_ADMIN,  "customers", "delete"): _T,
-    (Role.BUSINESS_ADMIN, "customers", "view"):   _T,
-    (Role.BUSINESS_ADMIN, "customers", "create"): _T,
-    (Role.BUSINESS_ADMIN, "customers", "edit"):   _T,
-    (Role.BUSINESS_ADMIN, "customers", "delete"): _T,
-    (Role.FINANCE_USER,   "customers", "view"):   _T,
-    (Role.FINANCE_USER,   "customers", "create"): _T,
-    (Role.FINANCE_USER,   "customers", "edit"):   _T,
-    (Role.FINANCE_USER,   "customers", "delete"): _F,
-    (Role.READ_ONLY,      "customers", "view"):   _T,
-    (Role.READ_ONLY,      "customers", "create"): _F,
-    (Role.READ_ONLY,      "customers", "edit"):   _F,
-    (Role.READ_ONLY,      "customers", "delete"): _F,
-}
-
-
-def has_permission(user: "UserDB", resource: str, action: str) -> bool:
-    """Return True if the user's role is granted (resource, action) in the matrix."""
-    return PERMISSIONS.get((user.role, resource, action), False)
-
-
-def require_permission(resource: str, action: str):
-    """
-    Returns a FastAPI dependency that raises 403 when the authenticated user
-    lacks the given (resource, action) permission in the matrix.
-
-    Usage:
-        @app.post("/invoices", dependencies=[require_permission("invoices", "create")])
-    """
-    def _check(current_user: "UserDB" = Depends(get_current_user_from_header)):
-        if not has_permission(current_user, resource, action):
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    f"Permission denied: '{action}' on '{resource}' "
-                    f"is not allowed for role {current_user.role}"
-                ),
-            )
-    return Depends(_check)
 
 
 class CompanyStatus(str, enum.Enum):
@@ -379,7 +163,6 @@ class DocumentStatus(str, enum.Enum):
 class InvoiceType(str, enum.Enum):
     TAX_INVOICE = "380"  # Commercial invoice (standard VAT)
     TAX_CREDIT_NOTE = "381"  # Credit note
-    DEBIT_NOTE = "383"  # Debit note (Task 4 — FTA UBL type 383)
     COMMERCIAL_INVOICE = "480"  # Invoice out of scope of tax
     CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
 
@@ -463,24 +246,6 @@ class UserDB(Base):
     mfa_backup_codes = Column(Text, nullable=True)  # JSON array of hashed backup codes
     mfa_enrolled_at = Column(DateTime, nullable=True)
     mfa_last_verified_at = Column(DateTime, nullable=True)
-
-    # Task 2: Account lockout fields
-    failed_login_count = Column(Integer, default=0)
-    locked_until = Column(DateTime, nullable=True)
-
-    # Task 20: Forced password change on first login
-    must_change_password = Column(Boolean, default=False)
-
-    # Task 22: Password expiry policy
-    password_changed_at = Column(DateTime, nullable=True)
-
-    # Task 33: User deactivation (suspend without deleting)
-    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
-
-    @property
-    def password_last_change_date(self):
-        """Alias for password_changed_at for spec compatibility."""
-        return self.password_changed_at
 
 
 class CompanyDB(Base):
@@ -733,10 +498,6 @@ class InvoiceDB(Base):
     status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT)
     issue_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
-    supply_date = Column(Date, nullable=True)  # Task 5: UBL cac:Delivery date
-    version = Column(Integer, default=1, nullable=False, server_default="1")  # Task 10: optimistic locking
-    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")  # Task 12: archival
-    archived_at = Column(DateTime, nullable=True)  # Task 12: timestamp when archived
     currency_code = Column(String, default="AED")
 
     # Supplier (Issuer) - Company issuing the invoice
@@ -1102,8 +863,6 @@ class InwardInvoiceDB(Base):
     tax_amount = Column(Float, nullable=False)
     total_amount = Column(Float, nullable=False)
     amount_due = Column(Float, nullable=False)
-    # AED conversion (mandatory when currency_code != "AED" — FTA P2-A compliance)
-    total_amount_aed = Column(Float, nullable=True)
 
     # Document Storage
     xml_file_path = Column(String, nullable=True)  # Received UBL XML
@@ -1155,10 +914,6 @@ class InwardInvoiceDB(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    # Archival
-    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
-    archived_at = Column(DateTime, nullable=True)
 
     # Relationships
     company = relationship(
@@ -1252,131 +1007,6 @@ class AuditFileDB(Base):
 
     # Relationships
     company = relationship("CompanyDB", backref="audit_files")
-
-
-class PasswordHistoryDB(Base):
-    """Stores the last N password hashes per user to prevent reuse (Task 2)."""
-
-    __tablename__ = "password_history"
-
-    id = Column(String, primary_key=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    password_hash = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    user = relationship("UserDB", backref="password_history")
-
-
-class AuditLogDB(Base):
-    """Immutable audit trail — every sensitive action is recorded here (Task 1)."""
-
-    __tablename__ = "audit_logs"
-
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True, index=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
-
-    # What happened
-    action = Column(String, nullable=False)        # e.g. "USER_LOGIN", "INVOICE_ISSUED"
-    resource_type = Column(String, nullable=True)  # e.g. "invoice", "vat_return"
-    resource_id = Column(String, nullable=True)    # PK of the affected resource
-
-    # Change detail (JSON-encoded strings)
-    old_value = Column(Text, nullable=True)
-    new_value = Column(Text, nullable=True)
-    description = Column(Text, nullable=True)
-
-    # Request context
-    ip_address = Column(String, nullable=True)
-    user_agent = Column(String, nullable=True)
-
-    # Timestamp — never nullable; auto-set
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    company = relationship("CompanyDB", backref="audit_logs")
-    user = relationship("UserDB", backref="audit_logs")
-
-
-class IntegrityCheckDB(Base):
-    """Stores the result of each hash chain integrity verification run (Task 26)."""
-
-    __tablename__ = "integrity_checks"
-
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=True, index=True)
-    performed_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
-    checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    total_invoices = Column(Integer, nullable=False, default=0)
-    valid_links = Column(Integer, nullable=False, default=0)
-    integrity_ok = Column(Boolean, nullable=False, default=False)
-    first_broken_invoice_id = Column(String, nullable=True)
-    first_broken_invoice_number = Column(String, nullable=True)
-    first_broken_invoice_date = Column(String, nullable=True)
-
-    company = relationship("CompanyDB", backref="integrity_checks")
-    user = relationship("UserDB", backref="integrity_checks")
-
-
-class VATReturnDB(Base):
-    """VAT Return — stores computed FTA VAT returns per period (Task 9)."""
-
-    __tablename__ = "vat_returns"
-
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
-
-    # Period
-    period_start = Column(Date, nullable=False)
-    period_end = Column(Date, nullable=False)
-
-    # Transaction counts
-    total_sales_invoices = Column(Integer, default=0)
-    total_purchase_invoices = Column(Integer, default=0)
-
-    # === SALES / OUTPUT SIDE ===
-    # Box 1 — Standard rated supplies (taxable amount excl. VAT)
-    standard_rated_sales = Column(Float, default=0.0)
-    # Box 2 — Tax refunds provided to tourists (AED)
-    tax_refunds_provided = Column(Float, default=0.0)
-    # Box 3 — Output VAT (VAT on standard-rated sales)
-    output_vat = Column(Float, default=0.0)
-    # Box 4 — Zero-rated supplies (taxable amount)
-    zero_rated_sales = Column(Float, default=0.0)
-    # Box 5 — Exempt supplies (amount)
-    exempt_sales = Column(Float, default=0.0)
-    # Box 6 — Out-of-scope / reverse-charge supplies (amount)
-    out_of_scope_sales = Column(Float, default=0.0)
-    # Alias required by task spec: reverse_charge_sales = same as out_of_scope_sales (category O)
-    reverse_charge_sales = Column(Float, default=0.0)
-    # Box 7 — Total supplies (Box 1 + 4 + 5 + 6)
-    total_sales = Column(Float, default=0.0)
-
-    # === PURCHASES / INPUT SIDE ===
-    # Box 8 — Standard-rated purchases – bills (taxable amount excl. VAT)
-    standard_rated_purchases = Column(Float, default=0.0)
-    # Box 9 — Recoverable input VAT on bills
-    input_vat_bills = Column(Float, default=0.0)
-    # Box 10 — Standard-rated purchases – expenses (taxable amount excl. VAT)
-    purchase_expenses = Column(Float, default=0.0)
-    # Box 11 — Recoverable input VAT on expenses
-    input_vat_expenses = Column(Float, default=0.0)
-    # Box 12 — Total input VAT (Box 9 + Box 11)
-    total_input_vat = Column(Float, default=0.0)
-    # Zero-rated & exempt purchases (informational; VAT = 0)
-    zero_rated_purchases = Column(Float, default=0.0)
-    exempt_purchases = Column(Float, default=0.0)
-    # Reverse-charge VAT: input VAT due on reverse-charge purchases (category O inward invoices)
-    reverse_charge_vat = Column(Float, default=0.0)
-
-    # === NET ===
-    # Box 13 — Net VAT payable / refundable (Box 3 – Box 12)
-    net_vat_payable = Column(Float, default=0.0)
-
-    # Metadata
-    generated_by_user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    company = relationship("CompanyDB", backref="vat_returns")
 
 
 class PaymentMethodDB(Base):
@@ -1555,10 +1185,6 @@ class ExpenseDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Archival
-    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
-    archived_at = Column(DateTime, nullable=True)
-
     # Relationships
     company = relationship("CompanyDB", backref="expenses")
 
@@ -1626,108 +1252,6 @@ class InventoryTransactionDB(Base):
     inventory_item = relationship("InventoryItemDB", backref="transactions")
 
 
-# ==================== TASK 8: GENERAL LEDGER / DOUBLE-ENTRY ACCOUNTING ====================
-
-class AccountDB(Base):
-    """Chart of Accounts — one set per company, system accounts auto-created."""
-
-    __tablename__ = "accounts"
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
-    account_code = Column(String(20), nullable=False)
-    account_name = Column(String(100), nullable=False)
-    account_name_ar = Column(String(100), nullable=True)
-    account_type = Column(String(20), nullable=False)  # ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
-    parent_account_id = Column(String, ForeignKey("accounts.id"), nullable=True)
-    is_system = Column(Boolean, default=False)  # System accounts auto-created per company
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    company = relationship("CompanyDB", backref="accounts")
-
-
-class JournalEntryDB(Base):
-    """Journal Entry header — one per business event (invoice issued, payment, etc.)."""
-
-    __tablename__ = "journal_entries"
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
-    entry_date = Column(Date, nullable=False)
-    reference_type = Column(String(50), nullable=True)  # INVOICE, CREDIT_NOTE, DEBIT_NOTE, PAYMENT, EXPENSE
-    reference_id = Column(String, nullable=True)  # FK to source document
-    reference_number = Column(String(100), nullable=True)  # Human-readable (invoice number)
-    description = Column(String(500), nullable=True)
-    is_posted = Column(Boolean, default=True)
-    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    is_archived = Column(Boolean, default=False, nullable=False, server_default="false")
-    archived_at = Column(DateTime, nullable=True)
-    version = Column(Integer, default=1, nullable=False, server_default="1")  # Gap 2: optimistic locking
-
-    company = relationship("CompanyDB", backref="journal_entries")
-    lines = relationship("JournalEntryLineDB", backref="journal_entry", cascade="all, delete-orphan")
-
-
-class JournalEntryLineDB(Base):
-    """Journal Entry Line — debit or credit leg of a journal entry."""
-
-    __tablename__ = "journal_entry_lines"
-    id = Column(String, primary_key=True)
-    journal_entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
-    account_id = Column(String, ForeignKey("accounts.id"), nullable=False)
-    account_code = Column(String(20), nullable=True)   # Denormalized for read performance
-    account_name = Column(String(100), nullable=True)  # Denormalized for read performance
-    debit_amount = Column(Float, default=0.0)
-    credit_amount = Column(Float, default=0.0)
-    currency = Column(String(3), default="AED")
-    amount_aed = Column(Float, default=0.0)
-    description = Column(String(500), nullable=True)
-    line_number = Column(Integer, nullable=True)
-
-    account = relationship("AccountDB", backref="journal_entry_lines")
-
-
-# ==================== BACKUP LOG MODEL (Task 29 — P2-E) ====================
-
-
-class CustomerDB(Base):
-    """
-    Task 30 (P3-B): Standalone customer/contact book entry per company.
-    Enables FTA 5-year retention guard on delete.
-    """
-
-    __tablename__ = "customers"
-
-    id = Column(String, primary_key=True, default=lambda: f"cust_{uuid4().hex[:12]}")
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
-    name = Column(String, nullable=False)
-    email = Column(String, nullable=True, index=True)
-    trn = Column(String, nullable=True)
-    address = Column(Text, nullable=True)
-    city = Column(String, nullable=True)
-    country = Column(String, default="AE")
-    phone = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class BackupLogDB(Base):
-    """Records every automated and manual backup event with audit metadata."""
-
-    __tablename__ = "backup_logs"
-
-    id = Column(String, primary_key=True, default=lambda: f"bkp_{uuid4().hex[:12]}")
-    started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
-    filename = Column(String, nullable=True)
-    file_size_bytes = Column(Integer, nullable=True)
-    checksum_sha256 = Column(String(64), nullable=True)
-    storage_path = Column(String, nullable=True)
-    status = Column(String(10), nullable=False, default="PENDING")  # SUCCESS / FAILED / PENDING
-    error_message = Column(Text, nullable=True)
-    triggered_by = Column(String, nullable=True)  # "scheduler" | user email | "restore"
-
-
 # Create tables
 Base.metadata.create_all(engine)
 
@@ -1738,367 +1262,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-# ==================== PASSWORD SECURITY HELPERS (Task 2) ====================
-
-MAX_FAILED_LOGINS = 5       # Lock after N consecutive failures
-LOCKOUT_MINUTES = 30        # Lock duration
-PASSWORD_HISTORY_DEPTH = 5  # Number of past hashes to retain per user
-
-# Task 22: Password expiry policy (env-configurable)
-PASSWORD_MAX_AGE_DAYS = int(os.environ.get("PASSWORD_MAX_AGE_DAYS", "90"))
-PASSWORD_MIN_AGE_HOURS = int(os.environ.get("PASSWORD_MIN_AGE_HOURS", "24"))
-PASSWORD_EXPIRY_WARNING_DAYS = 14  # Show warning banner this many days before expiry
-
-
-def validate_password_complexity(password: str) -> None:
-    """
-    Enforce UAE FTA password policy:
-    - Min 8 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one digit
-    - At least one special character
-    Raises ValueError on failure.
-    """
-    import re
-    errors = []
-    if len(password) < 8:
-        errors.append("at least 8 characters")
-    if not re.search(r"[A-Z]", password):
-        errors.append("an uppercase letter")
-    if not re.search(r"[a-z]", password):
-        errors.append("a lowercase letter")
-    if not re.search(r"\d", password):
-        errors.append("a digit")
-    if not re.search(r"[^A-Za-z0-9]", password):
-        errors.append("a special character")
-    if errors:
-        raise ValueError(f"Password must contain: {', '.join(errors)}")
-
-
-def _check_password_expiry(user: "UserDB"):
-    """
-    Task 22 — Check password age against policy.
-    Returns (is_expired: bool, days_until_expiry: int | None).
-    days_until_expiry is None when no password_changed_at is recorded.
-    """
-    if not getattr(user, "password_changed_at", None):
-        return False, None
-    age_days = (datetime.utcnow() - user.password_changed_at).days
-    days_until_expiry = PASSWORD_MAX_AGE_DAYS - age_days
-    return days_until_expiry <= 0, days_until_expiry
-
-
-def _save_password_history(user_id: str, password_hash: str, db: Session) -> None:
-    """Save a new password hash and trim to the last N entries."""
-    entry = PasswordHistoryDB(
-        id=f"ph_{uuid4().hex[:16]}",
-        user_id=user_id,
-        password_hash=password_hash,
-        created_at=datetime.utcnow(),
-    )
-    db.add(entry)
-    db.flush()
-
-    # Trim to keep only the most recent PASSWORD_HISTORY_DEPTH entries
-    history = (
-        db.query(PasswordHistoryDB)
-        .filter(PasswordHistoryDB.user_id == user_id)
-        .order_by(PasswordHistoryDB.created_at.desc())
-        .all()
-    )
-    for old in history[PASSWORD_HISTORY_DEPTH:]:
-        db.delete(old)
-
-
-def _check_password_history(user_id: str, new_plain: str, db: Session) -> bool:
-    """
-    Returns True if new_plain matches any of the last PASSWORD_HISTORY_DEPTH hashes.
-    """
-    history = (
-        db.query(PasswordHistoryDB)
-        .filter(PasswordHistoryDB.user_id == user_id)
-        .order_by(PasswordHistoryDB.created_at.desc())
-        .limit(PASSWORD_HISTORY_DEPTH)
-        .all()
-    )
-    for h in history:
-        if verify_password(new_plain, h.password_hash):
-            return True
-    return False
-
-
-# ==================== AUDIT TRAIL HELPER (Task 1) ====================
-
-
-def log_audit_event(
-    db: Session,
-    action: str,
-    user_id: Optional[str] = None,
-    company_id: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    resource_id: Optional[str] = None,
-    old_value: Optional[str] = None,
-    new_value: Optional[str] = None,
-    description: Optional[str] = None,
-    ip_address: Optional[str] = None,
-    user_agent: Optional[str] = None,
-) -> None:
-    """
-    Persist a single audit trail entry.
-    This is a fire-and-forget helper — failures are logged but never raised.
-    """
-    try:
-        entry = AuditLogDB(
-            id=f"al_{uuid4().hex[:16]}",
-            company_id=company_id,
-            user_id=user_id,
-            action=action,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            old_value=old_value,
-            new_value=new_value,
-            description=description,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            created_at=datetime.utcnow(),
-        )
-        db.add(entry)
-        db.flush()  # Don't commit — caller controls the transaction
-    except Exception as exc:
-        logger.error(f"Audit log write failed (non-fatal): {exc}")
-
-
-# ==================== GL HELPER FUNCTIONS (Task 8) ====================
-
-# System chart of accounts template
-_DEFAULT_ACCOUNTS = [
-    ("1000", "Cash / Bank",          "نقد / بنك",        "ASSET"),
-    ("1100", "Accounts Receivable",  "حسابات القبض",     "ASSET"),
-    ("1200", "VAT Receivable",       "ضريبة القيمة المضافة المستردة", "ASSET"),
-    ("2100", "Accounts Payable",     "حسابات الدفع",     "LIABILITY"),
-    ("2200", "VAT Payable",          "ضريبة القيمة المضافة المستحقة", "LIABILITY"),
-    ("3000", "Sales Revenue",        "إيرادات المبيعات", "REVENUE"),
-    ("4000", "Purchase / Cost of Goods", "المشتريات / تكلفة البضاعة", "EXPENSE"),
-]
-
-
-def create_default_chart_of_accounts(company_id: str, db: Session) -> None:
-    """Create the 7 system accounts for a company if they don't already exist."""
-    for code, name_en, name_ar, acc_type in _DEFAULT_ACCOUNTS:
-        existing = (
-            db.query(AccountDB)
-            .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
-            .first()
-        )
-        if not existing:
-            db.add(AccountDB(
-                id=str(uuid4()),
-                company_id=company_id,
-                account_code=code,
-                account_name=name_en,
-                account_name_ar=name_ar,
-                account_type=acc_type,
-                is_system=True,
-                is_active=True,
-            ))
-    db.flush()
-
-
-def _get_account(company_id: str, code: str, db: Session) -> AccountDB:
-    """Fetch a system account by code, creating default accounts if missing."""
-    acc = (
-        db.query(AccountDB)
-        .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
-        .first()
-    )
-    if not acc:
-        create_default_chart_of_accounts(company_id, db)
-        acc = (
-            db.query(AccountDB)
-            .filter(AccountDB.company_id == company_id, AccountDB.account_code == code)
-            .first()
-        )
-    return acc
-
-
-def create_journal_entry_for_invoice(invoice: "InvoiceDB", db: Session, user_id: str = None) -> None:
-    """
-    Auto-generate a double-entry journal entry when an outgoing invoice is ISSUED.
-
-    Sales Invoice (380):
-        DR  1100 Accounts Receivable  [total incl. VAT]
-            CR  3000 Sales Revenue    [subtotal excl. VAT]
-            CR  2200 VAT Payable      [VAT amount]
-
-    Credit Note (381):
-        DR  3000 Sales Revenue        [subtotal]
-        DR  2200 VAT Payable          [VAT]
-            CR  1100 Accounts Receivable [total]
-    """
-    try:
-        company_id = invoice.company_id
-        entry_date = invoice.issue_date if isinstance(invoice.issue_date, date) else date.today()
-        total = round(float(invoice.total_amount or 0), 2)
-        subtotal = round(float(invoice.subtotal_amount or 0), 2)
-        tax = round(float(invoice.tax_amount or 0), 2)
-
-        is_credit_note = invoice.invoice_type in [
-            InvoiceType.TAX_CREDIT_NOTE,
-            InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
-        ]
-
-        ref_type = "CREDIT_NOTE" if is_credit_note else "INVOICE"
-        desc = f"{'Credit Note' if is_credit_note else 'Invoice'} {invoice.invoice_number}"
-
-        je = JournalEntryDB(
-            id=str(uuid4()),
-            company_id=company_id,
-            entry_date=entry_date,
-            reference_type=ref_type,
-            reference_id=invoice.id,
-            reference_number=invoice.invoice_number,
-            description=desc,
-            is_posted=True,
-            created_by_user_id=user_id,
-        )
-        db.add(je)
-        db.flush()
-
-        ar = _get_account(company_id, "1100", db)
-        rev = _get_account(company_id, "3000", db)
-        vat_p = _get_account(company_id, "2200", db)
-
-        lines = []
-        if is_credit_note:
-            lines = [
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=rev.id,  account_code=rev.account_code,  account_name=rev.account_name,  debit_amount=subtotal, credit_amount=0,     currency="AED", amount_aed=subtotal, description="Revenue reversal", line_number=1),
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_p.id,account_code=vat_p.account_code,account_name=vat_p.account_name,debit_amount=tax,     credit_amount=0,     currency="AED", amount_aed=tax,     description="VAT reversal",     line_number=2),
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ar.id,   account_code=ar.account_code,   account_name=ar.account_name,   debit_amount=0,       credit_amount=total, currency="AED", amount_aed=total,   description="AR credit",         line_number=3),
-            ]
-        else:
-            lines = [
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ar.id,   account_code=ar.account_code,   account_name=ar.account_name,   debit_amount=total,   credit_amount=0,       currency="AED", amount_aed=total,   description="AR debit",     line_number=1),
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=rev.id,  account_code=rev.account_code,  account_name=rev.account_name,  debit_amount=0,       credit_amount=subtotal,currency="AED", amount_aed=subtotal,description="Revenue",      line_number=2),
-                JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_p.id,account_code=vat_p.account_code,account_name=vat_p.account_name,debit_amount=0,       credit_amount=tax,     currency="AED", amount_aed=tax,     description="VAT Payable",  line_number=3),
-            ]
-
-        for line in lines:
-            db.add(line)
-        db.flush()
-        logger.info(f"GL: journal entry {je.id} created for invoice {invoice.invoice_number}")
-    except Exception as exc:
-        logger.error(f"GL: failed to create journal entry for invoice {getattr(invoice, 'invoice_number', '?')}: {exc}")
-
-
-def create_journal_entry_for_purchase(inward_invoice, db: Session, user_id: str = None) -> None:
-    """
-    Auto-generate a double-entry journal entry when a purchase invoice is received.
-
-    Purchase Invoice:
-        DR  4000 Purchase / COGS   [subtotal]
-        DR  1200 VAT Receivable    [VAT]
-            CR  2100 Accounts Payable [total]
-    """
-    try:
-        company_id = inward_invoice.company_id
-        entry_date = (
-            inward_invoice.invoice_date.date()
-            if hasattr(inward_invoice.invoice_date, "date")
-            else date.today()
-        )
-        total = round(float(inward_invoice.total_amount or 0), 2)
-        subtotal = round(float(inward_invoice.subtotal_amount or 0), 2)
-        tax = round(float(inward_invoice.tax_amount or 0), 2)
-
-        je = JournalEntryDB(
-            id=str(uuid4()),
-            company_id=company_id,
-            entry_date=entry_date,
-            reference_type="PURCHASE",
-            reference_id=str(inward_invoice.id),
-            reference_number=inward_invoice.supplier_invoice_number,
-            description=f"Purchase {inward_invoice.supplier_invoice_number} from {inward_invoice.supplier_name}",
-            is_posted=True,
-            created_by_user_id=user_id,
-        )
-        db.add(je)
-        db.flush()
-
-        cogs = _get_account(company_id, "4000", db)
-        vat_r = _get_account(company_id, "1200", db)
-        ap = _get_account(company_id, "2100", db)
-
-        lines = [
-            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=cogs.id, account_code=cogs.account_code, account_name=cogs.account_name, debit_amount=subtotal, credit_amount=0,     currency="AED", amount_aed=subtotal, description="Purchase cost", line_number=1),
-            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_r.id,account_code=vat_r.account_code,account_name=vat_r.account_name,debit_amount=tax,     credit_amount=0,     currency="AED", amount_aed=tax,     description="Input VAT",     line_number=2),
-            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=ap.id,   account_code=ap.account_code,   account_name=ap.account_name,   debit_amount=0,       credit_amount=total, currency="AED", amount_aed=total,   description="AP credit",     line_number=3),
-        ]
-        for line in lines:
-            db.add(line)
-        db.flush()
-        logger.info(f"GL: purchase journal entry {je.id} created for {inward_invoice.supplier_invoice_number}")
-    except Exception as exc:
-        logger.error(f"GL: failed to create purchase journal entry: {exc}")
-
-
-def _create_journal_entry_for_expense(expense, db: Session, user_id: str = None) -> None:
-    """
-    Gap 10: Auto-generate a double-entry journal entry when an expense is recorded.
-
-    Expense:
-        DR  6000 Expense Account   [amount excl. VAT]
-        DR  1200 VAT Receivable    [vat_amount]
-            CR  1000 Cash / Bank   [total_amount]
-
-    Sets reference_type=EXPENSE and reference_id=expense.id for full SourceDocRef in FAF GL table.
-    """
-    try:
-        company_id = expense.company_id
-        entry_date = expense.expense_date if isinstance(expense.expense_date, date) else date.today()
-        total = round(float(expense.total_amount or 0), 2)
-        amount = round(float(expense.amount or 0), 2)
-        vat = round(float(expense.vat_amount or 0), 2)
-
-        desc = f"Expense: {expense.category or 'General'}"
-        if expense.supplier_name:
-            desc += f" — {expense.supplier_name}"
-        if expense.reference_number:
-            desc += f" (Ref: {expense.reference_number})"
-
-        je = JournalEntryDB(
-            id=str(uuid4()),
-            company_id=company_id,
-            entry_date=entry_date,
-            reference_type="EXPENSE",
-            reference_id=str(expense.id),
-            reference_number=expense.reference_number or expense.id,
-            description=desc,
-            is_posted=True,
-            created_by_user_id=user_id,
-        )
-        db.add(je)
-        db.flush()
-
-        exp_acc = _get_account(company_id, "6000", db)
-        vat_r = _get_account(company_id, "1200", db)
-        cash = _get_account(company_id, "1000", db)
-
-        lines = [
-            JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=exp_acc.id, account_code=exp_acc.account_code, account_name=exp_acc.account_name, debit_amount=amount, credit_amount=0, currency="AED", amount_aed=amount, description="Expense", line_number=1),
-        ]
-        if vat > 0:
-            lines.append(JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=vat_r.id, account_code=vat_r.account_code, account_name=vat_r.account_name, debit_amount=vat, credit_amount=0, currency="AED", amount_aed=vat, description="Input VAT on expense", line_number=2))
-        lines.append(JournalEntryLineDB(id=str(uuid4()), journal_entry_id=je.id, account_id=cash.id, account_code=cash.account_code, account_name=cash.account_name, debit_amount=0, credit_amount=total, currency="AED", amount_aed=total, description="Cash/Bank payment", line_number=len(lines) + 1))
-
-        for line in lines:
-            db.add(line)
-        db.flush()
-        logger.info(f"GL: expense journal entry {je.id} created for expense {expense.id}")
-    except Exception as exc:
-        logger.error(f"GL: failed to create expense journal entry: {exc}")
 
 
 # ==================== AUTH HELPERS ====================
@@ -2171,36 +1334,14 @@ def generate_temp_password(length: int = 16) -> str:
 
 
 def authenticate_user(email: str, password: str, db: Session):
-    """Authenticate user with lockout enforcement (Task 2)."""
+    """Authenticate user (super admin, company admin, etc) by email and password"""
     user = db.query(UserDB).filter(UserDB.email == email).first()
-    if not user or not user.password_hash:
+    if not user:
         return None
-
-    # Task 33: Check account deactivation before any other checks
-    if not getattr(user, "is_active", True):
-        raise HTTPException(403, "Account is deactivated. Contact your administrator.")
-
-    # Task 2: Check account lockout
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        remaining = int((user.locked_until - datetime.utcnow()).total_seconds() / 60)
-        raise HTTPException(
-            403,
-            f"Account is locked due to {MAX_FAILED_LOGINS} failed login attempts. "
-            f"Try again in {remaining} minute(s).",
-        )
-
+    if not user.password_hash:
+        return None
     if not verify_password(password, user.password_hash):
-        # Increment failed attempts and possibly lock the account
-        user.failed_login_count = (user.failed_login_count or 0) + 1
-        if user.failed_login_count >= MAX_FAILED_LOGINS:
-            user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
-            user.failed_login_count = 0
-        db.commit()
         return None
-
-    # Successful login — reset counter
-    user.failed_login_count = 0
-    user.locked_until = None
     return user
 
 
@@ -2635,11 +1776,7 @@ class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType
     issue_date: str  # ISO date format
     due_date: Optional[str] = None
-    supply_date: Optional[str] = None  # Task 5: Actual delivery/supply date
     currency_code: str = "AED"
-
-    # AED equivalent (mandatory when currency_code != "AED" — FTA P2-A compliance)
-    total_amount_aed: Optional[float] = None
 
     # Customer details
     customer_name: str
@@ -2695,8 +1832,6 @@ class InvoiceOut(BaseModel):
     status: InvoiceStatus
     issue_date: str
     due_date: Optional[str]
-    supply_date: Optional[str] = None  # Task 5: Actual delivery/supply date
-    version: int = 1  # Task 10: Optimistic locking counter
     currency_code: str
 
     # Supplier (auto-filled from company)
@@ -2719,7 +1854,6 @@ class InvoiceOut(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
-    total_amount_aed: Optional[float] = None  # AED equivalent (P2-A: populated for non-AED invoices)
 
     # Credit note fields
     preceding_invoice_id: Optional[str] = None
@@ -2885,7 +2019,6 @@ class InwardInvoiceReceive(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
-    total_amount_aed: Optional[float] = None  # Gap 3: required for non-AED inward invoices (FTA FAF compliance)
     xml_content: Optional[str] = None  # UBL XML content
     peppol_message_id: Optional[str] = None
     peppol_sender_id: Optional[str] = None
@@ -2978,8 +2111,6 @@ class InwardInvoiceListOut(BaseModel):
     received_at: str
     matching_status: MatchingStatus
     po_id: Optional[str]
-    is_archived: bool = False
-    archived_at: Optional[str] = None
 
 
 class InwardInvoiceApprove(BaseModel):
@@ -3047,142 +2178,9 @@ else:
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# Task 29 (P2-E): Module-level scheduler handle so it can be shut down cleanly
-_backup_scheduler = None
-
-
-def _run_column_migrations():
-    """Add new columns to existing tables without affecting data (Task 2)."""
-    migrations = [
-        # Task 2: Account lockout columns for users table
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER DEFAULT 0",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP",
-        # Task 5: Supply date on invoices
-        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supply_date DATE",
-        # Task 10: Optimistic locking version counter
-        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1",
-        # Task 12: Data archival columns
-        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
-        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
-        # Task 20: Forced password change on first login
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false",
-        # Task 22: Password expiry policy
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
-        # Task 22: Backfill existing users - use created_at as baseline password age
-        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL AND created_at IS NOT NULL",
-        "UPDATE users SET password_changed_at = NOW() WHERE password_changed_at IS NULL",
-        # Task 13: VAT return 13-box breakdown columns
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_sales DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_sales DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS out_of_scope_sales DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS reverse_charge_sales DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS total_sales DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS reverse_charge_vat DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS zero_rated_purchases DOUBLE PRECISION DEFAULT 0.0",
-        "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS exempt_purchases DOUBLE PRECISION DEFAULT 0.0",
-        # Task 25: READ_ONLY role enum migration — adds value to PostgreSQL enum type if not present
-        "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'READ_ONLY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'role')) THEN ALTER TYPE role ADD VALUE 'READ_ONLY'; END IF; END $$",
-        # Task 27 (P2-A): AED conversion enforcement — add nullable AED column to both invoice tables
-        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_amount_aed DOUBLE PRECISION",
-        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS total_amount_aed DOUBLE PRECISION",
-        # Backfill: set total_amount_aed = total_amount for existing AED invoices
-        "UPDATE invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
-        "UPDATE inward_invoices SET total_amount_aed = total_amount WHERE total_amount_aed IS NULL AND (currency_code = 'AED' OR currency_code IS NULL)",
-        # Task 33: User deactivation flag
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true",
-        # Task 29 (P2-E): backup_logs table — ensure all columns exist (safe for existing envs)
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS filename VARCHAR",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS checksum_sha256 VARCHAR(64)",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS storage_path VARCHAR",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS status VARCHAR(10) DEFAULT 'PENDING'",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS error_message TEXT",
-        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS triggered_by VARCHAR",
-        # Task 34: GL, Expense & Inward Invoice archival
-        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
-        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
-        "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
-        "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
-        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false",
-        "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP",
-        # Gap 2: Optimistic locking version column on journal_entries
-        "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1",
-    ]
-    with engine.begin() as conn:
-        for sql in migrations:
-            try:
-                conn.execute(text(sql))
-            except Exception as e:
-                logger.warning(f"Column migration skipped (may already exist): {e}")
-
-
-def _install_audit_log_immutability():
-    """
-    Task 33 — DB-level immutability for audit_logs.
-    Creates a PostgreSQL trigger function + BEFORE UPDATE/DELETE triggers on audit_logs.
-    The trigger raises 'Audit log records are immutable' on any modification attempt.
-    Fully idempotent — uses CREATE OR REPLACE / DROP IF EXISTS patterns.
-    No-op on non-PostgreSQL dialects (e.g. SQLite in test environments).
-    """
-    if engine.dialect.name != "postgresql":
-        logger.info("⏭️  Audit log immutability triggers skipped (non-PostgreSQL dialect)")
-        return
-    try:
-        _do_install_audit_log_immutability()
-    except Exception as e:
-        logger.warning(f"Audit log immutability install skipped: {e}")
-
-
-def _do_install_audit_log_immutability():
-    with engine.begin() as conn:
-        # 1. Create (or replace) the immutability guard function
-        conn.execute(text("""
-            CREATE OR REPLACE FUNCTION audit_logs_immutability_guard()
-            RETURNS TRIGGER LANGUAGE plpgsql AS $$
-            BEGIN
-                RAISE EXCEPTION 'Audit log records are immutable';
-            END;
-            $$
-        """))
-
-        # 2. Drop old rules from the previous implementation (idempotent cleanup)
-        conn.execute(text("DROP RULE IF EXISTS audit_logs_no_update ON audit_logs"))
-        conn.execute(text("DROP RULE IF EXISTS audit_logs_no_delete ON audit_logs"))
-
-        # 3. BEFORE UPDATE trigger — idempotent via DROP IF EXISTS + CREATE
-        conn.execute(text(
-            "DROP TRIGGER IF EXISTS audit_logs_no_update ON audit_logs"
-        ))
-        conn.execute(text("""
-            CREATE TRIGGER audit_logs_no_update
-            BEFORE UPDATE ON audit_logs
-            FOR EACH ROW EXECUTE FUNCTION audit_logs_immutability_guard()
-        """))
-
-        # 4. BEFORE DELETE trigger — idempotent via DROP IF EXISTS + CREATE
-        conn.execute(text(
-            "DROP TRIGGER IF EXISTS audit_logs_no_delete ON audit_logs"
-        ))
-        conn.execute(text("""
-            CREATE TRIGGER audit_logs_no_delete
-            BEFORE DELETE ON audit_logs
-            FOR EACH ROW EXECUTE FUNCTION audit_logs_immutability_guard()
-        """))
-
-    logger.info("✅ Audit log immutability triggers installed (UPDATE/DELETE blocked)")
-
-
 @app.on_event("startup")
 def startup_event():
     """Seed plans on startup and validate environment"""
-    # Run column-level migrations for new fields on existing tables
-    _run_column_migrations()
-
-    # Task 33: Install DB-level audit log immutability rules
-    _install_audit_log_immutability()
-
     # Check if running in production mode
     production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
 
@@ -3240,803 +2238,8 @@ def startup_event():
 
     db.close()
 
-    # Archival status check: warn if invoices older than 5 years are not yet archived
-    # Open a fresh session — the seeding session above is already closed.
-    try:
-        _arch_db = SessionLocal()
-        try:
-            five_years_ago = date.today() - timedelta(days=5 * 365)
-            eligible_count = (
-                _arch_db.query(InvoiceDB)
-                .filter(
-                    InvoiceDB.issue_date <= five_years_ago,
-                    InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
-                    InvoiceDB.is_archived == False,
-                )
-                .count()
-            )
-            if eligible_count > 0:
-                logger.warning(
-                    f"⚠️ ARCHIVAL REQUIRED: {eligible_count} invoice(s) older than 5 years "
-                    "are eligible for archival but not yet archived. "
-                    "Use POST /invoices/archive to archive them."
-                )
-            else:
-                logger.info("✅ Archival check: No invoices require archiving at this time.")
-        finally:
-            _arch_db.close()
-    except Exception as _arch_exc:
-        logger.warning(f"Archival startup check failed: {_arch_exc}")
-
-    # Task 24: Backup configuration summary
-    _backup_provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
-    _backup_rpo = os.getenv("BACKUP_RPO_HOURS", "24")
-    _backup_rto = os.getenv("BACKUP_RTO_HOURS", "4")
-    logger.info(
-        f"💾 Backup config — Provider: {_backup_provider} | "
-        f"RPO target: {_backup_rpo}h | RTO target: {_backup_rto}h"
-    )
-
-    # Task 26: Last integrity check summary
-    try:
-        _ic_db = SessionLocal()
-        try:
-            last_ic = (
-                _ic_db.query(IntegrityCheckDB)
-                .order_by(IntegrityCheckDB.checked_at.desc())
-                .first()
-            )
-            if last_ic:
-                _ic_status = "PASSED ✅" if last_ic.integrity_ok else "FAILED ❌"
-                _ic_scope = "GLOBAL" if last_ic.company_id is None else f"company={last_ic.company_id}"
-                logger.info(
-                    f"🔗 Last integrity check: {_ic_status} | "
-                    f"Scope: {_ic_scope} | "
-                    f"Date: {last_ic.checked_at.strftime('%Y-%m-%d %H:%M UTC')} | "
-                    f"Invoices checked: {last_ic.total_invoices} | "
-                    f"Valid links: {last_ic.valid_links}"
-                )
-            else:
-                logger.info("🔗 Integrity check: No prior check on record. Run GET /admin/integrity/verify.")
-        finally:
-            _ic_db.close()
-    except Exception as _ic_exc:
-        logger.warning(f"Integrity check startup log failed: {_ic_exc}")
-
-    # Gap 1: INVOLINKS_VENDOR_TRN validation
-    _vendor_trn = os.environ.get("INVOLINKS_VENDOR_TRN", "")
-    if not _vendor_trn or _vendor_trn == "N/A":
-        logger.warning(
-            "⚠️ FTA COMPLIANCE: INVOLINKS_VENDOR_TRN is not set. "
-            "VAT Return exports will embed 'N/A' as the vendor TRN — this will fail FTA review. "
-            "Set INVOLINKS_VENDOR_TRN to your 15-digit UAE TRN before production deployment."
-        )
-    elif not (_vendor_trn.isdigit() and len(_vendor_trn) == 15):
-        logger.warning(
-            f"⚠️ FTA COMPLIANCE: INVOLINKS_VENDOR_TRN='{_vendor_trn}' is not a valid 15-digit TRN. "
-            "VAT Return exports will contain an invalid vendor TRN. "
-            "Set a valid 15-digit numeric TRN."
-        )
-    else:
-        logger.info(f"✅ INVOLINKS_VENDOR_TRN validated: {_vendor_trn[:4]}***{_vendor_trn[-3:]}")
-
-    # Task 29 (P2-E): Start the APScheduler daily backup job
-    global _backup_scheduler
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from apscheduler.triggers.cron import CronTrigger
-        from utils.backup_engine import run_backup
-
-        def _scheduled_backup():
-            """Run a backup and persist the BackupLogDB record."""
-            result = run_backup(triggered_by="scheduler")
-            _sched_db = SessionLocal()
-            try:
-                log_entry = BackupLogDB(
-                    started_at=result["started_at"],
-                    completed_at=result["completed_at"],
-                    filename=result["filename"],
-                    file_size_bytes=result["file_size_bytes"],
-                    checksum_sha256=result["checksum_sha256"],
-                    storage_path=result["storage_path"],
-                    status="SUCCESS" if result["success"] else "FAILED",
-                    error_message=result["error_message"],
-                    triggered_by=result["triggered_by"],
-                )
-                _sched_db.add(log_entry)
-                _sched_db.commit()
-            finally:
-                _sched_db.close()
-
-        cron_expr = os.getenv("BACKUP_SCHEDULE_CRON", "0 2 * * *")
-        cron_parts = cron_expr.split()
-        if len(cron_parts) == 5:
-            minute, hour, day, month, day_of_week = cron_parts
-        else:
-            minute, hour, day, month, day_of_week = "0", "2", "*", "*", "*"
-
-        _backup_scheduler = BackgroundScheduler()
-        _backup_scheduler.add_job(
-            _scheduled_backup,
-            CronTrigger(
-                minute=minute, hour=hour, day=day,
-                month=month, day_of_week=day_of_week,
-            ),
-            id="daily_db_backup",
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
-        _backup_scheduler.start()
-        logger.info(
-            f"📅 Daily backup scheduler started — cron: {cron_expr} "
-            f"(BACKUP_DIR={os.getenv('BACKUP_DIR', './backups')})"
-        )
-    except Exception as _sched_exc:
-        logger.error(f"❌ Backup scheduler failed to start: {_sched_exc}")
-
     mode_indicator = "🔒 PRODUCTION" if production_mode else "🔧 DEVELOPMENT"
     print(f"✅ InvoLinks API started ({mode_indicator}) - Plans seeded")
-
-
-@app.on_event("shutdown")
-def shutdown_event():
-    """Gracefully stop the backup scheduler on app shutdown."""
-    global _backup_scheduler
-    if _backup_scheduler is not None and _backup_scheduler.running:
-        _backup_scheduler.shutdown(wait=False)
-        logger.info("📅 Backup scheduler stopped.")
-
-
-# ==================== BACKUP ENDPOINTS (Task 24) ====================
-
-
-class BackupStatusResponse(BaseModel):
-    provider: str
-    rpo_target_hours: int
-    rto_target_hours: int
-    last_verified_at: Optional[str]
-    last_verified_by: Optional[str]
-    backup_age_hours: Optional[float]
-    within_rpo: bool
-    compliance_note: str
-
-
-@app.get("/admin/backup/status", tags=["Admin"], response_model=BackupStatusResponse)
-def get_backup_status(
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user_from_header),
-):
-    """
-    Return backup configuration metadata and last verification time.
-    Super-admin only.  Task 24.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
-    rpo_hours = int(os.getenv("BACKUP_RPO_HOURS", "24"))
-    rto_hours = int(os.getenv("BACKUP_RTO_HOURS", "4"))
-
-    # Find the most recent BACKUP_VERIFIED audit event
-    last_event = (
-        db.query(AuditLogDB)
-        .filter(AuditLogDB.action == "BACKUP_VERIFIED")
-        .order_by(AuditLogDB.created_at.desc())
-        .first()
-    )
-
-    last_verified_at = None
-    last_verified_by = None
-    backup_age_hours = None
-    within_rpo = False
-
-    if last_event:
-        last_verified_at = last_event.created_at.isoformat()
-        # Resolve user email via user_id
-        last_verified_by = None
-        if last_event.user_id:
-            u = db.query(UserDB).filter(UserDB.id == last_event.user_id).first()
-            last_verified_by = u.email if u else None
-        backup_age_hours = round(
-            (datetime.utcnow() - last_event.created_at).total_seconds() / 3600, 2
-        )
-        within_rpo = backup_age_hours <= rpo_hours
-
-    compliance_note = (
-        "COMPLIANT — last backup verification within RPO window"
-        if within_rpo
-        else (
-            "UNVERIFIED — no backup verification on record; run POST /admin/backup/verify"
-            if last_verified_at is None
-            else f"AT RISK — last verification {backup_age_hours:.1f}h ago exceeds RPO of {rpo_hours}h"
-        )
-    )
-
-    return BackupStatusResponse(
-        provider=provider,
-        rpo_target_hours=rpo_hours,
-        rto_target_hours=rto_hours,
-        last_verified_at=last_verified_at,
-        last_verified_by=last_verified_by,
-        backup_age_hours=backup_age_hours,
-        within_rpo=within_rpo,
-        compliance_note=compliance_note,
-    )
-
-
-@app.post("/admin/backup/verify", tags=["Admin"])
-def verify_backup(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user_from_header),
-):
-    """
-    Log a BACKUP_VERIFIED audit event with timestamp to create a compliance paper trail.
-    Super-admin only.  Task 24.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    provider = os.getenv("BACKUP_PROVIDER", "Neon PostgreSQL PITR")
-    rpo_hours = int(os.getenv("BACKUP_RPO_HOURS", "24"))
-
-    ip = request.client.host if request.client else None
-
-    log_audit_event(
-        db=db,
-        action="BACKUP_VERIFIED",
-        user_id=current_user.id,
-        company_id=None,
-        resource_type="system",
-        resource_id="backup",
-        description=(
-            f"Backup recoverability manually verified by {current_user.email}. "
-            f"Provider: {provider} | RPO target: {rpo_hours}h"
-        ),
-        ip_address=ip,
-    )
-    db.commit()
-
-    logger.info(f"BACKUP_VERIFIED logged by {current_user.email}")
-
-    return {
-        "status": "ok",
-        "verified_at": datetime.utcnow().isoformat(),
-        "verified_by": current_user.email,
-        "provider": provider,
-        "message": "Backup verification event logged to audit trail.",
-    }
-
-
-# ==================== BACKUP MANAGEMENT ENDPOINTS (Task 29 — P2-E) ====================
-
-
-@app.post("/admin/backup/trigger", tags=["Admin"])
-def trigger_backup(
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Run an on-demand backup immediately.
-    Super-admin only. Task 29 P2-E.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    from utils.backup_engine import run_backup
-
-    result = run_backup(triggered_by=current_user.email)
-
-    log_entry = BackupLogDB(
-        started_at=result["started_at"],
-        completed_at=result["completed_at"],
-        filename=result["filename"],
-        file_size_bytes=result["file_size_bytes"],
-        checksum_sha256=result["checksum_sha256"],
-        storage_path=result["storage_path"],
-        status="SUCCESS" if result["success"] else "FAILED",
-        error_message=result["error_message"],
-        triggered_by=result["triggered_by"],
-    )
-    db.add(log_entry)
-    db.commit()
-    db.refresh(log_entry)
-
-    log_audit_event(
-        db=db,
-        action="BACKUP_TRIGGERED",
-        user_id=current_user.id,
-        company_id=None,
-        resource_type="system",
-        resource_id=log_entry.id,
-        description=(
-            f"On-demand backup triggered by {current_user.email}. "
-            f"Status: {log_entry.status} | File: {log_entry.filename}"
-        ),
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-
-    if not result["success"]:
-        raise HTTPException(500, f"Backup failed: {result['error_message']}")
-
-    return {
-        "id": log_entry.id,
-        "status": log_entry.status,
-        "filename": log_entry.filename,
-        "file_size_bytes": log_entry.file_size_bytes,
-        "checksum_sha256": log_entry.checksum_sha256,
-        "storage_path": log_entry.storage_path,
-        "started_at": log_entry.started_at.isoformat() if log_entry.started_at else None,
-        "completed_at": log_entry.completed_at.isoformat() if log_entry.completed_at else None,
-        "triggered_by": log_entry.triggered_by,
-    }
-
-
-@app.get("/admin/backup/logs", tags=["Admin"])
-def get_backup_logs(
-    limit: int = 30,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Return the last `limit` backup log entries ordered by most recent first.
-    Super-admin only. Task 29 P2-E.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    logs = (
-        db.query(BackupLogDB)
-        .order_by(BackupLogDB.started_at.desc())
-        .limit(max(1, min(limit, 200)))
-        .all()
-    )
-
-    return {
-        "count": len(logs),
-        "logs": [
-            {
-                "id": l.id,
-                "status": l.status,
-                "filename": l.filename,
-                "file_size_bytes": l.file_size_bytes,
-                "checksum_sha256": l.checksum_sha256,
-                "storage_path": l.storage_path,
-                "started_at": l.started_at.isoformat() if l.started_at else None,
-                "completed_at": l.completed_at.isoformat() if l.completed_at else None,
-                "triggered_by": l.triggered_by,
-                "error_message": l.error_message,
-            }
-            for l in logs
-        ],
-    }
-
-
-@app.post("/admin/backup/restore", tags=["Admin"])
-def restore_backup(
-    request: Request,
-    backup_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Restore the database from a local backup file identified by backup_id.
-    Restore is admin-triggered only — requires explicit confirmation via backup_id.
-    Super-admin only. Task 29 P2-E.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    log_entry = db.query(BackupLogDB).filter(BackupLogDB.id == backup_id).first()
-    if not log_entry:
-        raise HTTPException(404, "Backup log entry not found")
-    if log_entry.status != "SUCCESS":
-        raise HTTPException(400, "Can only restore from a SUCCESS backup")
-
-    storage_path = log_entry.storage_path
-    if not storage_path or storage_path.startswith("s3://"):
-        raise HTTPException(
-            400,
-            "Restore from S3 is not supported in this environment. "
-            "Download the dump and restore manually.",
-        )
-
-    import subprocess
-    from pathlib import Path
-
-    dump_file = Path(storage_path)
-    if not dump_file.exists():
-        raise HTTPException(404, f"Backup file not found on disk: {storage_path}")
-
-    db_url = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
-
-    log_audit_event(
-        db=db,
-        action="BACKUP_RESTORE_INITIATED",
-        user_id=current_user.id,
-        company_id=None,
-        resource_type="system",
-        resource_id=backup_id,
-        description=(
-            f"Database restore initiated by {current_user.email}. "
-            f"Source: {log_entry.filename} | SHA-256: {log_entry.checksum_sha256}"
-        ),
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-
-    try:
-        if "sqlite" in db_url.lower():
-            import gzip, sqlite3
-
-            sqlite_file = db_url.replace("sqlite:///", "").replace("sqlite://", "")
-            sqlite_file = os.path.abspath(sqlite_file)
-            tmp_sql = sqlite_file + ".restore.sql"
-            with gzip.open(dump_file, "rt", encoding="utf-8") as gz:
-                sql = gz.read()
-            with open(tmp_sql, "w", encoding="utf-8") as f:
-                f.write(sql)
-            conn = sqlite3.connect(sqlite_file)
-            conn.executescript(sql)
-            conn.close()
-            Path(tmp_sql).unlink(missing_ok=True)
-        elif "postgresql" in db_url.lower() or "postgres" in db_url.lower():
-            import gzip, tempfile
-
-            with tempfile.NamedTemporaryFile(suffix=".dump", delete=False) as tmp:
-                tmp_path = tmp.name
-                with gzip.open(dump_file, "rb") as gz:
-                    tmp.write(gz.read())
-
-            try:
-                result = subprocess.run(
-                    ["pg_restore", "--no-password", "--clean", "--if-exists",
-                     "--dbname", db_url, tmp_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        "pg_restore failed: "
-                        + result.stderr.decode("utf-8", errors="replace")[:500]
-                    )
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
-        else:
-            raise HTTPException(400, "Unsupported database type for restore")
-
-        log_audit_event(
-            db=db,
-            action="BACKUP_RESTORE_COMPLETED",
-            user_id=current_user.id,
-            company_id=None,
-            resource_type="system",
-            resource_id=backup_id,
-            description=(
-                f"Database restore COMPLETED by {current_user.email}. "
-                f"Source: {log_entry.filename}"
-            ),
-            ip_address=request.client.host if request.client else None,
-        )
-        db.commit()
-
-        return {
-            "status": "restored",
-            "backup_id": backup_id,
-            "filename": log_entry.filename,
-            "restored_by": current_user.email,
-            "restored_at": datetime.utcnow().isoformat(),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as exc:
-        error_msg = str(exc)
-        log_audit_event(
-            db=db,
-            action="BACKUP_RESTORE_FAILED",
-            user_id=current_user.id,
-            company_id=None,
-            resource_type="system",
-            resource_id=backup_id,
-            description=f"Restore FAILED for {log_entry.filename}: {error_msg}",
-            ip_address=request.client.host if request.client else None,
-        )
-        db.commit()
-        raise HTTPException(500, f"Restore failed: {error_msg}")
-
-
-# ==================== DATA INTEGRITY ENDPOINTS (Task 26) ====================
-
-
-@app.get("/admin/integrity/verify", tags=["Admin"])
-def verify_hash_chain_integrity(
-    company_id: Optional[str] = None,
-    request: Request = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 26 — Verify the SHA-256 hash chain integrity for all non-archived invoices.
-
-    Walks invoices ordered by issue_date (then created_at for tie-breaking), recomputes
-    each invoice's hash from its canonical fields, and checks that the following invoice's
-    prev_invoice_hash matches. Returns total checked, valid link count, and the first
-    broken link (if any). Logs INTEGRITY_CHECK_PASSED or INTEGRITY_CHECK_FAILED.
-
-    Access: SUPER_ADMIN (any company, optional company_id filter), COMPANY_ADMIN (own company).
-    """
-    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
-        raise HTTPException(403, "Only Super Admin or Company Admin can run integrity checks")
-
-    # Determine which company to check
-    if current_user.role == Role.SUPER_ADMIN and company_id:
-        target_company_id = company_id
-    elif current_user.role == Role.COMPANY_ADMIN:
-        target_company_id = current_user.company_id
-    else:
-        target_company_id = None  # SUPER_ADMIN with no filter → all companies
-
-    ip = request.client.host if request and request.client else None
-
-    # Chain membership: all non-archived invoices that are post-draft.
-    # Excludes only DRAFT (mutable, never issued, no hash link).
-    # OVERDUE, CANCELLED and all other post-issuance statuses are included
-    # so that status transitions never create chain gaps or hide broken links.
-    q = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.is_archived == False,
-            InvoiceDB.status != InvoiceStatus.DRAFT,
-        )
-        .order_by(InvoiceDB.issue_date.asc(), InvoiceDB.created_at.asc())
-    )
-    if target_company_id:
-        q = q.filter(InvoiceDB.company_id == target_company_id)
-
-    invoices = q.all()
-    total = len(invoices)
-
-    from utils.crypto_utils import InvoiceCrypto
-    from collections import defaultdict
-
-    _verifier = InvoiceCrypto()
-
-    valid_links = 0
-    first_broken_id = None
-    first_broken_number = None
-    first_broken_date = None
-    integrity_ok = True
-
-    # Group by company to maintain per-company chains
-    by_company: dict[str, list] = defaultdict(list)
-    for inv in invoices:
-        by_company[inv.company_id or "__none__"].append(inv)
-
-    for _cid, chain in by_company.items():
-        for i, inv in enumerate(chain):
-            if i == 0:
-                # First invoice in the chain — no previous to verify against
-                continue
-            prev = chain[i - 1]
-
-            # Independent recomputation: build canonical dict from the previous
-            # invoice's DB fields, compute SHA-256 hash, and compare against
-            # the current invoice's stored prev_invoice_hash.
-            # This detects tampering even if both stored hash fields are altered.
-            prev_canonical = {
-                "invoice_number": prev.invoice_number or "",
-                "issue_date": str(prev.issue_date) if prev.issue_date else "",
-                "supplier_trn": prev.supplier_trn or "",
-                "customer_trn": prev.customer_trn or "",
-                "total_amount": str(prev.total_amount or "0.0"),
-                "tax_amount": str(prev.tax_amount or "0.0"),
-                "prev_invoice_hash": prev.prev_invoice_hash or "",
-            }
-            expected_hash = _verifier.compute_invoice_hash(prev_canonical)
-
-            # A missing prev_invoice_hash on a non-first invoice — broken chain
-            if not inv.prev_invoice_hash:
-                if integrity_ok:
-                    first_broken_id = inv.id
-                    first_broken_number = inv.invoice_number
-                    first_broken_date = str(inv.issue_date) if inv.issue_date else None
-                integrity_ok = False
-                continue
-
-            # Primary: compare against independently recomputed canonical hash
-            # Fallback: legacy data used prev_invoice.xml_hash (XML-content hash)
-            # Accept either for backward compatibility — new invoices will only
-            # match the canonical hash going forward.
-            legacy_match = prev.xml_hash and (inv.prev_invoice_hash == prev.xml_hash)
-            if inv.prev_invoice_hash == expected_hash or legacy_match:
-                valid_links += 1
-            else:
-                if integrity_ok:
-                    first_broken_id = inv.id
-                    first_broken_number = inv.invoice_number
-                    first_broken_date = str(inv.issue_date) if inv.issue_date else None
-                integrity_ok = False
-
-    # Persist the result
-    check_record = IntegrityCheckDB(
-        id=f"ic_{uuid4().hex[:16]}",
-        company_id=target_company_id,
-        performed_by_user_id=current_user.id,
-        checked_at=datetime.utcnow(),
-        total_invoices=total,
-        valid_links=valid_links,
-        integrity_ok=integrity_ok,
-        first_broken_invoice_id=first_broken_id,
-        first_broken_invoice_number=first_broken_number,
-        first_broken_invoice_date=first_broken_date,
-    )
-    db.add(check_record)
-
-    # Audit event
-    audit_action = "INTEGRITY_CHECK_PASSED" if integrity_ok else "INTEGRITY_CHECK_FAILED"
-    desc_parts = [
-        f"Hash chain integrity check by {current_user.email}.",
-        f"Total invoices checked: {total}.",
-        f"Valid links: {valid_links}.",
-    ]
-    if not integrity_ok:
-        desc_parts.append(
-            f"First broken link: invoice {first_broken_number} (ID={first_broken_id}, date={first_broken_date})."
-        )
-    log_audit_event(
-        db=db,
-        action=audit_action,
-        user_id=current_user.id,
-        company_id=target_company_id,
-        resource_type="system",
-        resource_id=check_record.id,
-        description=" ".join(desc_parts),
-        ip_address=ip,
-    )
-    db.commit()
-
-    logger.info(
-        f"{audit_action}: company={target_company_id or 'ALL'} "
-        f"total={total} valid_links={valid_links} by={current_user.email}"
-    )
-
-    result = {
-        "integrity_ok": integrity_ok,
-        "total_invoices_checked": total,
-        "valid_links": valid_links,
-        "checked_at": check_record.checked_at.isoformat(),
-        "checked_by": current_user.email,
-        "company_id": target_company_id,
-    }
-    if not integrity_ok:
-        result["first_broken_link"] = {
-            "invoice_id": first_broken_id,
-            "invoice_number": first_broken_number,
-            "invoice_date": first_broken_date,
-        }
-    return result
-
-
-@app.get("/admin/integrity/status", tags=["Admin"])
-def get_integrity_status(
-    company_id: Optional[str] = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 26 — Return the most recent integrity check result for a company (or system-wide).
-
-    Used by the Super Admin dashboard to show current integrity posture without re-running.
-    """
-    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
-        raise HTTPException(403, "Only Super Admin or Company Admin can view integrity status")
-
-    target_company_id = (
-        company_id if (current_user.role == Role.SUPER_ADMIN and company_id)
-        else current_user.company_id if current_user.role == Role.COMPANY_ADMIN
-        else None
-    )
-
-    q = db.query(IntegrityCheckDB).order_by(IntegrityCheckDB.checked_at.desc())
-    if target_company_id:
-        # Company-scoped: return latest result for that specific company
-        q = q.filter(IntegrityCheckDB.company_id == target_company_id)
-    elif current_user.role == Role.SUPER_ADMIN:
-        # Global scope for SUPER_ADMIN with no filter: prefer the latest
-        # global run (company_id IS NULL); fall back to latest any-scope run
-        # if no global run exists yet
-        global_last = q.filter(IntegrityCheckDB.company_id.is_(None)).first()
-        last = global_last or q.first()
-        if not last:
-            return {
-                "status": "NEVER_CHECKED",
-                "scope": "GLOBAL",
-                "message": "No integrity check has been performed yet. Run GET /admin/integrity/verify.",
-                "last_checked_at": None,
-                "integrity_ok": None,
-                "total_invoices": None,
-                "valid_links": None,
-                "first_broken_link": None,
-            }
-        return {
-            "status": "PASSED" if last.integrity_ok else "FAILED",
-            "scope": "GLOBAL" if last.company_id is None else "COMPANY",
-            "last_checked_at": last.checked_at.isoformat(),
-            "integrity_ok": last.integrity_ok,
-            "total_invoices": last.total_invoices,
-            "valid_links": last.valid_links,
-            "checked_by_user_id": last.performed_by_user_id,
-            "company_id": last.company_id,
-            "first_broken_link": {
-                "invoice_id": last.first_broken_invoice_id,
-                "invoice_number": last.first_broken_invoice_number,
-                "invoice_date": last.first_broken_invoice_date,
-            } if not last.integrity_ok else None,
-        }
-
-    last = q.first()
-
-    if not last:
-        return {
-            "status": "NEVER_CHECKED",
-            "scope": "COMPANY" if target_company_id else "GLOBAL",
-            "message": "No integrity check has been performed yet. Run GET /admin/integrity/verify.",
-            "last_checked_at": None,
-            "integrity_ok": None,
-            "total_invoices": None,
-            "valid_links": None,
-            "first_broken_link": None,
-        }
-
-    return {
-        "status": "PASSED" if last.integrity_ok else "FAILED",
-        "scope": "GLOBAL" if last.company_id is None else "COMPANY",
-        "last_checked_at": last.checked_at.isoformat(),
-        "integrity_ok": last.integrity_ok,
-        "total_invoices": last.total_invoices,
-        "valid_links": last.valid_links,
-        "checked_by_user_id": last.performed_by_user_id,
-        "company_id": last.company_id,
-        "first_broken_link": {
-            "invoice_id": last.first_broken_invoice_id,
-            "invoice_number": last.first_broken_invoice_number,
-            "invoice_date": last.first_broken_invoice_date,
-        } if not last.integrity_ok else None,
-    }
-
-
-# ==================== PERMISSION MATRIX ENDPOINT (Task 25) ====================
-
-
-@app.get("/admin/permissions", tags=["Admin"])
-def get_permission_matrix(
-    current_user: UserDB = Depends(get_current_user_from_header),
-):
-    """
-    Return the full role-permission matrix as JSON for FTA audit documentation.
-    Accessible by SUPER_ADMIN and COMPANY_ADMIN.  Task 25.
-    """
-    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
-        raise HTTPException(403, "Insufficient permissions to view permission matrix")
-
-    # Serialise PERMISSIONS into a nested dict: {role: {resource: {action: bool}}}
-    matrix: dict = {}
-    for (role, resource, action), allowed in PERMISSIONS.items():
-        r_key = role.value
-        matrix.setdefault(r_key, {}).setdefault(resource, {})[action] = allowed
-
-    all_resources = sorted({res for (_, res, _) in PERMISSIONS})
-    all_actions = sorted({act for (_, _, act) in PERMISSIONS})
-
-    return {
-        "roles": [r.value for r in Role],
-        "resources": all_resources,
-        "actions": all_actions,
-        "matrix": matrix,
-    }
 
 
 # ==================== REGISTRATION ENDPOINTS ====================
@@ -4117,8 +2320,6 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
             company_id=company_id,
             is_owner=True,
             full_name=payload.company_name,  # Use company name as default
-            # Task 22: Initialise password age tracking at registration
-            password_changed_at=datetime.utcnow(),
         )
         db.add(user)
 
@@ -4638,10 +2839,6 @@ class MFALoginResponse(BaseModel):
     user_id: Optional[str] = None
     company_id: Optional[str] = None
     role: Optional[str] = None
-    password_change_required: Optional[bool] = False
-    # Task 22: Password expiry fields
-    password_expired: Optional[bool] = False
-    password_expires_in_days: Optional[int] = None
 
 
 @app.post("/auth/login", response_model=MFALoginResponse, tags=["Auth"])
@@ -4683,31 +2880,10 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
                 role=user.role.value,
             )
         # No MFA - return access and refresh tokens directly
-        # Task 22: Check password expiry before issuing token
-        _pw_expired, _pw_days_left = _check_password_expiry(user)
-        if _pw_expired:
-            user.must_change_password = True
-            log_audit_event(
-                db, "PASSWORD_EXPIRED_FORCED_CHANGE",
-                user_id=user.id, company_id=user.company_id,
-                resource_type="user", resource_id=user.id,
-                description=f"Password for {user.email} expired — forced change required",
-            )
-        password_change_required = bool(getattr(user, "must_change_password", False))
-        access_token = create_access_token(data={
-            "sub": user.id,
-            "type": "user",
-            "password_change_required": password_change_required,
-        })
+        access_token = create_access_token(data={"sub": user.id, "type": "user"})
         refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
         # Update last login
         user.last_login = datetime.utcnow()
-        log_audit_event(
-            db, "USER_LOGIN",
-            user_id=user.id, company_id=user.company_id,
-            resource_type="user", resource_id=user.id,
-            description=f"User {user.email} logged in",
-        )
         db.commit()
         return MFALoginResponse(
             mfa_required=False,
@@ -4719,9 +2895,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             user_id=user.id,
             company_id=user.company_id,
             role=user.role.value,
-            password_change_required=password_change_required,
-            password_expired=_pw_expired,
-            password_expires_in_days=_pw_days_left,
         )
 
     # Try company authentication (with MFA support)
@@ -4950,31 +3123,10 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
     # Update last verified timestamp
     user.mfa_last_verified_at = datetime.utcnow()
     user.last_login = datetime.utcnow()
-    log_audit_event(
-        db, "USER_LOGIN",
-        user_id=user.id, company_id=user.company_id,
-        resource_type="user", resource_id=user.id,
-        description=f"User {user.email} logged in (MFA verified)",
-    )
-    # Task 22: Check password expiry at MFA-verify step too
-    _pw_expired_mfa, _pw_days_left_mfa = _check_password_expiry(user)
-    if _pw_expired_mfa:
-        user.must_change_password = True
-        log_audit_event(
-            db, "PASSWORD_EXPIRED_FORCED_CHANGE",
-            user_id=user.id, company_id=user.company_id,
-            resource_type="user", resource_id=user.id,
-            description=f"Password for {user.email} expired — forced change required",
-        )
-    password_change_required = bool(getattr(user, "must_change_password", False))
     db.commit()
 
     # Create full access token and refresh token
-    access_token = create_access_token(data={
-        "sub": user.id,
-        "type": "user",
-        "password_change_required": password_change_required,
-    })
+    access_token = create_access_token(data={"sub": user.id, "type": "user"})
     refresh_token = create_refresh_token(data={"sub": user.id, "type": "user"})
 
     return MFALoginResponse(
@@ -4987,9 +3139,6 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
         user_id=user.id,
         company_id=user.company_id,
         role=user.role.value,
-        password_change_required=password_change_required,
-        password_expired=_pw_expired_mfa,
-        password_expires_in_days=_pw_days_left_mfa,
     )
 
 
@@ -5228,28 +3377,11 @@ def get_current_user_info(
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )
 
-    # Task 22: Compute days until password expires for frontend warning banner
-    _pw_expired_me, _pw_days_left_me = _check_password_expiry(current_user)
-
     response = {
         "user_id": current_user.id,
         "email": current_user.email,
         "role": current_user.role.value,
         "company": None,
-        # Task 22: Password policy info for security settings / warning banner
-        "password_changed_at": (
-            current_user.password_changed_at.isoformat()
-            if getattr(current_user, "password_changed_at", None)
-            else None
-        ),
-        # Task 22: Alias for spec compatibility
-        "password_last_change_date": (
-            current_user.password_changed_at.isoformat()
-            if getattr(current_user, "password_changed_at", None)
-            else None
-        ),
-        "password_expires_in_days": _pw_days_left_me,
-        "password_expired": _pw_expired_me,
     }
 
     if company:
@@ -5311,8 +3443,8 @@ def update_company_profile(
     db: Session = Depends(get_db),
 ):
     """Update company profile (Company Admin only)"""
-    if not has_permission(current_user, "settings", "edit"):
-        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only company admins can update company profile")
 
     if not current_user.company_id:
         raise HTTPException(400, "User is not associated with a company")
@@ -6010,13 +4142,7 @@ def get_admin_stats(
             {
                 "id": company.id,
                 "name": company.legal_name or "Unnamed Company",
-                "status": "active"
-                if company.status == CompanyStatus.ACTIVE
-                else (
-                    "suspended"
-                    if company.status == CompanyStatus.SUSPENDED
-                    else "inactive"
-                ),
+                "status": company.status.value if company.status else "UNKNOWN",
                 "invoicesThisMonth": invoices_this_month,
                 "invoicesUsed": invoices_used_total,
                 "invoicesLimit": company.free_plan_invoice_limit,
@@ -6836,7 +4962,6 @@ class UserOut(BaseModel):
     full_name: Optional[str]
     role: str
     is_owner: bool
-    is_active: bool = True
     created_at: str
     last_login: Optional[str]
 
@@ -6849,17 +4974,18 @@ def invite_user(
     db: Session = Depends(get_db),
 ):
     """Invite a team member to the company based on inviter role permissions."""
-    # Task 25: permission matrix gate
-    if not has_permission(current_user, "team", "manage_users"):
+    allowed_inviter_roles = [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]
+    if current_user.role not in allowed_inviter_roles:
         raise HTTPException(403, "Only admins can invite users")
 
-    # BUSINESS_ADMIN can only invite FINANCE_USER or READ_ONLY
-    if current_user.role == Role.BUSINESS_ADMIN and payload.role not in (
-        Role.FINANCE_USER, Role.READ_ONLY
-    ):
+    if current_user.role == Role.BUSINESS_ADMIN and payload.role != Role.FINANCE_USER:
         raise HTTPException(
             403,
-            "Business admins can only invite Finance Users or Read-Only users",
+            "Business admins can only invite finance users",
         )
 
     if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
@@ -6884,9 +5010,6 @@ def invite_user(
         company_id=current_user.company_id,
         is_owner=False,
         invited_by=current_user.id,
-        must_change_password=True,
-        # Task 22: Initialise password age tracking on invite creation
-        password_changed_at=datetime.utcnow(),
     )
 
     db.add(new_user)
@@ -6913,58 +5036,6 @@ def invite_user(
     }
 
 
-@app.post("/users/{user_id}/reset-password", tags=["Users"])
-@app.post("/company/users/{user_id}/reset-password", tags=["Users"])
-def admin_reset_user_password(
-    user_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Admin resets a team member's password.
-    Sets a temporary password and flags the account for mandatory change on next login (Task 20).
-    """
-    allowed_roles = [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]
-    if current_user.role not in allowed_roles:
-        raise HTTPException(403, "Only admins can reset user passwords")
-
-    target_user = db.query(UserDB).filter(UserDB.id == user_id).first()
-    if not target_user:
-        raise HTTPException(404, "User not found")
-
-    # Must be in the same company (unless super admin)
-    if current_user.role != Role.SUPER_ADMIN:
-        if target_user.company_id != current_user.company_id:
-            raise HTTPException(403, "Cannot reset password for users outside your company")
-
-    # Business admins can only reset finance users
-    if current_user.role == Role.BUSINESS_ADMIN and target_user.role != Role.FINANCE_USER:
-        raise HTTPException(403, "Business admins can only reset Finance User passwords")
-
-    temp_password = generate_temp_password(16)
-    target_user.password_hash = get_password_hash(temp_password)
-    target_user.must_change_password = True
-    # Task 22: Track password mutation time for expiry policy
-    target_user.password_changed_at = datetime.utcnow()
-
-    log_audit_event(
-        db, "PASSWORD_CHANGED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="user", resource_id=target_user.id,
-        description=f"Admin {current_user.email} reset password for {target_user.email} — forced change on next login",
-    )
-
-    db.commit()
-
-    return {
-        "success": True,
-        "user_id": user_id,
-        "email": target_user.email,
-        "temporary_password": temp_password,
-        "message": "Password reset successfully. User must change password on next login.",
-    }
-
-
 @app.get("/users/teams", response_model=List[UserOut], tags=["Users"])
 def get_team_members(
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -6983,7 +5054,6 @@ def get_team_members(
             "full_name": user.full_name,
             "role": user.role.value,
             "is_owner": user.is_owner,
-            "is_active": getattr(user, "is_active", True),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_login": user.last_login.isoformat() if user.last_login else None,
         }
@@ -7028,84 +5098,6 @@ def remove_team_member(
     return {"success": True, "message": "User removed successfully"}
 
 
-@app.post("/company/users/{user_id}/deactivate", tags=["Users"])
-def deactivate_team_member(
-    user_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 33 — Deactivate (suspend) a team member.
-    Revokes login access while preserving all history. COMPANY_ADMIN only.
-    Cannot deactivate the company owner (is_owner=True).
-    """
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Only Company Admin or Super Admin can deactivate users")
-
-    target = db.get(UserDB, user_id)
-    if not target:
-        raise HTTPException(404, "User not found")
-
-    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Cannot deactivate users from other companies")
-
-    if target.is_owner:
-        raise HTTPException(400, "Cannot deactivate the company owner")
-
-    if target.id == current_user.id:
-        raise HTTPException(400, "Cannot deactivate your own account")
-
-    if not getattr(target, "is_active", True):
-        raise HTTPException(400, "User is already deactivated")
-
-    target.is_active = False
-    log_audit_event(
-        db, "USER_DEACTIVATED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="user", resource_id=target.id,
-        description=f"User {target.email} deactivated by {current_user.email}",
-    )
-    db.commit()
-    return {"success": True, "message": f"User {target.email} has been deactivated"}
-
-
-@app.post("/company/users/{user_id}/reactivate", tags=["Users"])
-def reactivate_team_member(
-    user_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 33 — Reactivate a previously deactivated team member.
-    Restores login access. COMPANY_ADMIN only.
-    """
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Only Company Admin or Super Admin can reactivate users")
-
-    target = db.get(UserDB, user_id)
-    if not target:
-        raise HTTPException(404, "User not found")
-
-    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Cannot reactivate users from other companies")
-
-    if target.is_owner:
-        raise HTTPException(400, "Cannot reactivate the company owner")
-
-    if getattr(target, "is_active", True):
-        raise HTTPException(400, "User is already active")
-
-    target.is_active = True
-    log_audit_event(
-        db, "USER_REACTIVATED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="user", resource_id=target.id,
-        description=f"User {target.email} reactivated by {current_user.email}",
-    )
-    db.commit()
-    return {"success": True, "message": f"User {target.email} has been reactivated"}
-
-
 # ==================== INVOICE ENDPOINTS ====================
 
 
@@ -7115,11 +5107,10 @@ def generate_invoice_number(
     """Generate sequential invoice number for company with type-specific prefix"""
     # Map invoice type to prefix
     prefix_map = {
-        "380": "TI",   # Tax Invoice
+        "380": "TI",  # Tax Invoice
         "381": "TCN",  # Tax Credit Note
-        "383": "DN",   # Debit Note (Task 4)
-        "480": "CI",   # Commercial Invoice
-        "81": "CN",    # Credit Note
+        "480": "CI",  # Commercial Invoice
+        "81": "CN",  # Credit Note
     }
 
     # Handle both enum and string types
@@ -7163,13 +5154,13 @@ def calculate_line_item_totals(
     }
 
 
-@app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut,
-          dependencies=[require_permission("invoices", "create")])
+@app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut)
 def create_invoice(
     payload: InvoiceCreate,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
+    """Create a new invoice"""
     # Get company
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -7295,7 +5286,6 @@ def create_invoice(
 
     issue_date = dt.fromisoformat(payload.issue_date).date()
     due_date = dt.fromisoformat(payload.due_date).date() if payload.due_date else None
-    supply_date = dt.fromisoformat(payload.supply_date).date() if getattr(payload, "supply_date", None) else None
 
     # Create invoice
     invoice = InvoiceDB(
@@ -7306,7 +5296,6 @@ def create_invoice(
         status=InvoiceStatus.DRAFT,
         issue_date=issue_date,
         due_date=due_date,
-        supply_date=supply_date,
         currency_code=payload.currency_code,
         # Supplier (from company)
         supplier_trn=company.trn,
@@ -7402,17 +5391,6 @@ def create_invoice(
     invoice.total_amount = round(subtotal + total_tax, 2)
     invoice.amount_due = round(subtotal + total_tax, 2)
 
-    # P2-A: AED conversion enforcement — reject foreign-currency invoices without AED equivalent
-    if (payload.currency_code or "AED").upper() != "AED":
-        if not payload.total_amount_aed or payload.total_amount_aed <= 0:
-            raise HTTPException(
-                422,
-                "total_amount_aed is required for foreign-currency invoices",
-            )
-        invoice.total_amount_aed = round(payload.total_amount_aed, 2)
-    else:
-        invoice.total_amount_aed = invoice.total_amount
-
     from decimal import Decimal
 
     # Credit note validation: must reference matching invoice and not exceed original total
@@ -7465,37 +5443,6 @@ def create_invoice(
         original_invoice.amount_due = max(0.0, new_amount_due)
         db.add(original_invoice)  # Explicitly mark for update
 
-    # Debit note validation (Task 4 — FTA UBL 383): must reference an issued tax invoice
-    if invoice.invoice_type == InvoiceType.DEBIT_NOTE:
-        if not invoice.preceding_invoice_id:
-            raise HTTPException(400, "Debit notes must reference an existing tax invoice.")
-
-        original_invoice = (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.id == invoice.preceding_invoice_id,
-                InvoiceDB.company_id == company.id,
-            )
-            .first()
-        )
-
-        if not original_invoice:
-            raise HTTPException(400, "Referenced invoice not found.")
-
-        if original_invoice.invoice_type != InvoiceType.TAX_INVOICE:
-            raise HTTPException(400, "Debit notes must reference a tax invoice (type 380).")
-
-        if original_invoice.status not in [InvoiceStatus.ISSUED, InvoiceStatus.SENT, InvoiceStatus.VIEWED, InvoiceStatus.PAID]:
-            raise HTTPException(400, "Debit notes can only be issued against a posted invoice.")
-
-        # Add debit note amount to original invoice's amount_due
-        new_amount_due = float(
-            Decimal(str(original_invoice.amount_due))
-            + Decimal(str(invoice.total_amount))
-        )
-        original_invoice.amount_due = new_amount_due
-        db.add(original_invoice)
-
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
     invoice.invoice_classification = classify_invoice_type(
         total_amount=Decimal(str(invoice.total_amount)),
@@ -7522,7 +5469,6 @@ def create_invoice(
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -7539,7 +5485,6 @@ def create_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
-        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -7770,11 +5715,8 @@ def list_invoices(
     limit: int = 50,
     offset: int = 0,
 ):
-    """List invoices for the current company (excludes archived invoices by default)"""
-    query = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == current_user.company_id,
-        InvoiceDB.is_archived == False,  # Task 12: hide archived by default
-    )
+    """List invoices for the current company"""
+    query = db.query(InvoiceDB).filter(InvoiceDB.company_id == current_user.company_id)
 
     if status:
         try:
@@ -7817,430 +5759,6 @@ def list_invoices(
         )
         for inv in invoices
     ]
-
-
-@app.get("/invoices/archived", tags=["Invoices"])
-def list_archived_invoices(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    limit: int = 50,
-    offset: int = 0,
-):
-    """
-    Task 12 — Data Archival: list all archived invoices for this company.
-
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER
-    """
-    if current_user.role not in [
-        Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER,
-    ]:
-        raise HTTPException(403, "Insufficient permissions to view archived invoices")
-
-    invoices = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == True,
-        )
-        .order_by(InvoiceDB.archived_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    return [
-        {
-            "id": inv.id,
-            "invoice_number": inv.invoice_number,
-            "invoice_type": inv.invoice_type.value if inv.invoice_type else None,
-            "status": inv.status.value if inv.status else None,
-            "issue_date": inv.issue_date.isoformat() if inv.issue_date else None,
-            "customer_name": inv.customer_name,
-            "total_amount": inv.total_amount,
-            "currency_code": inv.currency_code,
-            "archived_at": inv.archived_at.isoformat() if inv.archived_at else None,
-        }
-        for inv in invoices
-    ]
-
-
-@app.post("/invoices/archive", tags=["Invoices"])
-def archive_old_invoices(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    years_old: int = 5,
-):
-    """
-    Task 12 — Data Archival: archive all PAID/CANCELLED invoices older than `years_old` years.
-
-    Archived invoices are hidden from normal invoice lists but remain in the database
-    and can be retrieved for audit purposes via GET /invoices/archived.
-
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN only.
-    Default: archives invoices issued more than 5 years ago.
-    """
-    from datetime import date, timedelta
-
-    if not has_permission(current_user, "archival", "create"):
-        raise HTTPException(403, "Permission denied: archive invoices is not allowed for your role")
-
-    if years_old < 1:
-        raise HTTPException(400, "years_old must be at least 1")
-
-    cutoff_date = date.today() - timedelta(days=years_old * 365)
-
-    invoices_to_archive = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == False,
-            InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
-            InvoiceDB.issue_date <= cutoff_date,
-        )
-        .all()
-    )
-
-    now = datetime.utcnow()
-    archived_count = 0
-    for inv in invoices_to_archive:
-        inv.is_archived = True
-        inv.archived_at = now
-        archived_count += 1
-
-    db.commit()
-
-    log_audit_event(
-        db, "INVOICES_ARCHIVED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="invoice", resource_id=None,
-        description=f"Archived {archived_count} invoices older than {years_old} years (cutoff: {cutoff_date})",
-    )
-
-    return {
-        "archived_count": archived_count,
-        "cutoff_date": cutoff_date.isoformat(),
-        "years_old": years_old,
-        "message": f"Successfully archived {archived_count} invoice(s) issued before {cutoff_date}.",
-    }
-
-
-@app.get("/invoices/archive/status", tags=["Invoices"])
-def get_archival_status(
-    years_old: int = 5,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 16 — Archival status: count invoices eligible for archival
-    (PAID/CANCELLED, older than `years_old` years, not yet archived).
-    Useful for admins to know when to trigger POST /invoices/archive.
-    """
-    from datetime import date, timedelta
-
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Only admins can view archival status")
-
-    cutoff_date = date.today() - timedelta(days=years_old * 365)
-
-    eligible_count = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == False,
-            InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
-            InvoiceDB.issue_date <= cutoff_date,
-        )
-        .count()
-    )
-
-    already_archived = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == True,
-        )
-        .count()
-    )
-
-    return {
-        "years_old": years_old,
-        "cutoff_date": cutoff_date.isoformat(),
-        "eligible_for_archival": eligible_count,
-        "already_archived": already_archived,
-        "archival_required": eligible_count > 0,
-        "message": (
-            f"{eligible_count} invoice(s) eligible for archival (issued before {cutoff_date})."
-            if eligible_count > 0
-            else "No invoices require archiving at this time."
-        ),
-    }
-
-
-@app.get("/invoices/archive/export", tags=["Invoices"])
-def export_archived_invoices(
-    format: str = "xlsx",
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 32 — Bulk export all archived invoices for this company as an XLSX file.
-    Requires COMPANY_ADMIN or above. Only format=xlsx is supported.
-    """
-    if format.lower() != "xlsx":
-        raise HTTPException(400, "Unsupported format. Only format=xlsx is supported.")
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
-        raise HTTPException(403, "Permission denied: only Company Admin or Super Admin can export archived invoices")
-    if not has_permission(current_user, "reports", "export"):
-        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
-
-    import io
-    import openpyxl
-    from fastapi.responses import StreamingResponse
-
-    archived = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == True,
-        )
-        .order_by(InvoiceDB.archived_at.desc())
-        .all()
-    )
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Archived Invoices"
-
-    headers = [
-        "Invoice Number",
-        "Issue Date",
-        "Supply Date",
-        "Customer Name",
-        "Customer TRN",
-        "Total Amount",
-        "Tax Amount",
-        "Currency",
-        "Status",
-        "Archived At",
-    ]
-    ws.append(headers)
-
-    for inv in archived:
-        ws.append([
-            inv.invoice_number,
-            inv.issue_date.isoformat() if inv.issue_date else "",
-            inv.supply_date.isoformat() if getattr(inv, "supply_date", None) else "",
-            inv.customer_name or "",
-            inv.customer_trn or "",
-            inv.total_amount,
-            inv.tax_amount,
-            inv.currency_code or "AED",
-            inv.status.value if inv.status else "",
-            inv.archived_at.isoformat() if inv.archived_at else "",
-        ])
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    filename = f"archived_invoices_{current_user.company_id}.xlsx"
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@app.post("/invoices/{invoice_id}/restore", tags=["Invoices"])
-def restore_archived_invoice(
-    invoice_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 12 — Data Archival: restore a single archived invoice back to normal.
-
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN only.
-    """
-    if not has_permission(current_user, "archival", "create"):
-        raise HTTPException(403, "Permission denied: restore archived invoices is not allowed for your role")
-
-    invoice = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.id == invoice_id,
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.is_archived == True,
-        )
-        .first()
-    )
-
-    if not invoice:
-        raise HTTPException(404, "Archived invoice not found")
-
-    invoice.is_archived = False
-    invoice.archived_at = None
-    db.commit()
-
-    log_audit_event(
-        db, "INVOICE_RESTORED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="invoice", resource_id=invoice.id,
-        description=f"Restored archived invoice {invoice.invoice_number}",
-    )
-
-    return {
-        "id": invoice.id,
-        "invoice_number": invoice.invoice_number,
-        "message": f"Invoice {invoice.invoice_number} successfully restored.",
-    }
-
-
-# ==================== FISCAL YEAR BULK ARCHIVAL (Task 36 — P2-6) ====================
-
-
-class FiscalYearArchivalRequest(BaseModel):
-    year: int
-    dry_run: bool = False
-
-
-@app.post("/admin/archive/fiscal-year", tags=["Admin"])
-def archive_fiscal_year(
-    body: FiscalYearArchivalRequest,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 36 — Fiscal Year Bulk Archival.
-
-    Archives (or previews, when dry_run=true) all records belonging to a completed
-    fiscal year (Jan 1 – Dec 31 of the given year) in a single atomic transaction:
-
-    - Invoices: PAID or CANCELLED status, issue_date within the year
-    - Journal Entries: entry_date within the year
-    - Expenses: expense_date within the year
-    - Inward Invoices: invoice_date within the year
-
-    dry_run=true returns counts without making any database changes.
-    Only SUPER_ADMIN and COMPANY_ADMIN may call this endpoint.
-    Logs a single FISCAL_YEAR_ARCHIVAL audit event (skipped on dry_run).
-    """
-    from datetime import date as _date
-
-    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN]:
-        raise HTTPException(403, "Only Super Admin or Company Admin can perform fiscal year archival")
-
-    current_year = _date.today().year
-    if body.year >= current_year:
-        raise HTTPException(400, f"Cannot archive the current or a future year ({body.year}). Only completed fiscal years may be archived.")
-    if body.year < 1990:
-        raise HTTPException(400, "Year must be 1990 or later")
-
-    company_id = current_user.company_id
-    if not company_id:
-        raise HTTPException(400, "User has no associated company")
-
-    year_start = _date(body.year, 1, 1)
-    year_end = _date(body.year, 12, 31)
-    now = datetime.utcnow()
-
-    # -- Count / collect records for each type --
-
-    invoices_q = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company_id,
-        InvoiceDB.is_archived == False,
-        InvoiceDB.status.in_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
-        InvoiceDB.issue_date >= year_start,
-        InvoiceDB.issue_date <= year_end,
-    )
-
-    journal_entries_q = db.query(JournalEntryDB).filter(
-        JournalEntryDB.company_id == company_id,
-        JournalEntryDB.is_archived == False,
-        JournalEntryDB.entry_date >= year_start,
-        JournalEntryDB.entry_date <= year_end,
-    )
-
-    expenses_q = db.query(ExpenseDB).filter(
-        ExpenseDB.company_id == company_id,
-        ExpenseDB.is_archived == False,
-        ExpenseDB.expense_date >= year_start,
-        ExpenseDB.expense_date <= year_end,
-    )
-
-    inward_invoices_q = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.company_id == company_id,
-        InwardInvoiceDB.is_archived == False,
-        InwardInvoiceDB.invoice_date >= year_start,
-        InwardInvoiceDB.invoice_date <= year_end,
-    )
-
-    invoice_count = invoices_q.count()
-    journal_entry_count = journal_entries_q.count()
-    expense_count = expenses_q.count()
-    inward_invoice_count = inward_invoices_q.count()
-    total_count = invoice_count + journal_entry_count + expense_count + inward_invoice_count
-
-    if body.dry_run:
-        return {
-            "dry_run": True,
-            "year": body.year,
-            "year_start": year_start.isoformat(),
-            "year_end": year_end.isoformat(),
-            "counts": {
-                "invoices": invoice_count,
-                "journal_entries": journal_entry_count,
-                "expenses": expense_count,
-                "inward_invoices": inward_invoice_count,
-                "total": total_count,
-            },
-            "message": f"Preview: {total_count} record(s) would be archived for FY{body.year}.",
-        }
-
-    # -- Apply archival in one transaction --
-    for inv in invoices_q.all():
-        inv.is_archived = True
-        inv.archived_at = now
-
-    for je in journal_entries_q.all():
-        je.is_archived = True
-        je.archived_at = now
-
-    for exp in expenses_q.all():
-        exp.is_archived = True
-        exp.archived_at = now
-
-    for ii in inward_invoices_q.all():
-        ii.is_archived = True
-        ii.archived_at = now
-
-    log_audit_event(
-        db, "FISCAL_YEAR_ARCHIVAL",
-        user_id=current_user.id, company_id=company_id,
-        resource_type="fiscal_year", resource_id=str(body.year),
-        description=(
-            f"FY{body.year} bulk archival: {invoice_count} invoices, "
-            f"{journal_entry_count} journal entries, {expense_count} expenses, "
-            f"{inward_invoice_count} inward invoices archived."
-        ),
-    )
-
-    db.commit()
-
-    return {
-        "dry_run": False,
-        "year": body.year,
-        "year_start": year_start.isoformat(),
-        "year_end": year_end.isoformat(),
-        "counts": {
-            "invoices": invoice_count,
-            "journal_entries": journal_entry_count,
-            "expenses": expense_count,
-            "inward_invoices": inward_invoice_count,
-            "total": total_count,
-        },
-        "message": f"FY{body.year} archival complete — {total_count} record(s) archived.",
-    }
 
 
 @app.get("/invoices/pending-payment", tags=["Invoices"])
@@ -8298,14 +5816,10 @@ def get_pending_payment_invoices(
 @app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def get_invoice(
     invoice_id: str,
-    response: Response,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Get a specific invoice.
-
-    Task 10: Returns ETag header with current version for optimistic locking.
-    """
+    """Get a specific invoice"""
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -8317,10 +5831,6 @@ def get_invoice(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
-    # Task 10: Set ETag header for optimistic locking support
-    current_version = invoice.version if invoice.version is not None else 1
-    response.headers["ETag"] = str(current_version)
-
     return InvoiceOut(
         id=invoice.id,
         company_id=invoice.company_id,
@@ -8329,8 +5839,6 @@ def get_invoice(
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
-        version=current_version,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -8347,7 +5855,6 @@ def get_invoice(
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
-        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -8386,20 +5893,14 @@ def get_invoice(
     )
 
 
-@app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut,
-         dependencies=[require_permission("invoices", "edit")])
+@app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def update_invoice(
     invoice_id: str,
     data: InvoiceCreate,
-    request: Request,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Update a DRAFT invoice (only DRAFT invoices can be edited).
-
-    Task 10 — Concurrent Update Prevention: supports ETag/If-Match optimistic locking.
-    Supply `If-Match: <version>` to detect mid-air edits. Returns 412 on conflict.
-    """
+    """Update a DRAFT invoice (only DRAFT invoices can be edited)"""
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -8413,35 +5914,9 @@ def update_invoice(
 
     if invoice.status != InvoiceStatus.DRAFT:
         raise HTTPException(
-            409,
-            f"Cannot edit invoice. Only DRAFT invoices can be edited. "
-            f"Current status: {invoice.status.value}. "
-            "To correct a posted invoice, issue a credit note (document type 381).",
+            403,
+            f"Cannot edit invoice. Only DRAFT invoices can be edited. Current status: {invoice.status.value}",
         )
-
-    # Task 15: Capture old values before any mutation (for audit trail)
-    import json as _json
-    _old_snapshot = {
-        "status": invoice.status.value if invoice.status else None,
-        "customer_name": invoice.customer_name,
-        "total_amount": float(invoice.total_amount) if invoice.total_amount else None,
-    }
-
-    # Task 10: Optimistic locking via If-Match / ETag
-    if_match = request.headers.get("If-Match")
-    current_version = invoice.version if invoice.version is not None else 1
-    if if_match is not None:
-        try:
-            client_version = int(if_match.strip('"'))
-        except ValueError:
-            raise HTTPException(400, "If-Match header must be an integer version number")
-        if client_version != current_version:
-            raise HTTPException(
-                412,
-                f"Precondition Failed: invoice was modified by another session "
-                f"(client version={client_version}, server version={current_version}). "
-                "Reload the invoice and reapply your changes.",
-            )
 
     try:
         # Update basic invoice details
@@ -8530,17 +6005,6 @@ def update_invoice(
         invoice.total_amount = float(subtotal + total_tax)
         invoice.amount_due = float(subtotal + total_tax)
 
-        # P2-A: AED conversion enforcement — reject foreign-currency invoices without AED equivalent
-        if (data.currency_code or "AED").upper() != "AED":
-            if not data.total_amount_aed or data.total_amount_aed <= 0:
-                raise HTTPException(
-                    422,
-                    "total_amount_aed is required for foreign-currency invoices",
-                )
-            invoice.total_amount_aed = round(data.total_amount_aed, 2)
-        else:
-            invoice.total_amount_aed = invoice.total_amount
-
         # Clear and rebuild tax breakdowns
         db.query(InvoiceTaxBreakdownDB).filter(
             InvoiceTaxBreakdownDB.invoice_id == invoice_id
@@ -8558,24 +6022,6 @@ def update_invoice(
             )
             db.add(breakdown)
 
-        # Task 10: Increment optimistic-locking version counter
-        invoice.version = (invoice.version or 1) + 1
-
-        # Task 15: Log INVOICE_UPDATED with old/new key fields
-        _new_snapshot = {
-            "status": invoice.status.value if invoice.status else None,
-            "customer_name": invoice.customer_name,
-            "total_amount": float(invoice.total_amount) if invoice.total_amount else None,
-        }
-        log_audit_event(
-            db, "INVOICE_UPDATED",
-            user_id=current_user.id, company_id=current_user.company_id,
-            resource_type="invoice", resource_id=invoice.id,
-            old_value=_json.dumps(_old_snapshot),
-            new_value=_json.dumps(_new_snapshot),
-            description=f"Invoice {invoice.invoice_number} updated",
-        )
-
         db.commit()
 
         # Return updated invoice
@@ -8587,8 +6033,6 @@ def update_invoice(
             status=invoice.status,
             issue_date=invoice.issue_date.isoformat(),
             due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-            supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
-            version=invoice.version,
             currency_code=invoice.currency_code,
             supplier_trn=invoice.supplier_trn,
             supplier_name=invoice.supplier_name,
@@ -8605,7 +6049,6 @@ def update_invoice(
             tax_amount=invoice.tax_amount,
             total_amount=invoice.total_amount,
             amount_due=invoice.amount_due,
-            total_amount_aed=getattr(invoice, "total_amount_aed", None),
             preceding_invoice_id=invoice.preceding_invoice_id,
             credit_note_reason=invoice.credit_note_reason,
             xml_file_path=invoice.xml_file_path,
@@ -8642,9 +6085,6 @@ def update_invoice(
                 for tb in invoice.tax_breakdowns
             ],
         )
-    except HTTPException:
-        db.rollback()
-        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to update invoice: {str(e)}")
@@ -8717,9 +6157,6 @@ def verify_invoice_payment(
     else:
         payment_dt = datetime.utcnow()
 
-    # Snapshot prior status before mutation
-    _prev_status_paid = invoice.status.value if invoice.status else "UNKNOWN"
-
     # Update invoice payment details
     invoice.status = InvoiceStatus.PAID
     invoice.payment_method = payment.payment_method
@@ -8743,21 +6180,6 @@ def verify_invoice_payment(
         else:
             invoice.invoice_notes = f"Payment Reference: {payment.payment_reference}"
 
-    # Task 1 / Task 15: Audit trail — log actual prior → new status
-    import json as _json
-    log_audit_event(
-        db, "INVOICE_PAID",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="invoice", resource_id=invoice.id,
-        old_value=_json.dumps({"status": _prev_status_paid}),
-        new_value=_json.dumps({
-            "status": "PAID",
-            "payment_method": payment.payment_method,
-            "total_amount": float(invoice.total_amount),
-        }),
-        description=f"Invoice {invoice.invoice_number} marked as paid via {payment.payment_method}",
-    )
-
     db.commit()
     db.refresh(invoice)
 
@@ -8772,1179 +6194,6 @@ def verify_invoice_payment(
         "verified_by": current_user.email,
         "verified_at": invoice.payment_verified_at.isoformat(),
     }
-
-
-def _iso_weeks_in_year(year: int) -> int:
-    """Return the number of ISO weeks in the given year (52 or 53)."""
-    from datetime import date
-    # Dec 28 is always in the last ISO week of the year
-    dec28 = date(year, 12, 28)
-    return dec28.isocalendar()[1]
-
-
-def _build_periodic_date_range(period_type: str, year, period):
-    """
-    Task 21 — compute (start_dt, end_dt, period_label, period_type, period) for
-    weekly / monthly / quarterly / annual period types.
-
-    All defaulting (year, period) is done here so callers can always pass raw
-    query-param values (which may be None).
-
-    Returns (start_dt, end_dt, period_label, normalised_period_type,
-             normalised_period, normalised_year).
-    normalised_year is the ISO year for weekly reports, Gregorian year for all others.
-    """
-    from datetime import date, timedelta
-    import calendar
-
-    today = date.today()
-
-    if period_type == "weekly":
-        # ISO week-year: use isocalendar() so year-boundary weeks are correct
-        iso_today = today.isocalendar()
-        if year is None:
-            year = iso_today[0]   # ISO year, NOT Gregorian year
-        if period is None:
-            # Only default to today's week if we are using today's ISO year
-            if year == iso_today[0]:
-                period = iso_today[1]
-            else:
-                period = 1
-        # Validate week number against actual weeks in that ISO year
-        max_week = _iso_weeks_in_year(year)
-        if period < 1 or period > max_week:
-            raise HTTPException(
-                400,
-                f"period must be 1-{max_week} for weekly reports in year {year}",
-            )
-        # Compute Monday of ISO week 1: Jan 4 is always in week 1
-        jan4 = date(year, 1, 4)
-        week1_monday = jan4 - timedelta(days=jan4.weekday())
-        start_dt = week1_monday + timedelta(weeks=period - 1)
-        end_dt = start_dt + timedelta(days=6)
-        period_label = f"Week {period}, {year} ({start_dt.strftime('%d %b')}–{end_dt.strftime('%d %b %Y')})"
-        return start_dt, end_dt, period_label, "weekly", period, year
-
-    elif period_type == "quarterly":
-        if year is None:
-            year = today.year
-        if period is None:
-            period = (today.month - 1) // 3 + 1
-        if period < 1 or period > 4:
-            raise HTTPException(400, "period must be 1-4 for quarterly reports")
-        start_month = (period - 1) * 3 + 1
-        end_month = start_month + 2
-        start_dt = date(year, start_month, 1)
-        last_day = calendar.monthrange(year, end_month)[1]
-        end_dt = date(year, end_month, last_day)
-        period_label = f"Q{period} {year}"
-        return start_dt, end_dt, period_label, "quarterly", period, year
-
-    elif period_type == "annual":
-        if year is None:
-            year = today.year
-        # Full calendar year — period param unused (always 1)
-        start_dt = date(year, 1, 1)
-        end_dt = date(year, 12, 31)
-        period_label = f"Annual {year}"
-        return start_dt, end_dt, period_label, "annual", 1, year
-
-    else:
-        # monthly (default / fallback)
-        if year is None:
-            year = today.year
-        if period is None:
-            period = today.month
-        if period < 1 or period > 12:
-            raise HTTPException(400, "period must be 1-12 for monthly reports")
-        start_dt = date(year, period, 1)
-        last_day = calendar.monthrange(year, period)[1]
-        end_dt = date(year, period, last_day)
-        period_label = f"{calendar.month_name[period]} {year}"
-        return start_dt, end_dt, period_label, "monthly", period, year
-
-
-@app.get("/reports/periodic", tags=["Reports"])
-def get_periodic_report(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    period_type: str = "monthly",
-    year: int = None,
-    period: int = None,
-):
-    """
-    Task 11 / Task 21 — Periodic Report: weekly, monthly, quarterly or annual invoice summary.
-
-    Query parameters:
-    - period_type: "weekly" | "monthly" (default) | "quarterly" | "annual"
-    - year: calendar year (default: current year)
-    - period: ISO week number for weekly; 1-12 for monthly; 1-4 for quarterly; ignored for annual
-
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER, READ_ONLY
-    """
-    if not has_permission(current_user, "reports", "view"):
-        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
-
-    # All year/period defaulting is handled inside _build_periodic_date_range.
-    # norm_year is the ISO year for weekly, Gregorian year for all other types.
-    start_dt, end_dt, period_label, period_type, period, norm_year = (
-        _build_periodic_date_range(period_type, year, period)
-    )
-
-    # Query all non-cancelled invoices in the period
-    invoices = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.status != InvoiceStatus.CANCELLED,
-            InvoiceDB.issue_date >= start_dt,
-            InvoiceDB.issue_date <= end_dt,
-        )
-        .all()
-    )
-
-    # Aggregate totals by invoice type
-    type_labels = {
-        "380": "Tax Invoice",
-        "381": "Credit Note",
-        "383": "Debit Note",
-        "480": "Commercial Invoice",
-        "81": "Simplified Tax Invoice",
-    }
-    breakdown = {}
-    overall = {
-        "count": 0,
-        "subtotal": 0.0,
-        "tax_amount": 0.0,
-        "total_amount": 0.0,
-    }
-
-    for inv in invoices:
-        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
-        if type_code not in breakdown:
-            breakdown[type_code] = {
-                "invoice_type_code": type_code,
-                "invoice_type_label": type_labels.get(type_code, type_code),
-                "count": 0,
-                "subtotal": 0.0,
-                "tax_amount": 0.0,
-                "total_amount": 0.0,
-            }
-        entry = breakdown[type_code]
-        entry["count"] += 1
-        entry["subtotal"] += float(inv.subtotal_amount or 0)
-        entry["tax_amount"] += float(inv.tax_amount or 0)
-        entry["total_amount"] += float(inv.total_amount or 0)
-
-        overall["count"] += 1
-        overall["subtotal"] += float(inv.subtotal_amount or 0)
-        overall["tax_amount"] += float(inv.tax_amount or 0)
-        overall["total_amount"] += float(inv.total_amount or 0)
-
-    # Round all floats
-    for row in breakdown.values():
-        row["subtotal"] = round(row["subtotal"], 2)
-        row["tax_amount"] = round(row["tax_amount"], 2)
-        row["total_amount"] = round(row["total_amount"], 2)
-    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
-
-    return {
-        "period_type": period_type,
-        "period_label": period_label,
-        "year": norm_year,
-        "period": period,
-        "start_date": start_dt.isoformat(),
-        "end_date": end_dt.isoformat(),
-        "summary": overall,
-        "breakdown_by_type": list(breakdown.values()),
-        "generated_at": datetime.utcnow().isoformat(),
-    }
-
-
-@app.get("/reports/periodic/export", tags=["Reports"])
-def export_periodic_report(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    period_type: str = "monthly",
-    year: int = None,
-    period: int = None,
-    format: str = "pdf",
-):
-    """
-    Task 21 — Export a periodic report as PDF or XLSX.
-
-    Query parameters:
-    - period_type: "weekly" | "monthly" | "quarterly" | "annual"
-    - year: calendar year (default: current year)
-    - period: period number (see GET /reports/periodic for semantics)
-    - format: "pdf" (default) | "xlsx"
-
-    Role Access: COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER, READ_ONLY
-    """
-    import io
-
-    if not has_permission(current_user, "reports", "export"):
-        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
-
-    # Validate format param explicitly
-    if format.lower() not in ("pdf", "xlsx"):
-        raise HTTPException(400, "format must be 'pdf' or 'xlsx'")
-
-    # All year/period defaulting is handled inside _build_periodic_date_range
-    start_dt, end_dt, period_label, period_type, period, _norm_year = (
-        _build_periodic_date_range(period_type, year, period)
-    )
-
-    # Query invoices
-    invoices = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.status != InvoiceStatus.CANCELLED,
-            InvoiceDB.issue_date >= start_dt,
-            InvoiceDB.issue_date <= end_dt,
-        )
-        .all()
-    )
-
-    type_labels = {
-        "380": "Tax Invoice",
-        "381": "Credit Note",
-        "383": "Debit Note",
-        "480": "Commercial Invoice",
-        "81": "Simplified Tax Invoice",
-    }
-    breakdown = {}
-    overall = {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
-
-    for inv in invoices:
-        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
-        if type_code not in breakdown:
-            breakdown[type_code] = {
-                "invoice_type_code": type_code,
-                "invoice_type_label": type_labels.get(type_code, type_code),
-                "count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0,
-            }
-        e = breakdown[type_code]
-        e["count"] += 1
-        e["subtotal"] += float(inv.subtotal_amount or 0)
-        e["tax_amount"] += float(inv.tax_amount or 0)
-        e["total_amount"] += float(inv.total_amount or 0)
-        overall["count"] += 1
-        overall["subtotal"] += float(inv.subtotal_amount or 0)
-        overall["tax_amount"] += float(inv.tax_amount or 0)
-        overall["total_amount"] += float(inv.total_amount or 0)
-
-    for row in breakdown.values():
-        row["subtotal"] = round(row["subtotal"], 2)
-        row["tax_amount"] = round(row["tax_amount"], 2)
-        row["total_amount"] = round(row["total_amount"], 2)
-    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
-    breakdown_rows = list(breakdown.values())
-    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    safe_label = period_label.replace(",", "").replace(" ", "_").replace("–", "-")
-
-    if format.lower() == "xlsx":
-        # ── XLSX export ────────────────────────────────────────────────────────
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        except ImportError:
-            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Periodic Report"
-
-        # Styling helpers
-        primary_fill = PatternFill("solid", fgColor="0066CC")
-        header_fill = PatternFill("solid", fgColor="E8F0FE")
-        total_fill = PatternFill("solid", fgColor="DBEAFE")
-        white_font = Font(color="FFFFFF", bold=True)
-        bold_font = Font(bold=True)
-        thin = Side(style="thin", color="CCCCCC")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        def _set(ws, row, col, value, font=None, fill=None, align="left", number_format=None):
-            cell = ws.cell(row=row, column=col, value=value)
-            if font:
-                cell.font = font
-            if fill:
-                cell.fill = fill
-            cell.alignment = Alignment(horizontal=align, vertical="center")
-            if number_format:
-                cell.number_format = number_format
-            cell.border = border
-            return cell
-
-        # Title block
-        ws.merge_cells("A1:E1")
-        t = ws.cell(row=1, column=1, value="InvoLinks — Periodic Invoice Report")
-        t.font = Font(size=14, bold=True, color="0066CC")
-        t.alignment = Alignment(horizontal="center")
-
-        ws.merge_cells("A2:E2")
-        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}  |  {start_dt.isoformat()} to {end_dt.isoformat()}")
-        t2.alignment = Alignment(horizontal="center")
-        t2.font = Font(italic=True, color="555555")
-
-        ws.merge_cells("A3:E3")
-        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
-        t3.alignment = Alignment(horizontal="center")
-        t3.font = Font(italic=True, size=9, color="888888")
-
-        # Column headers (row 5)
-        headers = ["Invoice Type", "Count", "Net Amount (AED)", "VAT Amount (AED)", "Gross Total (AED)"]
-        for col, h in enumerate(headers, 1):
-            _set(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
-
-        # Data rows
-        for r_idx, row in enumerate(breakdown_rows, 6):
-            _set(ws, r_idx, 1, f"{row['invoice_type_label']} ({row['invoice_type_code']})", font=bold_font, fill=header_fill)
-            _set(ws, r_idx, 2, row["count"], align="center")
-            _set(ws, r_idx, 3, row["subtotal"], number_format="#,##0.00", align="right")
-            _set(ws, r_idx, 4, row["tax_amount"], number_format="#,##0.00", align="right")
-            _set(ws, r_idx, 5, row["total_amount"], number_format="#,##0.00", align="right")
-
-        # Totals row
-        total_row = 6 + len(breakdown_rows)
-        _set(ws, total_row, 1, "TOTAL", font=Font(bold=True, color="0066CC"), fill=total_fill)
-        _set(ws, total_row, 2, overall["count"], font=bold_font, fill=total_fill, align="center")
-        _set(ws, total_row, 3, overall["subtotal"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
-        _set(ws, total_row, 4, overall["tax_amount"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
-        _set(ws, total_row, 5, overall["total_amount"], font=Font(bold=True, size=12, color="0066CC"), fill=total_fill, number_format="#,##0.00", align="right")
-
-        # Column widths
-        ws.column_dimensions["A"].width = 36
-        ws.column_dimensions["B"].width = 10
-        for col in ["C", "D", "E"]:
-            ws.column_dimensions[col].width = 22
-
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="periodic_report_{safe_label}.xlsx"'},
-        )
-
-    else:
-        # ── PDF export ─────────────────────────────────────────────────────────
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.units import cm
-            from reportlab.lib import colors as rl_colors
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        except ImportError:
-            raise HTTPException(500, "reportlab not installed — cannot generate PDF")
-
-        buffer = io.BytesIO()
-        PAGE_WIDTH, PAGE_HEIGHT = A4
-        MARGIN = 2 * cm
-        CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN)
-        PRIMARY = rl_colors.HexColor("#0066CC")
-        LIGHT_BLUE = rl_colors.HexColor("#E8F0FE")
-        TOTAL_BG = rl_colors.HexColor("#DBEAFE")
-        GRAY = rl_colors.HexColor("#666666")
-        DARK = rl_colors.HexColor("#333333")
-
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=A4,
-            leftMargin=MARGIN, rightMargin=MARGIN,
-            topMargin=MARGIN, bottomMargin=MARGIN,
-            title=f"Periodic Report — {period_label}",
-            author="InvoLinks",
-        )
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle("Title21", fontSize=16, textColor=PRIMARY, fontName="Helvetica-Bold",
-                                   alignment=TA_CENTER, spaceAfter=4))
-        styles.add(ParagraphStyle("Sub21", fontSize=10, textColor=GRAY, alignment=TA_CENTER, spaceAfter=2))
-        styles.add(ParagraphStyle("Small21", fontSize=8, textColor=GRAY, alignment=TA_CENTER, spaceAfter=8))
-
-        story = []
-        story.append(Paragraph("InvoLinks — Periodic Invoice Report", styles["Title21"]))
-        story.append(Paragraph(f"Period: {period_label}  |  {start_dt.isoformat()} to {end_dt.isoformat()}", styles["Sub21"]))
-        story.append(Paragraph(f"Generated: {generated_at}", styles["Small21"]))
-        story.append(Spacer(1, 12))
-
-        # Build table data
-        col_widths = [CONTENT_WIDTH * 0.40, CONTENT_WIDTH * 0.10, CONTENT_WIDTH * 0.17,
-                      CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.16]
-        table_data = [[
-            Paragraph("<b>Invoice Type</b>", styles["Normal"]),
-            Paragraph("<b>Count</b>", styles["Normal"]),
-            Paragraph("<b>Net (AED)</b>", styles["Normal"]),
-            Paragraph("<b>VAT (AED)</b>", styles["Normal"]),
-            Paragraph("<b>Gross (AED)</b>", styles["Normal"]),
-        ]]
-        for row in breakdown_rows:
-            label = f"{row['invoice_type_label']} ({row['invoice_type_code']})"
-            table_data.append([
-                Paragraph(label, styles["Normal"]),
-                Paragraph(str(row["count"]), styles["Normal"]),
-                Paragraph(f"{row['subtotal']:,.2f}", styles["Normal"]),
-                Paragraph(f"{row['tax_amount']:,.2f}", styles["Normal"]),
-                Paragraph(f"<b>{row['total_amount']:,.2f}</b>", styles["Normal"]),
-            ])
-        # Totals row
-        table_data.append([
-            Paragraph("<b>TOTAL</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['count']}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['subtotal']:,.2f}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['tax_amount']:,.2f}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['total_amount']:,.2f}</b>", styles["Normal"]),
-        ])
-
-        tbl = Table(table_data, colWidths=col_widths)
-        n_data = len(table_data)
-        tbl.setStyle(TableStyle([
-            # Header row
-            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
-            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("TOPPADDING", (0, 0), (-1, 0), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            # Data rows
-            ("BACKGROUND", (0, 1), (-1, n_data - 2), rl_colors.white),
-            ("FONTNAME", (0, 1), (-1, n_data - 2), "Helvetica"),
-            ("FONTSIZE", (0, 1), (-1, n_data - 2), 9),
-            ("TOPPADDING", (0, 1), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
-            ("GRID", (0, 0), (-1, -1), 0.5, GRAY),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            # Total row
-            ("BACKGROUND", (0, n_data - 1), (-1, n_data - 1), TOTAL_BG),
-            ("FONTNAME", (0, n_data - 1), (-1, n_data - 1), "Helvetica-Bold"),
-            ("TEXTCOLOR", (0, n_data - 1), (0, n_data - 1), PRIMARY),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 20))
-        story.append(Paragraph(
-            f"<font color='#888888' size='8'>This report was generated by InvoLinks for internal FTA compliance purposes. "
-            f"All amounts are in AED. Non-cancelled invoices only.</font>",
-            styles["Normal"],
-        ))
-
-        doc.build(story)
-        buffer.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="periodic_report_{safe_label}.pdf"'},
-        )
-
-
-# ==================== AD HOC REPORT ENDPOINTS (Task 30 — P3-A) ====================
-
-def _build_adhoc_breakdown(invoices_list, type_labels):
-    """Build the same breakdown-by-type + overall summary structure as the periodic report."""
-    breakdown = {}
-    overall = {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
-    for inv in invoices_list:
-        type_code = str(inv.invoice_type.value) if inv.invoice_type else "380"
-        if type_code not in breakdown:
-            breakdown[type_code] = {
-                "invoice_type_code": type_code,
-                "invoice_type_label": type_labels.get(type_code, type_code),
-                "count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0,
-            }
-        e = breakdown[type_code]
-        e["count"] += 1
-        e["subtotal"] += float(getattr(inv, "subtotal_amount", 0) or 0)
-        e["tax_amount"] += float(getattr(inv, "tax_amount", 0) or 0)
-        e["total_amount"] += float(getattr(inv, "total_amount", 0) or 0)
-        overall["count"] += 1
-        overall["subtotal"] += float(getattr(inv, "subtotal_amount", 0) or 0)
-        overall["tax_amount"] += float(getattr(inv, "tax_amount", 0) or 0)
-        overall["total_amount"] += float(getattr(inv, "total_amount", 0) or 0)
-    for row in breakdown.values():
-        row["subtotal"] = round(row["subtotal"], 2)
-        row["tax_amount"] = round(row["tax_amount"], 2)
-        row["total_amount"] = round(row["total_amount"], 2)
-    overall = {k: round(v, 2) if isinstance(v, float) else v for k, v in overall.items()}
-    return list(breakdown.values()), overall
-
-
-@app.get("/reports/adhoc", tags=["Reports"])
-def get_adhoc_report(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    from_date: str = None,
-    to_date: str = None,
-    type: str = "all",
-    format: str = "json",
-):
-    """
-    Task 30 (P3-A) — Ad Hoc Report: arbitrary date-range invoice summary.
-
-    Query parameters:
-    - from_date: ISO date string YYYY-MM-DD (required)
-    - to_date:   ISO date string YYYY-MM-DD (required)
-    - type:      "sales" | "purchases" | "all" (default: all)
-    - format:    "json" | "xlsx" | "pdf" | "csv"
-                 When format != "json", delegates to the export endpoint.
-
-    Returns the same payload shape as GET /reports/periodic (for format=json).
-    """
-    from datetime import date as _date
-
-    if not has_permission(current_user, "reports", "view"):
-        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
-
-    if type.lower() not in ("sales", "purchases", "all"):
-        raise HTTPException(400, "type must be 'sales', 'purchases', or 'all'")
-
-    if format.lower() not in ("json", "xlsx", "pdf", "csv"):
-        raise HTTPException(400, "format must be 'json', 'xlsx', 'pdf', or 'csv'")
-
-    if format.lower() in ("xlsx", "pdf", "csv"):
-        return export_adhoc_report(
-            current_user=current_user, db=db,
-            from_date=from_date, to_date=to_date,
-            type=type, format=format,
-        )
-
-    if not from_date or not to_date:
-        raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
-
-    try:
-        start_dt = _date.fromisoformat(from_date)
-        end_dt = _date.fromisoformat(to_date)
-    except ValueError:
-        raise HTTPException(400, "from_date and to_date must be valid ISO dates (YYYY-MM-DD)")
-
-    if start_dt > end_dt:
-        raise HTTPException(400, "from_date must not be after to_date")
-
-    type_labels = {
-        "380": "Tax Invoice", "381": "Credit Note", "383": "Debit Note",
-        "480": "Commercial Invoice", "81": "Simplified Tax Invoice",
-    }
-
-    invoices = []
-    if type in ("sales", "all"):
-        invoices += (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.company_id == current_user.company_id,
-                InvoiceDB.status != InvoiceStatus.CANCELLED,
-                InvoiceDB.issue_date >= start_dt,
-                InvoiceDB.issue_date <= end_dt,
-            )
-            .all()
-        )
-    if type in ("purchases", "all"):
-        invoices += (
-            db.query(InwardInvoiceDB)
-            .filter(
-                InwardInvoiceDB.company_id == current_user.company_id,
-                InwardInvoiceDB.invoice_date >= start_dt,
-                InwardInvoiceDB.invoice_date <= end_dt,
-            )
-            .all()
-        )
-
-    breakdown_rows, overall = _build_adhoc_breakdown(invoices, type_labels)
-    period_label = f"Custom Report: {start_dt.isoformat()} to {end_dt.isoformat()}"
-
-    return {
-        "period_type": "adhoc",
-        "period_label": period_label,
-        "start_date": start_dt.isoformat(),
-        "end_date": end_dt.isoformat(),
-        "report_type": type,
-        "summary": overall,
-        "breakdown_by_type": breakdown_rows,
-        "generated_at": datetime.utcnow().isoformat(),
-    }
-
-
-@app.get("/reports/adhoc/export", tags=["Reports"])
-def export_adhoc_report(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    from_date: str = None,
-    to_date: str = None,
-    type: str = "all",
-    format: str = "xlsx",
-):
-    """
-    Task 30 (P3-A) — Export an ad hoc report as XLSX, PDF, or CSV.
-
-    Query parameters:
-    - from_date, to_date: ISO dates (required)
-    - type:   "sales" | "purchases" | "all"
-    - format: "xlsx" | "pdf" | "csv"
-    """
-    import io
-    from datetime import date as _date
-
-    if not has_permission(current_user, "reports", "export"):
-        raise HTTPException(403, "Permission denied: export on reports is not allowed for your role")
-
-    if type.lower() not in ("sales", "purchases", "all"):
-        raise HTTPException(400, "type must be 'sales', 'purchases', or 'all'")
-
-    if not from_date or not to_date:
-        raise HTTPException(400, "from_date and to_date are required (YYYY-MM-DD)")
-
-    try:
-        start_dt = _date.fromisoformat(from_date)
-        end_dt = _date.fromisoformat(to_date)
-    except ValueError:
-        raise HTTPException(400, "from_date and to_date must be valid ISO dates (YYYY-MM-DD)")
-
-    if start_dt > end_dt:
-        raise HTTPException(400, "from_date must not be after to_date")
-
-    if format.lower() not in ("xlsx", "pdf", "csv"):
-        raise HTTPException(400, "format must be 'xlsx', 'pdf', or 'csv'")
-
-    type_labels = {
-        "380": "Tax Invoice", "381": "Credit Note", "383": "Debit Note",
-        "480": "Commercial Invoice", "81": "Simplified Tax Invoice",
-    }
-
-    invoices = []
-    if type in ("sales", "all"):
-        invoices += (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.company_id == current_user.company_id,
-                InvoiceDB.status != InvoiceStatus.CANCELLED,
-                InvoiceDB.issue_date >= start_dt,
-                InvoiceDB.issue_date <= end_dt,
-            )
-            .all()
-        )
-    if type in ("purchases", "all"):
-        invoices += (
-            db.query(InwardInvoiceDB)
-            .filter(
-                InwardInvoiceDB.company_id == current_user.company_id,
-                InwardInvoiceDB.invoice_date >= start_dt,
-                InwardInvoiceDB.invoice_date <= end_dt,
-            )
-            .all()
-        )
-
-    breakdown_rows, overall = _build_adhoc_breakdown(invoices, type_labels)
-    period_label = f"Custom Report: {start_dt.isoformat()} to {end_dt.isoformat()}"
-    safe_label = f"adhoc_{start_dt.isoformat()}_{end_dt.isoformat()}"
-    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-
-    if format.lower() == "csv":
-        rows = [
-            ["Ad Hoc Report", period_label],
-            ["Report Type", type],
-            ["Generated At", generated_at],
-            [],
-            ["Invoice Type", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"],
-            *[
-                [
-                    f"{row['invoice_type_label']} ({row['invoice_type_code']})",
-                    row["count"],
-                    row["subtotal"],
-                    row["tax_amount"],
-                    row["total_amount"],
-                ]
-                for row in breakdown_rows
-            ],
-            [],
-            ["TOTAL", overall["count"], overall["subtotal"], overall["tax_amount"], overall["total_amount"]],
-        ]
-        csv_str = "\n".join(",".join(str(c) for c in row) for row in rows)
-        from fastapi.responses import Response
-        return Response(
-            content=csv_str,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.csv"'},
-        )
-
-    if format.lower() == "xlsx":
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        except ImportError:
-            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Ad Hoc Report"
-
-        primary_fill = PatternFill("solid", fgColor="4F46E5")
-        header_fill = PatternFill("solid", fgColor="EEF2FF")
-        total_fill = PatternFill("solid", fgColor="E0E7FF")
-        white_font = Font(color="FFFFFF", bold=True)
-        bold_font = Font(bold=True)
-        thin = Side(style="thin", color="CCCCCC")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        def _set(ws, row, col, value, font=None, fill=None, align="left", number_format=None):
-            cell = ws.cell(row=row, column=col, value=value)
-            if font:
-                cell.font = font
-            if fill:
-                cell.fill = fill
-            cell.alignment = Alignment(horizontal=align, vertical="center")
-            if number_format:
-                cell.number_format = number_format
-            cell.border = border
-            return cell
-
-        ws.merge_cells("A1:E1")
-        t = ws.cell(row=1, column=1, value="InvoLinks — Ad Hoc Invoice Report")
-        t.font = Font(size=14, bold=True, color="4F46E5")
-        t.alignment = Alignment(horizontal="center")
-
-        ws.merge_cells("A2:E2")
-        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}  |  Type: {type.capitalize()}")
-        t2.alignment = Alignment(horizontal="center")
-        t2.font = Font(italic=True, color="555555")
-
-        ws.merge_cells("A3:E3")
-        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
-        t3.alignment = Alignment(horizontal="center")
-        t3.font = Font(italic=True, size=9, color="888888")
-
-        headers = ["Invoice Type", "Count", "Net Amount (AED)", "VAT Amount (AED)", "Gross Total (AED)"]
-        for col, h in enumerate(headers, 1):
-            _set(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
-
-        for r_idx, row in enumerate(breakdown_rows, 6):
-            _set(ws, r_idx, 1, f"{row['invoice_type_label']} ({row['invoice_type_code']})", font=bold_font, fill=header_fill)
-            _set(ws, r_idx, 2, row["count"], align="center")
-            _set(ws, r_idx, 3, row["subtotal"], number_format="#,##0.00", align="right")
-            _set(ws, r_idx, 4, row["tax_amount"], number_format="#,##0.00", align="right")
-            _set(ws, r_idx, 5, row["total_amount"], number_format="#,##0.00", align="right")
-
-        total_row = 6 + len(breakdown_rows)
-        _set(ws, total_row, 1, "TOTAL", font=Font(bold=True, color="4F46E5"), fill=total_fill)
-        _set(ws, total_row, 2, overall["count"], font=bold_font, fill=total_fill, align="center")
-        _set(ws, total_row, 3, overall["subtotal"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
-        _set(ws, total_row, 4, overall["tax_amount"], font=bold_font, fill=total_fill, number_format="#,##0.00", align="right")
-        _set(ws, total_row, 5, overall["total_amount"], font=Font(bold=True, size=12, color="4F46E5"), fill=total_fill, number_format="#,##0.00", align="right")
-
-        ws.column_dimensions["A"].width = 36
-        ws.column_dimensions["B"].width = 10
-        for col_letter in ["C", "D", "E"]:
-            ws.column_dimensions[col_letter].width = 22
-
-        buffer = io.BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.xlsx"'},
-        )
-
-    else:
-        # PDF
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.units import cm
-            from reportlab.lib import colors as rl_colors
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        except ImportError:
-            raise HTTPException(500, "reportlab not installed — cannot generate PDF")
-
-        buffer = io.BytesIO()
-        PAGE_WIDTH, PAGE_HEIGHT = A4
-        MARGIN = 2 * cm
-        CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN)
-        PRIMARY = rl_colors.HexColor("#4F46E5")
-        LIGHT = rl_colors.HexColor("#EEF2FF")
-        TOTAL_BG = rl_colors.HexColor("#E0E7FF")
-        GRAY = rl_colors.HexColor("#666666")
-
-        doc = SimpleDocTemplate(
-            buffer, pagesize=A4,
-            leftMargin=MARGIN, rightMargin=MARGIN,
-            topMargin=MARGIN, bottomMargin=MARGIN,
-            title=f"Ad Hoc Report — {period_label}", author="InvoLinks",
-        )
-        styles = getSampleStyleSheet()
-        styles.add(ParagraphStyle("TitleAH", fontSize=16, textColor=PRIMARY, fontName="Helvetica-Bold",
-                                   alignment=TA_CENTER, spaceAfter=4))
-        styles.add(ParagraphStyle("SubAH", fontSize=10, textColor=GRAY, alignment=TA_CENTER, spaceAfter=2))
-        styles.add(ParagraphStyle("SmallAH", fontSize=8, textColor=GRAY, alignment=TA_CENTER, spaceAfter=8))
-
-        story = [
-            Paragraph("InvoLinks — Ad Hoc Invoice Report", styles["TitleAH"]),
-            Paragraph(f"Period: {period_label}  |  Type: {type.capitalize()}", styles["SubAH"]),
-            Paragraph(f"Generated: {generated_at}", styles["SmallAH"]),
-            Spacer(1, 12),
-        ]
-
-        col_widths = [CONTENT_WIDTH * 0.40, CONTENT_WIDTH * 0.10,
-                      CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.17, CONTENT_WIDTH * 0.16]
-        table_data = [[
-            Paragraph("<b>Invoice Type</b>", styles["Normal"]),
-            Paragraph("<b>Count</b>", styles["Normal"]),
-            Paragraph("<b>Net (AED)</b>", styles["Normal"]),
-            Paragraph("<b>VAT (AED)</b>", styles["Normal"]),
-            Paragraph("<b>Gross (AED)</b>", styles["Normal"]),
-        ]]
-        for row in breakdown_rows:
-            label = f"{row['invoice_type_label']} ({row['invoice_type_code']})"
-            table_data.append([
-                Paragraph(label, styles["Normal"]),
-                Paragraph(str(row["count"]), styles["Normal"]),
-                Paragraph(f"{row['subtotal']:,.2f}", styles["Normal"]),
-                Paragraph(f"{row['tax_amount']:,.2f}", styles["Normal"]),
-                Paragraph(f"<b>{row['total_amount']:,.2f}</b>", styles["Normal"]),
-            ])
-        table_data.append([
-            Paragraph("<b>TOTAL</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['count']}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['subtotal']:,.2f}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['tax_amount']:,.2f}</b>", styles["Normal"]),
-            Paragraph(f"<b>{overall['total_amount']:,.2f}</b>", styles["Normal"]),
-        ])
-        n_data = len(table_data)
-        tbl = Table(table_data, colWidths=col_widths)
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY),
-            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("TOPPADDING", (0, 0), (-1, 0), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-            ("BACKGROUND", (0, 1), (-1, n_data - 2), rl_colors.white),
-            ("FONTNAME", (0, 1), (-1, n_data - 2), "Helvetica"),
-            ("FONTSIZE", (0, 1), (-1, n_data - 2), 9),
-            ("TOPPADDING", (0, 1), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
-            ("GRID", (0, 0), (-1, -1), 0.5, GRAY),
-            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("BACKGROUND", (0, n_data - 1), (-1, n_data - 1), TOTAL_BG),
-            ("FONTNAME", (0, n_data - 1), (-1, n_data - 1), "Helvetica-Bold"),
-            ("TEXTCOLOR", (0, n_data - 1), (0, n_data - 1), PRIMARY),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 20))
-        story.append(Paragraph(
-            f"<font color='#888888' size='8'>This ad hoc report was generated by InvoLinks for FTA compliance. "
-            f"All amounts are in AED. Non-cancelled invoices only.</font>",
-            styles["Normal"],
-        ))
-        doc.build(story)
-        buffer.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="adhoc_report_{safe_label}.pdf"'},
-        )
-
-
-# ==================== CUSTOMER CRUD ENDPOINTS (Task 30 — P3-B) ====================
-
-FTA_RETENTION_YEARS = 5
-
-
-def _customer_has_retention_invoices(
-    db: Session,
-    company_id: str,
-    customer_name: str,
-    customer_email: Optional[str] = None,
-    customer_trn: Optional[str] = None,
-) -> bool:
-    """
-    Check whether this customer has any sales invoices within the FTA 5-year retention window.
-    Uses TRN (most stable) → email → name in priority order to avoid name-heuristic false negatives.
-    """
-    from datetime import timedelta
-    from sqlalchemy import or_
-    cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
-    base = db.query(InvoiceDB).filter(
-        InvoiceDB.company_id == company_id,
-        InvoiceDB.issue_date >= cutoff,
-    )
-    conditions = []
-    if customer_trn:
-        conditions.append(InvoiceDB.customer_trn == customer_trn)
-    if customer_email:
-        conditions.append(InvoiceDB.customer_email == customer_email)
-    conditions.append(InvoiceDB.customer_name == customer_name)
-    return base.filter(or_(*conditions)).first() is not None
-
-
-@app.get("/customers", tags=["Customers"])
-def list_customers(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-    q: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
-):
-    """List customer contacts for the current company. Task 30 (P3-B)."""
-    if not has_permission(current_user, "customers", "view"):
-        raise HTTPException(403, "Permission denied: view on customers is not allowed for your role")
-    if not current_user.company_id:
-        raise HTTPException(403, "Customer management is not available for platform-level accounts")
-    query = db.query(CustomerDB).filter(CustomerDB.company_id == current_user.company_id)
-    if q:
-        pattern = f"%{q}%"
-        from sqlalchemy import or_
-        query = query.filter(or_(
-            CustomerDB.name.ilike(pattern),
-            CustomerDB.email.ilike(pattern),
-            CustomerDB.trn.ilike(pattern),
-        ))
-    total = query.count()
-    customers = query.order_by(CustomerDB.name).offset(offset).limit(min(limit, 500)).all()
-    return {
-        "total": total,
-        "customers": [
-            {
-                "id": c.id, "name": c.name, "email": c.email, "trn": c.trn,
-                "address": c.address, "city": c.city, "country": c.country,
-                "phone": c.phone,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-            }
-            for c in customers
-        ],
-    }
-
-
-@app.post("/customers", tags=["Customers"], status_code=201)
-def create_customer(
-    data: dict,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Create a customer contact for the current company. Task 30 (P3-B)."""
-    if not has_permission(current_user, "customers", "create"):
-        raise HTTPException(403, "Permission denied: create on customers is not allowed for your role")
-    if not current_user.company_id:
-        raise HTTPException(403, "Customer management is not available for platform-level accounts")
-    name = (data.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "Customer name is required")
-
-    customer = CustomerDB(
-        company_id=current_user.company_id,
-        name=name,
-        email=(data.get("email") or "").strip() or None,
-        trn=(data.get("trn") or "").strip() or None,
-        address=data.get("address"),
-        city=data.get("city"),
-        country=data.get("country") or "AE",
-        phone=data.get("phone"),
-    )
-    db.add(customer)
-    db.commit()
-    db.refresh(customer)
-    return {
-        "id": customer.id, "name": customer.name, "email": customer.email,
-        "trn": customer.trn, "country": customer.country,
-        "created_at": customer.created_at.isoformat() if customer.created_at else None,
-    }
-
-
-@app.get("/customers/{customer_id}", tags=["Customers"])
-def get_customer(
-    customer_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Get a single customer contact. Task 30 (P3-B)."""
-    if not has_permission(current_user, "customers", "view"):
-        raise HTTPException(403, "Permission denied: view on customers is not allowed for your role")
-    customer = db.query(CustomerDB).filter(
-        CustomerDB.id == customer_id,
-        CustomerDB.company_id == current_user.company_id,
-    ).first()
-    if not customer:
-        raise HTTPException(404, "Customer not found")
-    return {
-        "id": customer.id, "name": customer.name, "email": customer.email,
-        "trn": customer.trn, "address": customer.address, "city": customer.city,
-        "country": customer.country, "phone": customer.phone,
-        "created_at": customer.created_at.isoformat() if customer.created_at else None,
-        "updated_at": customer.updated_at.isoformat() if customer.updated_at else None,
-    }
-
-
-@app.put("/customers/{customer_id}", tags=["Customers"])
-def update_customer(
-    customer_id: str,
-    data: dict,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Update a customer contact. Task 30 (P3-B)."""
-    if not has_permission(current_user, "customers", "edit"):
-        raise HTTPException(403, "Permission denied: edit on customers is not allowed for your role")
-    customer = db.query(CustomerDB).filter(
-        CustomerDB.id == customer_id,
-        CustomerDB.company_id == current_user.company_id,
-    ).first()
-    if not customer:
-        raise HTTPException(404, "Customer not found")
-
-    if "name" in data:
-        name = (data["name"] or "").strip()
-        if not name:
-            raise HTTPException(400, "Customer name cannot be empty")
-        customer.name = name
-    if "email" in data:
-        customer.email = (data["email"] or "").strip() or None
-    if "trn" in data:
-        customer.trn = (data["trn"] or "").strip() or None
-    if "address" in data:
-        customer.address = data["address"]
-    if "city" in data:
-        customer.city = data["city"]
-    if "country" in data:
-        customer.country = data["country"] or "AE"
-    if "phone" in data:
-        customer.phone = data["phone"]
-    customer.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(customer)
-    return {"id": customer.id, "name": customer.name, "email": customer.email}
-
-
-@app.delete("/customers/{customer_id}", tags=["Customers"])
-def delete_customer(
-    customer_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Delete a customer contact.
-    Task 30 (P3-B) — FTA 5-year retention guard:
-    Returns HTTP 409 if the customer has invoices issued within the last 5 years.
-    """
-    if not has_permission(current_user, "customers", "delete"):
-        raise HTTPException(403, "Permission denied: delete on customers is not allowed for your role")
-    customer = db.query(CustomerDB).filter(
-        CustomerDB.id == customer_id,
-        CustomerDB.company_id == current_user.company_id,
-    ).first()
-    if not customer:
-        raise HTTPException(404, "Customer not found")
-
-    if _customer_has_retention_invoices(db, current_user.company_id, customer.name, customer.email, customer.trn):
-        log_audit_event(
-            db=db,
-            action="CUSTOMER_DELETE_BLOCKED_RETENTION",
-            user_id=current_user.id,
-            company_id=current_user.company_id,
-            resource_type="customer",
-            resource_id=customer_id,
-            description=(
-                f"Customer delete blocked by FTA 5-year retention policy. "
-                f"Customer: {customer.name} ({customer.email or 'no email'}) "
-                f"has invoices within the last {FTA_RETENTION_YEARS} years."
-            ),
-            ip_address=request.client.host if request.client else None,
-        )
-        db.commit()
-        raise HTTPException(
-            409,
-            "Cannot delete customer with invoices within the 5-year FTA retention period",
-        )
-
-    log_audit_event(
-        db=db,
-        action="CUSTOMER_DELETED",
-        user_id=current_user.id,
-        company_id=current_user.company_id,
-        resource_type="customer",
-        resource_id=customer_id,
-        description=f"Customer deleted: {customer.name} ({customer.email or 'no email'})",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.delete(customer)
-    db.commit()
-    return {"status": "deleted", "id": customer_id}
-
-
-@app.delete("/admin/companies/{company_id}", tags=["Admin"])
-def delete_company(
-    company_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Super-admin: permanently delete a company account.
-    Task 30 (P3-B) — FTA 5-year retention guard:
-    Returns HTTP 409 if the company has any invoices issued within the last 5 years.
-    Applies to all roles including SUPER_ADMIN.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super admin access required")
-
-    company = db.query(CompanyDB).filter(CompanyDB.id == company_id).first()
-    if not company:
-        raise HTTPException(404, "Company not found")
-
-    from datetime import timedelta
-    cutoff = datetime.utcnow().date() - timedelta(days=FTA_RETENTION_YEARS * 365)
-    has_recent_sales = (
-        db.query(InvoiceDB)
-        .filter(InvoiceDB.company_id == company_id, InvoiceDB.issue_date >= cutoff)
-        .first()
-    ) is not None
-    has_recent_purchases = (
-        db.query(InwardInvoiceDB)
-        .filter(InwardInvoiceDB.company_id == company_id, InwardInvoiceDB.invoice_date >= cutoff)
-        .first()
-    ) is not None
-    has_recent_invoices = has_recent_sales or has_recent_purchases
-
-    if has_recent_invoices:
-        log_audit_event(
-            db=db,
-            action="CUSTOMER_DELETE_BLOCKED_RETENTION",
-            user_id=current_user.id,
-            company_id=company_id,
-            resource_type="company",
-            resource_id=company_id,
-            description=(
-                f"Company delete blocked by FTA 5-year retention policy. "
-                f"Company: {company.legal_name} (id={company_id}) "
-                f"has invoices within the last {FTA_RETENTION_YEARS} years."
-            ),
-            ip_address=request.client.host if request.client else None,
-        )
-        db.commit()
-        raise HTTPException(
-            409,
-            "Cannot delete company with invoices within the 5-year FTA retention period",
-        )
-
-    log_audit_event(
-        db=db,
-        action="COMPANY_DELETED",
-        user_id=current_user.id,
-        company_id=company_id,
-        resource_type="company",
-        resource_id=company_id,
-        description=f"Company permanently deleted by super admin: {company.legal_name} (id={company_id})",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.delete(company)
-    db.commit()
-    return {"status": "deleted", "id": company_id}
 
 
 @app.get("/reports/daily-reconciliation", tags=["Reports"])
@@ -9963,8 +6212,14 @@ def get_daily_reconciliation_report(
     from sqlalchemy import func
 
     # Check role-based permissions
-    if not has_permission(current_user, "reports", "view"):
-        raise HTTPException(403, "Permission denied: view on reports is not allowed for your role")
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
+        raise HTTPException(
+            403, "Insufficient permissions to view reconciliation reports"
+        )
 
     # Parse date range
     if start_date:
@@ -10620,8 +6875,6 @@ def issue_invoice(
     - Saves XML to file system
     - Updates status to ISSUED
     """
-    if not has_permission(current_user, "invoices", "approve"):
-        raise HTTPException(403, "Permission denied: issue invoices is not allowed for your role")
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -10700,52 +6953,25 @@ def issue_invoice(
     from utils.ubl_xml_generator import generate_invoice_xml
     import json
 
-    # Get the immediate predecessor in the hash chain for the current invoice.
-    # Chain membership mirrors the verifier: all non-archived, non-draft
-    # invoices (ISSUED/SENT/VIEWED/PAID/OVERDUE/CANCELLED). Using the same
-    # ordering (issue_date, created_at) as the verifier ensures consistency.
-    from sqlalchemy import or_, and_
+    # Get previous invoice hash for chain
     prev_invoice = (
         db.query(InvoiceDB)
         .filter(
             InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.id != invoice.id,
-            InvoiceDB.is_archived == False,
-            InvoiceDB.status != InvoiceStatus.DRAFT,
-            or_(
-                InvoiceDB.issue_date < invoice.issue_date,
-                and_(
-                    InvoiceDB.issue_date == invoice.issue_date,
-                    InvoiceDB.created_at < invoice.created_at,
-                ),
-            ),
+            InvoiceDB.id != invoice.id,  # Exclude current invoice
         )
-        .order_by(InvoiceDB.issue_date.desc(), InvoiceDB.created_at.desc())
+        .order_by(InvoiceDB.created_at.desc())
         .first()
     )
 
-    if prev_invoice:
-        # Compute canonical hash of previous invoice for hash chain linking.
-        # Using compute_invoice_hash (SHA-256 of canonical fields) so that
-        # the integrity verifier can independently recompute it from DB fields.
-        _chain_crypto = get_crypto_instance()
-        _prev_canonical = {
-            "invoice_number": prev_invoice.invoice_number or "",
-            "issue_date": str(prev_invoice.issue_date) if prev_invoice.issue_date else "",
-            "supplier_trn": prev_invoice.supplier_trn or "",
-            "customer_trn": prev_invoice.customer_trn or "",
-            "total_amount": str(prev_invoice.total_amount or "0.0"),
-            "tax_amount": str(prev_invoice.tax_amount or "0.0"),
-            "prev_invoice_hash": prev_invoice.prev_invoice_hash or "",
-        }
-        invoice.prev_invoice_hash = _chain_crypto.compute_invoice_hash(_prev_canonical)
+    if prev_invoice and prev_invoice.xml_hash:
+        invoice.prev_invoice_hash = prev_invoice.xml_hash
 
     # Prepare invoice data for XML generation
     invoice_data = {
         "invoice_number": invoice.invoice_number,
         "issue_date": invoice.issue_date,
         "due_date": invoice.due_date,
-        "supply_date": invoice.supply_date,  # Task 5: cac:Delivery/cbc:ActualDeliveryDate
         "invoice_type": invoice.invoice_type.value,
         "currency_code": invoice.currency_code,
         "supplier_trn": invoice.supplier_trn,
@@ -10833,26 +7059,8 @@ def issue_invoice(
         invoice.signing_timestamp = datetime.utcnow()
         invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
 
-    # Update invoice status — snapshot prior status before mutation
-    _prev_status_issue = invoice.status.value if invoice.status else "UNKNOWN"
+    # Update invoice status
     invoice.status = InvoiceStatus.ISSUED
-
-    # Task 8: Auto-generate GL journal entry (wrapped so GL failure never breaks issuance)
-    try:
-        create_journal_entry_for_invoice(invoice, db, user_id=current_user.id)
-    except Exception as gl_err:
-        logger.error(f"GL journal entry failed for {invoice.invoice_number}: {gl_err}")
-
-    # Task 1 / Task 15: Audit trail — log actual prior → new status
-    import json as _json
-    log_audit_event(
-        db, "INVOICE_ISSUED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="invoice", resource_id=invoice.id,
-        old_value=_json.dumps({"status": _prev_status_issue}),
-        new_value=_json.dumps({"status": "ISSUED"}),
-        description=f"Invoice {invoice.invoice_number} issued",
-    )
 
     db.commit()
     db.refresh(invoice)
@@ -11002,10 +7210,7 @@ def download_invoice_pdf(
         "status": invoice.status.value,
         "issue_date": invoice.issue_date.isoformat() if invoice.issue_date else "",
         "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
-        "supply_date": invoice.supply_date.isoformat() if invoice.supply_date else None,
         "currency_code": invoice.currency_code,
-        "vat_enabled": bool(invoice.supplier_trn),
-        "invoice_classification": invoice.invoice_classification,
         # Supplier
         "supplier_trn": invoice.supplier_trn,
         "supplier_name": invoice.supplier_name,
@@ -11064,15 +7269,6 @@ def download_invoice_pdf(
             invoice_data=invoice_data, line_items=line_items_data, public_url=public_url
         )
 
-        # Task 1: Audit trail — PDF download
-        log_audit_event(
-            db, "INVOICE_PDF_DOWNLOADED",
-            user_id=current_user.id, company_id=current_user.company_id,
-            resource_type="invoice", resource_id=invoice.id,
-            description=f"PDF downloaded for invoice {invoice.invoice_number}",
-        )
-        db.commit()
-
         # Return PDF as download
         filename = f"{invoice.invoice_number.replace('/', '_')}.pdf"
 
@@ -11100,8 +7296,6 @@ def cancel_invoice(
     db: Session = Depends(get_db),
 ):
     """Cancel an invoice"""
-    if not has_permission(current_user, "invoices", "delete"):
-        raise HTTPException(403, "Permission denied: cancel invoices is not allowed for your role")
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -11114,30 +7308,7 @@ def cancel_invoice(
         raise HTTPException(404, "Invoice not found")
 
     if invoice.status in [InvoiceStatus.PAID, InvoiceStatus.CANCELLED]:
-        raise HTTPException(409, f"Cannot cancel invoice with status: {invoice.status.value}")
-
-    # Task 3: ISSUED invoices require a credit note before cancellation
-    if invoice.status in [InvoiceStatus.ISSUED, InvoiceStatus.SENT]:
-        credit_note_exists = (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.preceding_invoice_id == invoice.id,
-                InvoiceDB.invoice_type.in_([
-                    InvoiceType.TAX_CREDIT_NOTE,
-                    InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
-                ]),
-                InvoiceDB.status.in_([InvoiceStatus.ISSUED, InvoiceStatus.SENT]),
-                InvoiceDB.company_id == current_user.company_id,
-            )
-            .first()
-        )
-        if not credit_note_exists:
-            raise HTTPException(
-                409,
-                "A posted invoice can only be cancelled after issuing a credit note "
-                "(document type 381 referencing this invoice). "
-                "Please create a credit note first.",
-            )
+        raise HTTPException(400, f"Cannot cancel invoice with status: {invoice.status}")
 
     # If cancelling a credit note, restore the original invoice's amount_due
     if invoice.invoice_type in [
@@ -11166,39 +7337,7 @@ def cancel_invoice(
                 )
                 db.add(original_invoice)
 
-    # Task 4: If cancelling a debit note, subtract its amount back from the original invoice's amount_due
-    if invoice.invoice_type == InvoiceType.DEBIT_NOTE and invoice.preceding_invoice_id:
-        original_invoice = (
-            db.query(InvoiceDB)
-            .filter(
-                InvoiceDB.id == invoice.preceding_invoice_id,
-                InvoiceDB.company_id == current_user.company_id,
-            )
-            .first()
-        )
-        if original_invoice:
-            new_amount_due = float(
-                Decimal(str(original_invoice.amount_due))
-                - Decimal(str(invoice.total_amount))
-            )
-            original_invoice.amount_due = max(0.0, new_amount_due)
-            db.add(original_invoice)
-
-    # Snapshot prior status before mutation
-    _prev_status_cancel = invoice.status.value if invoice.status else "UNKNOWN"
     invoice.status = InvoiceStatus.CANCELLED
-
-    # Task 1 / Task 15: Audit trail — log actual prior → new status
-    import json as _json
-    log_audit_event(
-        db, "INVOICE_CANCELLED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="invoice", resource_id=invoice.id,
-        old_value=_json.dumps({"status": _prev_status_cancel}),
-        new_value=_json.dumps({"status": "CANCELLED"}),
-        description=f"Invoice {invoice.invoice_number} cancelled",
-    )
-
     db.commit()
 
     return {
@@ -11494,7 +7633,6 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         status=invoice.status,
         issue_date=invoice.issue_date.isoformat(),
         due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        supply_date=invoice.supply_date.isoformat() if invoice.supply_date else None,
         currency_code=invoice.currency_code,
         supplier_trn=invoice.supplier_trn,
         supplier_name=invoice.supplier_name,
@@ -11511,7 +7649,6 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         tax_amount=invoice.tax_amount,
         total_amount=invoice.total_amount,
         amount_due=invoice.amount_due,
-        total_amount_aed=getattr(invoice, "total_amount_aed", None),
         preceding_invoice_id=invoice.preceding_invoice_id,
         credit_note_reason=invoice.credit_note_reason,
         xml_file_path=invoice.xml_file_path,
@@ -11817,14 +7954,6 @@ def create_expense(
     )
 
     db.add(expense)
-    db.flush()  # persist expense so GL can reference its id
-
-    # Gap 10: Auto-create GL journal entry for expense (FTA SourceDocRef compliance)
-    try:
-        _create_journal_entry_for_expense(expense, db, user_id=current_user.id)
-    except Exception as _gl_exc:
-        logger.warning(f"GL: expense journal entry skipped: {_gl_exc}")
-
     db.commit()
     db.refresh(expense)
 
@@ -11846,7 +7975,6 @@ def create_expense(
 def list_expenses(
     month: str = None,  # "2025-10" for October 2025
     category: str = None,
-    include_archived: bool = False,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -11856,12 +7984,8 @@ def list_expenses(
     Filters:
     - month: "2025-10" for October 2025
     - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
-    - include_archived: include archived expenses (default false)
     """
     query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
-
-    if not include_archived:
-        query = query.filter(ExpenseDB.is_archived == False)
 
     # Filter by month
     if month:
@@ -11902,8 +8026,6 @@ def list_expenses(
                 "supplier_name": exp.supplier_name,
                 "reference_number": exp.reference_number,
                 "notes": exp.notes,
-                "is_archived": exp.is_archived,
-                "archived_at": exp.archived_at.isoformat() if exp.archived_at else None,
                 "created_at": exp.created_at.isoformat(),
             }
             for exp in expenses
@@ -12530,18 +8652,6 @@ def receive_inward_invoice(
         payment_status="PENDING",
     )
 
-    # Gap 3: AED conversion enforcement — mandatory for non-AED inward invoices (FTA FAF compliance)
-    if (invoice_data.currency_code or "AED").upper() != "AED":
-        if not invoice_data.total_amount_aed or invoice_data.total_amount_aed <= 0:
-            raise HTTPException(
-                422,
-                "total_amount_aed is required for non-AED inward invoices. "
-                "Provide the AED equivalent so the FAF Purchase table can report amounts in AED.",
-            )
-        new_invoice.total_amount_aed = round(invoice_data.total_amount_aed, 2)
-    else:
-        new_invoice.total_amount_aed = round(invoice_data.total_amount, 2)
-
     db.add(new_invoice)
 
     # Create line items if provided
@@ -12572,12 +8682,6 @@ def receive_inward_invoice(
         matching_po.variance_amount = (
             matching_po.expected_total - matching_po.received_amount_total
         )
-
-    # Task 8: Auto-generate GL journal entry for purchase (wrapped — GL failure must not block)
-    try:
-        create_journal_entry_for_purchase(new_invoice, db, user_id=current_user.id)
-    except Exception as gl_err:
-        logger.error(f"GL purchase journal entry failed: {gl_err}")
 
     db.commit()
     db.refresh(new_invoice)
@@ -12678,7 +8782,6 @@ def list_inward_invoices(
     status: Optional[str] = None,
     supplier_trn: Optional[str] = None,
     matching_status: Optional[str] = None,
-    include_archived: bool = False,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -12689,14 +8792,10 @@ def list_inward_invoices(
     - status: Filter by invoice status (RECEIVED, PENDING_REVIEW, APPROVED, etc.)
     - supplier_trn: Filter by supplier TRN
     - matching_status: Filter by PO matching status
-    - include_archived: include archived invoices (default false)
     """
     query = db.query(InwardInvoiceDB).filter(
         InwardInvoiceDB.company_id == current_user.company_id
     )
-
-    if not include_archived:
-        query = query.filter(InwardInvoiceDB.is_archived == False)
 
     if status:
         query = query.filter(InwardInvoiceDB.status == status)
@@ -12721,8 +8820,6 @@ def list_inward_invoices(
             received_at=inv.received_at.isoformat(),
             matching_status=inv.matching_status,
             po_id=inv.po_id,
-            is_archived=inv.is_archived,
-            archived_at=inv.archived_at.isoformat() if inv.archived_at else None,
         )
         for inv in invoices
     ]
@@ -12843,8 +8940,6 @@ def approve_inward_invoice(
 
     This changes the status to APPROVED and records the approver
     """
-    if not has_permission(current_user, "inward_invoices", "approve"):
-        raise HTTPException(403, "Permission denied: approve on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -12908,8 +9003,6 @@ def reject_inward_invoice(
     """
     Reject inward invoice with reason
     """
-    if not has_permission(current_user, "inward_invoices", "approve"):
-        raise HTTPException(403, "Permission denied: reject on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -12960,8 +9053,6 @@ def match_inward_invoice_to_po(
 
     This updates the matching_status and calculates variances
     """
-    if not has_permission(current_user, "inward_invoices", "edit"):
-        raise HTTPException(403, "Permission denied: edit on inward_invoices is not allowed for your role")
     invoice = (
         db.query(InwardInvoiceDB)
         .filter(
@@ -14179,8 +10270,6 @@ def restore_superadmin(db: Session = Depends(get_db)):
             company_id=None,
             is_owner=False,
             full_name="Super Admin",
-            # Task 22: Initialise password age tracking
-            password_changed_at=datetime.utcnow(),
         )
         db.add(user)
         db.commit()
@@ -14195,8 +10284,6 @@ def restore_superadmin(db: Session = Depends(get_db)):
         user.password_hash = get_password_hash(super_admin_password)
         user.company_id = None
         user.is_owner = False
-        # Task 22: Track password mutation time for expiry policy
-        user.password_changed_at = datetime.utcnow()
         db.commit()
         return {
             "success": True,
@@ -14221,8 +10308,6 @@ def generate_fta_audit_file(
 
     UAE Federal Tax Authority compliant audit file with invoice-level detail.
     """
-    if not has_permission(current_user, "audit_logs", "export"):
-        raise HTTPException(403, "Permission denied: export on audit_logs is not allowed for your role")
     # Verify company exists and is active
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -14276,17 +10361,17 @@ def generate_fta_audit_file(
 
     # Create audit file record
     audit_file_id = f"faf_{uuid4().hex[:12]}"
-    base_name = f"FTA_FAF_{company.trn}_{period_start}_to_{period_end}"
-    file_name = f"{base_name}.zip"
-    output_dir = os.path.join(ARTIFACT_ROOT, "audit_files", company.id)
-    file_path = os.path.join(output_dir, file_name)
+    file_name = (
+        f"FTA_Audit_File_{company.trn}_{period_start}_to_{period_end}.{format.lower()}"
+    )
+    file_path = os.path.join(ARTIFACT_ROOT, "audit_files", company.id, file_name)
 
     audit_file = AuditFileDB(
         id=audit_file_id,
         company_id=company.id,
         file_name=file_name,
         file_path=file_path,
-        format="ZIP",
+        format=format.upper(),
         period_start_date=start_date,
         period_end_date=end_date,
         status=AuditFileStatus.GENERATING,
@@ -14306,7 +10391,6 @@ def generate_fta_audit_file(
                 InvoiceDB.issue_date <= end_date,
                 InvoiceDB.status != InvoiceStatus.DRAFT,  # Exclude drafts
                 InvoiceDB.status != InvoiceStatus.CANCELLED,  # Exclude cancelled
-                InvoiceDB.is_archived == False,  # Exclude archived (T34)
             )
             .all()
         )
@@ -14319,7 +10403,6 @@ def generate_fta_audit_file(
                 InwardInvoiceDB.invoice_date >= start_date,
                 InwardInvoiceDB.invoice_date <= end_date,
                 InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED,
-                InwardInvoiceDB.is_archived == False,  # Exclude archived (T34)
             )
             .all()
         )
@@ -14329,7 +10412,6 @@ def generate_fta_audit_file(
             {
                 "invoice_number": inv.invoice_number,
                 "issue_date": inv.issue_date,
-                "supply_date": getattr(inv, "supply_date", None),
                 "invoice_type": inv.invoice_type.value,
                 "customer_trn": inv.customer_trn,
                 "customer_name": inv.customer_name,
@@ -14337,85 +10419,29 @@ def generate_fta_audit_file(
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
-                "total_amount_aed": getattr(inv, "total_amount_aed", None),
                 "currency_code": inv.currency_code,
                 "status": inv.status.value,
             }
             for inv in outgoing_invoices
         ]
 
-        # Build GRN receipt_date map: grn_id -> receipt_date (used as SupplyDate for inward invoices)
-        grn_ids = [inv.grn_id for inv in inward_invoices if inv.grn_id]
-        grn_receipt_map: dict = {}
-        if grn_ids:
-            grns = db.query(GoodsReceiptDB).filter(GoodsReceiptDB.id.in_(grn_ids)).all()
-            grn_receipt_map = {grn.id: grn.receipt_date for grn in grns}
-
         inward_data = [
             {
                 "supplier_invoice_number": inv.supplier_invoice_number,
                 "invoice_date": inv.invoice_date,
-                # Use GRN receipt_date as the equivalent supply/delivery date; falls back to invoice_date in FAF generator when None
-                "supply_date": grn_receipt_map.get(inv.grn_id) if inv.grn_id else None,
                 "invoice_type": inv.invoice_type.value,
                 "supplier_trn": inv.supplier_trn,
                 "supplier_name": inv.supplier_name,
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
-                "total_amount_aed": getattr(inv, "total_amount_aed", None),
                 "currency_code": inv.currency_code,
                 "status": inv.status.value,
             }
             for inv in inward_invoices
         ]
 
-        # Fetch General Ledger entries for the period (exclude archived — T34)
-        gl_journal_entries = (
-            db.query(JournalEntryDB)
-            .filter(
-                JournalEntryDB.company_id == company.id,
-                JournalEntryDB.entry_date >= start_date,
-                JournalEntryDB.entry_date <= end_date,
-                JournalEntryDB.is_posted == True,
-                JournalEntryDB.is_archived == False,
-            )
-            .all()
-        )
-
-        gl_entry_ids = [je.id for je in gl_journal_entries]
-        gl_lines = (
-            db.query(JournalEntryLineDB)
-            .filter(JournalEntryLineDB.journal_entry_id.in_(gl_entry_ids))
-            .all()
-            if gl_entry_ids
-            else []
-        )
-
-        lines_by_entry: Dict[str, List[Dict]] = {}
-        for line in gl_lines:
-            lines_by_entry.setdefault(line.journal_entry_id, []).append(
-                {
-                    "account_code": line.account_code or "",
-                    "account_name": line.account_name or "",
-                    "debit_amount": line.debit_amount or 0.0,
-                    "credit_amount": line.credit_amount or 0.0,
-                }
-            )
-
-        gl_data = [
-            {
-                "id": je.id,
-                "entry_date": je.entry_date,
-                "reference_number": je.reference_number or "",
-                "reference_id": je.reference_id or "",
-                "reference_type": je.reference_type or "",
-                "lines": lines_by_entry.get(je.id, []),
-            }
-            for je in gl_journal_entries
-        ]
-
-        # Generate FAF ZIP (5-table CSV + SHA-256 hash, packed into ZIP)
+        # Generate audit file using utility
         from utils.fta_audit_generator import FTAAuditFileGenerator
 
         company_data = {
@@ -14424,15 +10450,14 @@ def generate_fta_audit_file(
             "address": f"{company.address_line1 or ''} {company.address_line2 or ''}".strip(),
             "city": company.city,
             "emirate": company.emirate,
-            "registration_date": company.registration_date,
-            "period_start": start_date,
-            "period_end": end_date,
         }
 
         generator = FTAAuditFileGenerator(company_data)
-        zip_path, stats = generator.generate_faf_zip(
-            outgoing_data, inward_data, output_dir, base_name, gl_entries=gl_data
-        )
+
+        if format.upper() == "CSV":
+            stats = generator.generate_csv(outgoing_data, inward_data, file_path)
+        else:
+            stats = generator.generate_txt(outgoing_data, inward_data, file_path)
 
         # Update audit file record with stats
         audit_file.status = AuditFileStatus.COMPLETED
@@ -14442,25 +10467,16 @@ def generate_fta_audit_file(
         audit_file.total_vat = stats.get("total_vat", 0.0)
         audit_file.file_size = stats.get("file_size", 0)
 
-        # Task 1: Audit trail
-        log_audit_event(
-            db, "FAF_GENERATED",
-            user_id=current_user.id, company_id=company.id,
-            resource_type="audit_file", resource_id=audit_file_id,
-            description=f"FAF generated for period {period_start} to {period_end}",
-        )
-
         db.commit()
 
         return {
             "success": True,
-            "message": "FTA Audit File (FAFv1.0.0) generated — ZIP with CSV + SHA-256 hash",
+            "message": "FTA Audit File generated successfully",
             "audit_file_id": audit_file_id,
             "file_name": file_name,
-            "sha256": stats.get("sha256", ""),
             "period_start": period_start,
             "period_end": period_end,
-            "format": "ZIP",
+            "format": format.upper(),
             "statistics": {
                 "total_invoices": audit_file.total_invoices,
                 "total_sales": stats.get("total_sales", 0),
@@ -14468,7 +10484,6 @@ def generate_fta_audit_file(
                 "total_customers": audit_file.total_customers,
                 "total_amount": audit_file.total_amount,
                 "total_vat": audit_file.total_vat,
-                "total_gl_lines": stats.get("total_gl_lines", 0),
             },
         }
 
@@ -14545,121 +10560,15 @@ def download_audit_file(
     if not os.path.exists(audit_file.file_path):
         raise HTTPException(404, "Audit file not found on disk")
 
-    # Determine media type — new files are ZIPs; legacy CSV/TXT still served correctly
-    ext = os.path.splitext(audit_file.file_path)[1].lower()
-    media_type_map = {
-        ".zip": "application/zip",
-        ".csv": "text/csv",
-        ".txt": "text/plain",
-    }
-    media_type = media_type_map.get(ext, "application/octet-stream")
+    # Determine media type
+    media_type = "text/csv" if audit_file.format == "CSV" else "text/plain"
 
     return FileResponse(
         path=audit_file.file_path, media_type=media_type, filename=audit_file.file_name
     )
 
 
-# ==================== FAF HASH VERIFICATION (Task 35 — P2-5) ====================
-
-
-@app.post("/audit-files/verify", tags=["FTA Audit"])
-async def verify_faf_integrity(
-    request: Request,
-    file: UploadFile = File(...),
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Verify the integrity of a previously exported FAF ZIP file.
-
-    Accepts a FAF .zip upload, extracts the CSV and its embedded SHA-256 hash file,
-    recomputes the hash, and confirms whether they match.
-
-    Returns:
-      {
-        "valid": true|false,
-        "filename": "...",
-        "csv_filename": "...",
-        "computed_hash": "...",
-        "expected_hash": "..."
-      }
-    """
-    import zipfile as zf_module
-
-    if not file.filename or not file.filename.lower().endswith(".zip"):
-        raise HTTPException(400, "Uploaded file must be a .zip FAF archive")
-
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Uploaded file is empty")
-
-    try:
-        with zf_module.ZipFile(io.BytesIO(content)) as zf:
-            names = zf.namelist()
-
-            # Find the CSV and the hash file
-            csv_names = [n for n in names if n.lower().endswith(".csv")]
-            sha_names = [n for n in names if n.lower().endswith(".sha256")]
-
-            if not csv_names:
-                raise HTTPException(422, "No CSV file found inside the ZIP")
-            if not sha_names:
-                raise HTTPException(422, "No .sha256 hash file found inside the ZIP")
-
-            csv_filename = csv_names[0]
-            sha_filename = sha_names[0]
-
-            csv_bytes = zf.read(csv_filename)
-            sha_bytes = zf.read(sha_filename)
-
-        # Parse expected hash — format is "{hash}  {filename}\n"
-        sha_text = sha_bytes.decode("utf-8", errors="replace").strip()
-        expected_hash = sha_text.split()[0] if sha_text else ""
-
-        # Recompute hash
-        computed_hash = hashlib.sha256(csv_bytes).hexdigest()
-
-        valid = computed_hash == expected_hash
-
-        log_audit_event(
-            db, "FAF_INTEGRITY_VERIFIED",
-            user_id=current_user.id, company_id=current_user.company_id,
-            resource_type="audit_file", resource_id=None,
-            description=f"FAF integrity check: {'PASS' if valid else 'FAIL'} — file: {file.filename}",
-            ip_address=request.client.host if request.client else None,
-        )
-        db.commit()
-
-        return {
-            "valid": valid,
-            "filename": file.filename,
-            "csv_filename": csv_filename,
-            "computed_hash": computed_hash,
-            "expected_hash": expected_hash,
-        }
-
-    except zf_module.BadZipFile:
-        raise HTTPException(422, "Uploaded file is not a valid ZIP archive")
-
-
 # ==================== PEPPOL SETTINGS ====================
-
-
-@app.get("/settings/session", tags=["Settings"])
-def get_session_settings(
-    current_user: UserDB = Depends(get_current_user_from_header),
-):
-    """
-    Return current JWT session configuration.
-    Controlled via JWT_EXPIRY_HOURS environment variable (default: 24 hours).
-    FTA Article 9.1 requires configurable session lifetime.
-    """
-    return {
-        "jwt_expiry_hours": round(ACCESS_TOKEN_EXPIRE_MINUTES / 60, 2),
-        "jwt_expiry_minutes": ACCESS_TOKEN_EXPIRE_MINUTES,
-        "env_var": "JWT_EXPIRY_HOURS",
-        "fta_reference": "Article 9.1 – Session Controls",
-    }
 
 
 @app.get("/settings/peppol", tags=["Settings"])
@@ -14698,8 +10607,6 @@ def update_peppol_settings(
     db: Session = Depends(get_db),
 ):
     """Update PEPPOL configuration for the company"""
-    if not has_permission(current_user, "settings", "edit"):
-        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
     )
@@ -14841,8 +10748,12 @@ def update_vat_settings(
     db: Session = Depends(get_db),
 ):
     """Update VAT registration configuration for the company"""
-    if not has_permission(current_user, "settings", "edit"):
-        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]:
+        raise HTTPException(403, "Only admins can update VAT settings")
 
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -14917,8 +10828,12 @@ async def upload_vat_certificate(
     db: Session = Depends(get_db),
 ):
     """Upload VAT registration certificate (PDF only)"""
-    if not has_permission(current_user, "settings", "edit"):
-        raise HTTPException(403, "Permission denied: edit on settings is not allowed for your role")
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.SUPER_ADMIN,
+        Role.BUSINESS_ADMIN,
+    ]:
+        raise HTTPException(403, "Only admins can upload VAT certificates")
 
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -15502,9 +11417,9 @@ async def download_vendor_template(format: str = "csv"):
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
 
-@app.post("/invoices/bulk-import", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
-@app.post("/bulk/import/invoices", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
-@app.post("/api/bulk/import/invoices", tags=["Bulk Import"], dependencies=[require_permission("invoices", "create")])
+@app.post("/invoices/bulk-import", tags=["Bulk Import"])
+@app.post("/bulk/import/invoices", tags=["Bulk Import"])
+@app.post("/api/bulk/import/invoices", tags=["Bulk Import"])
 async def bulk_import_invoices(
     file: UploadFile = File(...),
     current_user: UserDB = Depends(get_current_user_from_header),
@@ -15706,11 +11621,10 @@ async def bulk_import_invoices(
             invoice_type_counts[invoice_type_value] += 1
 
             prefix_map = {
-                "380": "TI",   # Tax Invoice
+                "380": "TI",  # Tax Invoice
                 "381": "TCN",  # Tax Credit Note
-                "383": "DN",   # Debit Note (Task 4)
-                "480": "CI",   # Commercial Invoice
-                "81": "CN",    # Credit Note
+                "480": "CI",  # Commercial Invoice
+                "81": "CN",  # Credit Note
             }
             prefix = prefix_map.get(invoice_type_value, "TI")
             generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
@@ -15824,25 +11738,6 @@ async def bulk_import_invoices(
                 )
                 db.add(tax_breakdown)
 
-            # Gap 9: Per-record audit event for each bulk-imported invoice (FTA audit trail compliance)
-            db.flush()  # ensure new_invoice.id is set before logging
-            log_audit_event(
-                db,
-                action="INVOICE_IMPORTED",
-                user_id=current_user.id,
-                company_id=company_id,
-                resource_type="invoice",
-                resource_id=new_invoice.id,
-                description=f"Bulk imported invoice {invoice_number} for {invoice_data.get('customer_name', 'unknown customer')} by {current_user.email}",
-                new_value=str({
-                    "invoice_number": invoice_number,
-                    "invoice_type": invoice_type_value,
-                    "customer_name": invoice_data.get("customer_name"),
-                    "total_amount": float(total_amount_calc),
-                    "source": "bulk_import",
-                }),
-            )
-
             created_count += 1
 
         # Update trial invoice count if on trial
@@ -15947,1973 +11842,6 @@ async def bulk_import_vendors(
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Bulk vendor import failed: {str(e)}")
-
-
-# ==================== TASK 2: PASSWORD SECURITY ENDPOINTS ====================
-
-
-@app.post("/me/change-password", tags=["Password Security"])
-def change_password(
-    current_password: str,
-    new_password: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Change the current user's password.
-    Enforces:
-    - Current password must be correct
-    - New password must meet complexity requirements (Task 2)
-    - New password must not match any of the last 5 passwords (Task 2)
-    - Minimum password age (Task 22): cannot change more than once per PASSWORD_MIN_AGE_HOURS
-    """
-    # 0. Task 22: Minimum password age — skip this check for forced/expired changes
-    was_forced = bool(getattr(current_user, "must_change_password", False))
-    if not was_forced:
-        pw_changed_at = getattr(current_user, "password_changed_at", None)
-        if pw_changed_at is not None:
-            hours_since_last_change = (datetime.utcnow() - pw_changed_at).total_seconds() / 3600
-            if hours_since_last_change < PASSWORD_MIN_AGE_HOURS:
-                remaining_hours = int(PASSWORD_MIN_AGE_HOURS - hours_since_last_change) + 1
-                raise HTTPException(
-                    429,
-                    f"Password was changed too recently. Please wait {remaining_hours} hour(s) before changing again.",
-                )
-
-    # 1. Verify current password
-    if not current_user.password_hash or not verify_password(
-        current_password, current_user.password_hash
-    ):
-        raise HTTPException(400, "Current password is incorrect")
-
-    # 2. Validate complexity
-    try:
-        validate_password_complexity(new_password)
-    except ValueError as e:
-        raise HTTPException(422, str(e))
-
-    # 3. Check password history (no reuse of last 5)
-    if _check_password_history(current_user.id, new_password, db):
-        raise HTTPException(
-            422,
-            f"New password cannot be the same as any of your last {PASSWORD_HISTORY_DEPTH} passwords",
-        )
-
-    # 4. Hash and save
-    new_hash = get_password_hash(new_password)
-    _save_password_history(current_user.id, new_hash, db)
-    current_user.password_hash = new_hash
-
-    # 5. Update password_changed_at timestamp (Task 22)
-    current_user.password_changed_at = datetime.utcnow()
-
-    # 6. Clear forced password change flag if set (Task 20)
-    current_user.must_change_password = False
-
-    # 7. Audit trail
-    audit_action = "FORCED_PASSWORD_CHANGED" if was_forced else "PASSWORD_CHANGED"
-    audit_description = (
-        f"User {current_user.email} completed mandatory password change"
-        if was_forced
-        else f"User {current_user.email} changed their password"
-    )
-    log_audit_event(
-        db, audit_action,
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="user", resource_id=current_user.id,
-        description=audit_description,
-    )
-
-    db.commit()
-    return {
-        "success": True,
-        "message": "Password changed successfully",
-        "password_changed_at": current_user.password_changed_at.isoformat(),
-    }
-
-
-# ==================== TASK 1: AUDIT LOG ENDPOINTS ====================
-
-
-@app.get("/audit-logs", tags=["Audit Trail"])
-def list_audit_logs(
-    action: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    page: int = 1,
-    limit: int = 50,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    List audit log entries for the company.
-    Company admins see their company's logs. Super-admins see all logs.
-    """
-    from datetime import datetime as dt
-
-    if not has_permission(current_user, "audit_logs", "view"):
-        raise HTTPException(403, "Permission denied: view on audit_logs is not allowed for your role")
-
-    q = db.query(AuditLogDB)
-
-    if current_user.role != Role.SUPER_ADMIN:
-        if not current_user.company_id:
-            raise HTTPException(400, "User has no associated company")
-        q = q.filter(AuditLogDB.company_id == current_user.company_id)
-
-    if action:
-        q = q.filter(AuditLogDB.action == action.upper())
-    if resource_type:
-        q = q.filter(AuditLogDB.resource_type == resource_type.lower())
-    if from_date:
-        try:
-            q = q.filter(AuditLogDB.created_at >= dt.strptime(from_date, "%Y-%m-%d"))
-        except ValueError:
-            raise HTTPException(400, "Invalid from_date format. Use YYYY-MM-DD")
-    if to_date:
-        try:
-            from datetime import timedelta as _td
-            _to = dt.strptime(to_date, "%Y-%m-%d") + _td(days=1)
-            q = q.filter(AuditLogDB.created_at < _to)
-        except ValueError:
-            raise HTTPException(400, "Invalid to_date format. Use YYYY-MM-DD")
-
-    total = q.count()
-    logs = (
-        q.order_by(AuditLogDB.created_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-        .all()
-    )
-
-    # Build user_id → email map for response enrichment
-    user_ids = list({log.user_id for log in logs if log.user_id})
-    user_email_map: dict = {}
-    if user_ids:
-        users = db.query(UserDB).filter(UserDB.id.in_(user_ids)).all()
-        user_email_map = {u.id: u.email for u in users}
-
-    return {
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "audit_logs": [
-            {
-                "id": log.id,
-                "action": log.action,
-                "resource_type": log.resource_type,
-                "resource_id": log.resource_id,
-                "user_id": log.user_id,
-                "user_email": user_email_map.get(log.user_id),
-                "company_id": log.company_id,
-                "old_value": log.old_value,
-                "new_value": log.new_value,
-                "description": log.description,
-                "ip_address": log.ip_address,
-                "created_at": log.created_at.isoformat() if log.created_at else None,
-            }
-            for log in logs
-        ],
-    }
-
-
-@app.get("/audit-logs/export", tags=["Audit Trail"])
-def export_audit_logs(
-    format: str = "csv",
-    action: Optional[str] = None,
-    resource_type: Optional[str] = None,
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Task 23 — Export filtered audit log as CSV or XLSX (admin-only, authenticated).
-    Accepts the same filter parameters as GET /audit-logs but returns a downloadable file
-    containing ALL matching records (no pagination).
-    """
-    from datetime import datetime as dt
-    import csv as _csv
-    import io
-
-    # Authorization: governed by permission matrix (FINANCE_USER and READ_ONLY are excluded)
-    if not has_permission(current_user, "audit_logs", "export"):
-        raise HTTPException(403, "Permission denied: export on audit_logs is not allowed for your role")
-
-    # Validate format
-    if format.lower() not in ("csv", "xlsx"):
-        raise HTTPException(400, "Invalid format. Supported values: csv, xlsx")
-
-    # Build query identical to list_audit_logs but without pagination
-    q = db.query(AuditLogDB)
-    if current_user.role != Role.SUPER_ADMIN:
-        if not current_user.company_id:
-            raise HTTPException(400, "User has no associated company")
-        q = q.filter(AuditLogDB.company_id == current_user.company_id)
-
-    if action:
-        q = q.filter(AuditLogDB.action == action.upper())
-    if resource_type:
-        q = q.filter(AuditLogDB.resource_type == resource_type.lower())
-    if from_date:
-        try:
-            q = q.filter(AuditLogDB.created_at >= dt.strptime(from_date, "%Y-%m-%d"))
-        except ValueError:
-            raise HTTPException(400, "Invalid from_date format. Use YYYY-MM-DD")
-    if to_date:
-        try:
-            from datetime import timedelta as _td2
-            _to = dt.strptime(to_date, "%Y-%m-%d") + _td2(days=1)
-            q = q.filter(AuditLogDB.created_at < _to)
-        except ValueError:
-            raise HTTPException(400, "Invalid to_date format. Use YYYY-MM-DD")
-
-    logs = q.order_by(AuditLogDB.created_at.desc()).all()
-
-    # Enrich with user emails
-    user_ids = list({log.user_id for log in logs if log.user_id})
-    user_email_map: dict = {}
-    if user_ids:
-        users = db.query(UserDB).filter(UserDB.id.in_(user_ids)).all()
-        user_email_map = {u.id: u.email for u in users}
-
-    # Build rows
-    COLUMNS = ["timestamp", "user_email", "action", "resource_type", "resource_id",
-               "old_value", "new_value", "description", "ip_address"]
-
-    rows = [
-        {
-            "timestamp": log.created_at.isoformat() if log.created_at else "",
-            "user_email": user_email_map.get(log.user_id, log.user_id or ""),
-            "action": log.action or "",
-            "resource_type": log.resource_type or "",
-            "resource_id": log.resource_id or "",
-            "old_value": log.old_value or "",
-            "new_value": log.new_value or "",
-            "description": log.description or "",
-            "ip_address": log.ip_address or "",
-        }
-        for log in logs
-    ]
-
-    # Build filename base
-    date_suffix = dt.utcnow().strftime("%Y%m%d_%H%M%S")
-    base_name = f"audit_log_{date_suffix}"
-
-    if format.lower() == "xlsx":
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment
-        except ImportError:
-            raise HTTPException(500, "openpyxl not installed — cannot generate XLSX")
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Audit Log"
-
-        # Header row — bold with light blue fill
-        header_fill = PatternFill("solid", fgColor="D0E4FF")
-        for col_idx, col_name in enumerate(COLUMNS, start=1):
-            cell = ws.cell(row=1, column=col_idx, value=col_name.replace("_", " ").title())
-            cell.font = Font(bold=True)
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-
-        # Data rows
-        for row_idx, row in enumerate(rows, start=2):
-            for col_idx, col_name in enumerate(COLUMNS, start=1):
-                ws.cell(row=row_idx, column=col_idx, value=row[col_name])
-
-        # Auto-width columns
-        for col_cells in ws.columns:
-            max_len = max((len(str(cell.value)) if cell.value else 0) for cell in col_cells)
-            ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
-
-        output = BytesIO()
-        wb.save(output)
-        output.seek(0)
-        return Response(
-            content=output.getvalue(),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{base_name}.xlsx"'},
-        )
-
-    else:
-        # Default: CSV
-        output = io.StringIO()
-        writer = _csv.DictWriter(output, fieldnames=COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
-        csv_bytes = output.getvalue().encode("utf-8-sig")  # BOM for Excel compatibility
-        return Response(
-            content=csv_bytes,
-            media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{base_name}.csv"'},
-        )
-
-
-@app.get("/audit-logs/actions", tags=["Audit Trail"])
-def list_audit_actions(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Return the distinct action values present in this company's audit log.
-    Used by the frontend to populate the action filter dropdown.
-    """
-    from sqlalchemy import distinct as _distinct
-
-    q = db.query(_distinct(AuditLogDB.action))
-
-    if current_user.role != Role.SUPER_ADMIN:
-        if not current_user.company_id:
-            raise HTTPException(400, "User has no associated company")
-        q = q.filter(AuditLogDB.company_id == current_user.company_id)
-
-    actions = [row[0] for row in q.all() if row[0]]
-    actions.sort()
-    return {"actions": actions}
-
-
-# ==================== TASK 9: VAT RETURN ENDPOINTS ====================
-
-
-@app.post("/vat-return/generate", tags=["VAT Return"])
-def generate_vat_return(
-    period_start: str,
-    period_end: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Generate and persist a VAT return for the given period.
-    Uses the existing calculate_vat_return() utility (Task 9 — must not modify it).
-    """
-    from decimal import Decimal
-    from datetime import datetime as dt
-    from utils.vat_utils import calculate_vat_return
-
-    if not has_permission(current_user, "vat_return", "create"):
-        raise HTTPException(403, "Permission denied: create on vat_return is not allowed for your role")
-
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-
-    try:
-        start_date = dt.strptime(period_start, "%Y-%m-%d").date()
-        end_date = dt.strptime(period_end, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
-
-    if start_date > end_date:
-        raise HTTPException(400, "Start date must be before end date")
-
-    if end_date > date.today():
-        raise HTTPException(400, "End date cannot be in the future")
-
-    # --- Sales invoices in period (not DRAFT or CANCELLED) ---
-    sales_invoices = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.issue_date >= start_date,
-            InvoiceDB.issue_date <= end_date,
-            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
-        )
-        .all()
-    )
-
-    # --- Purchase invoices in period (not CANCELLED) ---
-    purchase_invoices = (
-        db.query(InwardInvoiceDB)
-        .filter(
-            InwardInvoiceDB.company_id == current_user.company_id,
-            InwardInvoiceDB.invoice_date >= start_date,
-            InwardInvoiceDB.invoice_date <= end_date,
-            InwardInvoiceDB.status != InwardInvoiceStatus.CANCELLED,
-        )
-        .all()
-    )
-
-    # --- 13-Box breakdown via InvoiceTaxBreakdownDB ---
-    # Pull all tax breakdowns for the sales invoices in the period
-    sale_invoice_ids = [inv.id for inv in sales_invoices]
-    tax_breakdowns = (
-        db.query(InvoiceTaxBreakdownDB)
-        .filter(InvoiceTaxBreakdownDB.invoice_id.in_(sale_invoice_ids))
-        .all()
-        if sale_invoice_ids
-        else []
-    )
-
-    # Aggregate by tax category
-    box1_std_taxable = Decimal("0.00")   # Box 1: Standard-rated sales (excl. VAT)
-    box3_output_vat = Decimal("0.00")    # Box 3: Output VAT (VAT on standard sales)
-    box4_zero_rated = Decimal("0.00")    # Box 4: Zero-rated sales
-    box5_exempt = Decimal("0.00")        # Box 5: Exempt supplies
-    box6_out_of_scope = Decimal("0.00")  # Box 6: Out-of-scope / reverse-charge
-
-    for tb in tax_breakdowns:
-        taxable = Decimal(str(tb.taxable_amount or 0))
-        vat_amt = Decimal(str(tb.tax_amount or 0))
-        cat = tb.tax_category
-        if cat == TaxCategory.STANDARD:
-            box1_std_taxable += taxable
-            box3_output_vat += vat_amt
-        elif cat == TaxCategory.ZERO:
-            box4_zero_rated += taxable
-        elif cat == TaxCategory.EXEMPT:
-            box5_exempt += taxable
-        elif cat == TaxCategory.OUT_OF_SCOPE:
-            box6_out_of_scope += taxable
-
-    # Fallback: if no breakdowns recorded, use invoice-level tax_amount for output VAT
-    if not tax_breakdowns:
-        box3_output_vat = sum(
-            (Decimal(str(inv.tax_amount or 0)) for inv in sales_invoices), Decimal("0.00")
-        )
-        box1_std_taxable = sum(
-            (Decimal(str(inv.subtotal_amount or 0)) for inv in sales_invoices), Decimal("0.00")
-        )
-
-    box7_total_sales = box1_std_taxable + box4_zero_rated + box5_exempt + box6_out_of_scope  # Box 7
-
-    # Purchases — group InwardInvoiceLineItemDB by tax_category to fill all purchase boxes
-    purchase_invoice_ids = [inv.id for inv in purchase_invoices]
-    inward_line_items = (
-        db.query(InwardInvoiceLineItemDB)
-        .filter(InwardInvoiceLineItemDB.inward_invoice_id.in_(purchase_invoice_ids))
-        .all()
-        if purchase_invoice_ids
-        else []
-    )
-
-    box8_std_purchases = Decimal("0.00")     # Box 8: Standard-rated purchases (excl. VAT)
-    purchase_bills_vat = Decimal("0.00")     # Box 9: Input VAT on standard-rated bills
-    box_zero_rated_purch = Decimal("0.00")   # Zero-rated purchases (no input VAT)
-    box_exempt_purch = Decimal("0.00")       # Exempt purchases (no input VAT)
-    box_reverse_charge_vat = Decimal("0.00") # Input VAT due on reverse-charge (cat O) purchases
-
-    for li in inward_line_items:
-        taxable = Decimal(str(li.line_extension_amount or 0))
-        vat_amt = Decimal(str(li.tax_amount or 0))
-        cat = li.tax_category
-        if cat == TaxCategory.STANDARD:
-            box8_std_purchases += taxable
-            purchase_bills_vat += vat_amt
-        elif cat == TaxCategory.ZERO:
-            box_zero_rated_purch += taxable
-        elif cat == TaxCategory.EXEMPT:
-            box_exempt_purch += taxable
-        elif cat == TaxCategory.OUT_OF_SCOPE:
-            # Reverse-charge: VAT must be accounted for by the buyer
-            box8_std_purchases += taxable
-            box_reverse_charge_vat += vat_amt
-            purchase_bills_vat += vat_amt
-
-    # Fallback: if no line items, derive from invoice-level totals (all standard-rated)
-    if not inward_line_items and purchase_invoices:
-        purchase_bills_vat = sum(
-            (Decimal(str(inv.tax_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
-        )
-        box8_std_purchases = sum(
-            (Decimal(str(inv.subtotal_amount or 0)) for inv in purchase_invoices), Decimal("0.00")
-        )
-
-    # --- Box 2: Tax refunds — VAT on credit notes (381) and debit notes (383) in period ---
-    # FTA Form 301 Box 2 covers only standard tax adjustments (types 381 and 383).
-    # Out-of-scope credit notes (type 81) are excluded because they carry no VAT.
-    # Use cast().in_() with raw string labels to avoid Python↔DB enum name mismatch.
-    from sqlalchemy import cast as sa_cast, String as SA_String
-    credit_debit_notes = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == current_user.company_id,
-            InvoiceDB.issue_date >= start_date,
-            InvoiceDB.issue_date <= end_date,
-            sa_cast(InvoiceDB.invoice_type, SA_String).in_(["TAX_CREDIT_NOTE", "TAX_DEBIT_NOTE", "DEBIT_NOTE"]),
-            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
-        )
-        .all()
-    )
-    tax_refunds_provided = sum(
-        (Decimal(str(cn.tax_amount or 0)) for cn in credit_debit_notes), Decimal("0.00")
-    )
-
-    # --- Box 10 & 11: Expenses with VAT in period ---
-    expenses_in_period = (
-        db.query(ExpenseDB)
-        .filter(
-            ExpenseDB.company_id == current_user.company_id,
-            ExpenseDB.expense_date >= start_date,
-            ExpenseDB.expense_date <= end_date,
-            ExpenseDB.vat_amount != 0,
-        )
-        .all()
-    )
-    purchase_expenses_net = sum(
-        (Decimal(str(exp.amount or 0)) for exp in expenses_in_period), Decimal("0.00")
-    )
-    purchase_expenses_vat = sum(
-        (Decimal(str(exp.vat_amount or 0)) for exp in expenses_in_period), Decimal("0.00")
-    )
-
-    # Call the protected utility function (MUST NOT BE MODIFIED)
-    result = calculate_vat_return(
-        sales_invoices_vat=box3_output_vat,
-        purchase_bills_vat=purchase_bills_vat,
-        purchase_expenses_vat=purchase_expenses_vat,
-    )
-
-    # Box 12: Total input VAT = result["total_input_vat"]
-    # Box 13: Net payable = result["net_vat_payable"]
-
-    # Persist the return
-    return_id = f"vr_{uuid4().hex[:12]}"
-    vat_return = VATReturnDB(
-        id=return_id,
-        company_id=current_user.company_id,
-        period_start=start_date,
-        period_end=end_date,
-        total_sales_invoices=len(sales_invoices),
-        total_purchase_invoices=len(purchase_invoices),
-        # Sales / output side
-        standard_rated_sales=float(box1_std_taxable),
-        tax_refunds_provided=float(tax_refunds_provided),
-        output_vat=float(result["output_vat"]),
-        zero_rated_sales=float(box4_zero_rated),
-        exempt_sales=float(box5_exempt),
-        out_of_scope_sales=float(box6_out_of_scope),
-        reverse_charge_sales=float(box6_out_of_scope),
-        total_sales=float(box7_total_sales),
-        # Purchases / input side
-        standard_rated_purchases=float(box8_std_purchases),
-        input_vat_bills=float(result["input_vat_bills"]),
-        purchase_expenses=float(purchase_expenses_net),
-        input_vat_expenses=float(result["input_vat_expenses"]),
-        total_input_vat=float(result["total_input_vat"]),
-        zero_rated_purchases=float(box_zero_rated_purch),
-        exempt_purchases=float(box_exempt_purch),
-        reverse_charge_vat=float(box_reverse_charge_vat),
-        # Net
-        net_vat_payable=float(result["net_vat_payable"]),
-        generated_by_user_id=current_user.id,
-    )
-    db.add(vat_return)
-
-    # Audit trail
-    log_audit_event(
-        db, "VAT_RETURN_GENERATED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="vat_return", resource_id=return_id,
-        description=f"VAT return generated for period {period_start} to {period_end}",
-    )
-
-    db.commit()
-    db.refresh(vat_return)
-
-    return {
-        "success": True,
-        "return_id": return_id,
-        "period_start": period_start,
-        "period_end": period_end,
-        "total_sales_invoices": len(sales_invoices),
-        "total_purchase_invoices": len(purchase_invoices),
-        # Sales boxes
-        "box1_standard_rated_sales": float(box1_std_taxable),
-        "box2_tax_refunds": float(tax_refunds_provided),
-        "box3_output_vat": float(result["output_vat"]),
-        "box4_zero_rated_sales": float(box4_zero_rated),
-        "box5_exempt_sales": float(box5_exempt),
-        "box6_out_of_scope_sales": float(box6_out_of_scope),
-        "box6_reverse_charge_sales": float(box6_out_of_scope),
-        "box7_total_sales": float(box7_total_sales),
-        # Purchase boxes
-        "box8_standard_rated_purchases": float(box8_std_purchases),
-        "box9_input_vat_bills": float(result["input_vat_bills"]),
-        "box10_purchase_expenses": float(purchase_expenses_net),
-        "box11_input_vat_expenses": float(result["input_vat_expenses"]),
-        "box12_total_input_vat": float(result["total_input_vat"]),
-        "zero_rated_purchases": float(box_zero_rated_purch),
-        "exempt_purchases": float(box_exempt_purch),
-        "reverse_charge_vat": float(box_reverse_charge_vat),
-        # Net
-        "box13_net_vat_payable": float(result["net_vat_payable"]),
-        "status": "payable" if float(result["net_vat_payable"]) > 0 else "refundable",
-    }
-
-
-@app.get("/vat-return", tags=["VAT Return"])
-def list_vat_returns(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """List all VAT returns for the current company."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-    returns = (
-        db.query(VATReturnDB)
-        .filter(VATReturnDB.company_id == current_user.company_id)
-        .order_by(VATReturnDB.created_at.desc())
-        .all()
-    )
-    return {
-        "vat_returns": [
-            {
-                "id": r.id,
-                "period_start": str(r.period_start),
-                "period_end": str(r.period_end),
-                "total_sales_invoices": r.total_sales_invoices,
-                "total_purchase_invoices": r.total_purchase_invoices,
-                "box1_standard_rated_sales": r.standard_rated_sales,
-                "box3_output_vat": r.output_vat,
-                "box4_zero_rated_sales": getattr(r, "zero_rated_sales", 0.0),
-                "box5_exempt_sales": getattr(r, "exempt_sales", 0.0),
-                "box6_out_of_scope_sales": getattr(r, "out_of_scope_sales", 0.0),
-                "box6_reverse_charge_sales": getattr(r, "reverse_charge_sales", 0.0),
-                "box7_total_sales": getattr(r, "total_sales", 0.0),
-                "box8_standard_rated_purchases": r.standard_rated_purchases,
-                "box9_input_vat_bills": r.input_vat_bills,
-                "box12_total_input_vat": r.total_input_vat,
-                "zero_rated_purchases": getattr(r, "zero_rated_purchases", 0.0),
-                "exempt_purchases": getattr(r, "exempt_purchases", 0.0),
-                "reverse_charge_vat": getattr(r, "reverse_charge_vat", 0.0),
-                "box13_net_vat_payable": r.net_vat_payable,
-                "status": "payable" if r.net_vat_payable > 0 else "refundable",
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in returns
-        ]
-    }
-
-
-@app.get("/vat-return/{return_id}", tags=["VAT Return"])
-def get_vat_return(
-    return_id: str,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Get a single VAT return with full box-by-box breakdown."""
-    r = (
-        db.query(VATReturnDB)
-        .filter(
-            VATReturnDB.id == return_id,
-            VATReturnDB.company_id == current_user.company_id,
-        )
-        .first()
-    )
-    if not r:
-        raise HTTPException(404, "VAT return not found")
-    return {
-        "id": r.id,
-        "period_start": str(r.period_start),
-        "period_end": str(r.period_end),
-        "total_sales_invoices": r.total_sales_invoices,
-        "total_purchase_invoices": r.total_purchase_invoices,
-        # Sales / Output side
-        "box1_standard_rated_sales": r.standard_rated_sales,
-        "box2_tax_refunds": r.tax_refunds_provided,
-        "box3_output_vat": r.output_vat,
-        "box4_zero_rated_sales": getattr(r, "zero_rated_sales", 0.0),
-        "box5_exempt_sales": getattr(r, "exempt_sales", 0.0),
-        "box6_out_of_scope_sales": getattr(r, "out_of_scope_sales", 0.0),
-        "box7_total_sales": getattr(r, "total_sales", 0.0),
-        # Purchases / Input side
-        "box8_standard_rated_purchases": r.standard_rated_purchases,
-        "box9_input_vat_bills": r.input_vat_bills,
-        "box10_purchase_expenses": r.purchase_expenses,
-        "box11_input_vat_expenses": r.input_vat_expenses,
-        "box12_total_input_vat": r.total_input_vat,
-        "zero_rated_purchases": getattr(r, "zero_rated_purchases", 0.0),
-        "exempt_purchases": getattr(r, "exempt_purchases", 0.0),
-        "reverse_charge_vat": getattr(r, "reverse_charge_vat", 0.0),
-        # Net
-        "box13_net_vat_payable": r.net_vat_payable,
-        "status": "payable" if r.net_vat_payable > 0 else "refundable",
-        "created_at": r.created_at.isoformat() if r.created_at else None,
-    }
-
-
-_SOFTWARE_NAME = "InvoLinks"
-_SOFTWARE_VERSION = "1.0.0"
-_VENDOR_TRN = os.environ.get("INVOLINKS_VENDOR_TRN", "N/A")
-
-
-@app.get("/vat-return/{return_id}/export", tags=["VAT Return"])
-def export_vat_return(
-    return_id: str,
-    format: str = "xlsx",
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Export a VAT return as XLSX or XML (FTA-compliant formats)."""
-    from io import BytesIO
-    from fastapi.responses import StreamingResponse
-    import xml.etree.ElementTree as ET
-
-    r = (
-        db.query(VATReturnDB)
-        .filter(
-            VATReturnDB.id == return_id,
-            VATReturnDB.company_id == current_user.company_id,
-        )
-        .first()
-    )
-    if not r:
-        raise HTTPException(404, "VAT return not found")
-
-    company = db.query(CompanyDB).filter(CompanyDB.id == r.company_id).first()
-    company_name = (company.legal_name or "") if company else ""
-    company_trn = (company.trn or "") if company else ""
-
-    period_start = str(r.period_start)
-    period_end = str(r.period_end)
-
-    boxes = [
-        (1, "Standard-rated supplies (taxable amount, excl. VAT)", getattr(r, "standard_rated_sales", 0.0)),
-        (2, "Tax refunds provided to tourists", getattr(r, "tax_refunds_provided", 0.0)),
-        (3, "Output VAT (5% on standard-rated sales)", r.output_vat),
-        (4, "Zero-rated supplies", getattr(r, "zero_rated_sales", 0.0)),
-        (5, "Exempt supplies", getattr(r, "exempt_sales", 0.0)),
-        (6, "Out-of-scope / reverse-charge supplies", getattr(r, "out_of_scope_sales", 0.0)),
-        (7, "Total value of all supplies", getattr(r, "total_sales", 0.0)),
-        (8, "Standard-rated purchases — bills (excl. VAT)", r.standard_rated_purchases),
-        (9, "Input VAT recoverable on bills", r.input_vat_bills),
-        (10, "Standard-rated purchases — expenses (excl. VAT)", getattr(r, "purchase_expenses", 0.0)),
-        (11, "Input VAT recoverable on expenses", r.input_vat_expenses),
-        (12, "Total input VAT (Box 9 + Box 11)", r.total_input_vat),
-        (13, "Net VAT payable / (refundable)", r.net_vat_payable),
-    ]
-
-    fmt_lower = format.lower()
-
-    if fmt_lower == "xlsx":
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "VAT Return FTA 301"
-
-        header_fill = PatternFill("solid", fgColor="1F3A6E")
-        header_font = Font(color="FFFFFF", bold=True, size=11)
-        section_fill = PatternFill("solid", fgColor="E8EDF5")
-        section_font = Font(bold=True, size=10, color="1F3A6E")
-        highlight_fill = PatternFill("solid", fgColor="FFF3CD")
-        highlight_font = Font(bold=True, size=10)
-        thin = Side(style="thin", color="CCCCCC")
-        thin_border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        def hrow(row, text, fill=None, font=None, merged_to=4):
-            cell = ws.cell(row=row, column=1, value=text)
-            ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=merged_to)
-            if fill:
-                cell.fill = fill
-            if font:
-                cell.font = font
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            return cell
-
-        def mrow(row, label, value):
-            lc = ws.cell(row=row, column=1, value=label)
-            lc.font = Font(bold=True, size=10)
-            lc.alignment = Alignment(horizontal="left", vertical="center")
-            vc = ws.cell(row=row, column=2, value=value)
-            vc.alignment = Alignment(horizontal="left", vertical="center")
-            for c in range(1, 5):
-                ws.cell(row=row, column=c).border = thin_border
-
-        ws.row_dimensions[1].height = 28
-        hrow(1, "UAE FTA — VAT Return (Form 301)", fill=header_fill, font=header_font)
-
-        ws.row_dimensions[2].height = 20
-        mrow(2, "Company Name", company_name)
-        ws.row_dimensions[3].height = 20
-        mrow(3, "Tax Registration Number (TRN)", company_trn)
-        ws.row_dimensions[4].height = 20
-        mrow(4, "Period Start", period_start)
-        ws.row_dimensions[5].height = 20
-        mrow(5, "Period End", period_end)
-        ws.row_dimensions[6].height = 20
-        mrow(6, "Software Name", _SOFTWARE_NAME)
-        ws.row_dimensions[7].height = 20
-        mrow(7, "Software Version", _SOFTWARE_VERSION)
-        ws.row_dimensions[8].height = 20
-        mrow(8, "Vendor TRN", _VENDOR_TRN)
-
-        ws.row_dimensions[9].height = 8
-
-        ws.row_dimensions[10].height = 22
-        hrow(10, "Box-by-Box Breakdown — FTA Form 301", fill=PatternFill("solid", fgColor="2E5FA3"),
-             font=Font(color="FFFFFF", bold=True, size=11))
-
-        ws.row_dimensions[11].height = 20
-        for col, txt in enumerate(["Box", "Description", "Amount (AED)"], start=1):
-            c = ws.cell(row=11, column=col, value=txt)
-            c.font = Font(bold=True, size=10, color="FFFFFF")
-            c.fill = PatternFill("solid", fgColor="4472C4")
-            c.alignment = Alignment(horizontal="center", vertical="center")
-            c.border = thin_border
-
-        highlight_boxes = {3, 7, 12, 13}
-        section_breaks = {
-            1: "Section 1 — Sales & Output Tax",
-            8: "Section 2 — Purchases & Input Tax",
-            13: "Section 3 — Net VAT",
-        }
-
-        data_row = 12
-        for box_num, desc, val in boxes:
-            if box_num in section_breaks:
-                ws.row_dimensions[data_row].height = 18
-                sc = ws.cell(row=data_row, column=1, value=section_breaks[box_num])
-                ws.merge_cells(start_row=data_row, start_column=1, end_row=data_row, end_column=3)
-                sc.fill = section_fill
-                sc.font = section_font
-                sc.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-                sc.border = thin_border
-                data_row += 1
-
-            ws.row_dimensions[data_row].height = 18
-            is_hl = box_num in highlight_boxes
-            fill = highlight_fill if is_hl else None
-            font = highlight_font if is_hl else Font(size=10)
-
-            for col_i, v in enumerate([f"Box {box_num}", desc, round(float(val or 0), 2)], start=1):
-                c = ws.cell(row=data_row, column=col_i, value=v)
-                c.border = thin_border
-                c.font = font
-                if fill:
-                    c.fill = fill
-                if col_i == 1:
-                    c.alignment = Alignment(horizontal="center", vertical="center")
-                elif col_i == 3:
-                    c.alignment = Alignment(horizontal="right", vertical="center")
-                    c.number_format = '#,##0.00'
-                else:
-                    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-            data_row += 1
-
-        ws.column_dimensions["A"].width = 10
-        ws.column_dimensions["B"].width = 58
-        ws.column_dimensions["C"].width = 20
-        ws.column_dimensions["D"].width = 5
-
-        buf = BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        filename = f"vat_return_{period_start}_{period_end}.xlsx"
-        return StreamingResponse(
-            buf,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-
-    elif fmt_lower == "xml":
-        root = ET.Element("VATReturn")
-        root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
-        root.set("SchemaVersion", "1.0")
-
-        meta = ET.SubElement(root, "Metadata")
-        ET.SubElement(meta, "SoftwareName").text = _SOFTWARE_NAME
-        ET.SubElement(meta, "SoftwareVersion").text = _SOFTWARE_VERSION
-        ET.SubElement(meta, "VendorTRN").text = _VENDOR_TRN
-        ET.SubElement(meta, "GeneratedAt").text = datetime.utcnow().isoformat() + "Z"
-
-        taxpayer = ET.SubElement(root, "TaxpayerInfo")
-        ET.SubElement(taxpayer, "CompanyName").text = company_name
-        ET.SubElement(taxpayer, "TRN").text = company_trn
-        ET.SubElement(taxpayer, "PeriodStart").text = period_start
-        ET.SubElement(taxpayer, "PeriodEnd").text = period_end
-
-        section_sales = ET.SubElement(root, "SalesAndOutputTax")
-        purchase_section = ET.SubElement(root, "PurchasesAndInputTax")
-        net_section = ET.SubElement(root, "NetVAT")
-
-        for box_num, desc, val in boxes:
-            tag = f"Box{box_num}"
-            amount_str = f"{float(val or 0):.2f}"
-            if box_num <= 7:
-                el = ET.SubElement(section_sales, tag)
-            elif box_num <= 12:
-                el = ET.SubElement(purchase_section, tag)
-            else:
-                el = ET.SubElement(net_section, tag)
-            el.set("description", desc)
-            el.text = amount_str
-
-        ET.indent(root, space="  ")
-        xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-        # P3-D: Validate the generated XML against the FTA VAT Return XSD schema (strictly blocking)
-        # Use module-level cached schema to avoid reparsing per request
-        if _FTA_VAT_XSD is None or _lxml_etree is None:
-            raise HTTPException(500, "FTA VAT Return XSD schema could not be loaded at startup — XML export unavailable")
-        _doc = _lxml_etree.fromstring(xml_bytes)
-        if not _FTA_VAT_XSD.validate(_doc):
-            _errors = "; ".join(str(e) for e in _FTA_VAT_XSD.error_log)
-            # Write audit in a separate independent session so it is committed before the exception
-            _audit_db = SessionLocal()
-            try:
-                log_audit_event(
-                    _audit_db, "VAT_RETURN_XML_INVALID",
-                    user_id=current_user.id, company_id=current_user.company_id,
-                    resource_type="vat_return", resource_id=return_id,
-                    description=f"VAT return XML failed XSD schema validation: {_errors[:500]}",
-                )
-                _audit_db.commit()
-            except Exception:
-                pass
-            finally:
-                _audit_db.close()
-            raise HTTPException(500, f"VAT return XML failed FTA schema validation: {_errors[:500]}")
-
-        filename = f"vat_return_{period_start}_{period_end}.xml"
-        return StreamingResponse(
-            BytesIO(xml_bytes),
-            media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-    else:
-        raise HTTPException(400, "format must be 'xlsx' or 'xml'")
-
-
-# ==================== TASK 8: GL / JOURNAL ENTRY ENDPOINTS ====================
-
-
-@app.get("/accounts", tags=["General Ledger"])
-def list_accounts(
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """List chart of accounts for the current company. Creates default accounts if none exist."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-    accounts = (
-        db.query(AccountDB)
-        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
-        .order_by(AccountDB.account_code)
-        .all()
-    )
-    if not accounts:
-        create_default_chart_of_accounts(current_user.company_id, db)
-        db.commit()
-        accounts = (
-            db.query(AccountDB)
-            .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
-            .order_by(AccountDB.account_code)
-            .all()
-        )
-    return {
-        "accounts": [
-            {
-                "id": a.id,
-                "account_code": a.account_code,
-                "account_name": a.account_name,
-                "account_name_ar": a.account_name_ar,
-                "account_type": a.account_type,
-                "is_system": a.is_system,
-                "is_active": a.is_active,
-            }
-            for a in accounts
-        ]
-    }
-
-
-@app.get("/journal-entries", tags=["General Ledger"])
-def list_journal_entries(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    reference_type: Optional[str] = None,
-    include_archived: bool = False,
-    page: int = 1,
-    limit: int = 50,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """List journal entries for the company with optional date and type filters."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-    q = db.query(JournalEntryDB).filter(JournalEntryDB.company_id == current_user.company_id)
-    if not include_archived:
-        q = q.filter(JournalEntryDB.is_archived == False)
-    if from_date:
-        q = q.filter(JournalEntryDB.entry_date >= from_date)
-    if to_date:
-        q = q.filter(JournalEntryDB.entry_date <= to_date)
-    if reference_type:
-        q = q.filter(JournalEntryDB.reference_type == reference_type.upper())
-    total = q.count()
-    entries = q.order_by(JournalEntryDB.entry_date.desc()).offset((page - 1) * limit).limit(limit).all()
-    return {
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "journal_entries": [
-            {
-                "id": e.id,
-                "entry_date": str(e.entry_date),
-                "reference_type": e.reference_type,
-                "reference_id": e.reference_id,
-                "reference_number": e.reference_number,
-                "description": e.description,
-                "is_posted": e.is_posted,
-                "is_archived": e.is_archived,
-                "archived_at": e.archived_at.isoformat() if e.archived_at else None,
-                "created_at": e.created_at.isoformat() if e.created_at else None,
-            }
-            for e in entries
-        ],
-    }
-
-
-@app.get("/journal-entries/{entry_id}", tags=["General Ledger"])
-def get_journal_entry(
-    entry_id: str,
-    response: Response,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Get a single journal entry with all its debit/credit lines. Returns ETag for optimistic locking."""
-    entry = (
-        db.query(JournalEntryDB)
-        .filter(JournalEntryDB.id == entry_id, JournalEntryDB.company_id == current_user.company_id)
-        .first()
-    )
-    if not entry:
-        raise HTTPException(404, "Journal entry not found")
-    # Gap 2: ETag header for optimistic locking
-    current_version = entry.version if entry.version is not None else 1
-    response.headers["ETag"] = str(current_version)
-    return {
-        "id": entry.id,
-        "entry_date": str(entry.entry_date),
-        "reference_type": entry.reference_type,
-        "reference_id": entry.reference_id,
-        "reference_number": entry.reference_number,
-        "description": entry.description,
-        "is_posted": entry.is_posted,
-        "version": current_version,
-        "created_at": entry.created_at.isoformat() if entry.created_at else None,
-        "lines": [
-            {
-                "id": l.id,
-                "account_id": l.account_id,
-                "account_code": l.account_code,
-                "account_name": l.account_name,
-                "debit_amount": l.debit_amount,
-                "credit_amount": l.credit_amount,
-                "currency": l.currency,
-                "amount_aed": l.amount_aed,
-                "description": l.description,
-                "line_number": l.line_number,
-            }
-            for l in entry.lines
-        ],
-    }
-
-
-@app.get("/gl-summary", tags=["General Ledger"])
-def get_gl_summary(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Account balances summary — total debits, credits, and net balance per account."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-
-    accounts = (
-        db.query(AccountDB)
-        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
-        .order_by(AccountDB.account_code)
-        .all()
-    )
-
-    summary = []
-    for acc in accounts:
-        q = (
-            db.query(JournalEntryLineDB)
-            .join(JournalEntryDB, JournalEntryLineDB.journal_entry_id == JournalEntryDB.id)
-            .filter(
-                JournalEntryLineDB.account_id == acc.id,
-                JournalEntryDB.company_id == current_user.company_id,
-                JournalEntryDB.is_posted == True,
-            )
-        )
-        if from_date:
-            q = q.filter(JournalEntryDB.entry_date >= from_date)
-        if to_date:
-            q = q.filter(JournalEntryDB.entry_date <= to_date)
-
-        lines = q.all()
-        total_debit = round(sum(l.debit_amount or 0 for l in lines), 2)
-        total_credit = round(sum(l.credit_amount or 0 for l in lines), 2)
-        net = round(total_debit - total_credit, 2)
-
-        summary.append({
-            "account_code": acc.account_code,
-            "account_name": acc.account_name,
-            "account_type": acc.account_type,
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-            "net_balance": net,
-        })
-
-    return {"from_date": from_date, "to_date": to_date, "accounts": summary}
-
-
-# ==================== GL ENTRY GUARD ENDPOINTS (Task 28 — P2-D) ====================
-
-
-@app.put("/journal-entries/{entry_id}", tags=["General Ledger"])
-def guard_journal_entry_update(
-    entry_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """P2-D: Posted journal entries cannot be modified. Always returns 403."""
-    log_audit_event(
-        db, "JOURNAL_ENTRY_EDIT_BLOCKED",
-        user_id=current_user.id,
-        company_id=current_user.company_id,
-        resource_type="journal_entry",
-        resource_id=entry_id,
-        description=f"Attempt to edit journal entry {entry_id} blocked (FTA compliance — posted entries are immutable)",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    raise HTTPException(403, "Posted journal entries cannot be modified")
-
-
-@app.delete("/journal-entries/{entry_id}", tags=["General Ledger"])
-def guard_journal_entry_delete(
-    entry_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """P2-D: Posted journal entries cannot be deleted. Always returns 403."""
-    log_audit_event(
-        db, "JOURNAL_ENTRY_DELETE_BLOCKED",
-        user_id=current_user.id,
-        company_id=current_user.company_id,
-        resource_type="journal_entry",
-        resource_id=entry_id,
-        description=f"Attempt to delete journal entry {entry_id} blocked (FTA compliance — posted entries are immutable)",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    raise HTTPException(403, "Posted journal entries cannot be modified")
-
-
-# ==================== ARCHIVAL ENDPOINTS (Task 34 — P2-4) ====================
-
-
-@app.post("/journal-entries/{entry_id}/archive", tags=["General Ledger"])
-def archive_journal_entry(
-    entry_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Archive a journal entry (COMPANY_ADMIN / SUPER_ADMIN only). Archived entries are hidden from normal views."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can archive journal entries")
-    entry = db.query(JournalEntryDB).filter(
-        JournalEntryDB.id == entry_id,
-        JournalEntryDB.company_id == current_user.company_id,
-    ).first()
-    if not entry:
-        raise HTTPException(404, "Journal entry not found")
-    if entry.is_archived:
-        raise HTTPException(409, "Journal entry is already archived")
-    entry.is_archived = True
-    entry.archived_at = datetime.utcnow()
-    log_audit_event(
-        db, "JOURNAL_ENTRY_ARCHIVED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="journal_entry", resource_id=entry_id,
-        description=f"Journal entry {entry_id} archived",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Journal entry archived", "id": entry_id, "archived_at": entry.archived_at.isoformat()}
-
-
-@app.post("/journal-entries/{entry_id}/restore", tags=["General Ledger"])
-def restore_journal_entry(
-    entry_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Restore an archived journal entry (COMPANY_ADMIN / SUPER_ADMIN only)."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can restore journal entries")
-    entry = db.query(JournalEntryDB).filter(
-        JournalEntryDB.id == entry_id,
-        JournalEntryDB.company_id == current_user.company_id,
-    ).first()
-    if not entry:
-        raise HTTPException(404, "Journal entry not found")
-    if not entry.is_archived:
-        raise HTTPException(409, "Journal entry is not archived")
-    entry.is_archived = False
-    entry.archived_at = None
-    log_audit_event(
-        db, "JOURNAL_ENTRY_RESTORED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="journal_entry", resource_id=entry_id,
-        description=f"Journal entry {entry_id} restored from archive",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Journal entry restored", "id": entry_id}
-
-
-@app.post("/expenses/{expense_id}/archive", tags=["Expenses"])
-def archive_expense(
-    expense_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Archive an expense record (COMPANY_ADMIN / SUPER_ADMIN only)."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can archive expenses")
-    expense = db.query(ExpenseDB).filter(
-        ExpenseDB.id == expense_id,
-        ExpenseDB.company_id == current_user.company_id,
-    ).first()
-    if not expense:
-        raise HTTPException(404, "Expense not found")
-    if expense.is_archived:
-        raise HTTPException(409, "Expense is already archived")
-    expense.is_archived = True
-    expense.archived_at = datetime.utcnow()
-    log_audit_event(
-        db, "EXPENSE_ARCHIVED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="expense", resource_id=expense_id,
-        description=f"Expense {expense_id} archived",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Expense archived", "id": expense_id, "archived_at": expense.archived_at.isoformat()}
-
-
-@app.post("/expenses/{expense_id}/restore", tags=["Expenses"])
-def restore_expense(
-    expense_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Restore an archived expense (COMPANY_ADMIN / SUPER_ADMIN only)."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can restore expenses")
-    expense = db.query(ExpenseDB).filter(
-        ExpenseDB.id == expense_id,
-        ExpenseDB.company_id == current_user.company_id,
-    ).first()
-    if not expense:
-        raise HTTPException(404, "Expense not found")
-    if not expense.is_archived:
-        raise HTTPException(409, "Expense is not archived")
-    expense.is_archived = False
-    expense.archived_at = None
-    log_audit_event(
-        db, "EXPENSE_RESTORED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="expense", resource_id=expense_id,
-        description=f"Expense {expense_id} restored from archive",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Expense restored", "id": expense_id}
-
-
-@app.post("/inward-invoices/{invoice_id}/archive", tags=["AP Management"])
-def archive_inward_invoice(
-    invoice_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Archive an inward invoice (COMPANY_ADMIN / SUPER_ADMIN only)."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can archive inward invoices")
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id,
-    ).first()
-    if not invoice:
-        raise HTTPException(404, "Inward invoice not found")
-    if invoice.is_archived:
-        raise HTTPException(409, "Inward invoice is already archived")
-    invoice.is_archived = True
-    invoice.archived_at = datetime.utcnow()
-    log_audit_event(
-        db, "INWARD_INVOICE_ARCHIVED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="inward_invoice", resource_id=invoice_id,
-        description=f"Inward invoice {invoice_id} archived",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Inward invoice archived", "id": invoice_id, "archived_at": invoice.archived_at.isoformat()}
-
-
-@app.post("/inward-invoices/{invoice_id}/restore", tags=["AP Management"])
-def restore_inward_invoice(
-    invoice_id: str,
-    request: Request,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Restore an archived inward invoice (COMPANY_ADMIN / SUPER_ADMIN only)."""
-    if current_user.role not in ("COMPANY_ADMIN", "SUPER_ADMIN"):
-        raise HTTPException(403, "Only company admins can restore inward invoices")
-    invoice = db.query(InwardInvoiceDB).filter(
-        InwardInvoiceDB.id == invoice_id,
-        InwardInvoiceDB.company_id == current_user.company_id,
-    ).first()
-    if not invoice:
-        raise HTTPException(404, "Inward invoice not found")
-    if not invoice.is_archived:
-        raise HTTPException(409, "Inward invoice is not archived")
-    invoice.is_archived = False
-    invoice.archived_at = None
-    log_audit_event(
-        db, "INWARD_INVOICE_RESTORED",
-        user_id=current_user.id, company_id=current_user.company_id,
-        resource_type="inward_invoice", resource_id=invoice_id,
-        description=f"Inward invoice {invoice_id} restored from archive",
-        ip_address=request.client.host if request.client else None,
-    )
-    db.commit()
-    return {"message": "Inward invoice restored", "id": invoice_id}
-
-
-# ==================== TRIAL BALANCE EXPORT (Task 28 — P2-C) ====================
-
-
-@app.get("/reports/trial-balance/export", tags=["General Ledger"])
-def export_trial_balance(
-    format: str = "xlsx",
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    account_type: Optional[str] = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Export trial balance data as XLSX or PDF for the requested period."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-
-    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
-    company_name = company.legal_name if company else "InvoLinks"
-
-    accounts = (
-        db.query(AccountDB)
-        .filter(AccountDB.company_id == current_user.company_id, AccountDB.is_active == True)
-        .order_by(AccountDB.account_code)
-        .all()
-    )
-
-    rows = []
-    for acc in accounts:
-        if account_type and acc.account_type != account_type.upper():
-            continue
-        q = (
-            db.query(JournalEntryLineDB)
-            .join(JournalEntryDB, JournalEntryLineDB.journal_entry_id == JournalEntryDB.id)
-            .filter(
-                JournalEntryLineDB.account_id == acc.id,
-                JournalEntryDB.company_id == current_user.company_id,
-                JournalEntryDB.is_posted == True,
-            )
-        )
-        if from_date:
-            q = q.filter(JournalEntryDB.entry_date >= from_date)
-        if to_date:
-            q = q.filter(JournalEntryDB.entry_date <= to_date)
-        lines = q.all()
-        total_debit = round(sum(l.debit_amount or 0 for l in lines), 2)
-        total_credit = round(sum(l.credit_amount or 0 for l in lines), 2)
-        if total_debit == 0 and total_credit == 0:
-            continue
-        rows.append({
-            "account_code": acc.account_code,
-            "account_name": acc.account_name,
-            "account_type": acc.account_type,
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-            "net_balance": round(total_debit - total_credit, 2),
-        })
-
-    period_label = f"{from_date or 'inception'} to {to_date or 'today'}"
-    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    safe_label = (from_date or "all").replace("-", "") + "_" + (to_date or "today").replace("-", "")
-
-    if format.lower() == "xlsx":
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        except ImportError:
-            raise HTTPException(500, "openpyxl not installed")
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Trial Balance"
-
-        primary_fill = PatternFill("solid", fgColor="4F46E5")
-        total_fill = PatternFill("solid", fgColor="C7D2FE")
-        white_font = Font(color="FFFFFF", bold=True)
-        bold_font = Font(bold=True)
-        thin = Side(style="thin", color="CCCCCC")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        def _cell(ws, row, col, value, font=None, fill=None, align="left", nfmt=None):
-            c = ws.cell(row=row, column=col, value=value)
-            if font: c.font = font
-            if fill: c.fill = fill
-            c.alignment = Alignment(horizontal=align, vertical="center")
-            if nfmt: c.number_format = nfmt
-            c.border = border
-            return c
-
-        ws.merge_cells("A1:F1")
-        t = ws.cell(row=1, column=1, value=f"{company_name} — Trial Balance")
-        t.font = Font(size=14, bold=True, color="4F46E5")
-        t.alignment = Alignment(horizontal="center")
-
-        ws.merge_cells("A2:F2")
-        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}")
-        t2.alignment = Alignment(horizontal="center")
-        t2.font = Font(italic=True, color="555555")
-
-        ws.merge_cells("A3:F3")
-        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
-        t3.alignment = Alignment(horizontal="center")
-        t3.font = Font(italic=True, size=9, color="888888")
-
-        headers = ["Account Code", "Account Name", "Account Type", "Total Debit (AED)", "Total Credit (AED)", "Net Balance (AED)"]
-        for col, h in enumerate(headers, 1):
-            _cell(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
-
-        total_dr = total_cr = 0.0
-        for r_idx, row in enumerate(rows, 6):
-            _cell(ws, r_idx, 1, row["account_code"], font=Font(name="Courier New"))
-            _cell(ws, r_idx, 2, row["account_name"])
-            _cell(ws, r_idx, 3, row["account_type"])
-            _cell(ws, r_idx, 4, row["total_debit"], nfmt="#,##0.00", align="right")
-            _cell(ws, r_idx, 5, row["total_credit"], nfmt="#,##0.00", align="right")
-            nb = row["net_balance"]
-            _cell(ws, r_idx, 6, nb, nfmt="#,##0.00", align="right",
-                  font=Font(bold=False, color="CC0000" if nb < 0 else "000000"))
-            total_dr += row["total_debit"]
-            total_cr += row["total_credit"]
-
-        tr = 6 + len(rows)
-        _cell(ws, tr, 1, "TOTALS", font=Font(bold=True, color="4F46E5"), fill=total_fill)
-        _cell(ws, tr, 2, "", fill=total_fill)
-        _cell(ws, tr, 3, "", fill=total_fill)
-        _cell(ws, tr, 4, round(total_dr, 2), font=bold_font, fill=total_fill, nfmt="#,##0.00", align="right")
-        _cell(ws, tr, 5, round(total_cr, 2), font=bold_font, fill=total_fill, nfmt="#,##0.00", align="right")
-        _cell(ws, tr, 6, round(total_dr - total_cr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
-
-        ws.column_dimensions["A"].width = 14
-        ws.column_dimensions["B"].width = 34
-        ws.column_dimensions["C"].width = 14
-        for col in ["D", "E", "F"]:
-            ws.column_dimensions[col].width = 22
-
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buf,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="trial_balance_{safe_label}.xlsx"'},
-        )
-
-    elif format.lower() == "pdf":
-        try:
-            from reportlab.lib.pagesizes import A4, landscape
-            from reportlab.lib.units import cm
-            from reportlab.lib import colors as rl_colors
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        except ImportError:
-            raise HTTPException(500, "reportlab not installed")
-
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-                                 leftMargin=1.5 * cm, rightMargin=1.5 * cm)
-        styles = getSampleStyleSheet()
-        el = []
-        el.append(Paragraph(f"<b>{company_name} — Trial Balance</b>", styles["Title"]))
-        el.append(Paragraph(f"Period: {period_label}", styles["Normal"]))
-        el.append(Paragraph(f"Generated: {generated_at}", ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=rl_colors.grey)))
-        el.append(Spacer(1, 0.4 * cm))
-
-        tbl_data = [["Code", "Account Name", "Type", "Total Debit (AED)", "Total Credit (AED)", "Net Balance (AED)"]]
-        total_dr = total_cr = 0.0
-        for row in rows:
-            tbl_data.append([
-                row["account_code"],
-                row["account_name"],
-                row["account_type"],
-                f"{row['total_debit']:,.2f}",
-                f"{row['total_credit']:,.2f}",
-                f"{row['net_balance']:,.2f}",
-            ])
-            total_dr += row["total_debit"]
-            total_cr += row["total_credit"]
-        tbl_data.append(["TOTALS", "", "", f"{total_dr:,.2f}", f"{total_cr:,.2f}", f"{total_dr - total_cr:,.2f}"])
-
-        tbl = Table(tbl_data, colWidths=[2.5 * cm, 9 * cm, 2.5 * cm, 4 * cm, 4 * cm, 4 * cm])
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#4F46E5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 9),
-            ("ALIGN", (3, 0), (-1, -1), "RIGHT"),
-            ("ALIGN", (0, 0), (2, -1), "LEFT"),
-            ("BACKGROUND", (0, -1), (-1, -1), rl_colors.HexColor("#C7D2FE")),
-            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [rl_colors.white, rl_colors.HexColor("#F5F5FF")]),
-            ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#CCCCCC")),
-            ("FONTSIZE", (0, 1), (-1, -1), 8),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]))
-        el.append(tbl)
-
-        doc.build(el)
-        buf.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buf,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="trial_balance_{safe_label}.pdf"'},
-        )
-    else:
-        raise HTTPException(400, "format must be 'xlsx' or 'pdf'")
-
-
-# ==================== GENERAL LEDGER EXPORT (Task 28 — P2-C) ====================
-
-
-@app.get("/reports/general-ledger/export", tags=["General Ledger"])
-def export_general_ledger(
-    format: str = "xlsx",
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    account_id: Optional[str] = None,
-    reference_type: Optional[str] = None,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """Export general ledger journal entries as XLSX or PDF."""
-    if not current_user.company_id:
-        raise HTTPException(400, "User has no associated company")
-
-    company = db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
-    company_name = company.legal_name if company else "InvoLinks"
-
-    q = (
-        db.query(JournalEntryDB)
-        .filter(JournalEntryDB.company_id == current_user.company_id)
-        .order_by(JournalEntryDB.entry_date.desc())
-    )
-    if from_date:
-        q = q.filter(JournalEntryDB.entry_date >= from_date)
-    if to_date:
-        q = q.filter(JournalEntryDB.entry_date <= to_date)
-    if reference_type:
-        q = q.filter(JournalEntryDB.reference_type == reference_type.upper())
-
-    entries = q.all()
-
-    # Build flat rows — one row per journal entry line
-    rows = []
-    for entry in entries:
-        for line in entry.lines:
-            if account_id and line.account_id != account_id:
-                continue
-            rows.append({
-                "entry_date": str(entry.entry_date),
-                "reference": entry.reference_number or entry.reference_id or "",
-                "reference_type": entry.reference_type or "",
-                "description": entry.description or "",
-                "is_posted": "Posted" if entry.is_posted else "Draft",
-                "account_code": line.account_code or "",
-                "account_name": line.account_name or "",
-                "line_description": line.description or "",
-                "debit_amount": line.debit_amount or 0.0,
-                "credit_amount": line.credit_amount or 0.0,
-            })
-
-    period_label = f"{from_date or 'inception'} to {to_date or 'today'}"
-    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    safe_label = (from_date or "all").replace("-", "") + "_" + (to_date or "today").replace("-", "")
-
-    if format.lower() == "xlsx":
-        try:
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        except ImportError:
-            raise HTTPException(500, "openpyxl not installed")
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "General Ledger"
-
-        primary_fill = PatternFill("solid", fgColor="4F46E5")
-        alt_fill = PatternFill("solid", fgColor="F5F5FF")
-        total_fill = PatternFill("solid", fgColor="C7D2FE")
-        white_font = Font(color="FFFFFF", bold=True)
-        bold_font = Font(bold=True)
-        thin = Side(style="thin", color="CCCCCC")
-        border = Border(left=thin, right=thin, top=thin, bottom=thin)
-
-        def _cell(ws, row, col, value, font=None, fill=None, align="left", nfmt=None):
-            c = ws.cell(row=row, column=col, value=value)
-            if font: c.font = font
-            if fill: c.fill = fill
-            c.alignment = Alignment(horizontal=align, vertical="center")
-            if nfmt: c.number_format = nfmt
-            c.border = border
-            return c
-
-        ws.merge_cells("A1:J1")
-        t = ws.cell(row=1, column=1, value=f"{company_name} — General Ledger")
-        t.font = Font(size=14, bold=True, color="4F46E5")
-        t.alignment = Alignment(horizontal="center")
-
-        ws.merge_cells("A2:J2")
-        t2 = ws.cell(row=2, column=1, value=f"Period: {period_label}")
-        t2.alignment = Alignment(horizontal="center")
-        t2.font = Font(italic=True, color="555555")
-
-        ws.merge_cells("A3:J3")
-        t3 = ws.cell(row=3, column=1, value=f"Generated: {generated_at}")
-        t3.alignment = Alignment(horizontal="center")
-        t3.font = Font(italic=True, size=9, color="888888")
-
-        hdrs = ["Date", "Reference", "Ref Type", "Entry Description", "Status",
-                "Account Code", "Account Name", "Line Description", "Debit (AED)", "Credit (AED)"]
-        for col, h in enumerate(hdrs, 1):
-            _cell(ws, 5, col, h, font=white_font, fill=primary_fill, align="center")
-
-        total_dr = total_cr = 0.0
-        for r_idx, row in enumerate(rows, 6):
-            fill = alt_fill if r_idx % 2 == 0 else None
-            _cell(ws, r_idx, 1, row["entry_date"], fill=fill)
-            _cell(ws, r_idx, 2, row["reference"], font=Font(name="Courier New"), fill=fill)
-            _cell(ws, r_idx, 3, row["reference_type"], fill=fill)
-            _cell(ws, r_idx, 4, row["description"], fill=fill)
-            _cell(ws, r_idx, 5, row["is_posted"], fill=fill)
-            _cell(ws, r_idx, 6, row["account_code"], font=Font(name="Courier New"), fill=fill)
-            _cell(ws, r_idx, 7, row["account_name"], fill=fill)
-            _cell(ws, r_idx, 8, row["line_description"], fill=fill)
-            _cell(ws, r_idx, 9, row["debit_amount"], nfmt="#,##0.00", align="right", fill=fill)
-            _cell(ws, r_idx, 10, row["credit_amount"], nfmt="#,##0.00", align="right", fill=fill)
-            total_dr += row["debit_amount"]
-            total_cr += row["credit_amount"]
-
-        tr = 6 + len(rows)
-        for col in range(1, 9):
-            _cell(ws, tr, col, "TOTALS" if col == 1 else "", font=bold_font, fill=total_fill)
-        _cell(ws, tr, 9, round(total_dr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
-        _cell(ws, tr, 10, round(total_cr, 2), font=Font(bold=True, color="4F46E5"), fill=total_fill, nfmt="#,##0.00", align="right")
-
-        col_widths = [12, 16, 14, 30, 8, 14, 24, 24, 16, 16]
-        for i, w in enumerate(col_widths, 1):
-            ws.column_dimensions[chr(ord("A") + i - 1)].width = w
-
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buf,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="general_ledger_{safe_label}.xlsx"'},
-        )
-
-    elif format.lower() == "pdf":
-        try:
-            from reportlab.lib.pagesizes import A4, landscape
-            from reportlab.lib.units import cm
-            from reportlab.lib import colors as rl_colors
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib.enums import TA_LEFT, TA_CENTER
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        except ImportError:
-            raise HTTPException(500, "reportlab not installed")
-
-        buf = io.BytesIO()
-        doc = SimpleDocTemplate(buf, pagesize=landscape(A4), topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-                                 leftMargin=1.5 * cm, rightMargin=1.5 * cm)
-        styles = getSampleStyleSheet()
-        el = []
-        el.append(Paragraph(f"<b>{company_name} — General Ledger</b>", styles["Title"]))
-        el.append(Paragraph(f"Period: {period_label}", styles["Normal"]))
-        el.append(Paragraph(f"Generated: {generated_at}", ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=rl_colors.grey)))
-        el.append(Spacer(1, 0.4 * cm))
-
-        tbl_data = [["Date", "Reference", "Type", "Description", "Status", "Account", "Debit (AED)", "Credit (AED)"]]
-        total_dr = total_cr = 0.0
-        for row in rows:
-            tbl_data.append([
-                row["entry_date"],
-                row["reference"],
-                row["reference_type"],
-                (row["description"] or "")[:40],
-                row["is_posted"],
-                row["account_code"],
-                f"{row['debit_amount']:,.2f}",
-                f"{row['credit_amount']:,.2f}",
-            ])
-            total_dr += row["debit_amount"]
-            total_cr += row["credit_amount"]
-        tbl_data.append(["TOTALS", "", "", "", "", "", f"{total_dr:,.2f}", f"{total_cr:,.2f}"])
-
-        tbl = Table(tbl_data, colWidths=[2.5 * cm, 3.5 * cm, 3 * cm, 6 * cm, 2 * cm, 2.5 * cm, 3.5 * cm, 3.5 * cm])
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), rl_colors.HexColor("#4F46E5")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, 0), 8),
-            ("ALIGN", (6, 0), (-1, -1), "RIGHT"),
-            ("ALIGN", (0, 0), (5, -1), "LEFT"),
-            ("BACKGROUND", (0, -1), (-1, -1), rl_colors.HexColor("#C7D2FE")),
-            ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [rl_colors.white, rl_colors.HexColor("#F5F5FF")]),
-            ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#CCCCCC")),
-            ("FONTSIZE", (0, 1), (-1, -1), 7),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
-        el.append(tbl)
-
-        doc.build(el)
-        buf.seek(0)
-        from fastapi.responses import StreamingResponse
-        return StreamingResponse(
-            buf,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="general_ledger_{safe_label}.pdf"'},
-        )
-    else:
-        raise HTTPException(400, "format must be 'xlsx' or 'pdf'")
-
-
-# ==================== GAP 1: FTA CONFIG HEALTH CHECK ====================
-
-@app.get("/admin/health/fta-config", tags=["Admin"], dependencies=[require_permission("audit_logs", "read")])
-def get_fta_config_health(
-    current_user: UserDB = Depends(get_current_user_from_header),
-):
-    """
-    Gap 1: FTA compliance configuration health check.
-    Returns the status of all required FTA environment variables.
-    SUPER_ADMIN only.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super Admin only")
-
-    vendor_trn = os.environ.get("INVOLINKS_VENDOR_TRN", "")
-    trn_set = bool(vendor_trn and vendor_trn != "N/A")
-    trn_valid = trn_set and vendor_trn.isdigit() and len(vendor_trn) == 15
-
-    jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
-    jwt_ok = bool(jwt_secret and jwt_secret not in ("secret", "changeme", ""))
-
-    production_mode = os.getenv("PRODUCTION_MODE", "false").lower() == "true"
-
-    checks = [
-        {
-            "key": "INVOLINKS_VENDOR_TRN",
-            "status": "OK" if trn_valid else ("WARN" if trn_set else "ERROR"),
-            "message": (
-                f"Valid 15-digit TRN: {vendor_trn[:4]}***{vendor_trn[-3:]}" if trn_valid
-                else ("Set but not a valid 15-digit TRN" if trn_set else "Not set — VAT Return exports will embed 'N/A'")
-            ),
-        },
-        {
-            "key": "JWT_SECRET_KEY",
-            "status": "OK" if jwt_ok else "ERROR",
-            "message": "Custom signing key configured" if jwt_ok else "Using default/weak key — change before production",
-        },
-        {
-            "key": "PRODUCTION_MODE",
-            "status": "OK" if production_mode else "WARN",
-            "message": "Production mode enabled" if production_mode else "Running in development mode — set PRODUCTION_MODE=true for deployment",
-        },
-    ]
-
-    overall = "OK" if all(c["status"] == "OK" for c in checks) else (
-        "ERROR" if any(c["status"] == "ERROR" for c in checks) else "WARN"
-    )
-
-    return {
-        "overall_status": overall,
-        "fta_ready": overall == "OK",
-        "checks": checks,
-        "message": (
-            "All FTA configuration checks passed." if overall == "OK"
-            else "One or more FTA configuration checks require attention before production deployment."
-        ),
-    }
-
-
-# ==================== GAP 4: BOX 2 TOURIST REFUND CAPTURE ====================
-
-class TouristRefundUpdate(BaseModel):
-    amount: float  # AED amount of tourist VAT refunds to set for Box 2
-
-@app.post("/vat-returns/{return_id}/tourist-refund", tags=["VAT Return"])
-def set_tourist_refund(
-    return_id: str,
-    payload: TouristRefundUpdate,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Gap 4: Record tourist VAT refund amount for Box 2 of FTA Form 301.
-    Updates tax_refunds_provided on the given VAT return.
-    Only COMPANY_ADMIN or SUPER_ADMIN may update this value.
-    """
-    if current_user.role not in (Role.SUPER_ADMIN, Role.COMPANY_ADMIN):
-        raise HTTPException(403, "Company Admin or Super Admin required")
-
-    vat_return = (
-        db.query(VATReturnDB)
-        .filter(
-            VATReturnDB.id == return_id,
-            VATReturnDB.company_id == current_user.company_id,
-        )
-        .first()
-    )
-    if not vat_return:
-        raise HTTPException(404, "VAT return not found")
-
-    if payload.amount < 0:
-        raise HTTPException(422, "Tourist refund amount cannot be negative")
-
-    old_amount = float(vat_return.tax_refunds_provided or 0)
-    vat_return.tax_refunds_provided = round(payload.amount, 2)
-
-    # Recalculate Box 13: net_vat_payable = output_vat - total_input_vat
-    vat_return.net_vat_payable = round(
-        (vat_return.output_vat or 0) - (vat_return.total_input_vat or 0), 2
-    )
-
-    log_audit_event(
-        db,
-        action="VAT_RETURN_TOURIST_REFUND_UPDATED",
-        user_id=current_user.id,
-        company_id=current_user.company_id,
-        resource_type="vat_return",
-        resource_id=return_id,
-        description=f"Box 2 tourist refund updated from AED {old_amount} to AED {payload.amount} by {current_user.email}",
-        old_value=str({"tax_refunds_provided": old_amount}),
-        new_value=str({"tax_refunds_provided": round(payload.amount, 2)}),
-    )
-
-    db.commit()
-    db.refresh(vat_return)
-
-    return {
-        "id": vat_return.id,
-        "tax_refunds_provided": float(vat_return.tax_refunds_provided),
-        "net_vat_payable": float(vat_return.net_vat_payable),
-        "message": f"Box 2 tourist refund set to AED {vat_return.tax_refunds_provided:.2f}",
-    }
-
-
-# ==================== GAP 7: BACKUP RESTORE-AND-VERIFY ====================
-
-class BackupRestoreVerifyRequest(BaseModel):
-    backup_log_id: Optional[str] = None  # specific backup log id; omit to use latest
-    notes: Optional[str] = None           # optional notes about this restore test
-
-@app.post("/admin/backup/restore-verify", tags=["Admin"])
-def verify_backup_restore(
-    payload: BackupRestoreVerifyRequest,
-    current_user: UserDB = Depends(get_current_user_from_header),
-    db: Session = Depends(get_db),
-):
-    """
-    Gap 7: Log a backup restore-and-verify event (BACKUP_RESTORE_VERIFIED).
-    FTA accreditation requires demonstration of a tested recovery procedure.
-    Call this endpoint after performing a manual or automated restore test
-    to create an immutable audit record of the verification.
-    SUPER_ADMIN only.
-    """
-    if current_user.role != Role.SUPER_ADMIN:
-        raise HTTPException(403, "Super Admin only")
-
-    backup_log = None
-    if payload.backup_log_id:
-        backup_log = db.query(BackupLogDB).filter(BackupLogDB.id == payload.backup_log_id).first()
-        if not backup_log:
-            raise HTTPException(404, "Backup log record not found")
-    else:
-        backup_log = (
-            db.query(BackupLogDB)
-            .filter(BackupLogDB.status == "SUCCESS")
-            .order_by(BackupLogDB.completed_at.desc())
-            .first()
-        )
-
-    verified_at = datetime.utcnow()
-    backup_info = {
-        "verified_at": verified_at.isoformat(),
-        "verified_by": current_user.email,
-        "notes": payload.notes or "Manual restore-and-verify test completed",
-    }
-    if backup_log:
-        backup_info.update({
-            "backup_log_id": backup_log.id if backup_log.id else None,
-            "backup_filename": backup_log.filename,
-            "backup_completed_at": backup_log.completed_at.isoformat() if backup_log.completed_at else None,
-            "backup_checksum_sha256": backup_log.checksum_sha256,
-        })
-
-    log_audit_event(
-        db,
-        action="BACKUP_RESTORE_VERIFIED",
-        user_id=current_user.id,
-        company_id=None,
-        resource_type="backup",
-        resource_id=str(backup_log.id) if backup_log and backup_log.id else "manual",
-        description=f"Backup restore-and-verify test completed by {current_user.email}. {payload.notes or ''}".strip(),
-        new_value=str(backup_info),
-    )
-
-    db.commit()
-
-    return {
-        "success": True,
-        "verified_at": verified_at.isoformat(),
-        "audit_event": "BACKUP_RESTORE_VERIFIED",
-        "backup_info": backup_info,
-        "message": "Backup restore verification recorded. The audit log entry is immutable.",
-    }
 
 
 # ==================== REACT APP SERVING ====================

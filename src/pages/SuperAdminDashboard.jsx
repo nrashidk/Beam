@@ -25,21 +25,11 @@ import {
   LogOut,
   User,
   Settings,
-  DatabaseBackup,
-  ShieldCheck,
-  AlertTriangle,
-  CheckCircle2,
-  Link2,
-  XCircle,
-  Database,
-  HardDriveDownload,
-  History,
 } from "lucide-react";
 import { format } from "date-fns";
 import api, { adminAPI } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import AdminLayout from "../components/AdminLayout";
-import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -158,149 +148,10 @@ export default function SuperAdminDashboard() {
   const [editingCompany, setEditingCompany] = useState(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [addExtraInvoices, setAddExtraInvoices] = useState(0);
   const [addExtraMonths, setAddExtraMonths] = useState(0);
   const [freePlanType, setFreePlanType] = useState("INVOICE_COUNT"); // INVOICE_COUNT or DURATION
   const [isSuspended, setIsSuspended] = useState(false);
-
-  // Task 24: Backup status state
-  const [backupStatus, setBackupStatus] = useState(null);
-  const [backupLoading, setBackupLoading] = useState(true);
-  const [backupError, setBackupError] = useState(null);
-  const [verifyingBackup, setVerifyingBackup] = useState(false);
-  const [verifyError, setVerifyError] = useState(null);
-
-  // Task 29: Backup management state
-  const [backupLogs, setBackupLogs] = useState([]);
-  const [backupLogsLoading, setBackupLogsLoading] = useState(true);
-  const [backupLogsError, setBackupLogsError] = useState(null);
-  const [showBackupLogs, setShowBackupLogs] = useState(false);
-  const [triggeringBackup, setTriggeringBackup] = useState(false);
-  const [triggerError, setTriggerError] = useState(null);
-  const [restoringBackupId, setRestoringBackupId] = useState(null);
-  const [restoreError, setRestoreError] = useState(null);
-
-  // Task 26: Integrity check state
-  const [integrityStatus, setIntegrityStatus] = useState(null);
-  const [integrityLoading, setIntegrityLoading] = useState(true);
-  const [integrityError, setIntegrityError] = useState(null);
-  const [runningIntegrity, setRunningIntegrity] = useState(false);
-
-  async function fetchBackupStatus() {
-    setBackupError(null);
-    try {
-      const res = await api.get("/admin/backup/status");
-      setBackupStatus(res.data);
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to load backup status.";
-      setBackupError(msg);
-      setBackupStatus(null);
-      console.error("[BackupStatus] fetch failed:", msg);
-    } finally {
-      setBackupLoading(false);
-    }
-  }
-
-  async function handleVerifyBackup() {
-    setVerifyingBackup(true);
-    setVerifyError(null);
-    try {
-      await api.post("/admin/backup/verify");
-      await fetchBackupStatus();
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to log backup verification.";
-      setVerifyError(msg);
-      console.error("[BackupVerify] failed:", msg);
-    } finally {
-      setVerifyingBackup(false);
-    }
-  }
-
-  async function fetchBackupLogs() {
-    setBackupLogsLoading(true);
-    setBackupLogsError(null);
-    try {
-      const res = await api.get("/admin/backup/logs?limit=30");
-      setBackupLogs(res.data.logs || []);
-    } catch (err) {
-      setBackupLogsError(err.response?.data?.detail || "Failed to load backup logs.");
-    } finally {
-      setBackupLogsLoading(false);
-    }
-  }
-
-  async function handleRunBackupNow() {
-    if (!confirm("Run a full database backup now? This may take a few seconds.")) return;
-    setTriggeringBackup(true);
-    setTriggerError(null);
-    try {
-      await api.post("/admin/backup/trigger");
-      await fetchBackupLogs();
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Backup failed.";
-      setTriggerError(msg);
-      console.error("[BackupTrigger] failed:", msg);
-    } finally {
-      setTriggeringBackup(false);
-    }
-  }
-
-  async function handleRestoreBackup(backupId, filename) {
-    if (!confirm(
-      `⚠️ RESTORE DATABASE from backup:\n\n"${filename}"\n\n` +
-      `This will overwrite the current database. This action cannot be undone.\n\n` +
-      `Type OK to continue.`
-    )) return;
-    setRestoringBackupId(backupId);
-    setRestoreError(null);
-    try {
-      await api.post(`/admin/backup/restore?backup_id=${encodeURIComponent(backupId)}`);
-      alert("Database restore completed successfully.");
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Restore failed.";
-      setRestoreError(msg);
-      console.error("[BackupRestore] failed:", msg);
-    } finally {
-      setRestoringBackupId(null);
-    }
-  }
-
-  async function fetchIntegrityStatus() {
-    setIntegrityError(null);
-    try {
-      const res = await api.get("/admin/integrity/status");
-      setIntegrityStatus(res.data);
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to load integrity status.";
-      setIntegrityError(msg);
-      setIntegrityStatus(null);
-    } finally {
-      setIntegrityLoading(false);
-    }
-  }
-
-  async function handleRunIntegrityCheck() {
-    setRunningIntegrity(true);
-    setIntegrityError(null);
-    try {
-      const res = await api.get("/admin/integrity/verify");
-      setIntegrityStatus({
-        status: res.data.integrity_ok ? "PASSED" : "FAILED",
-        scope: "GLOBAL",
-        last_checked_at: res.data.checked_at,
-        integrity_ok: res.data.integrity_ok,
-        total_invoices: res.data.total_invoices_checked,
-        valid_links: res.data.valid_links,
-        first_broken_link: res.data.first_broken_link || null,
-      });
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to run integrity check.";
-      setIntegrityError(msg);
-    } finally {
-      setRunningIntegrity(false);
-    }
-  }
 
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
@@ -426,39 +277,6 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  async function handleDeleteCompany() {
-    if (!editingCompany) return;
-    const confirmed = window.confirm(
-      `⚠️ Permanently delete company "${editingCompany.legal_name}"?\n\n` +
-        "This will remove all associated data. This action CANNOT be undone.\n\n" +
-        "Note: deletion is blocked by FTA regulations if the company has invoices within the last 5 years.\n\n" +
-        "Continue?"
-    );
-    if (!confirmed) return;
-
-    setDeleting(true);
-    try {
-      await api.delete(`/admin/companies/${editingCompany.id}`);
-      setSuccessMessage(`Company "${editingCompany.legal_name}" deleted successfully.`);
-      setShowEditModal(false);
-      setEditingCompany(null);
-      window.location.reload();
-    } catch (err) {
-      const status = err.response?.status;
-      const detail = err.response?.data?.detail || "Failed to delete company.";
-      if (status === 409) {
-        alert(
-          `⛔ Deletion blocked by FTA 5-year retention policy.\n\n${detail}\n\n` +
-            "This company has invoices within the last 5 years and cannot be deleted until the retention period has passed."
-        );
-      } else {
-        alert(`Error: ${detail}`);
-      }
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   async function handleResetTrial() {
     if (
       !confirm(
@@ -536,21 +354,6 @@ export default function SuperAdminDashboard() {
     }
     fetchPlatformStats();
   }, [fromISO, toISO]);
-
-  // Task 24: Fetch backup status on mount
-  useEffect(() => {
-    fetchBackupStatus();
-  }, []);
-
-  // Task 29: Fetch backup logs on mount
-  useEffect(() => {
-    fetchBackupLogs();
-  }, []);
-
-  // Task 26: Fetch integrity status on mount
-  useEffect(() => {
-    fetchIntegrityStatus();
-  }, []);
 
   const filteredCompanies = useMemo(() => {
     const list = stats?.companies.all || [];
@@ -666,8 +469,6 @@ export default function SuperAdminDashboard() {
   return (
     <AdminLayout navigation={navigationButtons}>
       <div className="bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-6 md:p-8 space-y-8 max-w-7xl mx-auto">
-        {/* Task 22: Password expiry warning banner */}
-        <PasswordExpiryBanner />
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
@@ -934,322 +735,6 @@ export default function SuperAdminDashboard() {
           </Card>
         </div>
 
-        {/* Task 24: Backup Status Card — super admin only */}
-        <div>
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="flex flex-row items-center gap-2 pb-3">
-              <DatabaseBackup className="h-5 w-5 text-indigo-500" />
-              <CardTitle className="text-base">Database Backup Status</CardTitle>
-              <div className="ml-auto">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={verifyingBackup || backupLoading}
-                  onClick={handleVerifyBackup}
-                  className="text-xs h-8 gap-1.5"
-                >
-                  {verifyingBackup
-                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
-                    : <ShieldCheck className="h-3.5 w-3.5" />}
-                  {verifyingBackup ? "Logging…" : "Mark as Verified"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {verifyError && (
-                <p className="text-sm text-red-600 mb-3">{verifyError}</p>
-              )}
-              {backupLoading ? (
-                <p className="text-sm text-muted-foreground">Loading backup status…</p>
-              ) : backupError ? (
-                <p className="text-sm text-red-600">{backupError}</p>
-              ) : !backupStatus ? (
-                <p className="text-sm text-red-600">Unable to load backup status.</p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Provider</p>
-                      <p className="text-sm font-medium">{backupStatus.provider}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">RPO Target</p>
-                      <p className="text-sm font-medium">{backupStatus.rpo_target_hours}h</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">RTO Target</p>
-                      <p className="text-sm font-medium">{backupStatus.rto_target_hours}h</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Last Verified</p>
-                      <p className="text-sm font-medium">
-                        {backupStatus.last_verified_at
-                          ? new Date(backupStatus.last_verified_at).toLocaleString()
-                          : "Never"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
-                    backupStatus.within_rpo
-                      ? "bg-emerald-50 text-emerald-800"
-                      : backupStatus.last_verified_at
-                        ? "bg-amber-50 text-amber-800"
-                        : "bg-red-50 text-red-800"
-                  }`}>
-                    {backupStatus.within_rpo
-                      ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                      : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
-                    <span>{backupStatus.compliance_note}</span>
-                  </div>
-                  {backupStatus.last_verified_by && (
-                    <p className="text-xs text-muted-foreground">
-                      Last verified by: {backupStatus.last_verified_by}
-                      {backupStatus.backup_age_hours !== null
-                        ? ` · ${backupStatus.backup_age_hours.toFixed(1)}h ago`
-                        : ""}
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Task 29: Backup Management Card */}
-        <div>
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="flex flex-row items-center gap-2 pb-3">
-              <Database className="h-5 w-5 text-indigo-500" />
-              <CardTitle className="text-base">Backup Management</CardTitle>
-              <div className="ml-auto flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={triggeringBackup}
-                  onClick={handleRunBackupNow}
-                  className="text-xs h-8 gap-1.5"
-                >
-                  {triggeringBackup
-                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
-                    : <HardDriveDownload className="h-3.5 w-3.5" />}
-                  {triggeringBackup ? "Running…" : "Run Backup Now"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => { setShowBackupLogs((v) => !v); if (!showBackupLogs) fetchBackupLogs(); }}
-                  className="text-xs h-8 gap-1.5"
-                >
-                  <History className="h-3.5 w-3.5" />
-                  {showBackupLogs ? "Hide Logs" : "View Logs"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 pt-0">
-              {triggerError && (
-                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg p-3">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <span>{triggerError}</span>
-                </div>
-              )}
-              {restoreError && (
-                <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 rounded-lg p-3">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                  <span>Restore failed: {restoreError}</span>
-                </div>
-              )}
-              {backupLogsError && !backupLogsLoading && (
-                <p className="text-xs text-red-600">{backupLogsError}</p>
-              )}
-              {backupLogsLoading && (
-                <p className="text-sm text-muted-foreground animate-pulse">Loading backup history…</p>
-              )}
-              {!backupLogsLoading && backupLogs.length === 0 && (
-                <p className="text-sm text-muted-foreground">No automated backups yet. Click "Run Backup Now" to create the first one.</p>
-              )}
-              {!backupLogsLoading && backupLogs.length > 0 && (
-                <div className="flex items-center gap-3 text-sm">
-                  {backupLogs[0].status === "SUCCESS"
-                    ? <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                    : <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />}
-                  <div>
-                    <span className="font-medium">Last backup: </span>
-                    <span className={backupLogs[0].status === "SUCCESS" ? "text-green-700" : "text-red-600"}>
-                      {backupLogs[0].status}
-                    </span>
-                    {backupLogs[0].completed_at && (
-                      <span className="text-muted-foreground ml-1">
-                        · {new Date(backupLogs[0].completed_at).toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                  {backupLogs[0].file_size_bytes && (
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {(backupLogs[0].file_size_bytes / 1024).toFixed(1)} KB
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {showBackupLogs && !backupLogsLoading && backupLogs.length > 0 && (
-                <div className="mt-2 rounded-lg border overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-medium">Filename</th>
-                        <th className="text-left px-3 py-2 font-medium">Status</th>
-                        <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Size</th>
-                        <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">SHA-256</th>
-                        <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Triggered By</th>
-                        <th className="text-left px-3 py-2 font-medium">Completed</th>
-                        <th className="text-left px-3 py-2 font-medium">Restore</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {backupLogs.map((log) => (
-                        <tr key={log.id} className="hover:bg-muted/30">
-                          <td className="px-3 py-2 font-mono truncate max-w-[140px]" title={log.filename}>
-                            {log.filename}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
-                              log.status === "SUCCESS"
-                                ? "bg-green-50 text-green-700"
-                                : "bg-red-50 text-red-700"
-                            }`}>
-                              {log.status === "SUCCESS"
-                                ? <CheckCircle2 className="h-3 w-3" />
-                                : <AlertTriangle className="h-3 w-3" />}
-                              {log.status}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground">
-                            {log.file_size_bytes ? `${(log.file_size_bytes / 1024).toFixed(1)} KB` : "—"}
-                          </td>
-                          <td className="px-3 py-2 hidden lg:table-cell font-mono text-muted-foreground">
-                            {log.checksum_sha256
-                              ? <span title={log.checksum_sha256}>{log.checksum_sha256.slice(0, 12)}…</span>
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[120px]">
-                            {log.triggered_by || "scheduler"}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">
-                            {log.completed_at
-                              ? new Date(log.completed_at).toLocaleString()
-                              : "—"}
-                          </td>
-                          <td className="px-3 py-2">
-                            {log.status === "SUCCESS" && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={restoringBackupId === log.id}
-                                onClick={() => handleRestoreBackup(log.id, log.filename)}
-                                className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                                title="Restore database from this backup"
-                              >
-                                {restoringBackupId === log.id
-                                  ? <RefreshCcw className="h-3 w-3 animate-spin" />
-                                  : "Restore"}
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Task 26: Data Integrity Hash Chain Status Card */}
-        <div>
-          <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="flex flex-row items-center gap-2 pb-3">
-              <Link2 className="h-5 w-5 text-violet-500" />
-              <CardTitle className="text-base">Hash Chain Integrity</CardTitle>
-              <div className="ml-auto">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={runningIntegrity}
-                  onClick={handleRunIntegrityCheck}
-                  className="text-xs h-8 gap-1.5"
-                >
-                  {runningIntegrity
-                    ? <RefreshCcw className="h-3.5 w-3.5 animate-spin" />
-                    : <ShieldCheck className="h-3.5 w-3.5" />}
-                  {runningIntegrity ? "Verifying…" : "Run Integrity Check"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {integrityError && (
-                <p className="text-sm text-red-600 mb-3">{integrityError}</p>
-              )}
-              {integrityLoading ? (
-                <p className="text-sm text-muted-foreground">Loading integrity status…</p>
-              ) : !integrityStatus || integrityStatus.status === "NEVER_CHECKED" ? (
-                <div className="flex items-start gap-2 rounded-lg p-3 text-sm bg-gray-50 text-gray-700">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-gray-500" />
-                  <span>No integrity check has been run yet. Click "Run Integrity Check" to verify the hash chain.</span>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Status</p>
-                      <p className={`text-sm font-semibold ${integrityStatus.integrity_ok ? "text-emerald-600" : "text-red-600"}`}>
-                        {integrityStatus.integrity_ok ? "PASSED" : "FAILED"}
-                      </p>
-                      {integrityStatus.scope && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Scope: {integrityStatus.scope}
-                        </p>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Invoices Checked</p>
-                      <p className="text-sm font-medium">{integrityStatus.total_invoices ?? "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Valid Links</p>
-                      <p className="text-sm font-medium">{integrityStatus.valid_links ?? "—"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">Last Checked</p>
-                      <p className="text-sm font-medium">
-                        {integrityStatus.last_checked_at
-                          ? new Date(integrityStatus.last_checked_at).toLocaleString()
-                          : "Never"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${
-                    integrityStatus.integrity_ok
-                      ? "bg-emerald-50 text-emerald-800"
-                      : "bg-red-50 text-red-800"
-                  }`}>
-                    {integrityStatus.integrity_ok
-                      ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                      : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
-                    <span>
-                      {integrityStatus.integrity_ok
-                        ? "All invoice hash links verified — chain is intact and tamper-evident."
-                        : integrityStatus.first_broken_link
-                          ? `Chain broken at invoice ${integrityStatus.first_broken_link.invoice_number} (${integrityStatus.first_broken_link.invoice_date}). Possible tampering detected.`
-                          : "Hash chain integrity failure detected. Please investigate."}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
         <div id="company-explorer">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold">Company Explorer</h2>
@@ -1286,6 +771,8 @@ export default function SuperAdminDashboard() {
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="pending_review">Pending</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
                   <SelectItem value="suspended">Suspended</SelectItem>
                 </SelectContent>
@@ -1417,9 +904,17 @@ export default function SuperAdminDashboard() {
                     <td className="px-4 py-3">{c.name}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "pending_review" ? "bg-amber-50 text-amber-700" : c.status?.toLowerCase() === "rejected" ? "bg-rose-50 text-rose-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
                       >
-                        {c.status}
+                        {c.status === "PENDING_REVIEW"
+                          ? "PENDING_REVIEW"
+                          : c.status === "REJECTED"
+                            ? "Rejected"
+                            : c.status === "ACTIVE"
+                              ? "Active"
+                              : c.status === "SUSPENDED"
+                                ? "Suspended"
+                                : c.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">{c.plan || "—"}</td>
@@ -1688,25 +1183,17 @@ export default function SuperAdminDashboard() {
                 <div className="flex gap-2 pt-4 border-t">
                   <Button
                     onClick={saveCompanyChanges}
-                    disabled={saving || resetting || deleting}
+                    disabled={saving || resetting}
                     className="flex-1 bg-indigo-600 hover:bg-indigo-700"
                   >
                     {saving ? "Saving..." : "Save All Changes"}
                   </Button>
                   <Button
                     onClick={handleResetTrial}
-                    disabled={saving || resetting || deleting}
+                    disabled={saving || resetting}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                   >
                     {resetting ? "Resetting..." : "🔄 Reset Trial"}
-                  </Button>
-                  <Button
-                    onClick={handleDeleteCompany}
-                    disabled={saving || resetting || deleting}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                    title="Permanently delete this company (blocked if invoices exist within 5 years)"
-                  >
-                    {deleting ? "Deleting..." : "🗑 Delete"}
                   </Button>
                   <Button
                     variant="outline"
@@ -1717,7 +1204,7 @@ export default function SuperAdminDashboard() {
                       setAddExtraMonths(0);
                       setIsSuspended(false);
                     }}
-                    disabled={saving || deleting}
+                    disabled={saving}
                   >
                     Cancel
                   </Button>
