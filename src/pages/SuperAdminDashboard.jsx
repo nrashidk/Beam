@@ -907,7 +907,7 @@ export default function SuperAdminDashboard() {
                         className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "pending_review" ? "bg-amber-50 text-amber-700" : c.status?.toLowerCase() === "rejected" ? "bg-rose-50 text-rose-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
                       >
                         {c.status === "PENDING_REVIEW"
-                          ? "Pending"
+                          ? "PENDING_REVIEW"
                           : c.status === "REJECTED"
                             ? "Rejected"
                             : c.status === "ACTIVE"
