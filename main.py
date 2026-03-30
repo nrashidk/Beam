@@ -4031,6 +4031,23 @@ def get_admin_stats(
     if current_user.role != Role.SUPER_ADMIN:
         raise HTTPException(403, "Insufficient permissions")
 
+    from_dt = None
+    to_dt = None
+    if from_date:
+        try:
+            from_dt = datetime.fromisoformat(from_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except Exception:
+            from_dt = None
+    if to_date:
+        try:
+            to_dt = datetime.fromisoformat(to_date.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except Exception:
+            to_dt = None
+
     # Count companies by status
     pending = (
         db.query(CompanyDB)
@@ -4061,23 +4078,6 @@ def get_admin_stats(
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
     all_companies_list = []
-    # Parse optional date range for per-company revenue calculations
-    from_dt = None
-    to_dt = None
-    if from_date:
-        try:
-            from_dt = datetime.fromisoformat(from_date.replace("Z", "+00:00")).replace(
-                tzinfo=None
-            )
-        except Exception:
-            from_dt = None
-    if to_date:
-        try:
-            to_dt = datetime.fromisoformat(to_date.replace("Z", "+00:00")).replace(
-                tzinfo=None
-            )
-        except Exception:
-            to_dt = None
     for company in companies:
         # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
         plan = None
@@ -4147,6 +4147,7 @@ def get_admin_stats(
                 "invoicesUsed": invoices_used_total,
                 "invoicesLimit": company.free_plan_invoice_limit,
                 "free_plan_type": company.free_plan_type,
+                "free_plan_duration_months": company.free_plan_duration_months,
                 "plan": plan,
                 "arpu": arpu,
                 "region": company.emirate,
@@ -4222,11 +4223,7 @@ def get_admin_stats(
             "deltaPctVsLastMonth": 0,  # Could calculate from historical data
             "tiers": tiers_data,
         },
-        "total_companies": pending
-        + approved
-        + rejected
-        + active_companies
-        + inactive_companies,
+        "total_companies": db.query(CompanyDB).count(),
     }
 
 
@@ -4566,12 +4563,9 @@ def get_platform_statistics(
         except Exception:
             pass
 
-    # Total companies (filtered by created_at if date range provided)
+    # Total companies should reflect the full current base, not just companies
+    # created inside the selected date range.
     company_query = db.query(CompanyDB)
-    if from_dt:
-        company_query = company_query.filter(CompanyDB.created_at >= from_dt)
-    if to_dt:
-        company_query = company_query.filter(CompanyDB.created_at <= to_dt)
     total_companies = company_query.count()
 
     active_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE)
@@ -4723,6 +4717,41 @@ def get_platform_statistics(
             paid_plan_company_ids.add(cid[0])
 
     paid_tier = len(paid_plan_company_ids)
+
+    # Recompute tier totals from the in-scope companies so each company is counted
+    # once against its current effective plan.
+    free_tier = 0
+    paid_tier = 0
+    for company in company_query.all():
+        latest_sub = (
+            db.query(CompanySubscriptionDB)
+            .filter(
+                CompanySubscriptionDB.company_id == company.id,
+                CompanySubscriptionDB.status.in_(
+                    [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]
+                ),
+            )
+            .order_by(CompanySubscriptionDB.created_at.desc())
+            .first()
+        )
+
+        if latest_sub and latest_sub.plan:
+            if (latest_sub.plan.price_monthly or 0) > 0:
+                paid_tier += 1
+            else:
+                free_tier += 1
+            continue
+
+        if company.subscription_plan_id:
+            legacy_plan = db.get(SubscriptionPlanDB, company.subscription_plan_id)
+            if legacy_plan and (legacy_plan.price_monthly or 0) > 0:
+                paid_tier += 1
+            else:
+                free_tier += 1
+            continue
+
+        if company.status in [CompanyStatus.ACTIVE, CompanyStatus.PENDING_REVIEW]:
+            free_tier += 1
 
     return PlatformStatsOut(
         total_companies=total_companies,
