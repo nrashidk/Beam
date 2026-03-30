@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   FileText,
@@ -23,24 +22,13 @@ import {
   ClipboardList,
   BookOpen,
   ShieldCheck,
-  List,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const isGLPath = location.pathname.startsWith("/gl/") || location.pathname === "/general-ledger";
-  const [glOpen, setGlOpen] = useState(isGLPath);
-
-  useEffect(() => {
-    if (isGLPath) setGlOpen(true);
-  }, [isGLPath]);
-
   const isActive = (path) => location.pathname === path;
-  const isGroupActive = (paths) => paths.some((p) => location.pathname === p || location.pathname.startsWith(p));
 
   const navItems = [
     { path: "/analytics", icon: LineChart, label: "Advanced Analytics" },
@@ -53,6 +41,7 @@ export default function Sidebar() {
     { path: "/expense-tracker", icon: Receipt, label: "Expense Tracker" },
     { path: "/finance", icon: BarChart3, label: "Finance" },
     { path: "/audit-files", icon: FileCheck, label: "FTA Audit" },
+    { path: "/general-ledger", icon: BookOpen, label: "General Ledger" },
     { path: "/invoices", icon: FileText, label: "Invoices" },
     { path: "/payment-verification", icon: CheckCircle, label: "Payment Verification" },
     { path: "/settings/peppol", icon: Network, label: "PEPPOL" },
@@ -64,14 +53,6 @@ export default function Sidebar() {
     { path: "/vat-return", icon: ClipboardList, label: "VAT Return" },
     { path: "/settings/vat", icon: Percent, label: "VAT Settings" },
   ];
-
-  const glSubItems = [
-    { path: "/gl/accounts", icon: List, label: "Chart of Accounts" },
-    { path: "/gl/journal-entries", icon: BookOpen, label: "Journal Entries" },
-    { path: "/gl/trial-balance", icon: BarChart3, label: "Trial Balance" },
-  ];
-
-  const glGroupActive = isGroupActive(["/gl/accounts", "/gl/journal-entries", "/gl/trial-balance", "/general-ledger"]);
 
   return (
     <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 shadow-sm flex flex-col z-40">
@@ -109,49 +90,6 @@ export default function Sidebar() {
               </button>
             );
           })}
-
-          {/* General Ledger Group */}
-          <div>
-            <button
-              onClick={() => setGlOpen((o) => !o)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${
-                glGroupActive
-                  ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                  : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600"
-              }`}
-            >
-              <BookOpen className="w-5 h-5" />
-              <span className="flex-1 text-left">General Ledger</span>
-              {glOpen ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-
-            {glOpen && (
-              <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-indigo-100 pl-3">
-                {glSubItems.map((sub) => {
-                  const Icon = sub.icon;
-                  const active = isActive(sub.path);
-                  return (
-                    <button
-                      key={sub.path}
-                      onClick={() => navigate(sub.path)}
-                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${
-                        active
-                          ? "bg-indigo-50 text-indigo-700 font-medium"
-                          : "text-gray-600 hover:bg-gray-50 hover:text-indigo-600"
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{sub.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       </nav>
 
