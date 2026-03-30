@@ -771,6 +771,8 @@ export default function SuperAdminDashboard() {
                 <SelectContent>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="pending_review">Pending</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
                   <SelectItem value="suspended">Suspended</SelectItem>
                 </SelectContent>
@@ -902,9 +904,17 @@ export default function SuperAdminDashboard() {
                     <td className="px-4 py-3">{c.name}</td>
                     <td className="px-4 py-3">
                       <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs ${c.status?.toLowerCase() === "active" ? "bg-emerald-50 text-emerald-700" : c.status?.toLowerCase() === "pending_review" ? "bg-amber-50 text-amber-700" : c.status?.toLowerCase() === "rejected" ? "bg-rose-50 text-rose-700" : c.status?.toLowerCase() === "suspended" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600"}`}
                       >
-                        {c.status}
+                        {c.status === "PENDING_REVIEW"
+                          ? "Pending"
+                          : c.status === "REJECTED"
+                            ? "Rejected"
+                            : c.status === "ACTIVE"
+                              ? "Active"
+                              : c.status === "SUSPENDED"
+                                ? "Suspended"
+                                : c.status}
                       </span>
                     </td>
                     <td className="px-4 py-3">{c.plan || "—"}</td>

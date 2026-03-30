@@ -4142,13 +4142,7 @@ def get_admin_stats(
             {
                 "id": company.id,
                 "name": company.legal_name or "Unnamed Company",
-                "status": "active"
-                if company.status == CompanyStatus.ACTIVE
-                else (
-                    "suspended"
-                    if company.status == CompanyStatus.SUSPENDED
-                    else "inactive"
-                ),
+                "status": company.status.value if company.status else "UNKNOWN",
                 "invoicesThisMonth": invoices_this_month,
                 "invoicesUsed": invoices_used_total,
                 "invoicesLimit": company.free_plan_invoice_limit,
