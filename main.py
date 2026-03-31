@@ -1316,30 +1316,40 @@ class AccountDB(Base):
 
 
 class JournalEntryDB(Base):
-    """General Ledger — Journal Entry headers."""
+    """General Ledger — Journal Entry headers (maps to existing journal_entries table)."""
     __tablename__ = "journal_entries"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    id = Column(String, primary_key=True)
     company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
     entry_date = Column(Date, nullable=False, index=True)
-    reference = Column(String, nullable=True)
-    description = Column(Text, nullable=True)
-    source = Column(String, nullable=True)
-    source_id = Column(String, nullable=True)
+    reference_type = Column(String, nullable=True)
+    reference_id = Column(String, nullable=True)
+    reference_number = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    is_posted = Column(Boolean, default=False)
+    created_by_user_id = Column(String, nullable=True)
+    is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime, nullable=True)
+    version = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.utcnow)
-    company = relationship("CompanyDB", backref="journal_entries")
-    lines = relationship("JournalEntryLineDB", backref="entry", cascade="all, delete-orphan")
+    company = relationship("CompanyDB", backref="gl_journal_entries")
+    lines = relationship("JournalEntryLineDB", backref="journal_entry", cascade="all, delete-orphan",
+                         foreign_keys="JournalEntryLineDB.journal_entry_id")
 
 
 class JournalEntryLineDB(Base):
-    """General Ledger — Journal Entry detail lines."""
+    """General Ledger — Journal Entry detail lines (maps to existing journal_entry_lines table)."""
     __tablename__ = "journal_entry_lines"
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
+    id = Column(String, primary_key=True)
+    journal_entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
+    account_id = Column(String, nullable=True)
     account_code = Column(String, nullable=False)
     account_name = Column(String, nullable=False)
     debit_amount = Column(Float, default=0.0)
     credit_amount = Column(Float, default=0.0)
-    description = Column(Text, nullable=True)
+    currency = Column(String, default="AED")
+    amount_aed = Column(Float, default=0.0)
+    description = Column(String, nullable=True)
+    line_number = Column(Integer, default=0)
 
 
 # Create tables
@@ -2363,6 +2373,10 @@ def startup_event():
         db.commit()
         logger.info(f"Super Admin created: {super_admin_email}")
     else:
+        # Always ensure password hash is current on startup
+        existing_super_admin.password_hash = get_password_hash(super_admin_password)
+        existing_super_admin.role = Role.SUPER_ADMIN
+        db.commit()
         logger.info(f"Super Admin already exists: {existing_super_admin.email}")
 
     db.close()
@@ -7531,11 +7545,14 @@ def list_journal_entries(
     return {
         "journal_entries": [
             {
-                "id": e.id, "entry_date": str(e.entry_date), "reference": e.reference,
-                "description": e.description, "source": e.source,
+                "id": e.id, "entry_date": str(e.entry_date),
+                "reference_type": e.reference_type, "reference_id": e.reference_id,
+                "reference_number": e.reference_number, "description": e.description,
+                "is_posted": e.is_posted,
                 "lines": [
                     {"account_code": l.account_code, "account_name": l.account_name,
-                     "debit_amount": l.debit_amount, "credit_amount": l.credit_amount}
+                     "debit_amount": l.debit_amount, "credit_amount": l.credit_amount,
+                     "description": l.description}
                     for l in e.lines
                 ],
             }
@@ -7559,8 +7576,10 @@ def get_journal_entry(
     if not entry:
         raise HTTPException(404, "Journal entry not found")
     return {
-        "id": entry.id, "entry_date": str(entry.entry_date), "reference": entry.reference,
-        "description": entry.description, "source": entry.source,
+        "id": entry.id, "entry_date": str(entry.entry_date),
+        "reference_type": entry.reference_type, "reference_id": entry.reference_id,
+        "reference_number": entry.reference_number,
+        "description": entry.description, "is_posted": entry.is_posted,
         "lines": [
             {"id": l.id, "account_code": l.account_code, "account_name": l.account_name,
              "debit_amount": l.debit_amount, "credit_amount": l.credit_amount,
@@ -7588,7 +7607,7 @@ def get_gl_summary(
         AccountDB.company_id == current_user.company_id
     ).order_by(AccountDB.account_code).all()
     q = db.query(JournalEntryLineDB).join(
-        JournalEntryDB, JournalEntryLineDB.entry_id == JournalEntryDB.id
+        JournalEntryDB, JournalEntryLineDB.journal_entry_id == JournalEntryDB.id
     ).filter(JournalEntryDB.company_id == current_user.company_id)
     if from_date:
         try:

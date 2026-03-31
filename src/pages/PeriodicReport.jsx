@@ -307,7 +307,7 @@ export default function PeriodicReport() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 ml-64 flex flex-col">
         <div className="bg-white border-b px-6 py-4">
           <div className="flex items-center gap-3">
             <BackToDashboard />

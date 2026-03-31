@@ -498,7 +498,7 @@ function TrialBalance() {
 
   useEffect(() => { load(); }, [load]);
 
-  const accounts = data?.accounts || [];
+  const accounts = Array.isArray(data) ? data : (data?.accounts || []);
   const types = ["ALL", ...Array.from(new Set(accounts.map((a) => a.account_type)))];
   const filtered = accounts.filter((a) => {
     const matchType = typeFilter === "ALL" || a.account_type === typeFilter;
