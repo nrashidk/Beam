@@ -23,7 +23,11 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
-  const [lockedModal, setLockedModal] = useState({ isOpen: false, title: "", message: "" });
+  const [lockedModal, setLockedModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     action: null,
@@ -172,7 +176,8 @@ export default function InvoiceDetail() {
       }
     } catch (error) {
       const status = error.response?.status;
-      const detail = error.response?.data?.detail || `Failed to ${action} invoice`;
+      const detail =
+        error.response?.data?.detail || `Failed to ${action} invoice`;
       if (status === 409) {
         setLockedModal({
           isOpen: true,
@@ -219,7 +224,8 @@ export default function InvoiceDetail() {
   const getInvoiceTypeName = (type) => {
     const types = {
       380: "Tax Invoice",
-      381: "Credit Note",
+      381: "Tax Credit Note",
+      383: "Debit Note",
       480: "Commercial Invoice",
       81: "Credit Note (Out of Scope)",
     };
@@ -314,7 +320,11 @@ export default function InvoiceDetail() {
                     ? "bg-blue-600 text-white hover:bg-blue-700"
                     : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                 }`}
-                title={invoice.status !== "DRAFT" ? "Invoice is locked — click to learn more" : "Edit invoice"}
+                title={
+                  invoice.status !== "DRAFT"
+                    ? "Invoice is locked — click to learn more"
+                    : "Edit invoice"
+                }
               >
                 {invoice.status === "DRAFT" ? (
                   <Edit2 className="w-5 h-5" />
@@ -358,27 +368,37 @@ export default function InvoiceDetail() {
             )}
 
             {/* Credit Note & Debit Note quick actions for posted tax invoices */}
-            {(invoice.status === "ISSUED" || invoice.status === "SENT" || invoice.status === "VIEWED") &&
+            {(invoice.status === "ISSUED" ||
+              invoice.status === "SENT" ||
+              invoice.status === "VIEWED") &&
               invoice.invoice_type === "380" && (
-              <>
-                <button
-                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`)}
-                  className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
-                  title="Issue a credit note against this invoice"
-                >
-                  <FileText className="w-5 h-5" />
-                  Credit Note
-                </button>
-                <button
-                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=debit_note`)}
-                  className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
-                  title="Issue a debit note against this invoice"
-                >
-                  <FileText className="w-5 h-5" />
-                  Debit Note
-                </button>
-              </>
-            )}
+                <>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/invoices/create?preceding_invoice_id=${id}&type=credit_note`,
+                      )
+                    }
+                    className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
+                    title="Issue a credit note against this invoice"
+                  >
+                    <FileText className="w-5 h-5" />
+                    Credit Note
+                  </button>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/invoices/create?preceding_invoice_id=${id}&type=debit_note`,
+                      )
+                    }
+                    className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
+                    title="Issue a debit note against this invoice"
+                  >
+                    <FileText className="w-5 h-5" />
+                    Debit Note
+                  </button>
+                </>
+              )}
 
             {invoice.status !== "CANCELLED" && invoice.status !== "PAID" && (
               <button
@@ -671,12 +691,18 @@ export default function InvoiceDetail() {
               <div className="p-3 bg-amber-100 rounded-full">
                 <Lock className="w-6 h-6 text-amber-600" />
               </div>
-              <h2 className="text-lg font-bold text-gray-900">{lockedModal.title}</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {lockedModal.title}
+              </h2>
             </div>
-            <p className="text-gray-600 mb-6 leading-relaxed">{lockedModal.message}</p>
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              {lockedModal.message}
+            </p>
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setLockedModal({ isOpen: false, title: "", message: "" })}
+                onClick={() =>
+                  setLockedModal({ isOpen: false, title: "", message: "" })
+                }
                 className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
               >
                 Close
@@ -684,7 +710,9 @@ export default function InvoiceDetail() {
               <button
                 onClick={() => {
                   setLockedModal({ isOpen: false, title: "", message: "" });
-                  navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`);
+                  navigate(
+                    `/invoices/create?preceding_invoice_id=${id}&type=credit_note`,
+                  );
                 }}
                 className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700"
               >

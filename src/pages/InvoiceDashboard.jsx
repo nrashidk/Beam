@@ -416,6 +416,7 @@ export default function InvoiceDashboard() {
                   { value: "all", label: "All Types" },
                   { value: "380", label: "Tax Invoice" },
                   { value: "381", label: "Tax Credit Note" },
+                  { value: "383", label: "Debit Note" },
                   { value: "480", label: "Commercial" },
                   { value: "81", label: "Credit Note" },
                 ].map((type) => (
@@ -586,11 +587,13 @@ export default function InvoiceDashboard() {
                               ? "Tax Invoice"
                               : invoice.invoice_type === "381"
                                 ? "Tax Credit Note"
-                                : invoice.invoice_type === "480"
-                                  ? "Commercial"
-                                  : invoice.invoice_type === "81"
-                                    ? "Credit Note"
-                                    : "Other"}
+                                : invoice.invoice_type === "383"
+                                  ? "Debit Note"
+                                  : invoice.invoice_type === "480"
+                                    ? "Commercial"
+                                    : invoice.invoice_type === "81"
+                                      ? "Credit Note"
+                                      : "Other"}
                           </span>
                         </div>
                       </div>

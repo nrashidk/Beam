@@ -9,83 +9,129 @@ class BulkImportValidator:
     """Validates and parses bulk CSV/Excel uploads for invoices and vendors"""
 
     @staticmethod
-    def generate_invoice_template() -> pd.DataFrame:
+    def _normalize_invoice_mode(invoice_mode: str = "vat") -> str:
+        mode = str(invoice_mode or "vat").strip().lower().replace("-", "_")
+        if mode not in {"vat", "non_vat"}:
+            return "vat"
+        return mode
+
+    @staticmethod
+    def _normalize_invoice_type(invoice_type_raw: Any, invoice_mode: str) -> str:
+        invoice_mode = BulkImportValidator._normalize_invoice_mode(invoice_mode)
+        invoice_type = (
+            str(invoice_type_raw).upper().strip()
+            if invoice_type_raw is not None and not pd.isna(invoice_type_raw)
+            else ""
+        )
+
+        invoice_type_aliases = {
+            "380": "TAX_INVOICE",
+            "381": "TAX_CREDIT_NOTE",
+            "383": "DEBIT_NOTE",
+            "480": "COMMERCIAL",
+            "81": "CREDIT_NOTE",
+            "TAX INVOICE": "TAX_INVOICE",
+            "TAX-INVOICE": "TAX_INVOICE",
+            "TAX_INVOICE": "TAX_INVOICE",
+            "TAX CREDIT NOTE": "TAX_CREDIT_NOTE",
+            "TAX-CREDIT-NOTE": "TAX_CREDIT_NOTE",
+            "TAX_CREDIT_NOTE": "TAX_CREDIT_NOTE",
+            "DEBIT NOTE": "DEBIT_NOTE",
+            "DEBIT-NOTE": "DEBIT_NOTE",
+            "DEBIT_NOTE": "DEBIT_NOTE",
+            "COMMERCIAL INVOICE": "COMMERCIAL",
+            "COMMERCIAL-INVOICE": "COMMERCIAL",
+            "COMMERCIAL_INVOICE": "COMMERCIAL",
+            "COMMERCIAL": "COMMERCIAL",
+            "CREDIT NOTE": "CREDIT_NOTE",
+            "CREDIT-NOTE": "CREDIT_NOTE",
+            "CREDIT_NOTE": "CREDIT_NOTE",
+        }
+        normalized = invoice_type_aliases.get(invoice_type, invoice_type)
+
+        if invoice_mode == "non_vat" and normalized == "TAX_CREDIT_NOTE":
+            return "CREDIT_NOTE"
+        return normalized or ("TAX_INVOICE" if invoice_mode == "vat" else "COMMERCIAL")
+
+    @staticmethod
+    def generate_invoice_template(invoice_mode: str = "vat") -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
-        template_data = {    
+        invoice_mode = BulkImportValidator._normalize_invoice_mode(invoice_mode)
+
+        common_data = {
             "issue_date": [
                 "2025-01-15",
                 "2025-01-16",
                 "2025-01-17",
                 "2025-01-18",
-                "2025-01-19",
             ],
             "due_date": [
                 "2025-02-15",
                 "2025-02-16",
                 "2025-02-17",
                 "2025-02-18",
-                "2025-02-19",
-            ],
-            # Provide examples covering common aliases and codes:
-            # - TAX_INVOICE (380), TAX_CREDIT_NOTE (381), COMMERCIAL (480), CREDIT_NOTE (81), numeric '380'
-            "invoice_type": [
-                "COMMERCIAL",
-                "TAX_INVOICE",
-                "CREDIT_NOTE",
-                "TAX_CREDIT_NOTE",
-                "380",
             ],
             "customer_name": [
                 "ABC Trading LLC",
                 "XYZ Company",
                 "DEF Corporation",
                 "GHI Enterprises",
-                "JKL Traders",
             ],
             "customer_email": [
                 "customer@example.com",
                 "customer2@example.com",
                 "customer3@example.com",
                 "customer4@example.com",
-                "customer5@example.com",
             ],
-            "customer_trn": ["", "", "", "", ""],  # Optional for all
+            "customer_trn": ["", "", "", ""],
             "customer_address": [
                 "Dubai, UAE",
                 "Abu Dhabi, UAE",
                 "Sharjah, UAE",
                 "Ajman, UAE",
-                "Ras Al Khaimah, UAE",
             ],
-            "customer_city": [
-                "Dubai",
-                "Abu Dhabi",
-                "Sharjah",
-                "Ajman",
-                "Ras Al Khaimah",
-            ],
-            "preceding_invoice_number": [
-                "",
-                "",
-                "CI-00001",
-                "",
-                "",
-            ],  # Required for credit notes only
-            "item_name": ["Goods", "Services", "Refund", "License", "Materials"],
+            "customer_city": ["Dubai", "Abu Dhabi", "Sharjah", "Ajman"],
+            "item_name": ["Goods", "Services", "Adjustment", "Materials"],
             "item_description": [
-                "Consulting Services",
+                "Consulting services",
                 "Professional work",
-                "Refund for returned goods",
-                "Software License",
+                "Invoice adjustment",
                 "Building materials",
             ],
-            "quantity": ["10", "5", "8", "12", "20"],
-            "unit_price": ["500.00", "1000.00", "750.00", "1200.00", "25.00"],
-            "unit_name": ["Hour", "Day", "Unit", "Month", "Piece"],
-            "tax_category": ["S", "S", "S", "S", "S"],
-            "tax_percent": ["5", "5", "5", "5", "5"],
-            "tax_code": ["S_5_5", "S_5_5", "S_5_5", "S_5_5", "S_5_5"],
+            "quantity": ["10", "5", "2", "20"],
+            "unit_price": ["500.00", "1000.00", "250.00", "25.00"],
+            "unit_name": ["Hour", "Day", "Unit", "Piece"],
         }
+
+        if invoice_mode == "non_vat":
+            template_data = {
+                **common_data,
+                "invoice_type": [
+                    "COMMERCIAL",
+                    "COMMERCIAL",
+                    "CREDIT_NOTE",
+                    "COMMERCIAL",
+                ],
+                "preceding_invoice_number": ["", "", "CI-00001", ""],
+                "tax_category": ["O", "O", "O", "O"],
+                "tax_percent": ["0", "0", "0", "0"],
+                "tax_code": ["OP", "OP", "OP", "OP"],
+            }
+        else:
+            template_data = {
+                **common_data,
+                "invoice_type": [
+                    "TAX_INVOICE",
+                    "COMMERCIAL",
+                    "TAX_CREDIT_NOTE",
+                    "DEBIT_NOTE",
+                ],
+                "preceding_invoice_number": ["", "", "TI-00001", "TI-00002"],
+                "tax_category": ["S", "O", "S", "S"],
+                "tax_percent": ["5", "0", "5", "5"],
+                "tax_code": ["S_5_5", "OP", "S_5_5", "S_5_5"],
+            }
+
         return pd.DataFrame(template_data)
 
     @staticmethod
@@ -105,7 +151,7 @@ class BulkImportValidator:
 
     @staticmethod
     def validate_invoice_file(
-        file_content: bytes, filename: str
+        file_content: bytes, filename: str, invoice_mode: str = "vat"
     ) -> Tuple[bool, List[Dict[str, Any]], List[str]]:
         """
         Validate and parse invoice CSV/Excel file
@@ -115,6 +161,7 @@ class BulkImportValidator:
         parsed_invoices = []
 
         try:
+            invoice_mode = BulkImportValidator._normalize_invoice_mode(invoice_mode)
             if filename.endswith(".xlsx") or filename.endswith(".xls"):
                 df = pd.read_excel(io.BytesIO(file_content), engine="openpyxl")
             elif filename.endswith(".csv"):
@@ -148,34 +195,13 @@ class BulkImportValidator:
                 row_errors = []
 
                 try:
-                    # Safely get invoice_type and normalize common aliases / numeric codes
-                    invoice_type_raw = (
-                        row.get("invoice_type", "COMMERCIAL")
-                        if "invoice_type" in row
-                        else "COMMERCIAL"
+                    default_invoice_type = (
+                        "TAX_INVOICE" if invoice_mode == "vat" else "COMMERCIAL"
                     )
-                    invoice_type = (
-                        str(invoice_type_raw).upper().strip()
-                        if not pd.isna(invoice_type_raw)
-                        else "COMMERCIAL"
+                    invoice_type_raw = row.get("invoice_type", default_invoice_type)
+                    invoice_type = BulkImportValidator._normalize_invoice_type(
+                        invoice_type_raw, invoice_mode
                     )
-
-                    # Normalize variants to canonical keys used by the importer
-                    invoice_type_aliases = {
-                        "380": "TAX_INVOICE",
-                        "381": "CREDIT_NOTE",
-                        "81": "CREDIT_NOTE",
-                        "TAX_CREDIT_NOTE": "CREDIT_NOTE",
-                        "TAX INVOICE": "TAX_INVOICE",
-                        "TAX-INVOICE": "TAX_INVOICE",
-                        "COMMERCIAL_INVOICE": "COMMERCIAL",
-                        "COMMERCIAL": "COMMERCIAL",
-                        "CREDIT_NOTE": "CREDIT_NOTE",
-                        "CREDIT-NOTE": "CREDIT_NOTE",
-                    }
-
-                    if invoice_type in invoice_type_aliases:
-                        invoice_type = invoice_type_aliases[invoice_type]
 
                     # TRN: optional but if provided must be valid 15 digits
                     trn_raw = (
@@ -226,9 +252,15 @@ class BulkImportValidator:
                     except (ValueError, TypeError):
                         row_errors.append(f"Row {row_num}: Invalid unit price value")
 
-                    if invoice_type not in ["TAX_INVOICE", "CREDIT_NOTE", "COMMERCIAL"]:
+                    valid_invoice_types = (
+                        ["TAX_INVOICE", "TAX_CREDIT_NOTE", "DEBIT_NOTE", "COMMERCIAL"]
+                        if invoice_mode == "vat"
+                        else ["COMMERCIAL", "CREDIT_NOTE"]
+                    )
+                    if invoice_type not in valid_invoice_types:
+                        allowed = ", ".join(valid_invoice_types)
                         row_errors.append(
-                            f"Row {row_num}: Invalid invoice type. Must be TAX_INVOICE, CREDIT_NOTE, or COMMERCIAL"
+                            f"Row {row_num}: Invalid invoice type for {invoice_mode.replace('_', '-')} bulk upload. Allowed values: {allowed}"
                         )
 
                     preceding_invoice_number = None
@@ -241,9 +273,12 @@ class BulkImportValidator:
                         if not pd.isna(preceding_raw):
                             preceding_invoice_number = str(preceding_raw).strip()
 
-                    if invoice_type == "CREDIT_NOTE" and not preceding_invoice_number:
+                    if (
+                        invoice_type in ["CREDIT_NOTE", "TAX_CREDIT_NOTE", "DEBIT_NOTE"]
+                        and not preceding_invoice_number
+                    ):
                         row_errors.append(
-                            f"Row {row_num}: preceding_invoice_number is required for credit notes"
+                            f"Row {row_num}: preceding_invoice_number is required for credit notes and debit notes"
                         )
 
                     issue_date_str = None
@@ -296,6 +331,33 @@ class BulkImportValidator:
                                 return default
                             return str(val).strip()
 
+                        raw_tax_category = (
+                            str(row.get("tax_category") or "").upper().strip()
+                        )
+                        raw_tax_percent = row.get("tax_percent")
+                        raw_tax_code = safe_str(row.get("tax_code"))
+
+                        if invoice_mode == "non_vat" or invoice_type in [
+                            "COMMERCIAL",
+                            "CREDIT_NOTE",
+                        ]:
+                            effective_tax_category = "O"
+                            effective_tax_percent = 0.0
+                            effective_tax_code = "OP"
+                        else:
+                            effective_tax_category = raw_tax_category or "S"
+                            if effective_tax_category == "O":
+                                effective_tax_percent = 0.0
+                                effective_tax_code = raw_tax_code or "OP"
+                            else:
+                                effective_tax_percent = (
+                                    float(raw_tax_percent)
+                                    if not pd.isna(raw_tax_percent)
+                                    and str(raw_tax_percent).strip() != ""
+                                    else 5.0
+                                )
+                                effective_tax_code = raw_tax_code or "S_5_5"
+
                         invoice_data = {
                             "row_num": int(row_num),
                             "invoice_number": safe_str(row.get("invoice_number"))
@@ -322,13 +384,9 @@ class BulkImportValidator:
                             else 0,
                             "unit_name": safe_str(row.get("unit_name"), "Unit")
                             or "Unit",
-                            "tax_category": safe_str(row.get("tax_category"), "S")
-                            or "S",
-                            "tax_percent": float(row.get("tax_percent", 5))
-                            if not pd.isna(row.get("tax_percent"))
-                            else 5.0,
-                            "tax_code": safe_str(row.get("tax_code"), "S_5_5")
-                            or "S_5_5",
+                            "tax_category": effective_tax_category,
+                            "tax_percent": effective_tax_percent,
+                            "tax_code": effective_tax_code,
                         }
                         parsed_invoices.append(invoice_data)
                 except Exception as e:

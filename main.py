@@ -163,6 +163,7 @@ class DocumentStatus(str, enum.Enum):
 class InvoiceType(str, enum.Enum):
     TAX_INVOICE = "380"  # Commercial invoice (standard VAT)
     TAX_CREDIT_NOTE = "381"  # Credit note
+    DEBIT_NOTE = "383"  # Debit note
     COMMERCIAL_INVOICE = "480"  # Invoice out of scope of tax
     CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
 
@@ -5138,6 +5139,7 @@ def generate_invoice_number(
     prefix_map = {
         "380": "TI",  # Tax Invoice
         "381": "TCN",  # Tax Credit Note
+        "383": "DN",  # Debit Note
         "480": "CI",  # Commercial Invoice
         "81": "CN",  # Credit Note
     }
@@ -5422,13 +5424,16 @@ def create_invoice(
 
     from decimal import Decimal
 
-    # Credit note validation: must reference matching invoice and not exceed original total
+    # Credit/debit note validation: must reference the correct original invoice.
     if invoice.invoice_type in [
         InvoiceType.TAX_CREDIT_NOTE,
         InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+        InvoiceType.DEBIT_NOTE,
     ]:
         if not invoice.preceding_invoice_id:
-            raise HTTPException(400, "Credit notes must reference an existing invoice.")
+            raise HTTPException(
+                400, "Credit notes and debit notes must reference an existing invoice."
+            )
 
         original_invoice = (
             db.query(InvoiceDB)
@@ -5456,20 +5461,32 @@ def create_invoice(
                 400, "Out-of-scope credit notes must reference a commercial invoice."
             )
 
-        if Decimal(str(invoice.total_amount)) > Decimal(
-            str(original_invoice.total_amount)
+        if (
+            invoice.invoice_type == InvoiceType.DEBIT_NOTE
+            and original_invoice.invoice_type != InvoiceType.TAX_INVOICE
         ):
+            raise HTTPException(400, "Debit notes must reference a tax invoice.")
+
+        if invoice.invoice_type != InvoiceType.DEBIT_NOTE and Decimal(
+            str(invoice.total_amount)
+        ) > Decimal(str(original_invoice.total_amount)):
             raise HTTPException(
                 400, "Credit note total cannot exceed the original invoice total."
             )
 
-        # Deduct credit note amount from original invoice's amount_due
-        new_amount_due = float(
-            Decimal(str(original_invoice.amount_due))
-            - Decimal(str(invoice.total_amount))
-        )
-        # Ensure amount_due doesn't go below 0
-        original_invoice.amount_due = max(0.0, new_amount_due)
+        if invoice.invoice_type == InvoiceType.DEBIT_NOTE:
+            original_invoice.amount_due = float(
+                Decimal(str(original_invoice.amount_due))
+                + Decimal(str(invoice.total_amount))
+            )
+        else:
+            # Deduct credit note amount from original invoice's amount_due
+            new_amount_due = float(
+                Decimal(str(original_invoice.amount_due))
+                - Decimal(str(invoice.total_amount))
+            )
+            # Ensure amount_due doesn't go below 0
+            original_invoice.amount_due = max(0.0, new_amount_due)
         db.add(original_invoice)  # Explicitly mark for update
 
     # VAT Compliance: Auto-classify invoice type based on amount and company VAT status (Phase 1)
@@ -6374,7 +6391,8 @@ def get_daily_reconciliation_report(
 def _invoice_type_label(itype: str) -> str:
     labels = {
         "380": "Tax Invoice",
-        "381": "Credit Note",
+        "381": "Tax Credit Note",
+        "383": "Debit Note",
         "480": "Commercial Invoice",
         "81": "Credit Note (Out of Scope)",
     }
@@ -11847,7 +11865,7 @@ async def get_trial_status(
 async def download_invoice_template(format: str = "csv"):
     """Download CSV/Excel template for bulk invoice import"""
     try:
-        df = BulkImportValidator.generate_invoice_template()
+        df = BulkImportValidator.generate_invoice_template(invoice_mode="vat")
 
         if format.lower() == "excel" or format.lower() == "xlsx":
             output = BytesIO()
@@ -11871,6 +11889,74 @@ async def download_invoice_template(format: str = "csv"):
                     "Content-Disposition": "attachment; filename=invoice_template.csv"
                 },
             )
+    except Exception as e:
+        raise HTTPException(500, f"Template generation failed: {str(e)}")
+
+
+@app.get("/templates/invoices/vat", tags=["Bulk Import"])
+@app.get("/bulk/template/invoices/vat", tags=["Bulk Import"])
+@app.get("/api/bulk/template/invoices/vat", tags=["Bulk Import"])
+async def download_vat_invoice_template(format: str = "csv"):
+    """Download CSV/Excel template for VAT-enabled invoice bulk import."""
+    try:
+        df = BulkImportValidator.generate_invoice_template(invoice_mode="vat")
+
+        if format.lower() == "excel" or format.lower() == "xlsx":
+            output = BytesIO()
+            df.to_excel(output, index=False, engine="openpyxl")
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": "attachment; filename=invoice_template_vat.xlsx"
+                },
+            )
+
+        output = BytesIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=invoice_template_vat.csv"
+            },
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Template generation failed: {str(e)}")
+
+
+@app.get("/templates/invoices/non-vat", tags=["Bulk Import"])
+@app.get("/bulk/template/invoices/non-vat", tags=["Bulk Import"])
+@app.get("/api/bulk/template/invoices/non-vat", tags=["Bulk Import"])
+async def download_non_vat_invoice_template(format: str = "csv"):
+    """Download CSV/Excel template for non-VAT invoice bulk import."""
+    try:
+        df = BulkImportValidator.generate_invoice_template(invoice_mode="non_vat")
+
+        if format.lower() == "excel" or format.lower() == "xlsx":
+            output = BytesIO()
+            df.to_excel(output, index=False, engine="openpyxl")
+            output.seek(0)
+            return Response(
+                content=output.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={
+                    "Content-Disposition": "attachment; filename=invoice_template_non_vat.xlsx"
+                },
+            )
+
+        output = BytesIO()
+        df.to_csv(output, index=False)
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=invoice_template_non_vat.csv"
+            },
+        )
     except Exception as e:
         raise HTTPException(500, f"Template generation failed: {str(e)}")
 
@@ -11914,6 +12000,7 @@ async def download_vendor_template(format: str = "csv"):
 @app.post("/api/bulk/import/invoices", tags=["Bulk Import"])
 async def bulk_import_invoices(
     file: UploadFile = File(...),
+    invoice_mode: str = "vat",
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -11927,9 +12014,27 @@ async def bulk_import_invoices(
         if not company:
             raise HTTPException(404, "Company not found")
 
+        normalized_invoice_mode = (
+            str(invoice_mode or "vat").strip().lower().replace("-", "_")
+        )
+        if normalized_invoice_mode not in {"vat", "non_vat"}:
+            raise HTTPException(400, "invoice_mode must be 'vat' or 'non-vat'")
+
+        if normalized_invoice_mode == "vat" and not company.vat_enabled:
+            raise HTTPException(
+                400,
+                "VAT bulk upload is only available for VAT-enabled companies. Use the non-VAT bulk upload instead.",
+            )
+
+        if normalized_invoice_mode == "non_vat" and company.vat_enabled:
+            raise HTTPException(
+                400,
+                "Non-VAT bulk upload is only available for non-VAT companies. Use the VAT bulk upload instead.",
+            )
+
         file_content = await file.read()
         is_valid, parsed_invoices, errors = BulkImportValidator.validate_invoice_file(
-            file_content, file.filename
+            file_content, file.filename, invoice_mode=normalized_invoice_mode
         )
 
         if not is_valid:
@@ -11987,13 +12092,22 @@ async def bulk_import_invoices(
         prepared_invoices = []
 
         for invoice_data in parsed_invoices:
+            invoice_type_key = invoice_data["invoice_type"]
+            is_tax_document = normalized_invoice_mode == "vat" and invoice_type_key in [
+                "TAX_INVOICE",
+                "TAX_CREDIT_NOTE",
+                "DEBIT_NOTE",
+            ]
             line_total = invoice_data["quantity"] * invoice_data["unit_price"]
             discount = invoice_data.get("discount_amount", 0)
             taxable_amount = line_total - discount
-            tax_amount_calc = (taxable_amount * invoice_data["tax_percent"]) / 100
+            tax_amount_calc = (
+                (taxable_amount * invoice_data["tax_percent"]) / 100
+                if is_tax_document
+                else 0
+            )
             total_amount_calc = taxable_amount + tax_amount_calc
 
-            invoice_type_key = invoice_data["invoice_type"]
             row_num = invoice_data.get("row_num", "Unknown")
             preceding_invoice_id = None
 
@@ -12001,13 +12115,14 @@ async def bulk_import_invoices(
             invoice_type_mapping = {
                 "TAX_INVOICE": InvoiceType.TAX_INVOICE,
                 "COMMERCIAL": InvoiceType.COMMERCIAL_INVOICE,
+                "DEBIT_NOTE": InvoiceType.DEBIT_NOTE,
             }
 
-            if invoice_type_key == "CREDIT_NOTE":
+            if invoice_type_key in ["CREDIT_NOTE", "TAX_CREDIT_NOTE", "DEBIT_NOTE"]:
                 preceding_number = invoice_data.get("preceding_invoice_number")
                 if not preceding_number:
                     bulk_errors.append(
-                        f"Row {row_num}: preceding_invoice_number is required for credit notes"
+                        f"Row {row_num}: preceding_invoice_number is required for credit notes and debit notes"
                     )
                     continue
 
@@ -12026,15 +12141,31 @@ async def bulk_import_invoices(
                     )
                     continue
 
-                if original_invoice.invoice_type == InvoiceType.TAX_INVOICE:
-                    invoice_type = InvoiceType.TAX_CREDIT_NOTE
-                    # Check if company is VAT enabled before allowing tax credit notes
-                    if not company.vat_enabled:
+                if invoice_type_key == "DEBIT_NOTE":
+                    if original_invoice.invoice_type != InvoiceType.TAX_INVOICE:
                         bulk_errors.append(
-                            f"Row {row_num}: Company must be VAT-enabled to create tax credit notes (381)"
+                            f"Row {row_num}: Debit notes must reference a tax invoice"
+                        )
+                        continue
+                    if normalized_invoice_mode != "vat":
+                        bulk_errors.append(
+                            f"Row {row_num}: Debit notes are only allowed in the VAT bulk upload"
+                        )
+                        continue
+                    invoice_type = InvoiceType.DEBIT_NOTE
+                elif original_invoice.invoice_type == InvoiceType.TAX_INVOICE:
+                    invoice_type = InvoiceType.TAX_CREDIT_NOTE
+                    if normalized_invoice_mode != "vat":
+                        bulk_errors.append(
+                            f"Row {row_num}: Tax credit notes are only allowed in the VAT bulk upload"
                         )
                         continue
                 elif original_invoice.invoice_type == InvoiceType.COMMERCIAL_INVOICE:
+                    if invoice_type_key != "CREDIT_NOTE":
+                        bulk_errors.append(
+                            f"Row {row_num}: Commercial invoices must use non-VAT credit notes"
+                        )
+                        continue
                     invoice_type = InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
                 else:
                     bulk_errors.append(
@@ -12042,9 +12173,9 @@ async def bulk_import_invoices(
                     )
                     continue
 
-                if Decimal(str(total_amount_calc)) > Decimal(
-                    str(original_invoice.total_amount)
-                ):
+                if invoice_type != InvoiceType.DEBIT_NOTE and Decimal(
+                    str(total_amount_calc)
+                ) > Decimal(str(original_invoice.total_amount)):
                     bulk_errors.append(
                         f"Row {row_num}: Credit note total cannot exceed original invoice total"
                     )
@@ -12056,10 +12187,12 @@ async def bulk_import_invoices(
                     invoice_type_key, InvoiceType.TAX_INVOICE
                 )
 
-                # Validate VAT requirement for Tax Invoices
-                if invoice_type == InvoiceType.TAX_INVOICE and not company.vat_enabled:
+                if (
+                    invoice_type == InvoiceType.TAX_INVOICE
+                    and normalized_invoice_mode != "vat"
+                ):
                     bulk_errors.append(
-                        f"Row {row_num}: Company must be VAT-enabled to create tax invoices (380). Non-VAT companies can only create Commercial Invoices (480)"
+                        f"Row {row_num}: Tax invoices can only be imported through the VAT bulk upload"
                     )
                     continue
 
@@ -12115,6 +12248,7 @@ async def bulk_import_invoices(
             prefix_map = {
                 "380": "TI",  # Tax Invoice
                 "381": "TCN",  # Tax Credit Note
+                "383": "DN",  # Debit Note
                 "480": "CI",  # Commercial Invoice
                 "81": "CN",  # Credit Note
             }
@@ -12161,6 +12295,7 @@ async def bulk_import_invoices(
                 customer_name=invoice_data["customer_name"],
                 customer_email=invoice_data.get("customer_email"),
                 customer_address=invoice_data.get("customer_address"),
+                customer_city=invoice_data.get("customer_city"),
                 # Amounts - use correct field names
                 subtotal_amount=float(taxable_amount),
                 tax_amount=float(tax_amount_calc),
@@ -12173,12 +12308,25 @@ async def bulk_import_invoices(
                 invoice_notes=invoice_data.get("notes"),
                 share_token=f"share_{uuid4().hex[:16]}",
                 created_at=datetime.utcnow(),
+                invoice_classification=classify_invoice_type(
+                    total_amount=Decimal(str(total_amount_calc)),
+                    vat_enabled=invoice_type
+                    in [
+                        InvoiceType.TAX_INVOICE,
+                        InvoiceType.TAX_CREDIT_NOTE,
+                        InvoiceType.DEBIT_NOTE,
+                    ],
+                ),
             )
             db.add(new_invoice)
 
             # Create one line item per imported row so invoice detail can render item/qty/tax.
             raw_tax_category = str(invoice_data.get("tax_category") or "S").upper()
-            if company.vat_enabled:
+            if invoice_type in [
+                InvoiceType.TAX_INVOICE,
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.DEBIT_NOTE,
+            ]:
                 tax_category_map = {
                     "S": TaxCategory.STANDARD,
                     "STANDARD": TaxCategory.STANDARD,
@@ -12219,7 +12367,11 @@ async def bulk_import_invoices(
             )
             db.add(line_item)
 
-            if company.vat_enabled:
+            if invoice_type in [
+                InvoiceType.TAX_INVOICE,
+                InvoiceType.TAX_CREDIT_NOTE,
+                InvoiceType.DEBIT_NOTE,
+            ]:
                 tax_breakdown = InvoiceTaxBreakdownDB(
                     id=f"tax_{uuid4().hex[:12]}",
                     invoice_id=new_invoice.id,

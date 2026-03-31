@@ -184,20 +184,27 @@ export const apAPI = {
 };
 
 export const bulkImportAPI = {
-  downloadInvoiceTemplate: (format) =>
-    apiClient.get(`/api/bulk/template/invoices?format=${format}`, {
-      responseType: "blob",
-    }),
+  downloadInvoiceTemplate: (format, invoiceMode = "vat") =>
+    apiClient.get(
+      `/api/bulk/template/invoices/${invoiceMode === "non_vat" ? "non-vat" : "vat"}?format=${format}`,
+      {
+        responseType: "blob",
+      },
+    ),
   downloadVendorTemplate: (format) =>
     apiClient.get(`/api/bulk/template/vendors?format=${format}`, {
       responseType: "blob",
     }),
-  uploadInvoices: (file) => {
+  uploadInvoices: (file, invoiceMode = "vat") => {
     const formData = new FormData();
     formData.append("file", file);
-    return apiClient.post("/api/bulk/import/invoices", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    return apiClient.post(
+      `/api/bulk/import/invoices?invoice_mode=${invoiceMode === "non_vat" ? "non-vat" : "vat"}`,
+      formData,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+      },
+    );
   },
   uploadVendors: (file) => {
     const formData = new FormData();

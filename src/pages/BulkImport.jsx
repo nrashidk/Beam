@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Upload,
   Download,
@@ -7,7 +7,7 @@ import {
   CheckCircle2,
   X,
 } from "lucide-react";
-import { bulkImportAPI } from "../lib/api";
+import { bulkImportAPI, settingsAPI } from "../lib/api";
 import {
   Card,
   CardContent,
@@ -20,10 +20,28 @@ import BackToDashboard from "../components/BackToDashboard";
 
 export default function BulkImport() {
   const [activeTab, setActiveTab] = useState("invoices");
+  const [invoiceMode, setInvoiceMode] = useState("vat");
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState(null);
   const [error, setError] = useState("");
+  const [vatEnabled, setVatEnabled] = useState(false);
+
+  useEffect(() => {
+    const fetchVatSettings = async () => {
+      try {
+        const response = await settingsAPI.getVATSettings();
+        const enabled = response.data?.vat_enabled || false;
+        setVatEnabled(enabled);
+        setInvoiceMode(enabled ? "vat" : "non_vat");
+      } catch (err) {
+        setVatEnabled(false);
+        setInvoiceMode("non_vat");
+      }
+    };
+
+    fetchVatSettings();
+  }, []);
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
@@ -51,7 +69,7 @@ export default function BulkImport() {
     try {
       const response =
         type === "invoices"
-          ? await bulkImportAPI.downloadInvoiceTemplate(format)
+          ? await bulkImportAPI.downloadInvoiceTemplate(format, invoiceMode)
           : await bulkImportAPI.downloadVendorTemplate(format);
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -59,7 +77,7 @@ export default function BulkImport() {
       link.href = url;
       link.setAttribute(
         "download",
-        `${type}_template.${format === "excel" ? "xlsx" : "csv"}`,
+        `${type}_${type === "invoices" ? invoiceMode : "default"}_template.${format === "excel" ? "xlsx" : "csv"}`,
       );
       document.body.appendChild(link);
       link.click();
@@ -82,7 +100,7 @@ export default function BulkImport() {
     try {
       const response =
         activeTab === "invoices"
-          ? await bulkImportAPI.uploadInvoices(selectedFile)
+          ? await bulkImportAPI.uploadInvoices(selectedFile, invoiceMode)
           : await bulkImportAPI.uploadVendors(selectedFile);
 
       setUploadResult(response.data);
@@ -113,7 +131,8 @@ export default function BulkImport() {
                   Bulk Import
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  Upload CSV or Excel files to import invoices and vendors
+                  Upload CSV or Excel files with separate flows for VAT and
+                  non-VAT invoice imports
                 </p>
               </div>
             </div>
@@ -159,10 +178,76 @@ export default function BulkImport() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {activeTab === "invoices" && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <button
+                      onClick={() => {
+                        setInvoiceMode("vat");
+                        setSelectedFile(null);
+                        setUploadResult(null);
+                        setError("");
+                      }}
+                      className={`rounded-lg border p-4 text-left transition-colors ${
+                        invoiceMode === "vat"
+                          ? "border-indigo-600 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-gray-900">
+                        VAT-Enabled Bulk Upload
+                      </p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Use for Tax Invoice, Tax Credit Note, Debit Note, and
+                        Commercial Invoice.
+                      </p>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setInvoiceMode("non_vat");
+                        setSelectedFile(null);
+                        setUploadResult(null);
+                        setError("");
+                      }}
+                      className={`rounded-lg border p-4 text-left transition-colors ${
+                        invoiceMode === "non_vat"
+                          ? "border-indigo-600 bg-indigo-50"
+                          : "border-gray-200 bg-white hover:border-gray-300"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-gray-900">
+                        Non-VAT Bulk Upload
+                      </p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Use for Commercial Invoice and non-VAT Credit Note only.
+                      </p>
+                    </button>
+                  </div>
+                )}
                 <p className="text-sm text-gray-600">
                   Download a pre-formatted template to ensure your data is
                   structured correctly
                 </p>
+                {activeTab === "invoices" && (
+                  <div
+                    className={`rounded-lg border px-4 py-3 text-sm ${
+                      invoiceMode === "vat"
+                        ? vatEnabled
+                          ? "border-green-200 bg-green-50 text-green-800"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                        : !vatEnabled
+                          ? "border-green-200 bg-green-50 text-green-800"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                    }`}
+                  >
+                    {invoiceMode === "vat"
+                      ? vatEnabled
+                        ? "Your company is VAT-enabled. This template keeps VAT calculations active for tax documents and keeps commercial invoices out of scope."
+                        : "VAT bulk upload requires VAT to be enabled in Settings first."
+                      : !vatEnabled
+                        ? "Your company is non-VAT. This template forces all uploaded rows to zero tax."
+                        : "Non-VAT bulk upload is only for non-VAT companies. VAT-enabled companies should use the VAT template."}
+                  </div>
+                )}
                 <div className="flex gap-3">
                   <Button
                     onClick={() => handleDownloadTemplate(activeTab, "csv")}
@@ -376,8 +461,16 @@ export default function BulkImport() {
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>
                     <span>
-                      Invoice types: TAX_INVOICE (standard invoices),
-                      CREDIT_NOTE (refunds), or COMMERCIAL (non-VAT)
+                      VAT upload supports TAX_INVOICE, TAX_CREDIT_NOTE,
+                      DEBIT_NOTE, and COMMERCIAL. Non-VAT upload supports
+                      COMMERCIAL and CREDIT_NOTE only.
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-blue-400 mt-1">â€¢</span>
+                    <span>
+                      Non-VAT uploads always force tax to 0, even if your file
+                      contains old tax values or missing tax columns.
                     </span>
                   </li>
                   <li className="flex items-start gap-2">
