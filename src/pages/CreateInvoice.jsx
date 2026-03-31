@@ -77,6 +77,16 @@ export default function CreateInvoice() {
     return labels[type] || type;
   };
 
+  const getDocumentTypeSuccessLabel = (type) => {
+    const labels = {
+      380: "Tax invoice",
+      381: "Tax credit note",
+      480: "Invoice",
+      81: "Credit note",
+    };
+    return labels[type] || "Invoice";
+  };
+
   // Get the valid credit note type for a given invoice type
   const getValidCreditNoteType = (invoiceType) => {
     if (invoiceType === "380") return "381"; // Tax Invoice → Tax Credit Note
@@ -171,14 +181,19 @@ export default function CreateInvoice() {
   useEffect(() => {
     const fetchOriginalInvoices = async () => {
       const needsOriginalInvoice =
-        formData.invoice_type === "381" || formData.invoice_type === "81" || formData.invoice_type === "383";
+        formData.invoice_type === "381" ||
+        formData.invoice_type === "81" ||
+        formData.invoice_type === "383";
       if (!needsOriginalInvoice) {
         setOriginalInvoices([]);
         setFormData((prev) => ({ ...prev, preceding_invoice_id: "" }));
         return;
       }
 
-      const originalType = formData.invoice_type === "381" || formData.invoice_type === "383" ? "380" : "480";
+      const originalType =
+        formData.invoice_type === "381" || formData.invoice_type === "383"
+          ? "380"
+          : "480";
       setLoadingOriginalInvoices(true);
       try {
         const response = await apiClient.get(
@@ -201,7 +216,9 @@ export default function CreateInvoice() {
   // Fetch suggestions from server when user types in the original invoice field
   useEffect(() => {
     const needsOriginalInvoice =
-      formData.invoice_type === "381" || formData.invoice_type === "81" || formData.invoice_type === "383";
+      formData.invoice_type === "381" ||
+      formData.invoice_type === "81" ||
+      formData.invoice_type === "383";
     if (!needsOriginalInvoice) return;
 
     // If no search query, show the pre-fetched original invoices (first page)
@@ -218,7 +235,10 @@ export default function CreateInvoice() {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const originalType = formData.invoice_type === "381" || formData.invoice_type === "383" ? "380" : "480";
+        const originalType =
+          formData.invoice_type === "381" || formData.invoice_type === "383"
+            ? "380"
+            : "480";
         const resp = await apiClient.get(
           `/invoices?invoice_type=${originalType}&q=${encodeURIComponent(originalSearchQuery)}&limit=10`,
           { signal: controller.signal },
@@ -413,7 +433,9 @@ export default function CreateInvoice() {
 
           // Validate credit note total doesn't exceed original invoice total
           const creditTotal = calculateTotal();
-          const originalTotal = Number(selectedOriginalInvoice.total_amount || 0);
+          const originalTotal = Number(
+            selectedOriginalInvoice.total_amount || 0,
+          );
 
           if (creditTotal > originalTotal) {
             setToast({
@@ -467,8 +489,11 @@ export default function CreateInvoice() {
       };
 
       const response = await apiClient.post("/invoices", cleanedFormData);
+      const documentLabel = getDocumentTypeSuccessLabel(
+        response.data.invoice_type ?? formData.invoice_type,
+      );
       setToast({
-        message: `Invoice ${response.data.invoice_number} created successfully!`,
+        message: `${documentLabel} ${response.data.invoice_number} created successfully!`,
         type: "success",
         onClose: () => {
           setToast(null);
@@ -584,8 +609,13 @@ export default function CreateInvoice() {
                     <ul className="text-xs text-blue-700 mt-2 list-disc list-inside space-y-1">
                       <li>Must reference a posted Tax Invoice (380)</li>
                       <li>Increases the amount owed by the customer</li>
-                      <li>Use for additional charges, price adjustments, or corrections</li>
-                      <li>Date must be on or after the original invoice date</li>
+                      <li>
+                        Use for additional charges, price adjustments, or
+                        corrections
+                      </li>
+                      <li>
+                        Date must be on or after the original invoice date
+                      </li>
                     </ul>
                   </div>
                 </div>
@@ -684,7 +714,10 @@ export default function CreateInvoice() {
                 {needsOriginalInvoice && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {isDebitNote ? "Referenced Tax Invoice" : "Original Invoice"} <span className="text-red-500">*</span>
+                      {isDebitNote
+                        ? "Referenced Tax Invoice"
+                        : "Original Invoice"}{" "}
+                      <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <input
@@ -854,7 +887,10 @@ export default function CreateInvoice() {
                     type="date"
                     value={formData.supply_date || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, supply_date: e.target.value || null })
+                      setFormData({
+                        ...formData,
+                        supply_date: e.target.value || null,
+                      })
                     }
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
                       !formData.supply_date && calculateTotal() >= 10000
@@ -864,7 +900,8 @@ export default function CreateInvoice() {
                   />
                   {!formData.supply_date && calculateTotal() >= 10000 ? (
                     <p className="mt-1 text-xs text-amber-600 font-medium">
-                      ⚠️ FTA requires supply date on full tax invoices ≥ AED 10,000 when it differs from the issue date.
+                      ⚠️ FTA requires supply date on full tax invoices ≥ AED
+                      10,000 when it differs from the issue date.
                     </p>
                   ) : (
                     <p className="mt-1 text-xs text-gray-400">

@@ -11,7 +11,7 @@ class BulkImportValidator:
     @staticmethod
     def generate_invoice_template() -> pd.DataFrame:
         """Generate CSV/Excel template for invoice bulk upload"""
-        template_data = {
+        template_data = {    
             "issue_date": [
                 "2025-01-15",
                 "2025-01-16",

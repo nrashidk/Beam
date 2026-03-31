@@ -52,6 +52,16 @@ const normalizeLineItemForVat = (item, isVatEnabled) => {
   };
 };
 
+const getDocumentTypeSuccessLabel = (type) => {
+  const labels = {
+    380: "Tax invoice",
+    381: "Tax credit note",
+    480: "Invoice",
+    81: "Credit note",
+  };
+  return labels[type] || "Invoice";
+};
+
 export default function EditInvoice() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -284,8 +294,10 @@ export default function EditInvoice() {
       await apiClient.put(`/invoices/${id}`, cleanedFormData, {
         headers: { "If-Match": String(invoiceVersion) },
       });
+      const documentLabel = getDocumentTypeSuccessLabel(formData.invoice_type);
+
       setToast({
-        message: "Invoice updated successfully!",
+        message: `${documentLabel} updated successfully!`,
         type: "success",
         onClose: () => {
           setToast(null);

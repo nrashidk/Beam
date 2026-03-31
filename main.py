@@ -6383,9 +6383,16 @@ def _invoice_type_label(itype: str) -> str:
 
 def _build_report_payload(invoices, period_label: str, start_date, end_date):
     from collections import defaultdict
-    breakdown = defaultdict(lambda: {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0})
+
+    breakdown = defaultdict(
+        lambda: {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
+    )
     for inv in invoices:
-        code = str(inv.invoice_type.value) if hasattr(inv.invoice_type, "value") else str(inv.invoice_type)
+        code = (
+            str(inv.invoice_type.value)
+            if hasattr(inv.invoice_type, "value")
+            else str(inv.invoice_type)
+        )
         breakdown[code]["count"] += 1
         breakdown[code]["subtotal"] += float(inv.subtotal or 0.0)
         breakdown[code]["tax_amount"] += float(inv.tax_amount or 0.0)
@@ -6406,6 +6413,7 @@ def _build_report_payload(invoices, period_label: str, start_date, end_date):
     total_tax = round(sum(d["tax_amount"] for d in breakdown_list), 2)
     total_gross = round(sum(d["total_amount"] for d in breakdown_list), 2)
     from datetime import datetime
+
     return {
         "period_label": period_label,
         "start_date": start_date.isoformat(),
@@ -6423,6 +6431,7 @@ def _build_report_payload(invoices, period_label: str, start_date, end_date):
 
 def _export_report_xlsx(payload: dict) -> bytes:
     import openpyxl, io
+
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Report"
@@ -6431,19 +6440,25 @@ def _export_report_xlsx(payload: dict) -> bytes:
     ws.append(["End Date", payload["end_date"]])
     ws.append(["Generated At", payload["generated_at"]])
     ws.append([])
-    ws.append(["Invoice Type", "Code", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"])
+    ws.append(
+        ["Invoice Type", "Code", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"]
+    )
     for row in payload["breakdown_by_type"]:
-        ws.append([
-            row["invoice_type_label"],
-            row["invoice_type_code"],
-            row["count"],
-            row["subtotal"],
-            row["tax_amount"],
-            row["total_amount"],
-        ])
+        ws.append(
+            [
+                row["invoice_type_label"],
+                row["invoice_type_code"],
+                row["count"],
+                row["subtotal"],
+                row["tax_amount"],
+                row["total_amount"],
+            ]
+        )
     ws.append([])
     s = payload["summary"]
-    ws.append(["TOTAL", "", s["count"], s["subtotal"], s["tax_amount"], s["total_amount"]])
+    ws.append(
+        ["TOTAL", "", s["count"], s["subtotal"], s["tax_amount"], s["total_amount"]]
+    )
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -6453,36 +6468,77 @@ def _export_report_xlsx(payload: dict) -> bytes:
 def _export_report_pdf(payload: dict) -> bytes:
     import io
     from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer,
+    )
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib import colors
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4)
     styles = getSampleStyleSheet()
     elements = []
-    elements.append(Paragraph(f"Periodic Invoice Report — {payload['period_label']}", styles["Title"]))
+    elements.append(
+        Paragraph(
+            f"Periodic Invoice Report — {payload['period_label']}", styles["Title"]
+        )
+    )
     elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"Period: {payload['start_date']} to {payload['end_date']}", styles["Normal"]))
-    elements.append(Paragraph(f"Generated: {payload['generated_at']}", styles["Normal"]))
+    elements.append(
+        Paragraph(
+            f"Period: {payload['start_date']} to {payload['end_date']}",
+            styles["Normal"],
+        )
+    )
+    elements.append(
+        Paragraph(f"Generated: {payload['generated_at']}", styles["Normal"])
+    )
     elements.append(Spacer(1, 16))
     header = ["Invoice Type", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"]
     data = [header]
     for row in payload["breakdown_by_type"]:
-        data.append([row["invoice_type_label"], str(row["count"]),
-                     f"{row['subtotal']:,.2f}", f"{row['tax_amount']:,.2f}", f"{row['total_amount']:,.2f}"])
+        data.append(
+            [
+                row["invoice_type_label"],
+                str(row["count"]),
+                f"{row['subtotal']:,.2f}",
+                f"{row['tax_amount']:,.2f}",
+                f"{row['total_amount']:,.2f}",
+            ]
+        )
     s = payload["summary"]
-    data.append(["TOTAL", str(s["count"]),
-                 f"{s['subtotal']:,.2f}", f"{s['tax_amount']:,.2f}", f"{s['total_amount']:,.2f}"])
+    data.append(
+        [
+            "TOTAL",
+            str(s["count"]),
+            f"{s['subtotal']:,.2f}",
+            f"{s['tax_amount']:,.2f}",
+            f"{s['total_amount']:,.2f}",
+        ]
+    )
     t = Table(data, repeatRows=1)
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#eff6ff")),
-        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f9fafb")]),
-    ]))
+    t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#eff6ff")),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -2),
+                    [colors.white, colors.HexColor("#f9fafb")],
+                ),
+            ]
+        )
+    )
     elements.append(t)
     doc.build(elements)
     return buf.getvalue()
@@ -6490,18 +6546,33 @@ def _export_report_pdf(payload: dict) -> bytes:
 
 def _parse_period_dates(period_type: str, year: int, period: int):
     from datetime import date, timedelta
+
     if period_type == "monthly":
         import calendar
+
         _, last_day = calendar.monthrange(year, period)
         start = date(year, period, 1)
         end = date(year, period, last_day)
-        month_names = ["January","February","March","April","May","June",
-                       "July","August","September","October","November","December"]
+        month_names = [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December",
+        ]
         label = f"{month_names[period - 1]} {year}"
     elif period_type == "quarterly":
         q = period
         month_start = (q - 1) * 3 + 1
         import calendar
+
         _, last_day = calendar.monthrange(year, month_start + 2)
         start = date(year, month_start, 1)
         end = date(year, month_start + 2, last_day)
@@ -6533,14 +6604,21 @@ def get_periodic_report(
     Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
     """
     from datetime import datetime, date
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
         raise HTTPException(403, "Insufficient permissions to view reports")
     if year is None:
         year = datetime.utcnow().year
     if period is None:
         period = datetime.utcnow().month
     if period_type not in ("monthly", "quarterly", "weekly", "annual"):
-        raise HTTPException(400, "Invalid period_type. Use monthly, quarterly, weekly or annual")
+        raise HTTPException(
+            400, "Invalid period_type. Use monthly, quarterly, weekly or annual"
+        )
     start, end, label = _parse_period_dates(period_type, year, period)
     invoices = (
         db.query(InvoiceDB)
@@ -6568,7 +6646,12 @@ def export_periodic_report(
     from datetime import datetime
     from fastapi.responses import StreamingResponse
     import io
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
         raise HTTPException(403, "Insufficient permissions")
     if year is None:
         year = datetime.utcnow().year
@@ -6615,10 +6698,19 @@ def get_adhoc_report(
     Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
     """
     from datetime import datetime, date
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
         raise HTTPException(403, "Insufficient permissions to view reports")
     try:
-        start = date.fromisoformat(from_date) if from_date else (datetime.utcnow().date().replace(day=1))
+        start = (
+            date.fromisoformat(from_date)
+            if from_date
+            else (datetime.utcnow().date().replace(day=1))
+        )
         end = date.fromisoformat(to_date) if to_date else datetime.utcnow().date()
     except ValueError:
         raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
@@ -6648,10 +6740,19 @@ def export_adhoc_report(
     from datetime import datetime, date
     from fastapi.responses import StreamingResponse
     import io
-    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
         raise HTTPException(403, "Insufficient permissions")
     try:
-        start = date.fromisoformat(from_date) if from_date else (datetime.utcnow().date().replace(day=1))
+        start = (
+            date.fromisoformat(from_date)
+            if from_date
+            else (datetime.utcnow().date().replace(day=1))
+        )
         end = date.fromisoformat(to_date) if to_date else datetime.utcnow().date()
     except ValueError:
         raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
@@ -8316,6 +8417,8 @@ def create_expense(
 @app.get("/expenses", tags=["Expenses"])
 def list_expenses(
     month: str = None,  # "2025-10" for October 2025
+    from_date: str = None,
+    to_date: str = None,
     category: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
@@ -8325,12 +8428,33 @@ def list_expenses(
 
     Filters:
     - month: "2025-10" for October 2025
+    - from_date: "2025-10-01"
+    - to_date: "2025-10-31"
     - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
     """
     query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
+    # Filter by explicit date range first
+    if from_date or to_date:
+        try:
+            from datetime import date, timedelta
+
+            start_date = date.fromisoformat(from_date) if from_date else None
+            end_date = date.fromisoformat(to_date) if to_date else None
+        except Exception:
+            raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(400, "from_date cannot be later than to_date")
+
+        if start_date:
+            query = query.filter(ExpenseDB.expense_date >= start_date)
+        if end_date:
+            query = query.filter(
+                ExpenseDB.expense_date < (end_date + timedelta(days=1))
+            )
 
     # Filter by month
-    if month:
+    elif month:
         try:
             year, month_num = map(int, month.split("-"))
             from datetime import date
@@ -8345,7 +8469,7 @@ def list_expenses(
             query = query.filter(
                 ExpenseDB.expense_date >= start_date, ExpenseDB.expense_date < end_date
             )
-        except:
+        except Exception:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
 
     # Filter by category
@@ -8379,6 +8503,8 @@ def list_expenses(
 @app.get("/expenses/summary", tags=["Expenses"])
 def get_financial_summary(
     month: str = None,  # "2025-10" for October 2025
+    from_date: str = None,
+    to_date: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -8403,10 +8529,32 @@ def get_financial_summary(
     - Input VAT: AED 3,000 (VAT paid to suppliers)
     - Net VAT: AED 3,000 (to pay to FTA)
     """
-    from datetime import date
+    from datetime import date, datetime, timedelta
+
+    # Parse explicit date range first
+    if from_date or to_date:
+        try:
+            start_date = date.fromisoformat(from_date) if from_date else None
+            end_date_inclusive = date.fromisoformat(to_date) if to_date else None
+        except Exception:
+            raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+        if start_date and end_date_inclusive and start_date > end_date_inclusive:
+            raise HTTPException(400, "from_date cannot be later than to_date")
+
+        today = datetime.now().date()
+        if not start_date and not end_date_inclusive:
+            start_date = date(today.year, today.month, 1)
+            end_date_inclusive = today
+        elif not start_date:
+            start_date = date(end_date_inclusive.year, end_date_inclusive.month, 1)
+        elif not end_date_inclusive:
+            end_date_inclusive = today
+
+        end_date = end_date_inclusive + timedelta(days=1)
 
     # Parse month filter
-    if month:
+    elif month:
         try:
             year, month_num = map(int, month.split("-"))
             start_date = date(year, month_num, 1)
@@ -8414,7 +8562,8 @@ def get_financial_summary(
                 end_date = date(year + 1, 1, 1)
             else:
                 end_date = date(year, month_num + 1, 1)
-        except:
+            end_date_inclusive = end_date - timedelta(days=1)
+        except Exception:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
     else:
         # Default to current month
@@ -8426,6 +8575,7 @@ def get_financial_summary(
             end_date = date(now.year + 1, 1, 1)
         else:
             end_date = date(now.year, now.month + 1, 1)
+        end_date_inclusive = end_date - timedelta(days=1)
 
     # ========== REVENUE (from issued invoices) ==========
     revenue_query = db.query(InvoiceDB).filter(
@@ -8497,7 +8647,7 @@ def get_financial_summary(
     return {
         "period": {
             "start_date": start_date.isoformat(),
-            "end_date": (end_date - timedelta(days=1)).isoformat(),
+            "end_date": end_date_inclusive.isoformat(),
             "month": f"{start_date.year}-{start_date.month:02d}",
         },
         "revenue": {
