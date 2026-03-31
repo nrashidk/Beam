@@ -172,7 +172,8 @@ export const apAPI = {
   rejectInvoice: (invoiceId, data) =>
     apiClient.post(`/inward-invoices/${invoiceId}/reject`, data),
   getPurchaseOrder: (poId) => apiClient.get(`/purchase-orders/${poId}`),
-  sendPurchaseOrder: (poId) => apiClient.post(`/purchase-orders/${poId}/send`),
+  sendPurchaseOrder: (poId, payload = {}) =>
+    apiClient.post(`/purchase-orders/${poId}/send`, payload),
   cancelPurchaseOrder: (poId) =>
     apiClient.post(`/purchase-orders/${poId}/cancel`),
   createPurchaseOrder: (formData) =>

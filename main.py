@@ -4,7 +4,7 @@ UAE e-Invoicing Platform with Registration Wizard
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
 
-import os, enum, hashlib, secrets, json, logging
+import os, enum, hashlib, secrets, json, logging, re
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
@@ -1955,6 +1955,20 @@ class PurchaseOrderCreate(BaseModel):
     def empty_str_to_none(cls, v):
         if v == "":
             return None
+        return v
+
+
+class PurchaseOrderSendRequest(BaseModel):
+    method: Optional[str] = "email"
+    contact: Optional[str] = None
+
+    @validator("method", "contact", pre=True)
+    def normalize_optional_strings(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped or None
         return v
 
 
@@ -6399,6 +6413,50 @@ def _invoice_type_label(itype: str) -> str:
     return labels.get(str(itype), str(itype))
 
 
+EMAIL_REGEX = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+UAE_MOBILE_REGEX = re.compile(r"^(?:\+9715\d{8}|9715\d{8}|05\d{8})$")
+
+
+def normalize_delivery_email(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    return normalized or None
+
+
+def normalize_delivery_phone(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    has_plus = raw.startswith("+")
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return None
+    return f"+{digits}" if has_plus else digits
+
+
+def validate_delivery_email(value: Optional[str]) -> str:
+    normalized = normalize_delivery_email(value)
+    if not normalized:
+        raise HTTPException(400, "A valid recipient email is required.")
+    if not EMAIL_REGEX.match(normalized):
+        raise HTTPException(400, "Invalid email format.")
+    return normalized
+
+
+def validate_delivery_phone(value: Optional[str]) -> str:
+    normalized = normalize_delivery_phone(value)
+    if not normalized:
+        raise HTTPException(
+            400, "A valid UAE mobile number is required for SMS/WhatsApp."
+        )
+    if not UAE_MOBILE_REGEX.match(normalized):
+        raise HTTPException(
+            400, "Invalid phone number. Use UAE mobile format 05XXXXXXXX or +9715XXXXXXXX."
+        )
+    return normalized
+
+
 def _build_report_payload(invoices, period_label: str, start_date, end_date):
     from collections import defaultdict
 
@@ -7928,13 +7986,11 @@ async def email_invoice(
         raise HTTPException(404, "Invoice not found")
 
     # Use provided email or fall back to invoice customer email
-    email_to = recipient_email or invoice.customer_email
-    if not email_to:
-        raise HTTPException(400, "No recipient email provided")
+    email_to = validate_delivery_email(recipient_email or invoice.customer_email)
 
     # Persist recipient email only when invoice is missing one
     if recipient_email and not invoice.customer_email:
-        invoice.customer_email = recipient_email
+        invoice.customer_email = email_to
         db.commit()
         db.refresh(invoice)
 
@@ -7997,6 +8053,8 @@ async def sms_invoice(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
+    phone_number = validate_delivery_phone(phone_number)
+
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
     if base_url:
@@ -8043,6 +8101,8 @@ async def whatsapp_invoice(
 
     if not invoice:
         raise HTTPException(404, "Invoice not found")
+
+    phone_number = validate_delivery_phone(phone_number)
 
     # Get the base URL for share link
     base_url = os.getenv("REPLIT_DOMAINS", "https://involinks.replit.app")
@@ -10177,11 +10237,12 @@ def cancel_purchase_order(
 @app.post("/purchase-orders/{po_id}/send", tags=["AP Management"])
 def send_purchase_order(
     po_id: str,
+    payload: Optional[PurchaseOrderSendRequest] = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
     """
-    Send purchase order to supplier (change status from DRAFT to SENT)
+    Send or resend purchase order to supplier.
 
     This would integrate with email/PEPPOL sending in production
     """
@@ -10197,11 +10258,23 @@ def send_purchase_order(
     if not po:
         raise HTTPException(404, "Purchase order not found")
 
-    if po.status != PurchaseOrderStatus.DRAFT:
-        raise HTTPException(400, "Only DRAFT purchase orders can be sent")
+    if po.status == PurchaseOrderStatus.CANCELLED:
+        raise HTTPException(400, "Cancelled purchase orders cannot be sent")
 
-    # Update status
-    po.status = PurchaseOrderStatus.SENT
+    method = (payload.method if payload and payload.method else "email").lower()
+    contact = payload.contact if payload else None
+
+    if method == "email":
+        validated_contact = validate_delivery_email(contact or po.supplier_contact_email)
+        po.supplier_contact_email = validated_contact
+    elif method in {"sms", "whatsapp"}:
+        validated_contact = validate_delivery_phone(contact)
+    else:
+        raise HTTPException(400, "Unsupported send method")
+
+    # Keep first send status change, but allow resending after that.
+    if po.status == PurchaseOrderStatus.DRAFT:
+        po.status = PurchaseOrderStatus.SENT
     po.updated_at = datetime.utcnow()
 
     # In production, this would:
@@ -10213,9 +10286,11 @@ def send_purchase_order(
 
     return {
         "success": True,
-        "message": f"Purchase order {po.po_number} sent to {po.supplier_name}",
+        "message": f"Purchase order {po.po_number} sent via {method}",
         "po_id": po.id,
         "po_number": po.po_number,
+        "method": method,
+        "sent_to": validated_contact,
         "supplier_email": po.supplier_contact_email,
     }
 
