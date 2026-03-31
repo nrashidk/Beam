@@ -3,6 +3,7 @@ import Sidebar from "../components/Sidebar";
 import { apiClient } from "../lib/api";
 import {
   FileText,
+  ClipboardList,
   RefreshCw,
   TrendingUp,
   TrendingDown,
@@ -157,19 +158,18 @@ export default function VATReturn() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <FileText className="h-8 w-8 text-indigo-600" />
-              <h1 className="text-3xl font-bold text-gray-900">VAT Return</h1>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <ClipboardList className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">VAT Return</h1>
+              <p className="text-sm text-gray-500 mt-0.5">UAE FTA Form 301 — 13-box VAT return computation</p>
             </div>
-            <p className="text-gray-500">
-              UAE FTA Form 301 — 13-box VAT return computation
-            </p>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+        <div className="max-w-4xl mx-auto">
           {/* Period Selector Card */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
             <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -495,6 +495,7 @@ export default function VATReturn() {
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
     </div>

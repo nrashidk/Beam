@@ -34,7 +34,6 @@ import {
 } from "recharts";
 import Sidebar from "../components/Sidebar";
 import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
-import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 import apiClient from "../lib/api";
 
@@ -263,20 +262,30 @@ export default function FinanceDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 flex">
         <Sidebar />
-        <div className="flex-1 ml-64">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <BackToDashboard />
-            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-              <div className="text-red-600 text-xl font-semibold mb-2">
-                Unable to Load Financial Data
+        <div className="flex-1 ml-64 flex flex-col">
+          <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <BarChart3 className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">Finance Dashboard</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Comprehensive view of your business financial health</p>
               </div>
-              <p className="text-red-700 mb-4">{error}</p>
-              <button
-                onClick={fetchFinancialData}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                Retry
-              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                <div className="text-red-600 text-xl font-semibold mb-2">
+                  Unable to Load Financial Data
+                </div>
+                <p className="text-red-700 mb-4">{error}</p>
+                <button
+                  onClick={fetchFinancialData}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                >
+                  Retry
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -304,32 +313,32 @@ export default function FinanceDashboard() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <BackToDashboard />
-          {/* Task 22: Password expiry warning banner */}
-          <PasswordExpiryBanner />
-
-          <div className="flex items-center justify-between mb-6">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <BarChart3 className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Finance Dashboard
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Comprehensive view of your business financial health
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Finance Dashboard</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Comprehensive view of your business financial health</p>
             </div>
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="7days">Last 7 Days</option>
-              <option value="30days">Last 30 Days</option>
-              <option value="90days">Last 90 Days</option>
-              <option value="year">This Year</option>
-            </select>
           </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Task 22: Password expiry warning banner */}
+            <PasswordExpiryBanner />
+            <div className="flex justify-end mb-6">
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="90days">Last 90 Days</option>
+                <option value="year">This Year</option>
+              </select>
+            </div>
 
           {/* Key Metrics */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -705,5 +714,6 @@ export default function FinanceDashboard() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

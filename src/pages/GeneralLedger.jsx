@@ -634,17 +634,18 @@ export default function GeneralLedger() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <BookOpen className="h-8 w-8 text-indigo-600" />
-              <h1 className="text-3xl font-bold text-gray-900">General Ledger</h1>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <BookOpen className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">General Ledger</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Chart of accounts, double-entry journal entries, and trial balance</p>
             </div>
-            <p className="text-gray-500">Chart of accounts, double-entry journal entries, and trial balance</p>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+        <div className="max-w-6xl mx-auto">
           {/* Tabs */}
           <div className="border-b border-gray-200 mb-6">
             <nav className="flex gap-1">
@@ -672,6 +673,7 @@ export default function GeneralLedger() {
           {activeTab === "chart" && <ChartOfAccounts />}
           {activeTab === "journal" && <JournalEntries />}
           {activeTab === "trial" && <TrialBalance />}
+        </div>
         </div>
       </div>
     </div>

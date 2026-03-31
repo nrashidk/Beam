@@ -18,7 +18,6 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements } from "@stripe/react-stripe-js";
 import StripeCardForm from "../components/StripeCardForm";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
@@ -186,19 +185,19 @@ export default function BillingSettings() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <BackToDashboard />
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Billing & Subscription
-            </h1>
-            <p className="text-gray-600 mt-2">
-              Manage your subscription, payment methods, and billing history
-            </p>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <CreditCard className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Billing & Subscription</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Manage your subscription, payment methods, and billing history</p>
+            </div>
           </div>
-
-          <div className="grid lg:grid-cols-3 gap-6 mb-8">
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid lg:grid-cols-3 gap-6 mb-8">
             {trialStatus?.trial_status === "ACTIVE" && (
               <div className="lg:col-span-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-6 text-white">
                 <div className="flex items-start justify-between mb-4">
@@ -518,5 +517,6 @@ export default function BillingSettings() {
         </div>
       )}
     </div>
+  </div>
   );
 }

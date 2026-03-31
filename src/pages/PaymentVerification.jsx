@@ -259,20 +259,21 @@ export default function PaymentVerification() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Payment Verification
-            </h1>
-            <p className="text-gray-600 mt-2">
-              Verify and record offline payments (Cash, POS, Bank Transfers)
-            </p>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Payment Verification</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Verify and record offline payments (Cash, POS, Bank Transfers)</p>
+            </div>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
           {successMessage && (
             <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -807,5 +808,6 @@ export default function PaymentVerification() {
         </DialogContent>
       </Dialog>
     </div>
+  </div>
   );
 }

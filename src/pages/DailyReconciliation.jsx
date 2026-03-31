@@ -18,6 +18,7 @@ import {
 import { Badge } from "../components/ui/badge";
 import {
   Download,
+  FileSpreadsheet,
   DollarSign,
   TrendingUp,
   AlertTriangle,
@@ -275,20 +276,21 @@ export default function DailyReconciliation() {
   }, [filteredPaymentBreakdown]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Daily Reconciliation Report
-            </h1>
-            <p className="text-gray-600 mt-2">
-              View payment collections and outstanding invoices
-            </p>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <FileSpreadsheet className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Daily Reconciliation Report</h1>
+              <p className="text-sm text-gray-500 mt-0.5">View payment collections and outstanding invoices</p>
+            </div>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
               {error}
@@ -629,5 +631,6 @@ export default function DailyReconciliation() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

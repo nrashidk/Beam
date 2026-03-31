@@ -16,7 +16,6 @@ import {
 } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 
 export default function BulkImport() {
   const [activeTab, setActiveTab] = useState("invoices");
@@ -120,24 +119,20 @@ export default function BulkImport() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <BackToDashboard />
-
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900">
-                  Bulk Import
-                </h1>
-                <p className="text-gray-600 mt-1">
-                  Upload CSV or Excel files with separate flows for VAT and
-                  non-VAT invoice imports
-                </p>
-              </div>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Upload className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Bulk Import</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Upload CSV or Excel files with separate flows for VAT and non-VAT invoice imports</p>
             </div>
-
-            <div className="flex gap-2 border-b">
+          </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="space-y-6">
+              <div className="flex gap-2 border-b">
               <button
                 onClick={() => {
                   setActiveTab("invoices");
@@ -487,5 +482,6 @@ export default function BulkImport() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

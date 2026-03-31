@@ -13,6 +13,7 @@ import PageLoader from "../components/PageLoader";
 import ConfirmationModal from "../components/ConfirmationModal";
 import {
   FileText,
+  ShoppingCart,
   CheckCircle,
   XCircle,
   Clock,
@@ -222,25 +223,27 @@ export default function POList() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <ShoppingCart className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Purchase Orders
-              </h1>
-              <p className="text-gray-600 mt-1">
-                Manage purchase orders to suppliers
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Purchase Orders</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Manage purchase orders to suppliers</p>
             </div>
-            <Button
-              onClick={() => setShowCreateModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create PO
-            </Button>
           </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-end mb-6">
+              <Button
+                onClick={() => setShowCreateModal(true)}
+                className="bg-indigo-600 hover:bg-indigo-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create PO
+              </Button>
+            </div>
 
           {/* Filters */}
           <Card className="mb-6">
@@ -489,5 +492,6 @@ export default function POList() {
         isLoading={actionLoading}
       />
     </div>
+  </div>
   );
 }

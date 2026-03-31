@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { companyAPI } from '../lib/api';
-import { ArrowLeft, Save, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Save, AlertCircle, CheckCircle, Shield } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
-import BackToDashboard from '../components/BackToDashboard';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -103,26 +102,20 @@ export default function CompanySettings() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 bg-gray-50">
-        <BackToDashboard />
-        <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => navigate('/dashboard')} 
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ArrowLeft size={20} />
-            </button>
+            <Shield className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold">Company Settings</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Update your company information and contact details
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Company Settings</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Update your company information and contact details</p>
             </div>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
               <AlertCircle className="text-red-600" size={20} />
@@ -293,5 +286,6 @@ export default function CompanySettings() {
         </div>
       </div>
     </div>
+  </div>
   );
 }
