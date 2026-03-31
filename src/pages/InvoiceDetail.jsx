@@ -219,7 +219,8 @@ export default function InvoiceDetail() {
   const getInvoiceTypeName = (type) => {
     const types = {
       380: "Tax Invoice",
-      381: "Credit Note",
+      381: "Tax Credit Note",
+      383: "Debit Note",
       480: "Commercial Invoice",
       81: "Credit Note (Out of Scope)",
     };
