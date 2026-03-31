@@ -28,9 +28,15 @@ const ExpenseTracker = () => {
   const [q, setQ] = useState("");
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(
-    new Date().toISOString().slice(0, 7),
-  );
+  const [dateRange, setDateRange] = useState(() => {
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    return {
+      from_date: startOfMonth.toISOString().slice(0, 10),
+      to_date: today.toISOString().slice(0, 10),
+    };
+  });
   const [categoryFilter, setCategoryFilter] = useState("_all");
 
   const [newExpense, setNewExpense] = useState({
@@ -54,7 +60,7 @@ const ExpenseTracker = () => {
     loadCategories();
     loadExpenses(categoryFilter);
     loadSummary();
-  }, [selectedMonth]);
+  }, [dateRange.from_date, dateRange.to_date]);
 
   const loadCategories = async () => {
     try {
@@ -67,7 +73,9 @@ const ExpenseTracker = () => {
 
   const loadExpenses = async (category = "_all") => {
     try {
-      const params = { month: selectedMonth };
+      const params = {};
+      if (dateRange.from_date) params.from_date = dateRange.from_date;
+      if (dateRange.to_date) params.to_date = dateRange.to_date;
       if (category && category !== "_all") params.category = category;
 
       const res = await apiClient.get("/expenses", { params });
@@ -79,8 +87,12 @@ const ExpenseTracker = () => {
 
   const loadSummary = async () => {
     try {
+      const params = {};
+      if (dateRange.from_date) params.from_date = dateRange.from_date;
+      if (dateRange.to_date) params.to_date = dateRange.to_date;
+
       const res = await apiClient.get("/expenses/summary", {
-        params: { month: selectedMonth },
+        params,
       });
       setSummary(res.data);
     } catch (err) {
@@ -91,7 +103,7 @@ const ExpenseTracker = () => {
   // Reload expenses when categoryFilter changes
   useEffect(() => {
     loadExpenses(categoryFilter);
-  }, [categoryFilter, selectedMonth]);
+  }, [categoryFilter, dateRange.from_date, dateRange.to_date]);
 
   // Client-side filtered view by supplier or description
   const filteredExpenses = useMemo(() => {
@@ -269,17 +281,61 @@ const ExpenseTracker = () => {
             </div>
           </div>
 
-          {/* Month Selector */}
+          {/* Date Range */}
           <div className="mb-6">
             <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Select Month
+              Date Range
             </label>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg"
-            />
+            <div className="flex flex-col gap-3 md:flex-row md:items-end">
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">From</label>
+                <input
+                  type="date"
+                  value={dateRange.from_date}
+                  onChange={(e) =>
+                    setDateRange((prev) => ({
+                      ...prev,
+                      from_date: e.target.value,
+                    }))
+                  }
+                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">To</label>
+                <input
+                  type="date"
+                  value={dateRange.to_date}
+                  min={dateRange.from_date || undefined}
+                  onChange={(e) =>
+                    setDateRange((prev) => ({
+                      ...prev,
+                      to_date: e.target.value,
+                    }))
+                  }
+                  className="px-4 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const today = new Date();
+                  const startOfMonth = new Date(
+                    today.getFullYear(),
+                    today.getMonth(),
+                    1,
+                  );
+
+                  setDateRange({
+                    from_date: startOfMonth.toISOString().slice(0, 10),
+                    to_date: today.toISOString().slice(0, 10),
+                  });
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Reset to This Month
+              </button>
+            </div>
           </div>
 
           {/* Search & Filter */}

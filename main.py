@@ -8316,6 +8316,8 @@ def create_expense(
 @app.get("/expenses", tags=["Expenses"])
 def list_expenses(
     month: str = None,  # "2025-10" for October 2025
+    from_date: str = None,
+    to_date: str = None,
     category: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
@@ -8325,12 +8327,32 @@ def list_expenses(
 
     Filters:
     - month: "2025-10" for October 2025
+    - from_date: "2025-10-01"
+    - to_date: "2025-10-31"
     - category: RENT, UTILITIES, SALARIES, RAW_MATERIALS, OTHER
     """
     query = db.query(ExpenseDB).filter(ExpenseDB.company_id == current_user.company_id)
 
+    # Filter by explicit date range first
+    if from_date or to_date:
+        try:
+            from datetime import date, timedelta
+
+            start_date = date.fromisoformat(from_date) if from_date else None
+            end_date = date.fromisoformat(to_date) if to_date else None
+        except Exception:
+            raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+        if start_date and end_date and start_date > end_date:
+            raise HTTPException(400, "from_date cannot be later than to_date")
+
+        if start_date:
+            query = query.filter(ExpenseDB.expense_date >= start_date)
+        if end_date:
+            query = query.filter(ExpenseDB.expense_date < (end_date + timedelta(days=1)))
+
     # Filter by month
-    if month:
+    elif month:
         try:
             year, month_num = map(int, month.split("-"))
             from datetime import date
@@ -8345,7 +8367,7 @@ def list_expenses(
             query = query.filter(
                 ExpenseDB.expense_date >= start_date, ExpenseDB.expense_date < end_date
             )
-        except:
+        except Exception:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
 
     # Filter by category
@@ -8379,6 +8401,8 @@ def list_expenses(
 @app.get("/expenses/summary", tags=["Expenses"])
 def get_financial_summary(
     month: str = None,  # "2025-10" for October 2025
+    from_date: str = None,
+    to_date: str = None,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
@@ -8403,10 +8427,32 @@ def get_financial_summary(
     - Input VAT: AED 3,000 (VAT paid to suppliers)
     - Net VAT: AED 3,000 (to pay to FTA)
     """
-    from datetime import date
+    from datetime import date, datetime, timedelta
+
+    # Parse explicit date range first
+    if from_date or to_date:
+        try:
+            start_date = date.fromisoformat(from_date) if from_date else None
+            end_date_inclusive = date.fromisoformat(to_date) if to_date else None
+        except Exception:
+            raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+        if start_date and end_date_inclusive and start_date > end_date_inclusive:
+            raise HTTPException(400, "from_date cannot be later than to_date")
+
+        today = datetime.now().date()
+        if not start_date and not end_date_inclusive:
+            start_date = date(today.year, today.month, 1)
+            end_date_inclusive = today
+        elif not start_date:
+            start_date = date(end_date_inclusive.year, end_date_inclusive.month, 1)
+        elif not end_date_inclusive:
+            end_date_inclusive = today
+
+        end_date = end_date_inclusive + timedelta(days=1)
 
     # Parse month filter
-    if month:
+    elif month:
         try:
             year, month_num = map(int, month.split("-"))
             start_date = date(year, month_num, 1)
@@ -8414,18 +8460,18 @@ def get_financial_summary(
                 end_date = date(year + 1, 1, 1)
             else:
                 end_date = date(year, month_num + 1, 1)
-        except:
+            end_date_inclusive = end_date - timedelta(days=1)
+        except Exception:
             raise HTTPException(400, "Invalid month format. Use YYYY-MM")
     else:
         # Default to current month
-        from datetime import datetime
-
         now = datetime.now()
         start_date = date(now.year, now.month, 1)
         if now.month == 12:
             end_date = date(now.year + 1, 1, 1)
         else:
             end_date = date(now.year, now.month + 1, 1)
+        end_date_inclusive = end_date - timedelta(days=1)
 
     # ========== REVENUE (from issued invoices) ==========
     revenue_query = db.query(InvoiceDB).filter(
@@ -8497,7 +8543,7 @@ def get_financial_summary(
     return {
         "period": {
             "start_date": start_date.isoformat(),
-            "end_date": (end_date - timedelta(days=1)).isoformat(),
+            "end_date": end_date_inclusive.isoformat(),
             "month": f"{start_date.year}-{start_date.month:02d}",
         },
         "revenue": {
