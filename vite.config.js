@@ -32,6 +32,7 @@ const backendRoutes = {
   "/analytics": proxyConfig,
   "/reports": proxyConfig,
   "/vat-return": proxyConfig,
+  "/vat-returns": proxyConfig,
   "/expenses": proxyConfig,
   "/expense-categories": proxyConfig,
   "/inventory": proxyConfig,

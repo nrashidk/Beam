@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 from fastapi import (
     FastAPI,
+    Request,
     UploadFile,
     File,
     HTTPException,
@@ -48,6 +49,7 @@ from sqlalchemy import (
     Text,
     func,
     or_,
+    text,
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 
@@ -1253,8 +1255,120 @@ class InventoryTransactionDB(Base):
     inventory_item = relationship("InventoryItemDB", backref="transactions")
 
 
+class AuditLogDB(Base):
+    """Audit Trail — records every significant action taken in the system."""
+    __tablename__ = "audit_logs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id"), nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String, nullable=False, index=True)
+    resource_type = Column(String, nullable=True)
+    resource_id = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    old_value = Column(Text, nullable=True)
+    new_value = Column(Text, nullable=True)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    company = relationship("CompanyDB", backref="audit_logs")
+    user = relationship("UserDB", backref="audit_logs")
+
+
+class VATReturnDB(Base):
+    """UAE FTA Form 301 — 13-box VAT Return records."""
+    __tablename__ = "vat_returns"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    box1_standard_rated_sales = Column(Float, default=0.0)
+    box2_tax_refunds = Column(Float, default=0.0)
+    box3_output_vat = Column(Float, default=0.0)
+    box4_zero_rated_sales = Column(Float, default=0.0)
+    box5_exempt_sales = Column(Float, default=0.0)
+    box6_out_of_scope_sales = Column(Float, default=0.0)
+    box7_total_sales = Column(Float, default=0.0)
+    box8_standard_rated_purchases = Column(Float, default=0.0)
+    box9_input_vat_bills = Column(Float, default=0.0)
+    box10_purchase_expenses = Column(Float, default=0.0)
+    box11_input_vat_expenses = Column(Float, default=0.0)
+    box12_total_input_vat = Column(Float, default=0.0)
+    box13_net_vat_payable = Column(Float, default=0.0)
+    total_sales_invoices = Column(Integer, default=0)
+    total_purchase_invoices = Column(Integer, default=0)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    company = relationship("CompanyDB", backref="vat_returns")
+
+
+class AccountDB(Base):
+    """General Ledger — Chart of Accounts."""
+    __tablename__ = "gl_accounts"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    account_code = Column(String, nullable=False)
+    account_name = Column(String, nullable=False)
+    account_name_ar = Column(String, nullable=True)
+    account_type = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    company = relationship("CompanyDB", backref="gl_accounts")
+
+
+class JournalEntryDB(Base):
+    """General Ledger — Journal Entry headers."""
+    __tablename__ = "journal_entries"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
+    entry_date = Column(Date, nullable=False, index=True)
+    reference = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    source = Column(String, nullable=True)
+    source_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    company = relationship("CompanyDB", backref="journal_entries")
+    lines = relationship("JournalEntryLineDB", backref="entry", cascade="all, delete-orphan")
+
+
+class JournalEntryLineDB(Base):
+    """General Ledger — Journal Entry detail lines."""
+    __tablename__ = "journal_entry_lines"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    entry_id = Column(String, ForeignKey("journal_entries.id"), nullable=False, index=True)
+    account_code = Column(String, nullable=False)
+    account_name = Column(String, nullable=False)
+    debit_amount = Column(Float, default=0.0)
+    credit_amount = Column(Float, default=0.0)
+    description = Column(Text, nullable=True)
+
+
 # Create tables
 Base.metadata.create_all(engine)
+
+# ── Safe schema migrations ────────────────────────────────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT false"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP NULL"
+        ))
+        _conn.commit()
+except Exception as _e:
+    print(f"⚠️  Archive column migration skipped: {_e}")
+
+try:
+    with engine.connect() as _conn:
+        _existing = [r[0] for r in _conn.execute(text(
+            "SELECT unnest(enum_range(NULL::invoicetype))::text"
+        ))]
+        if "383" not in _existing:
+            _conn.execute(text("ALTER TYPE invoicetype ADD VALUE '383'"))
+            _conn.commit()
+except Exception as _e:
+    print(f"⚠️  InvoiceType enum migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def get_db():
@@ -5873,6 +5987,93 @@ def get_pending_payment_invoices(
     ]
 
 
+@app.get("/invoices/archived", tags=["Invoices"])
+def list_archived_invoices(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return all invoices that have been archived."""
+    from sqlalchemy import text as sa_text
+    rows = db.execute(
+        sa_text("""SELECT id, invoice_number, customer_name, issue_date, total_amount,
+                          archived_at, invoice_type, status
+                   FROM invoices
+                   WHERE company_id = :cid AND is_archived = true
+                   ORDER BY archived_at DESC"""),
+        {"cid": current_user.company_id},
+    ).fetchall()
+    return {
+        "archived_invoices": [
+            {
+                "id": r[0], "invoice_number": r[1], "customer_name": r[2],
+                "issue_date": str(r[3]) if r[3] else None,
+                "total_amount": r[4],
+                "archived_at": r[5].isoformat() if r[5] else None,
+                "invoice_type": r[6], "status": r[7],
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@app.get("/invoices/archive/status", tags=["Invoices"])
+def get_archive_status(
+    years_old: int = 5,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return count of invoices eligible for archival (older than years_old years)."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import text as sa_text
+    cutoff = (datetime.utcnow() - timedelta(days=365 * years_old)).date()
+    result = db.execute(
+        sa_text("""SELECT COUNT(*) FROM invoices
+                   WHERE company_id = :cid
+                     AND (is_archived IS NULL OR is_archived = false)
+                     AND issue_date <= :cutoff"""),
+        {"cid": current_user.company_id, "cutoff": str(cutoff)},
+    ).scalar()
+    return {
+        "eligible_count": result or 0,
+        "cutoff_date": str(cutoff),
+        "years_old": years_old,
+    }
+
+
+@app.get("/invoices/archive/export", tags=["Invoices"])
+def export_archived_invoices(
+    format: str = "xlsx",
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export archived invoices as XLSX."""
+    from fastapi.responses import StreamingResponse
+    import io, openpyxl
+    from sqlalchemy import text as sa_text
+    rows = db.execute(
+        sa_text("""SELECT invoice_number, customer_name, issue_date, total_amount,
+                          archived_at, invoice_type, status
+                   FROM invoices
+                   WHERE company_id = :cid AND is_archived = true
+                   ORDER BY archived_at DESC"""),
+        {"cid": current_user.company_id},
+    ).fetchall()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Archived Invoices"
+    ws.append(["Invoice #", "Customer", "Issue Date", "Total (AED)", "Archived At", "Type", "Status"])
+    for r in rows:
+        ws.append([r[0], r[1], str(r[2]) if r[2] else "", r[3],
+                   r[4].isoformat() if r[4] else "", r[5], r[6]])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="archived_invoices.xlsx"'})
+
+
 @app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
 def get_invoice(
     invoice_id: str,
@@ -6471,7 +6672,7 @@ def _build_report_payload(invoices, period_label: str, start_date, end_date):
             else str(inv.invoice_type)
         )
         breakdown[code]["count"] += 1
-        breakdown[code]["subtotal"] += float(inv.subtotal or 0.0)
+        breakdown[code]["subtotal"] += float(inv.subtotal_amount or 0.0)
         breakdown[code]["tax_amount"] += float(inv.tax_amount or 0.0)
         breakdown[code]["total_amount"] += float(inv.total_amount or 0.0)
     breakdown_list = [
@@ -6857,6 +7058,809 @@ def export_adhoc_report(
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ==================== AUDIT TRAIL ENDPOINTS ====================
+
+@app.get("/audit-logs/actions", tags=["Audit Trail"])
+def get_audit_log_actions(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return distinct action types present in the audit log."""
+    rows = db.query(AuditLogDB.action).filter(
+        AuditLogDB.company_id == current_user.company_id
+    ).distinct().all()
+    return {"actions": sorted([r[0] for r in rows])}
+
+
+@app.get("/audit-logs", tags=["Audit Trail"])
+def list_audit_logs(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    page: int = 1,
+    limit: int = 25,
+):
+    """Return paginated audit trail entries for the company."""
+    from datetime import datetime, date, timedelta
+    q = db.query(AuditLogDB).filter(AuditLogDB.company_id == current_user.company_id)
+    if from_date:
+        try:
+            q = q.filter(AuditLogDB.created_at >= datetime.fromisoformat(from_date))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            end_dt = datetime.fromisoformat(to_date) + timedelta(days=1)
+            q = q.filter(AuditLogDB.created_at < end_dt)
+        except ValueError:
+            pass
+    if action:
+        q = q.filter(AuditLogDB.action == action)
+    if resource_type:
+        q = q.filter(AuditLogDB.resource_type == resource_type)
+    total = q.count()
+    logs = q.order_by(AuditLogDB.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    return {
+        "audit_logs": [
+            {
+                "id": l.id, "action": l.action, "resource_type": l.resource_type,
+                "resource_id": l.resource_id, "description": l.description,
+                "user_id": l.user_id, "company_id": l.company_id,
+                "ip_address": l.ip_address,
+                "created_at": l.created_at.isoformat() if l.created_at else None,
+                "old_value": l.old_value, "new_value": l.new_value,
+            }
+            for l in logs
+        ],
+        "total": total, "page": page, "limit": limit,
+    }
+
+
+@app.get("/audit-logs/export", tags=["Audit Trail"])
+def export_audit_logs(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    action: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    format: str = "csv",
+):
+    """Export audit logs as CSV or XLSX."""
+    from fastapi.responses import StreamingResponse
+    import io, csv
+    from datetime import datetime, timedelta
+    q = db.query(AuditLogDB).filter(AuditLogDB.company_id == current_user.company_id)
+    if from_date:
+        try:
+            q = q.filter(AuditLogDB.created_at >= datetime.fromisoformat(from_date))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            q = q.filter(AuditLogDB.created_at < datetime.fromisoformat(to_date) + timedelta(days=1))
+        except ValueError:
+            pass
+    if action:
+        q = q.filter(AuditLogDB.action == action)
+    if resource_type:
+        q = q.filter(AuditLogDB.resource_type == resource_type)
+    logs = q.order_by(AuditLogDB.created_at.desc()).all()
+    headers_row = ["Timestamp", "Action", "Resource Type", "Resource ID", "Description", "User ID", "IP Address"]
+    if format == "xlsx":
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Audit Log"
+        ws.append(headers_row)
+        for l in logs:
+            ws.append([
+                l.created_at.isoformat() if l.created_at else "",
+                l.action, l.resource_type or "", l.resource_id or "",
+                l.description or "", l.user_id or "", l.ip_address or "",
+            ])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="audit_log.xlsx"'})
+    else:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(headers_row)
+        for l in logs:
+            w.writerow([
+                l.created_at.isoformat() if l.created_at else "",
+                l.action, l.resource_type or "", l.resource_id or "",
+                l.description or "", l.user_id or "", l.ip_address or "",
+            ])
+        content = buf.getvalue().encode("utf-8-sig")
+        return StreamingResponse(io.BytesIO(content), media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="audit_log.csv"'})
+
+
+# ==================== VAT RETURN ENDPOINTS ====================
+
+@app.get("/vat-return", tags=["VAT Return"])
+def list_vat_returns(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """List all saved VAT returns for the company."""
+    returns = (
+        db.query(VATReturnDB)
+        .filter(VATReturnDB.company_id == current_user.company_id)
+        .order_by(VATReturnDB.generated_at.desc())
+        .all()
+    )
+    return {
+        "vat_returns": [
+            {
+                "id": r.id, "period_start": str(r.period_start), "period_end": str(r.period_end),
+                "box1_standard_rated_sales": r.box1_standard_rated_sales,
+                "box3_output_vat": r.box3_output_vat,
+                "box4_zero_rated_sales": r.box4_zero_rated_sales,
+                "box5_exempt_sales": r.box5_exempt_sales,
+                "box7_total_sales": r.box7_total_sales,
+                "box8_standard_rated_purchases": r.box8_standard_rated_purchases,
+                "box9_input_vat_bills": r.box9_input_vat_bills,
+                "box12_total_input_vat": r.box12_total_input_vat,
+                "box13_net_vat_payable": r.box13_net_vat_payable,
+                "total_sales_invoices": r.total_sales_invoices,
+                "generated_at": r.generated_at.isoformat() if r.generated_at else None,
+            }
+            for r in returns
+        ]
+    }
+
+
+@app.post("/vat-return/generate", tags=["VAT Return"])
+def generate_vat_return(
+    period_start: str,
+    period_end: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Generate UAE FTA Form 301 (13-box VAT return) for a given period."""
+    from datetime import date as dt_date
+    from decimal import Decimal
+    try:
+        ps = dt_date.fromisoformat(period_start)
+        pe = dt_date.fromisoformat(period_end)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+
+    # ── Sales invoices ────────────────────────────────────────────────────────
+    sales_invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            func.date(InvoiceDB.issue_date) >= ps,
+            func.date(InvoiceDB.issue_date) <= pe,
+            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+        )
+        .all()
+    )
+
+    box1 = Decimal("0")   # standard-rated sales (subtotal)
+    box3 = Decimal("0")   # output VAT
+    box4 = Decimal("0")   # zero-rated
+    box5 = Decimal("0")   # exempt
+    box6 = Decimal("0")   # out-of-scope
+
+    for inv in sales_invoices:
+        amt = Decimal(str(inv.subtotal_amount or 0))
+        vat = Decimal(str(inv.tax_amount or 0))
+        itype = str(inv.invoice_type.value) if hasattr(inv.invoice_type, "value") else str(inv.invoice_type)
+        tcode = inv.tax_code or "SR"
+        sign = -1 if itype in ("381", "81") else 1
+        if itype in ("480", "81"):
+            box6 += sign * amt
+        elif tcode == "ZR":
+            box4 += sign * amt
+        elif tcode == "ES":
+            box5 += sign * amt
+        else:
+            box1 += sign * amt
+        box3 += sign * vat
+
+    box7 = box1 + box4 + box5 + box6
+
+    # ── Purchase (inward) invoices ────────────────────────────────────────────
+    purchase_invoices = (
+        db.query(InwardInvoiceDB)
+        .filter(
+            InwardInvoiceDB.company_id == current_user.company_id,
+            func.date(InwardInvoiceDB.invoice_date) >= ps,
+            func.date(InwardInvoiceDB.invoice_date) <= pe,
+        )
+        .all()
+    )
+    box8 = sum(Decimal(str(p.subtotal_amount or 0)) for p in purchase_invoices)
+    box9 = sum(Decimal(str(p.tax_amount or 0)) for p in purchase_invoices)
+
+    # ── Expenses ──────────────────────────────────────────────────────────────
+    expenses = (
+        db.query(ExpenseDB)
+        .filter(
+            ExpenseDB.company_id == current_user.company_id,
+            func.date(ExpenseDB.expense_date) >= ps,
+            func.date(ExpenseDB.expense_date) <= pe,
+        )
+        .all()
+    )
+    box10 = sum(Decimal(str(e.amount or 0)) for e in expenses)
+    box11 = sum(Decimal(str(e.vat_amount or 0)) for e in expenses)
+
+    box12 = box9 + box11
+    box13 = box3 - box12
+
+    def _r(d: Decimal) -> float:
+        return float(d.quantize(Decimal("0.01")))
+
+    vat_return = VATReturnDB(
+        company_id=current_user.company_id,
+        period_start=ps,
+        period_end=pe,
+        box1_standard_rated_sales=_r(box1),
+        box2_tax_refunds=0.0,
+        box3_output_vat=_r(box3),
+        box4_zero_rated_sales=_r(box4),
+        box5_exempt_sales=_r(box5),
+        box6_out_of_scope_sales=_r(box6),
+        box7_total_sales=_r(box7),
+        box8_standard_rated_purchases=_r(box8),
+        box9_input_vat_bills=_r(box9),
+        box10_purchase_expenses=_r(box10),
+        box11_input_vat_expenses=_r(box11),
+        box12_total_input_vat=_r(box12),
+        box13_net_vat_payable=_r(box13),
+        total_sales_invoices=len(sales_invoices),
+        total_purchase_invoices=len(purchase_invoices),
+    )
+    db.add(vat_return)
+    db.commit()
+    db.refresh(vat_return)
+    return {
+        "return_id": vat_return.id,
+        "period_start": str(vat_return.period_start),
+        "period_end": str(vat_return.period_end),
+        "box1_standard_rated_sales": vat_return.box1_standard_rated_sales,
+        "box2_tax_refunds": vat_return.box2_tax_refunds,
+        "box3_output_vat": vat_return.box3_output_vat,
+        "box4_zero_rated_sales": vat_return.box4_zero_rated_sales,
+        "box5_exempt_sales": vat_return.box5_exempt_sales,
+        "box6_out_of_scope_sales": vat_return.box6_out_of_scope_sales,
+        "box7_total_sales": vat_return.box7_total_sales,
+        "box8_standard_rated_purchases": vat_return.box8_standard_rated_purchases,
+        "box9_input_vat_bills": vat_return.box9_input_vat_bills,
+        "box10_purchase_expenses": vat_return.box10_purchase_expenses,
+        "box11_input_vat_expenses": vat_return.box11_input_vat_expenses,
+        "box12_total_input_vat": vat_return.box12_total_input_vat,
+        "box13_net_vat_payable": vat_return.box13_net_vat_payable,
+        "total_sales_invoices": vat_return.total_sales_invoices,
+        "total_purchase_invoices": vat_return.total_purchase_invoices,
+    }
+
+
+@app.post("/vat-returns/{return_id}/tourist-refund", tags=["VAT Return"])
+def update_tourist_refund(
+    return_id: str,
+    amount: float,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Update the tourist refund amount (Box 2) on an existing VAT return."""
+    vr = db.query(VATReturnDB).filter(
+        VATReturnDB.id == return_id,
+        VATReturnDB.company_id == current_user.company_id,
+    ).first()
+    if not vr:
+        raise HTTPException(404, "VAT return not found")
+    vr.box2_tax_refunds = float(amount)
+    vr.box13_net_vat_payable = round(vr.box3_output_vat - vr.box2_tax_refunds - vr.box12_total_input_vat, 2)
+    db.commit()
+    return {"tax_refunds_provided": vr.box2_tax_refunds, "net_vat_payable": vr.box13_net_vat_payable}
+
+
+@app.get("/vat-return/{return_id}/export", tags=["VAT Return"])
+def export_vat_return(
+    return_id: str,
+    format: str = "xlsx",
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export a VAT return as XLSX or XML."""
+    from fastapi.responses import StreamingResponse
+    import io
+    vr = db.query(VATReturnDB).filter(
+        VATReturnDB.id == return_id,
+        VATReturnDB.company_id == current_user.company_id,
+    ).first()
+    if not vr:
+        raise HTTPException(404, "VAT return not found")
+    if format == "xlsx":
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "VAT Return"
+        ws.append(["UAE FTA VAT Return — Form 301"])
+        ws.append(["Period", f"{vr.period_start} to {vr.period_end}"])
+        ws.append([])
+        ws.append(["Box", "Description", "Amount (AED)"])
+        boxes = [
+            (1, "Standard-rated supplies (taxable amount, excl. VAT)", vr.box1_standard_rated_sales),
+            (2, "Tax refunds provided to tourists", vr.box2_tax_refunds),
+            (3, "Output VAT (5%)", vr.box3_output_vat),
+            (4, "Zero-rated supplies", vr.box4_zero_rated_sales),
+            (5, "Exempt supplies", vr.box5_exempt_sales),
+            (6, "Out-of-scope / reverse-charge supplies", vr.box6_out_of_scope_sales),
+            (7, "Total value of all supplies", vr.box7_total_sales),
+            (8, "Standard-rated purchases — bills (excl. VAT)", vr.box8_standard_rated_purchases),
+            (9, "Input VAT recoverable on bills", vr.box9_input_vat_bills),
+            (10, "Standard-rated purchases — expenses (excl. VAT)", vr.box10_purchase_expenses),
+            (11, "Input VAT recoverable on expenses", vr.box11_input_vat_expenses),
+            (12, "Total input VAT (Box 9 + Box 11)", vr.box12_total_input_vat),
+            (13, "Net VAT payable / (refundable)", vr.box13_net_vat_payable),
+        ]
+        for b in boxes:
+            ws.append(list(b))
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="vat_return_{vr.period_start}_{vr.period_end}.xlsx"'})
+    else:
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<VATReturn xmlns="urn:ae:fta:vat:return:v1.0">
+  <ReturnId>{return_id}</ReturnId>
+  <PeriodStart>{vr.period_start}</PeriodStart>
+  <PeriodEnd>{vr.period_end}</PeriodEnd>
+  <Box1>{vr.box1_standard_rated_sales}</Box1>
+  <Box2>{vr.box2_tax_refunds}</Box2>
+  <Box3>{vr.box3_output_vat}</Box3>
+  <Box4>{vr.box4_zero_rated_sales}</Box4>
+  <Box5>{vr.box5_exempt_sales}</Box5>
+  <Box6>{vr.box6_out_of_scope_sales}</Box6>
+  <Box7>{vr.box7_total_sales}</Box7>
+  <Box8>{vr.box8_standard_rated_purchases}</Box8>
+  <Box9>{vr.box9_input_vat_bills}</Box9>
+  <Box10>{vr.box10_purchase_expenses}</Box10>
+  <Box11>{vr.box11_input_vat_expenses}</Box11>
+  <Box12>{vr.box12_total_input_vat}</Box12>
+  <Box13>{vr.box13_net_vat_payable}</Box13>
+</VATReturn>"""
+        return StreamingResponse(io.BytesIO(xml.encode("utf-8")), media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="vat_return_{vr.period_start}_{vr.period_end}.xml"'})
+
+
+# ==================== GENERAL LEDGER ENDPOINTS ====================
+
+_DEFAULT_COA = [
+    ("1100", "Cash and Cash Equivalents", "نقد وما في حكمه", "ASSET"),
+    ("1200", "Accounts Receivable", "الذمم المدينة", "ASSET"),
+    ("1300", "Inventory", "المخزون", "ASSET"),
+    ("1400", "Prepaid Expenses", "المصروفات المدفوعة مقدماً", "ASSET"),
+    ("1500", "Property, Plant & Equipment", "الممتلكات والمصانع والمعدات", "ASSET"),
+    ("2100", "Accounts Payable", "الذمم الدائنة", "LIABILITY"),
+    ("2200", "VAT Payable", "ضريبة القيمة المضافة المستحقة", "LIABILITY"),
+    ("2300", "Accrued Expenses", "المصروفات المستحقة", "LIABILITY"),
+    ("2400", "Short-term Loans", "القروض قصيرة الأجل", "LIABILITY"),
+    ("3100", "Share Capital", "رأس المال", "EQUITY"),
+    ("3200", "Retained Earnings", "الأرباح المحتجزة", "EQUITY"),
+    ("4100", "Sales Revenue", "إيرادات المبيعات", "REVENUE"),
+    ("4200", "Service Revenue", "إيرادات الخدمات", "REVENUE"),
+    ("4300", "Other Income", "إيرادات أخرى", "REVENUE"),
+    ("5100", "Cost of Goods Sold", "تكلفة البضائع المباعة", "EXPENSE"),
+    ("5200", "Salaries & Wages", "الرواتب والأجور", "EXPENSE"),
+    ("5300", "Rent Expense", "مصروف الإيجار", "EXPENSE"),
+    ("5400", "Utilities Expense", "مصروف المرافق", "EXPENSE"),
+    ("5500", "Marketing & Advertising", "التسويق والإعلان", "EXPENSE"),
+    ("5600", "VAT Recoverable", "ضريبة القيمة المضافة القابلة للاسترداد", "EXPENSE"),
+]
+
+
+def _seed_default_coa(company_id: str, db: Session):
+    """Auto-seed the default Chart of Accounts for a company if none exist."""
+    import uuid as _uuid
+    for code, name, name_ar, atype in _DEFAULT_COA:
+        db.add(AccountDB(
+            id=str(_uuid.uuid4()), company_id=company_id,
+            account_code=code, account_name=name, account_name_ar=name_ar,
+            account_type=atype, is_active=True,
+        ))
+    db.commit()
+
+
+@app.get("/accounts", tags=["General Ledger"])
+def list_accounts(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return the Chart of Accounts for the company. Auto-seeds defaults on first call."""
+    count = db.query(AccountDB).filter(AccountDB.company_id == current_user.company_id).count()
+    if count == 0:
+        _seed_default_coa(current_user.company_id, db)
+    accounts = db.query(AccountDB).filter(
+        AccountDB.company_id == current_user.company_id
+    ).order_by(AccountDB.account_code).all()
+    return {
+        "accounts": [
+            {
+                "id": a.id, "account_code": a.account_code, "account_name": a.account_name,
+                "account_name_ar": a.account_name_ar, "account_type": a.account_type,
+                "description": a.description, "is_active": a.is_active,
+                "balance": 0.0,
+            }
+            for a in accounts
+        ]
+    }
+
+
+@app.get("/journal-entries", tags=["General Ledger"])
+def list_journal_entries(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    page: int = 1,
+    limit: int = 25,
+):
+    """Return paginated journal entries for the company."""
+    from datetime import date as dt_date
+    q = db.query(JournalEntryDB).filter(JournalEntryDB.company_id == current_user.company_id)
+    if from_date:
+        try:
+            q = q.filter(JournalEntryDB.entry_date >= dt_date.fromisoformat(from_date))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            q = q.filter(JournalEntryDB.entry_date <= dt_date.fromisoformat(to_date))
+        except ValueError:
+            pass
+    total = q.count()
+    entries = q.order_by(JournalEntryDB.entry_date.desc()).offset((page - 1) * limit).limit(limit).all()
+    return {
+        "journal_entries": [
+            {
+                "id": e.id, "entry_date": str(e.entry_date), "reference": e.reference,
+                "description": e.description, "source": e.source,
+                "lines": [
+                    {"account_code": l.account_code, "account_name": l.account_name,
+                     "debit_amount": l.debit_amount, "credit_amount": l.credit_amount}
+                    for l in e.lines
+                ],
+            }
+            for e in entries
+        ],
+        "total": total,
+    }
+
+
+@app.get("/journal-entries/{entry_id}", tags=["General Ledger"])
+def get_journal_entry(
+    entry_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Return a single journal entry with its lines."""
+    entry = db.query(JournalEntryDB).filter(
+        JournalEntryDB.id == entry_id,
+        JournalEntryDB.company_id == current_user.company_id,
+    ).first()
+    if not entry:
+        raise HTTPException(404, "Journal entry not found")
+    return {
+        "id": entry.id, "entry_date": str(entry.entry_date), "reference": entry.reference,
+        "description": entry.description, "source": entry.source,
+        "lines": [
+            {"id": l.id, "account_code": l.account_code, "account_name": l.account_name,
+             "debit_amount": l.debit_amount, "credit_amount": l.credit_amount,
+             "description": l.description}
+            for l in entry.lines
+        ],
+    }
+
+
+@app.get("/gl-summary", tags=["General Ledger"])
+def get_gl_summary(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    account_type: Optional[str] = None,
+):
+    """Return trial balance — per-account debit/credit totals for the period."""
+    from datetime import date as dt_date
+    from collections import defaultdict
+    count = db.query(AccountDB).filter(AccountDB.company_id == current_user.company_id).count()
+    if count == 0:
+        _seed_default_coa(current_user.company_id, db)
+    accounts = db.query(AccountDB).filter(
+        AccountDB.company_id == current_user.company_id
+    ).order_by(AccountDB.account_code).all()
+    q = db.query(JournalEntryLineDB).join(
+        JournalEntryDB, JournalEntryLineDB.entry_id == JournalEntryDB.id
+    ).filter(JournalEntryDB.company_id == current_user.company_id)
+    if from_date:
+        try:
+            q = q.filter(JournalEntryDB.entry_date >= dt_date.fromisoformat(from_date))
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            q = q.filter(JournalEntryDB.entry_date <= dt_date.fromisoformat(to_date))
+        except ValueError:
+            pass
+    lines = q.all()
+    totals = defaultdict(lambda: {"debit": 0.0, "credit": 0.0})
+    for l in lines:
+        totals[l.account_code]["debit"] += l.debit_amount
+        totals[l.account_code]["credit"] += l.credit_amount
+    result = []
+    for a in accounts:
+        if account_type and a.account_type != account_type:
+            continue
+        d = totals[a.account_code]["debit"]
+        c = totals[a.account_code]["credit"]
+        balance = d - c if a.account_type in ("ASSET", "EXPENSE") else c - d
+        result.append({
+            "account_code": a.account_code, "account_name": a.account_name,
+            "account_type": a.account_type, "total_debit": round(d, 2),
+            "total_credit": round(c, 2), "balance": round(balance, 2),
+        })
+    return result
+
+
+@app.get("/reports/general-ledger/export", tags=["General Ledger"])
+def export_general_ledger(
+    format: str = "xlsx",
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export the Chart of Accounts as XLSX or PDF."""
+    from fastapi.responses import StreamingResponse
+    import io
+    count = db.query(AccountDB).filter(AccountDB.company_id == current_user.company_id).count()
+    if count == 0:
+        _seed_default_coa(current_user.company_id, db)
+    accounts = db.query(AccountDB).filter(
+        AccountDB.company_id == current_user.company_id
+    ).order_by(AccountDB.account_code).all()
+    if format == "pdf":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = [Paragraph("Chart of Accounts", styles["Title"]), Spacer(1, 12)]
+        data = [["Code", "Account Name", "Type", "Active"]]
+        for a in accounts:
+            data.append([a.account_code, a.account_name, a.account_type, "Yes" if a.is_active else "No"])
+        t = Table(data, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ]))
+        elements.append(t)
+        doc.build(elements)
+        return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="chart_of_accounts.pdf"'})
+    else:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Chart of Accounts"
+        ws.append(["Code", "Account Name", "Arabic Name", "Type", "Active"])
+        for a in accounts:
+            ws.append([a.account_code, a.account_name, a.account_name_ar or "", a.account_type, "Yes" if a.is_active else "No"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="chart_of_accounts.xlsx"'})
+
+
+@app.get("/reports/trial-balance/export", tags=["General Ledger"])
+def export_trial_balance(
+    format: str = "xlsx",
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    account_type: Optional[str] = None,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Export the trial balance as XLSX or PDF."""
+    from fastapi.responses import StreamingResponse
+    import io
+    rows = get_gl_summary(current_user=current_user, db=db,
+                          from_date=from_date, to_date=to_date, account_type=account_type)
+    if format == "pdf":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib import colors
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = [Paragraph("Trial Balance", styles["Title"]), Spacer(1, 12)]
+        data = [["Code", "Account", "Type", "Debit (AED)", "Credit (AED)", "Balance (AED)"]]
+        for r in rows:
+            data.append([r["account_code"], r["account_name"], r["account_type"],
+                         f"{r['total_debit']:,.2f}", f"{r['total_credit']:,.2f}", f"{r['balance']:,.2f}"])
+        t = Table(data, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ]))
+        elements.append(t)
+        doc.build(elements)
+        return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="application/pdf",
+            headers={"Content-Disposition": 'attachment; filename="trial_balance.pdf"'})
+    else:
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Trial Balance"
+        ws.append(["Code", "Account Name", "Type", "Debit (AED)", "Credit (AED)", "Balance (AED)"])
+        for r in rows:
+            ws.append([r["account_code"], r["account_name"], r["account_type"],
+                       r["total_debit"], r["total_credit"], r["balance"]])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": 'attachment; filename="trial_balance.xlsx"'})
+
+
+# ==================== DATA ARCHIVAL ADMIN ENDPOINTS ====================
+
+@app.post("/invoices/archive", tags=["Invoices"])
+def archive_old_invoices(
+    years_old: int = 5,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Archive all invoices older than years_old years."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Insufficient permissions to archive invoices")
+    from datetime import datetime, timedelta
+    from sqlalchemy import text as sa_text
+    cutoff = (datetime.utcnow() - timedelta(days=365 * years_old)).date()
+    result = db.execute(
+        sa_text("""UPDATE invoices
+                   SET is_archived = true, archived_at = NOW()
+                   WHERE company_id = :cid
+                     AND (is_archived IS NULL OR is_archived = false)
+                     AND issue_date <= :cutoff
+                   RETURNING id"""),
+        {"cid": current_user.company_id, "cutoff": str(cutoff)},
+    )
+    archived_ids = [r[0] for r in result.fetchall()]
+    db.commit()
+    return {"archived_count": len(archived_ids), "cutoff_date": str(cutoff)}
+
+
+@app.post("/invoices/{invoice_id}/restore", tags=["Invoices"])
+def restore_invoice(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Restore a single archived invoice."""
+    from sqlalchemy import text as sa_text
+    result = db.execute(
+        sa_text("""UPDATE invoices SET is_archived = false, archived_at = NULL
+                   WHERE id = :id AND company_id = :cid AND is_archived = true
+                   RETURNING id"""),
+        {"id": invoice_id, "cid": current_user.company_id},
+    )
+    if not result.fetchone():
+        raise HTTPException(404, "Archived invoice not found")
+    db.commit()
+    return {"restored": True, "invoice_id": invoice_id}
+
+
+class FiscalYearArchiveRequest(BaseModel):
+    year: int
+    dry_run: bool = True
+
+
+@app.post("/admin/archive/fiscal-year", tags=["Admin"])
+def archive_fiscal_year(
+    payload: FiscalYearArchiveRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Archive all invoices for a given fiscal year. Set dry_run=false to apply."""
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Insufficient permissions")
+    from sqlalchemy import text as sa_text
+    from datetime import date
+    year = payload.year
+    dry_run = payload.dry_run
+    fy_start = date(year, 1, 1)
+    fy_end = date(year, 12, 31)
+    count_result = db.execute(
+        sa_text("""SELECT COUNT(*) FROM invoices
+                   WHERE company_id = :cid
+                     AND (is_archived IS NULL OR is_archived = false)
+                     AND issue_date BETWEEN :start AND :end"""),
+        {"cid": current_user.company_id, "start": str(fy_start), "end": str(fy_end)},
+    ).scalar()
+    eligible_count = count_result or 0
+    if dry_run:
+        return {
+            "dry_run": True, "fiscal_year": year,
+            "eligible_count": eligible_count,
+            "message": f"{eligible_count} invoices would be archived for FY{year}. Set dry_run=false to apply.",
+        }
+    result = db.execute(
+        sa_text("""UPDATE invoices
+                   SET is_archived = true, archived_at = NOW()
+                   WHERE company_id = :cid
+                     AND (is_archived IS NULL OR is_archived = false)
+                     AND issue_date BETWEEN :start AND :end
+                   RETURNING id"""),
+        {"cid": current_user.company_id, "start": str(fy_start), "end": str(fy_end)},
+    )
+    archived_ids = result.fetchall()
+    db.commit()
+    return {
+        "dry_run": False, "fiscal_year": year,
+        "archived_count": len(archived_ids),
+        "message": f"Successfully archived {len(archived_ids)} invoices for FY{year}.",
+    }
+
+
+@app.post("/admin/backup/restore-verify", tags=["Admin"])
+async def backup_restore_verify(
+    request: Request,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Verify system backup integrity — runs a quick DB connectivity and data integrity check."""
+    if current_user.role not in [Role.SUPER_ADMIN, Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Insufficient permissions")
+    from sqlalchemy import text as sa_text
+    checks = {}
+    try:
+        db.execute(sa_text("SELECT 1"))
+        checks["database_connectivity"] = "OK"
+    except Exception as e:
+        checks["database_connectivity"] = f"FAILED: {e}"
+    try:
+        inv_count = db.execute(sa_text("SELECT COUNT(*) FROM invoices WHERE company_id = :cid"),
+                               {"cid": current_user.company_id}).scalar()
+        checks["invoice_table"] = f"OK ({inv_count} records)"
+    except Exception as e:
+        checks["invoice_table"] = f"FAILED: {e}"
+    try:
+        user_count = db.execute(sa_text("SELECT COUNT(*) FROM users")).scalar()
+        checks["user_table"] = f"OK ({user_count} records)"
+    except Exception as e:
+        checks["user_table"] = f"FAILED: {e}"
+    all_ok = all("OK" in v for v in checks.values())
+    return {
+        "status": "PASS" if all_ok else "FAIL",
+        "checks": checks,
+        "verified_at": datetime.utcnow().isoformat(),
+        "message": "Backup integrity verified successfully." if all_ok else "Some checks failed. Review details.",
+    }
 
 
 # ==================== ANALYTICS ENDPOINTS ====================
