@@ -75,6 +75,16 @@ export default function CreateInvoice() {
     return labels[type] || type;
   };
 
+  const getDocumentTypeSuccessLabel = (type) => {
+    const labels = {
+      380: "Tax invoice",
+      381: "Tax credit note",
+      480: "Invoice",
+      81: "Credit note",
+    };
+    return labels[type] || "Invoice";
+  };
+
   // Get the valid credit note type for a given invoice type
   const getValidCreditNoteType = (invoiceType) => {
     if (invoiceType === "380") return "381"; // Tax Invoice → Tax Credit Note
@@ -437,8 +447,11 @@ export default function CreateInvoice() {
       };
 
       const response = await apiClient.post("/invoices", cleanedFormData);
+      const documentLabel = getDocumentTypeSuccessLabel(
+        response.data.invoice_type ?? formData.invoice_type,
+      );
       setToast({
-        message: `Invoice ${response.data.invoice_number} created successfully!`,
+        message: `${documentLabel} ${response.data.invoice_number} created successfully!`,
         type: "success",
         onClose: () => {
           setToast(null);

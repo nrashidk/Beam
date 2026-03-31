@@ -5011,10 +5011,7 @@ def invite_user(
     if current_user.role not in allowed_inviter_roles:
         raise HTTPException(403, "Only admins can invite users")
 
-    if (
-        current_user.role == Role.BUSINESS_ADMIN
-        and payload.role != Role.FINANCE_USER
-    ):
+    if current_user.role == Role.BUSINESS_ADMIN and payload.role != Role.FINANCE_USER:
         raise HTTPException(
             403,
             "Business admins can only invite finance users",
@@ -6371,6 +6368,319 @@ def get_daily_reconciliation_report(
     }
 
 
+# ==================== PERIODIC / AD-HOC REPORT ENDPOINTS ====================
+
+
+def _invoice_type_label(itype: str) -> str:
+    labels = {
+        "380": "Tax Invoice",
+        "381": "Credit Note",
+        "480": "Commercial Invoice",
+        "81": "Credit Note (Out of Scope)",
+    }
+    return labels.get(str(itype), str(itype))
+
+
+def _build_report_payload(invoices, period_label: str, start_date, end_date):
+    from collections import defaultdict
+    breakdown = defaultdict(lambda: {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0})
+    for inv in invoices:
+        code = str(inv.invoice_type.value) if hasattr(inv.invoice_type, "value") else str(inv.invoice_type)
+        breakdown[code]["count"] += 1
+        breakdown[code]["subtotal"] += float(inv.subtotal or 0.0)
+        breakdown[code]["tax_amount"] += float(inv.tax_amount or 0.0)
+        breakdown[code]["total_amount"] += float(inv.total_amount or 0.0)
+    breakdown_list = [
+        {
+            "invoice_type_code": code,
+            "invoice_type_label": _invoice_type_label(code),
+            "count": data["count"],
+            "subtotal": round(data["subtotal"], 2),
+            "tax_amount": round(data["tax_amount"], 2),
+            "total_amount": round(data["total_amount"], 2),
+        }
+        for code, data in sorted(breakdown.items())
+    ]
+    total_count = sum(d["count"] for d in breakdown_list)
+    total_subtotal = round(sum(d["subtotal"] for d in breakdown_list), 2)
+    total_tax = round(sum(d["tax_amount"] for d in breakdown_list), 2)
+    total_gross = round(sum(d["total_amount"] for d in breakdown_list), 2)
+    from datetime import datetime
+    return {
+        "period_label": period_label,
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "generated_at": datetime.utcnow().isoformat(),
+        "summary": {
+            "count": total_count,
+            "subtotal": total_subtotal,
+            "tax_amount": total_tax,
+            "total_amount": total_gross,
+        },
+        "breakdown_by_type": breakdown_list,
+    }
+
+
+def _export_report_xlsx(payload: dict) -> bytes:
+    import openpyxl, io
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    ws.append(["Period", payload["period_label"]])
+    ws.append(["Start Date", payload["start_date"]])
+    ws.append(["End Date", payload["end_date"]])
+    ws.append(["Generated At", payload["generated_at"]])
+    ws.append([])
+    ws.append(["Invoice Type", "Code", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"])
+    for row in payload["breakdown_by_type"]:
+        ws.append([
+            row["invoice_type_label"],
+            row["invoice_type_code"],
+            row["count"],
+            row["subtotal"],
+            row["tax_amount"],
+            row["total_amount"],
+        ])
+    ws.append([])
+    s = payload["summary"]
+    ws.append(["TOTAL", "", s["count"], s["subtotal"], s["tax_amount"], s["total_amount"]])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+def _export_report_pdf(payload: dict) -> bytes:
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+    elements.append(Paragraph(f"Periodic Invoice Report — {payload['period_label']}", styles["Title"]))
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"Period: {payload['start_date']} to {payload['end_date']}", styles["Normal"]))
+    elements.append(Paragraph(f"Generated: {payload['generated_at']}", styles["Normal"]))
+    elements.append(Spacer(1, 16))
+    header = ["Invoice Type", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"]
+    data = [header]
+    for row in payload["breakdown_by_type"]:
+        data.append([row["invoice_type_label"], str(row["count"]),
+                     f"{row['subtotal']:,.2f}", f"{row['tax_amount']:,.2f}", f"{row['total_amount']:,.2f}"])
+    s = payload["summary"]
+    data.append(["TOTAL", str(s["count"]),
+                 f"{s['subtotal']:,.2f}", f"{s['tax_amount']:,.2f}", f"{s['total_amount']:,.2f}"])
+    t = Table(data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#eff6ff")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f9fafb")]),
+    ]))
+    elements.append(t)
+    doc.build(elements)
+    return buf.getvalue()
+
+
+def _parse_period_dates(period_type: str, year: int, period: int):
+    from datetime import date, timedelta
+    if period_type == "monthly":
+        import calendar
+        _, last_day = calendar.monthrange(year, period)
+        start = date(year, period, 1)
+        end = date(year, period, last_day)
+        month_names = ["January","February","March","April","May","June",
+                       "July","August","September","October","November","December"]
+        label = f"{month_names[period - 1]} {year}"
+    elif period_type == "quarterly":
+        q = period
+        month_start = (q - 1) * 3 + 1
+        import calendar
+        _, last_day = calendar.monthrange(year, month_start + 2)
+        start = date(year, month_start, 1)
+        end = date(year, month_start + 2, last_day)
+        label = f"Q{q} {year}"
+    elif period_type == "weekly":
+        jan4 = date(year, 1, 4)
+        week1_monday = jan4 - timedelta(days=jan4.weekday())
+        start = week1_monday + timedelta(weeks=period - 1)
+        end = start + timedelta(days=6)
+        label = f"Week {period}, {year}"
+    else:
+        start = date(year, 1, 1)
+        end = date(year, 12, 31)
+        label = f"Annual {year}"
+    return start, end, label
+
+
+@app.get("/reports/periodic", tags=["Reports"])
+def get_periodic_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period_type: str = "monthly",
+    year: int = None,
+    period: int = None,
+):
+    """
+    Generate a periodic invoice summary report.
+
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    from datetime import datetime, date
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to view reports")
+    if year is None:
+        year = datetime.utcnow().year
+    if period is None:
+        period = datetime.utcnow().month
+    if period_type not in ("monthly", "quarterly", "weekly", "annual"):
+        raise HTTPException(400, "Invalid period_type. Use monthly, quarterly, weekly or annual")
+    start, end, label = _parse_period_dates(period_type, year, period)
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            func.date(InvoiceDB.issue_date) >= start,
+            func.date(InvoiceDB.issue_date) <= end,
+            InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+        )
+        .all()
+    )
+    return _build_report_payload(invoices, label, start, end)
+
+
+@app.get("/reports/periodic/export", tags=["Reports"])
+def export_periodic_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    period_type: str = "monthly",
+    year: int = None,
+    period: int = None,
+    format: str = "xlsx",
+):
+    """Export periodic report as XLSX or PDF."""
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+    import io
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions")
+    if year is None:
+        year = datetime.utcnow().year
+    if period is None:
+        period = datetime.utcnow().month
+    start, end, label = _parse_period_dates(period_type, year, period)
+    invoices = (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == current_user.company_id,
+            func.date(InvoiceDB.issue_date) >= start,
+            func.date(InvoiceDB.issue_date) <= end,
+            InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+        )
+        .all()
+    )
+    payload = _build_report_payload(invoices, label, start, end)
+    if format == "xlsx":
+        data = _export_report_xlsx(payload)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"periodic_report_{label.replace(' ', '_')}.xlsx"
+    else:
+        data = _export_report_pdf(payload)
+        media = "application/pdf"
+        filename = f"periodic_report_{label.replace(' ', '_')}.pdf"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/reports/adhoc", tags=["Reports"])
+def get_adhoc_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: str = None,
+    to_date: str = None,
+    type: str = "all",
+):
+    """
+    Generate an ad-hoc invoice summary report for a custom date range.
+
+    Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
+    """
+    from datetime import datetime, date
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions to view reports")
+    try:
+        start = date.fromisoformat(from_date) if from_date else (datetime.utcnow().date().replace(day=1))
+        end = date.fromisoformat(to_date) if to_date else datetime.utcnow().date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    q = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        func.date(InvoiceDB.issue_date) >= start,
+        func.date(InvoiceDB.issue_date) <= end,
+        InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+    )
+    if type and type != "all":
+        q = q.filter(InvoiceDB.invoice_type == type)
+    invoices = q.all()
+    label = f"{start.isoformat()} to {end.isoformat()}"
+    return _build_report_payload(invoices, label, start, end)
+
+
+@app.get("/reports/adhoc/export", tags=["Reports"])
+def export_adhoc_report(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+    from_date: str = None,
+    to_date: str = None,
+    type: str = "all",
+    format: str = "xlsx",
+):
+    """Export ad-hoc report as XLSX or PDF."""
+    from datetime import datetime, date
+    from fastapi.responses import StreamingResponse
+    import io
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN, Role.FINANCE_USER]:
+        raise HTTPException(403, "Insufficient permissions")
+    try:
+        start = date.fromisoformat(from_date) if from_date else (datetime.utcnow().date().replace(day=1))
+        end = date.fromisoformat(to_date) if to_date else datetime.utcnow().date()
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD")
+    q = db.query(InvoiceDB).filter(
+        InvoiceDB.company_id == current_user.company_id,
+        func.date(InvoiceDB.issue_date) >= start,
+        func.date(InvoiceDB.issue_date) <= end,
+        InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+    )
+    if type and type != "all":
+        q = q.filter(InvoiceDB.invoice_type == type)
+    invoices = q.all()
+    label = f"{start.isoformat()} to {end.isoformat()}"
+    payload = _build_report_payload(invoices, label, start, end)
+    if format == "xlsx":
+        data = _export_report_xlsx(payload)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"adhoc_report_{start}_{end}.xlsx"
+    else:
+        data = _export_report_pdf(payload)
+        media = "application/pdf"
+        filename = f"adhoc_report_{start}_{end}.pdf"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ==================== ANALYTICS ENDPOINTS ====================
 
 
@@ -6849,7 +7159,11 @@ def get_accounts_payable(
 
     for inv in invoices:
         # Use amount_due if present else total_amount - paid_amount
-        amt = float(inv.amount_due if getattr(inv, "amount_due", None) is not None else (inv.total_amount - (inv.paid_amount or 0.0)))
+        amt = float(
+            inv.amount_due
+            if getattr(inv, "amount_due", None) is not None
+            else (inv.total_amount - (inv.paid_amount or 0.0))
+        )
         if amt <= 0:
             continue
         total_outstanding += amt
@@ -9807,7 +10121,9 @@ async def upload_company_logo(
     # Save file - use original filename + timestamp to avoid collisions
     file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
     orig_base = os.path.splitext(logo.filename)[0] if logo.filename else "logo"
-    safe_base = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in orig_base)[:100]
+    safe_base = "".join(
+        c if c.isalnum() or c in ("-", "_") else "_" for c in orig_base
+    )[:100]
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     file_name = f"{safe_base}_{timestamp}.{file_extension}"
     file_path = os.path.join(branding_dir, file_name)
@@ -9909,7 +10225,9 @@ async def admin_upload_company_logo(
 
     file_extension = "svg" if logo.content_type == "image/svg+xml" else "png"
     orig_base = os.path.splitext(logo.filename)[0] if logo.filename else "logo"
-    safe_base = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in orig_base)[:100]
+    safe_base = "".join(
+        c if c.isalnum() or c in ("-", "_") else "_" for c in orig_base
+    )[:100]
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     file_name = f"{safe_base}_{timestamp}.{file_extension}"
     file_path = os.path.join(branding_dir, file_name)
