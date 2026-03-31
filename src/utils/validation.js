@@ -32,6 +32,24 @@ export const validateEmail = (value) => {
 };
 
 /**
+ * Delivery phone validation for SMS / WhatsApp
+ * Accepts UAE mobile numbers in local or international format.
+ */
+export const validateDeliveryPhone = (value) => {
+  if (!value) return { isValid: true, error: "" };
+  const normalized = String(value).replace(/[^\d+]/g, "");
+  const isValid =
+    /^\+9715\d{8}$/.test(normalized) ||
+    /^9715\d{8}$/.test(normalized) ||
+    /^05\d{8}$/.test(normalized);
+
+  return {
+    isValid,
+    error: isValid ? "" : "Use UAE mobile format 05XXXXXXXX or +9715XXXXXXXX",
+  };
+};
+
+/**
  * Password validation
  * Minimum 8 characters with uppercase, lowercase, and special character
  */
@@ -65,6 +83,16 @@ export const validateTRN = (value) => {
  */
 export const formatPhone = (value) => {
   return value.replace(/[^0-9]/g, "");
+};
+
+/**
+ * Keep digits and a leading + for delivery methods like SMS/WhatsApp.
+ */
+export const formatDeliveryPhone = (value) => {
+  const trimmed = String(value || "").trim();
+  const hasPlus = trimmed.startsWith("+");
+  const digits = trimmed.replace(/\D/g, "");
+  return hasPlus ? `+${digits}` : digits;
 };
 
 /**

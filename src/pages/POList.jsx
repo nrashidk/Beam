@@ -412,7 +412,7 @@ export default function POList() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {po.status === "DRAFT" && (
+                        {po.status !== "CANCELLED" && (
                           <>
                             <Button
                               onClick={() => handleSend(po.id)}
@@ -430,16 +430,6 @@ export default function POList() {
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </>
-                        )}
-                        {po.status === "SENT" && (
-                          <Button
-                            onClick={() => handleDelete(po.id)}
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
                         )}
                       </div>
                     </div>

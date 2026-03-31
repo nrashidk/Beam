@@ -17,6 +17,12 @@ import InvoiceDeliveryActions from "../components/InvoiceDeliveryActions";
 import Sidebar from "../components/Sidebar";
 import PasswordExpiryBanner from "../components/PasswordExpiryBanner";
 import PageLoader from "../components/PageLoader";
+import {
+  validateEmail,
+  validateDeliveryPhone,
+  formatEmail,
+  formatDeliveryPhone,
+} from "../utils/validation";
 
 export default function InvoiceDashboard() {
   const [invoices, setInvoices] = useState([]);
@@ -199,8 +205,15 @@ export default function InvoiceDashboard() {
   };
 
   const handleBulkEmail = async () => {
-    if (!bulkEmailAddress) {
+    const normalizedEmail = formatEmail(bulkEmailAddress);
+    if (!normalizedEmail) {
       setBulkError("Please enter an email address for bulk email.");
+      return;
+    }
+
+    const emailValidation = validateEmail(normalizedEmail);
+    if (!emailValidation.isValid) {
+      setBulkError(emailValidation.error);
       return;
     }
 
@@ -233,7 +246,7 @@ export default function InvoiceDashboard() {
       eligibleInvoices,
       (invoice) =>
         apiClient.post(`/invoices/${invoice.id}/email`, null, {
-          params: { recipient_email: bulkEmailAddress },
+          params: { recipient_email: normalizedEmail },
         }),
     );
 
@@ -251,8 +264,15 @@ export default function InvoiceDashboard() {
   };
 
   const handleBulkSms = async () => {
-    if (!bulkPhoneNumber) {
+    const normalizedPhone = formatDeliveryPhone(bulkPhoneNumber);
+    if (!normalizedPhone) {
       setBulkError("Please enter a phone number for bulk SMS.");
+      return;
+    }
+
+    const phoneValidation = validateDeliveryPhone(normalizedPhone);
+    if (!phoneValidation.isValid) {
+      setBulkError(phoneValidation.error);
       return;
     }
 
@@ -285,7 +305,7 @@ export default function InvoiceDashboard() {
       eligibleInvoices,
       (invoice) =>
         apiClient.post(`/invoices/${invoice.id}/sms`, null, {
-          params: { phone_number: bulkPhoneNumber },
+          params: { phone_number: normalizedPhone },
         }),
     );
 
@@ -303,8 +323,15 @@ export default function InvoiceDashboard() {
   };
 
   const handleBulkWhatsApp = async () => {
-    if (!bulkPhoneNumber) {
+    const normalizedPhone = formatDeliveryPhone(bulkPhoneNumber);
+    if (!normalizedPhone) {
       setBulkError("Please enter a phone number for bulk WhatsApp.");
+      return;
+    }
+
+    const phoneValidation = validateDeliveryPhone(normalizedPhone);
+    if (!phoneValidation.isValid) {
+      setBulkError(phoneValidation.error);
       return;
     }
 
@@ -339,7 +366,7 @@ export default function InvoiceDashboard() {
       eligibleInvoices,
       (invoice) =>
         apiClient.post(`/invoices/${invoice.id}/whatsapp`, null, {
-          params: { phone_number: bulkPhoneNumber },
+          params: { phone_number: normalizedPhone },
         }),
     );
 
@@ -664,10 +691,16 @@ export default function InvoiceDashboard() {
                 <input
                   type="tel"
                   value={bulkPhoneNumber}
-                  onChange={(e) => setBulkPhoneNumber(e.target.value)}
+                  onChange={(e) => {
+                    setBulkPhoneNumber(formatDeliveryPhone(e.target.value));
+                    setBulkError("");
+                  }}
                   placeholder="+971 50 123 4567"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Use UAE mobile format `05XXXXXXXX` or `+9715XXXXXXXX`.
+                </p>
               </div>
               {bulkError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -727,7 +760,10 @@ export default function InvoiceDashboard() {
                 <input
                   type="email"
                   value={bulkEmailAddress}
-                  onChange={(e) => setBulkEmailAddress(e.target.value)}
+                  onChange={(e) => {
+                    setBulkEmailAddress(formatEmail(e.target.value));
+                    setBulkError("");
+                  }}
                   placeholder="customer@example.com"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
@@ -790,10 +826,16 @@ export default function InvoiceDashboard() {
                 <input
                   type="tel"
                   value={bulkPhoneNumber}
-                  onChange={(e) => setBulkPhoneNumber(e.target.value)}
+                  onChange={(e) => {
+                    setBulkPhoneNumber(formatDeliveryPhone(e.target.value));
+                    setBulkError("");
+                  }}
                   placeholder="+971 50 123 4567"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Use UAE mobile format `05XXXXXXXX` or `+9715XXXXXXXX`.
+                </p>
               </div>
               {bulkError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">

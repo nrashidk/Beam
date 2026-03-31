@@ -10,6 +10,12 @@ import {
   Phone,
 } from "lucide-react";
 import { apAPI } from "../lib/api";
+import {
+  validateEmail,
+  validateDeliveryPhone,
+  formatEmail,
+  formatDeliveryPhone,
+} from "../utils/validation";
 
 export default function POSendModal({
   isOpen,
@@ -23,6 +29,25 @@ export default function POSendModal({
   const [loading, setLoading] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [error, setError] = useState("");
+
+  const validateContactInfo = (methodId, value) => {
+    const trimmed = String(value || "").trim();
+
+    if (methodId === "email") {
+      if (!trimmed) return "Please enter an email address.";
+      const validation = validateEmail(formatEmail(trimmed));
+      return validation.isValid ? "" : validation.error;
+    }
+
+    if (methodId === "sms" || methodId === "whatsapp") {
+      if (!trimmed)
+        return `Please enter a mobile number for ${methodId === "sms" ? "SMS" : "WhatsApp"}.`;
+      const validation = validateDeliveryPhone(formatDeliveryPhone(trimmed));
+      return validation.isValid ? "" : validation.error;
+    }
+
+    return "";
+  };
 
   const sendMethods = [
     {
@@ -88,8 +113,17 @@ export default function POSendModal({
   };
 
   const handleSend = async () => {
-    if (!contactInfo && selectedMethod.type) {
-      setError("Please enter a valid contact information");
+    const normalizedContact =
+      selectedMethod.id === "email"
+        ? formatEmail(contactInfo)
+        : formatDeliveryPhone(contactInfo);
+    const validationError = validateContactInfo(
+      selectedMethod.id,
+      normalizedContact,
+    );
+
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -98,7 +132,7 @@ export default function POSendModal({
     try {
       const payload = {
         method: selectedMethod.id,
-        contact: contactInfo,
+        contact: normalizedContact,
       };
 
       await apAPI.sendPurchaseOrder(poId, payload);
@@ -163,6 +197,8 @@ export default function POSendModal({
                     key={method.id}
                     onClick={() => {
                       setSelectedMethod(method);
+                      setContactInfo("");
+                      setError("");
                       if (method.id === "qrcode") handleGenerateQRCode();
                     }}
                     className="p-4 border-2 border-gray-200 rounded-lg hover:border-indigo-500 hover:bg-indigo-50 transition-all text-left group"
@@ -226,9 +262,22 @@ export default function POSendModal({
                   type={selectedMethod.type}
                   placeholder={selectedMethod.placeholder}
                   value={contactInfo}
-                  onChange={(e) => setContactInfo(e.target.value)}
+                  onChange={(e) => {
+                    const nextValue =
+                      selectedMethod.id === "email"
+                        ? formatEmail(e.target.value)
+                        : formatDeliveryPhone(e.target.value);
+                    setContactInfo(nextValue);
+                    setError(validateContactInfo(selectedMethod.id, nextValue));
+                  }}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                 />
+                {(selectedMethod.id === "sms" ||
+                  selectedMethod.id === "whatsapp") && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Use UAE mobile format `05XXXXXXXX` or `+9715XXXXXXXX`.
+                  </p>
+                )}
               </div>
 
               {error && (
@@ -258,7 +307,11 @@ export default function POSendModal({
           {selectedMethod && selectedMethod.id !== "qrcode" && (
             <button
               onClick={handleSend}
-              disabled={loading || (selectedMethod.type && !contactInfo)}
+              disabled={
+                loading ||
+                (selectedMethod.type &&
+                  Boolean(validateContactInfo(selectedMethod.id, contactInfo)))
+              }
               className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium inline-flex items-center gap-2"
             >
               {loading ? (
@@ -276,7 +329,11 @@ export default function POSendModal({
           )}
           {selectedMethod && (
             <button
-              onClick={() => setSelectedMethod(null)}
+              onClick={() => {
+                setSelectedMethod(null);
+                setContactInfo("");
+                setError("");
+              }}
               className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium"
             >
               Back
