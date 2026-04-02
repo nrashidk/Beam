@@ -17,12 +17,15 @@ from utils.peppol_provider import resolve_receiver_peppol_id
 
 def get_tin_from_trn(trn: str) -> str:
     """
-    Build the UAE PEPPOL supplier participant ID from a TRN.
-    UAE PINT-AE requires ICD scheme 0230 (UAE TRN) with the full 15-digit TRN:
-      format: "0230:{trn}"
-    Falls back to "0230:{trn}" even when TRN is short; returns "" for empty TRN.
+    Extract TIN from TRN for UAE PEPPOL customer participant ID (scheme 0235).
+    TIN = first 10 digits of the Corporate Tax TRN.
+    Falls back to full TRN if length < 10.
+    NOTE: For the supplier endpoint (scheme 0230), use the full TRN with the
+    "0230:" prefix stored in InvoiceDB.supplier_peppol_id; do not use this helper.
     """
-    return f"0230:{trn}" if trn else ""
+    if trn and len(trn) >= 10:
+        return trn[:10]
+    return trn or ""
 
 
 class UBLXMLGenerator:
