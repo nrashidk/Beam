@@ -5,6 +5,7 @@ Run with:  python -m pytest tests/test_fta_tlv_qr.py -v
 """
 import base64
 import pytest
+from unittest.mock import patch, MagicMock
 from utils.pdf_invoice_generator import generate_fta_tlv_payload, generate_invoice_pdf
 
 
@@ -126,3 +127,50 @@ class TestPdfGenerationWithTlv:
             invoice_data, [], public_url="https://involinks.app/i/xyz"
         )
         assert len(pdf) > 1000
+
+    def test_qr_receives_tlv_not_url(self):
+        """Assert that the QR code is given a TLV payload, not the public_url."""
+        from utils.pdf_invoice_generator import PDFInvoiceGenerator
+
+        invoice_data = {
+            "invoice_number": "INV-2025-003",
+            "currency_code": "AED",
+            "supplier_name": "InvoLinks LLC",
+            "supplier_trn": "100123456700003",
+            "issue_date": "2025-04-01",
+            "issue_datetime": "2025-04-01T12:00:00",
+            "subtotal_amount": 1000.0,
+            "tax_amount": 50.0,
+            "total_amount": 1050.0,
+        }
+        public_url = "https://involinks.app/i/SOME_TOKEN"
+
+        captured_qr_data = []
+        generator = PDFInvoiceGenerator()
+        original_generate_qr = generator.generate_qr_code
+
+        def capturing_generate_qr(data, size=150):
+            captured_qr_data.append(data)
+            return original_generate_qr(data, size)
+
+        generator.generate_qr_code = capturing_generate_qr
+        generator.generate_invoice_pdf(invoice_data, [], public_url=public_url)
+
+        assert len(captured_qr_data) == 1, "QR code should be generated exactly once"
+        qr_data = captured_qr_data[0]
+
+        assert qr_data != public_url, "QR must NOT encode the share URL directly"
+        assert qr_data.startswith("http") is False, "QR data should not be a URL"
+
+        tags = _decode_tlv(qr_data)
+        assert set(tags.keys()) == {1, 2, 3, 4, 5}, "QR must encode 5 FTA TLV tags"
+        assert tags[1] == "InvoLinks LLC"
+        assert tags[2] == "100123456700003"
+        assert tags[4] == "1050.00"
+        assert tags[5] == "50.00"
+
+    def test_tlv_value_length_truncated_at_255(self):
+        long_name = "A" * 300
+        payload = generate_fta_tlv_payload(long_name, "TRN", "2025-01-01", 0, 0)
+        tags = _decode_tlv(payload)
+        assert len(tags[1]) == 255, "TLV values >255 bytes must be truncated"

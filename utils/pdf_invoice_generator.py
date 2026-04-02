@@ -94,6 +94,8 @@ def generate_fta_tlv_payload(
     """
     def _tlv_block(tag: int, value: str) -> bytes:
         safe = str(value or "").encode("utf-8")
+        if len(safe) > 255:
+            safe = safe[:255]
         return bytes([tag, len(safe)]) + safe
 
     blocks = (
