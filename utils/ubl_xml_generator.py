@@ -12,6 +12,18 @@ from datetime import datetime, date
 from typing import Dict, Any, List, Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring, ElementTree
 from defusedxml import minidom
+from utils.peppol_provider import resolve_receiver_peppol_id
+
+
+def get_tin_from_trn(trn: str) -> str:
+    """
+    Extract TIN from TRN for UAE PEPPOL participant ID.
+    TIN = first 10 digits of the Corporate Tax TRN.
+    Falls back to full TRN if length < 10.
+    """
+    if trn and len(trn) >= 10:
+        return trn[:10]
+    return trn or ""
 
 
 class UBLXMLGenerator:
@@ -44,11 +56,15 @@ class UBLXMLGenerator:
         for prefix, uri in self.NAMESPACES.items():
             self.root.set(prefix, uri)
         
+        # Store invoice_data on self so _add_invoice_lines can access it (Task 5)
+        self._current_invoice_data = invoice_data
+
         # Build XML structure
         self._add_ubl_version()
         self._add_customization_id()
         self._add_profile_id()
         self._add_invoice_header(invoice_data)
+        self._add_transaction_type_fields(invoice_data)
         self._add_supplier_party(invoice_data)
         self._add_customer_party(invoice_data)
         self._add_payment_terms(invoice_data)
@@ -98,19 +114,19 @@ class UBLXMLGenerator:
         self._add_element(self.root, 'UBLVersionID', '2.1')
     
     def _add_customization_id(self):
-        """Add PEPPOL BIS customization identifier"""
+        """Add UAE PINT-AE customization identifier"""
         self._add_element(
-            self.root, 
+            self.root,
             'CustomizationID',
-            'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0'
+            'urn:peppol:pint:billing-1@ae-1'
         )
-    
+
     def _add_profile_id(self):
         """Add UAE PINT-AE profile identifier"""
         self._add_element(
             self.root,
             'ProfileID',
-            'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0'
+            'urn:peppol:pint:billing-1'
         )
     
     def _add_invoice_header(self, invoice_data: Dict[str, Any]):
@@ -173,16 +189,128 @@ class UBLXMLGenerator:
             invoice_doc_ref = SubElement(billing_ref, 'cac:InvoiceDocumentReference')
             self._add_element(invoice_doc_ref, 'ID', invoice_data['preceding_invoice_id'])
     
+    def _add_transaction_type_fields(self, invoice_data: Dict[str, Any]):
+        """
+        Add UAE PINT-AE transaction-type specific fields to the XML (Task 5).
+        Called after the main invoice header. Each transaction type adds
+        specific conditional fields required by the FTA data dictionary.
+        """
+        tx_type = invoice_data.get('invoice_transaction_type', 'STANDARD')
+
+        if tx_type == 'REVERSE_CHARGE':
+            note = SubElement(self.root, 'cbc:Note')
+            note.text = invoice_data.get('tax_exemption_reason', 'Reverse charge - VAT accounted for by recipient')
+
+        elif tx_type == 'ZERO_RATED':
+            if invoice_data.get('tax_exemption_reason'):
+                note = SubElement(self.root, 'cbc:Note')
+                note.text = invoice_data['tax_exemption_reason']
+
+        elif tx_type == 'DEEMED_SUPPLY':
+            if invoice_data.get('payment_due_date'):
+                payment_means = SubElement(self.root, 'cac:PaymentMeans')
+                pdd = invoice_data['payment_due_date']
+                if hasattr(pdd, 'strftime'):
+                    pdd = pdd.strftime('%Y-%m-%d')
+                self._add_element(payment_means, 'PaymentDueDate', str(pdd))
+                if invoice_data.get('payment_type_code'):
+                    self._add_element(payment_means, 'PaymentMeansCode', invoice_data['payment_type_code'])
+
+        elif tx_type == 'ECOMMERCE':
+            delivery = SubElement(self.root, 'cac:Delivery')
+            if invoice_data.get('delivery_date'):
+                dd = invoice_data['delivery_date']
+                if hasattr(dd, 'strftime'):
+                    dd = dd.strftime('%Y-%m-%d')
+                self._add_element(delivery, 'ActualDeliveryDate', str(dd))
+            if invoice_data.get('deliver_to_location_id'):
+                deliver_loc = SubElement(delivery, 'cac:DeliveryLocation')
+                loc_id = self._add_element(deliver_loc, 'ID', invoice_data['deliver_to_location_id'])
+                if invoice_data.get('ecommerce_scheme_id'):
+                    loc_id.set('schemeID', invoice_data['ecommerce_scheme_id'])
+                if invoice_data.get('deliver_to_address'):
+                    addr = SubElement(deliver_loc, 'cac:Address')
+                    self._add_element(addr, 'StreetName', invoice_data['deliver_to_address'])
+            if invoice_data.get('deliver_to_party_name'):
+                deliver_party = SubElement(delivery, 'cac:DeliveryParty')
+                pn = SubElement(deliver_party, 'cac:PartyName')
+                self._add_element(pn, 'Name', invoice_data['deliver_to_party_name'])
+
+        elif tx_type == 'EXPORT':
+            note = SubElement(self.root, 'cbc:Note')
+            note.text = 'Export supply - goods/services exported outside UAE'
+
+        elif tx_type == 'MARGIN_SCHEME':
+            if invoice_data.get('margin_credit_note_reason_code'):
+                note = SubElement(self.root, 'cbc:Note')
+                note.text = f"Margin scheme - reason: {invoice_data.get('margin_credit_note_reason_code')}"
+            if invoice_data.get('margin_preceding_ref'):
+                billing_ref = self.root.find('cac:BillingReference')
+                if billing_ref is None:
+                    billing_ref = SubElement(self.root, 'cac:BillingReference')
+                idr = SubElement(billing_ref, 'cac:InvoiceDocumentReference')
+                self._add_element(idr, 'ID', invoice_data['margin_preceding_ref'])
+                if invoice_data.get('margin_preceding_date'):
+                    mpd = invoice_data['margin_preceding_date']
+                    if hasattr(mpd, 'strftime'):
+                        mpd = mpd.strftime('%Y-%m-%d')
+                    self._add_element(idr, 'IssueDate', str(mpd))
+
+        elif tx_type == 'CONTINUOUS_SUPPLY':
+            if invoice_data.get('invoicing_period_start') or invoice_data.get('invoicing_period_end'):
+                inv_period = SubElement(self.root, 'cac:InvoicePeriod')
+                if invoice_data.get('invoicing_period_start'):
+                    sd = invoice_data['invoicing_period_start']
+                    if hasattr(sd, 'strftime'):
+                        sd = sd.strftime('%Y-%m-%d')
+                    self._add_element(inv_period, 'StartDate', str(sd))
+                if invoice_data.get('invoicing_period_end'):
+                    ed = invoice_data['invoicing_period_end']
+                    if hasattr(ed, 'strftime'):
+                        ed = ed.strftime('%Y-%m-%d')
+                    self._add_element(inv_period, 'EndDate', str(ed))
+            if invoice_data.get('contract_reference'):
+                contract_doc = SubElement(self.root, 'cac:ContractDocumentReference')
+                self._add_element(contract_doc, 'ID', invoice_data['contract_reference'])
+            if invoice_data.get('invoice_note'):
+                note = SubElement(self.root, 'cbc:Note')
+                note.text = invoice_data['invoice_note']
+
+        elif tx_type == 'SUMMARY_INVOICE':
+            if invoice_data.get('invoicing_period_start') or invoice_data.get('invoicing_period_end'):
+                inv_period = SubElement(self.root, 'cac:InvoicePeriod')
+                if invoice_data.get('invoicing_period_start'):
+                    sd = invoice_data['invoicing_period_start']
+                    if hasattr(sd, 'strftime'):
+                        sd = sd.strftime('%Y-%m-%d')
+                    self._add_element(inv_period, 'StartDate', str(sd))
+                if invoice_data.get('invoicing_period_end'):
+                    ed = invoice_data['invoicing_period_end']
+                    if hasattr(ed, 'strftime'):
+                        ed = ed.strftime('%Y-%m-%d')
+                    self._add_element(inv_period, 'EndDate', str(ed))
+
+        elif tx_type in ('DISCLOSED_AGENT', 'DISCLOSED_AGENT_CREDIT'):
+            if invoice_data.get('principal_id'):
+                note = SubElement(self.root, 'cbc:Note')
+                note.text = f"Disclosed agent billing - Principal ID: {invoice_data['principal_id']}"
+
+        elif tx_type == 'FREE_TRADE_ZONE':
+            if invoice_data.get('beneficiary_id'):
+                note = SubElement(self.root, 'cbc:Note')
+                note.text = f"Free trade zone supply - Beneficiary ID: {invoice_data['beneficiary_id']}"
+
     def _add_supplier_party(self, invoice_data: Dict[str, Any]):
         """Add supplier (seller) party information"""
         supplier_party = SubElement(self.root, 'cac:AccountingSupplierParty')
         party = SubElement(supplier_party, 'cac:Party')
         
-        # Supplier PEPPOL ID (if available)
-        if invoice_data.get('supplier_peppol_id'):
+        # Supplier PEPPOL endpoint — use explicit peppol_id or derive TIN from TRN (Task 2)
+        supplier_endpoint = invoice_data.get('supplier_peppol_id') or get_tin_from_trn(invoice_data.get('supplier_trn', ''))
+        if supplier_endpoint:
             endpoint_id = SubElement(party, 'cbc:EndpointID')
-            endpoint_id.set('schemeID', '0195')  # UAE TRN scheme
-            endpoint_id.text = invoice_data['supplier_peppol_id']
+            endpoint_id.set('schemeID', '0235')  # UAE TIN-based scheme
+            endpoint_id.text = supplier_endpoint
         
         # Party identification (TRN) - only if provided
         if invoice_data.get('supplier_trn'):
@@ -223,11 +351,17 @@ class UBLXMLGenerator:
         customer_party = SubElement(self.root, 'cac:AccountingCustomerParty')
         party = SubElement(customer_party, 'cac:Party')
         
-        # Customer PEPPOL ID (if available)
-        if invoice_data.get('customer_peppol_id'):
+        # Customer PEPPOL endpoint — resolve based on transaction type (Tasks 2 + 4b)
+        transaction_type = invoice_data.get('invoice_transaction_type', 'STANDARD')
+        customer_peppol_input = invoice_data.get('customer_peppol_id', '') or get_tin_from_trn(invoice_data.get('customer_trn', ''))
+        customer_endpoint = resolve_receiver_peppol_id(
+            invoice_transaction_type=transaction_type,
+            customer_peppol_id=customer_peppol_input
+        )
+        if customer_endpoint:
             endpoint_id = SubElement(party, 'cbc:EndpointID')
-            endpoint_id.set('schemeID', '0195')
-            endpoint_id.text = invoice_data['customer_peppol_id']
+            endpoint_id.set('schemeID', '0235')
+            endpoint_id.text = customer_endpoint
         
         # Party identification (TRN - optional for B2C)
         if invoice_data.get('customer_trn'):
@@ -381,9 +515,14 @@ class UBLXMLGenerator:
                 classification = SubElement(item_elem, 'cac:SellersItemIdentification')
                 self._add_element(classification, 'ID', item['item_code'])
             
-            # Tax category for item
+            # Tax category for item — REVERSE_CHARGE uses 'AE' per UAE PINT-AE (Task 5)
+            invoice_data = getattr(self, '_current_invoice_data', {})
+            if invoice_data.get('invoice_transaction_type') == 'REVERSE_CHARGE':
+                tax_cat_code = 'AE'
+            else:
+                tax_cat_code = item.get('tax_category', 'S')
             tax_category = SubElement(item_elem, 'cac:ClassifiedTaxCategory')
-            self._add_element(tax_category, 'ID', 'S')  # Standard rate
+            self._add_element(tax_category, 'ID', tax_cat_code)
             self._add_element(tax_category, 'Percent', f"{item.get('tax_percent', 5.0):.2f}")
             
             tax_scheme = SubElement(tax_category, 'cac:TaxScheme')

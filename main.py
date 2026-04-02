@@ -170,6 +170,26 @@ class InvoiceType(str, enum.Enum):
     CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
 
 
+class InvoiceTransactionType(str, enum.Enum):
+    """UAE PINT-AE invoice transaction/use-case types"""
+    STANDARD = "STANDARD"
+    REVERSE_CHARGE = "REVERSE_CHARGE"
+    ZERO_RATED = "ZERO_RATED"
+    EXEMPT = "EXEMPT"
+    DEEMED_SUPPLY = "DEEMED_SUPPLY"
+    ECOMMERCE = "ECOMMERCE"
+    EXPORT = "EXPORT"
+    MARGIN_SCHEME = "MARGIN_SCHEME"
+    CONTINUOUS_SUPPLY = "CONTINUOUS_SUPPLY"
+    SUMMARY_INVOICE = "SUMMARY_INVOICE"
+    DISCLOSED_AGENT = "DISCLOSED_AGENT"
+    FREE_TRADE_ZONE = "FREE_TRADE_ZONE"
+    SELF_BILLING = "SELF_BILLING"
+    SELF_BILLING_CREDIT = "SELF_BILLING_CREDIT"
+    DISCLOSED_AGENT_CREDIT = "DISCLOSED_AGENT_CREDIT"
+    COMMERCIAL = "COMMERCIAL"
+
+
 class InvoiceStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     ISSUED = "ISSUED"
@@ -549,6 +569,50 @@ class InvoiceDB(Base):
     # Credit Note specific
     credit_note_reason = Column(String, nullable=True)  # Mandatory for credit notes
 
+    # UAE PINT-AE Transaction Type (Task 3b)
+    invoice_transaction_type = Column(String, default="STANDARD", nullable=True)
+
+    # Reverse charge / Zero-rated
+    tax_exemption_reason_code = Column(String, nullable=True)
+    tax_exemption_reason = Column(String, nullable=True)
+
+    # Deemed supply
+    payment_due_date = Column(Date, nullable=True)
+    payment_type_code = Column(String, nullable=True)
+
+    # E-commerce
+    deliver_to_location_id = Column(String, nullable=True)
+    deliver_to_party_name = Column(String, nullable=True)
+    deliver_to_address = Column(String, nullable=True)
+    delivery_date = Column(Date, nullable=True)
+    ecommerce_scheme_id = Column(String, nullable=True)
+
+    # Export
+    buyer_legal_registration = Column(String, nullable=True)
+    buyer_registration_id = Column(String, nullable=True)
+    buyer_electronic_address = Column(String, nullable=True)
+    buyer_scheme_id = Column(String, nullable=True)
+
+    # Margin scheme
+    margin_credit_note_reason_code = Column(String, nullable=True)
+    margin_process_control = Column(String, nullable=True)
+    margin_preceding_ref = Column(String, nullable=True)
+    margin_preceding_date = Column(Date, nullable=True)
+
+    # Continuous supply
+    contract_reference = Column(String, nullable=True)
+    contract_value = Column(Float, nullable=True)
+    invoice_note = Column(String, nullable=True)
+    billing_frequency = Column(String, nullable=True)
+
+    # Summary invoice / Continuous supply periods
+    invoicing_period_start = Column(Date, nullable=True)
+    invoicing_period_end = Column(Date, nullable=True)
+
+    # Disclosed agent / Free trade zone / Self-billing
+    principal_id = Column(String, nullable=True)
+    beneficiary_id = Column(String, nullable=True)
+
     # Document Management
     xml_file_path = Column(String, nullable=True)  # UBL XML storage path
     pdf_file_path = Column(String, nullable=True)  # PDF storage path
@@ -574,6 +638,14 @@ class InvoiceDB(Base):
     peppol_provider = Column(String, nullable=True)  # e.g., "tradeshift", "basware"
     peppol_sent_at = Column(DateTime, nullable=True)  # Transmission timestamp
     peppol_response = Column(Text, nullable=True)  # Provider API response (JSON)
+
+    # MLS (Message Level Status) tracking — UAE FTA 10-minute response requirement (Task 6a)
+    mls_status = Column(String, nullable=True)           # "ACCEPTED", "REJECTED", "PENDING", "DEEMED_ACCEPTED"
+    mls_received_at = Column(DateTime, nullable=True)    # When MLS was received from Corner 3
+    mls_rejection_reason = Column(String, nullable=True) # Reason code if rejected
+    mls_retry_count = Column(Integer, default=0)         # Number of retry attempts
+    mls_last_retry_at = Column(DateTime, nullable=True)  # Last retry timestamp
+    peppol_deemed_accepted = Column(Boolean, default=False)  # True if 10-min window passed
 
     # Sharing & Transmission
     share_token = Column(String, nullable=True, index=True)  # Public share link token
@@ -1378,6 +1450,52 @@ try:
             _conn.commit()
 except Exception as _e:
     print(f"⚠️  InvoiceType enum migration skipped: {_e}")
+
+# ── UAE PINT-AE schema migration (Task 8) ────────────────────────────────────
+_UAE_PINT_COLUMNS = [
+    ("invoice_transaction_type", "VARCHAR DEFAULT 'STANDARD'"),
+    ("tax_exemption_reason_code", "VARCHAR"),
+    ("tax_exemption_reason", "VARCHAR"),
+    ("payment_due_date", "DATE"),
+    ("payment_type_code", "VARCHAR"),
+    ("deliver_to_location_id", "VARCHAR"),
+    ("deliver_to_party_name", "VARCHAR"),
+    ("deliver_to_address", "VARCHAR"),
+    ("delivery_date", "DATE"),
+    ("ecommerce_scheme_id", "VARCHAR"),
+    ("buyer_legal_registration", "VARCHAR"),
+    ("buyer_registration_id", "VARCHAR"),
+    ("buyer_electronic_address", "VARCHAR"),
+    ("buyer_scheme_id", "VARCHAR"),
+    ("margin_credit_note_reason_code", "VARCHAR"),
+    ("margin_process_control", "VARCHAR"),
+    ("margin_preceding_ref", "VARCHAR"),
+    ("margin_preceding_date", "DATE"),
+    ("contract_reference", "VARCHAR"),
+    ("contract_value", "FLOAT"),
+    ("invoice_note", "VARCHAR"),
+    ("billing_frequency", "VARCHAR"),
+    ("invoicing_period_start", "DATE"),
+    ("invoicing_period_end", "DATE"),
+    ("principal_id", "VARCHAR"),
+    ("beneficiary_id", "VARCHAR"),
+    ("mls_status", "VARCHAR"),
+    ("mls_received_at", "TIMESTAMP"),
+    ("mls_rejection_reason", "VARCHAR"),
+    ("mls_retry_count", "INTEGER DEFAULT 0"),
+    ("mls_last_retry_at", "TIMESTAMP"),
+    ("peppol_deemed_accepted", "BOOLEAN DEFAULT false"),
+]
+try:
+    with engine.connect() as _conn:
+        for _col, _type in _UAE_PINT_COLUMNS:
+            _conn.execute(text(
+                f"ALTER TABLE invoices ADD COLUMN IF NOT EXISTS {_col} {_type}"
+            ))
+        _conn.commit()
+    print("✅ UAE PINT-AE columns migrated")
+except Exception as _e:
+    print(f"⚠️  UAE PINT-AE migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -1925,6 +2043,34 @@ class InvoiceCreate(BaseModel):
     preceding_invoice_id: Optional[str] = None
     credit_note_reason: Optional[str] = None
 
+    # UAE Transaction Type (Task 3c)
+    invoice_transaction_type: Optional[str] = "STANDARD"
+    tax_exemption_reason_code: Optional[str] = None
+    tax_exemption_reason: Optional[str] = None
+    payment_due_date: Optional[str] = None
+    payment_type_code: Optional[str] = None
+    deliver_to_location_id: Optional[str] = None
+    deliver_to_party_name: Optional[str] = None
+    deliver_to_address: Optional[str] = None
+    delivery_date: Optional[str] = None
+    ecommerce_scheme_id: Optional[str] = None
+    buyer_legal_registration: Optional[str] = None
+    buyer_registration_id: Optional[str] = None
+    buyer_electronic_address: Optional[str] = None
+    buyer_scheme_id: Optional[str] = None
+    margin_credit_note_reason_code: Optional[str] = None
+    margin_process_control: Optional[str] = None
+    margin_preceding_ref: Optional[str] = None
+    margin_preceding_date: Optional[str] = None
+    contract_reference: Optional[str] = None
+    contract_value: Optional[float] = None
+    invoice_note: Optional[str] = None
+    billing_frequency: Optional[str] = None
+    invoicing_period_start: Optional[str] = None
+    invoicing_period_end: Optional[str] = None
+    principal_id: Optional[str] = None
+    beneficiary_id: Optional[str] = None
+
 
 class InvoiceLineItemOut(BaseModel):
     id: str
@@ -1983,6 +2129,36 @@ class InvoiceOut(BaseModel):
     # Credit note fields
     preceding_invoice_id: Optional[str] = None
     credit_note_reason: Optional[str] = None
+
+    # UAE Transaction Type fields (Task 3d)
+    invoice_transaction_type: Optional[str] = "STANDARD"
+    tax_exemption_reason_code: Optional[str] = None
+    tax_exemption_reason: Optional[str] = None
+    payment_due_date: Optional[str] = None
+    payment_type_code: Optional[str] = None
+    deliver_to_location_id: Optional[str] = None
+    deliver_to_party_name: Optional[str] = None
+    deliver_to_address: Optional[str] = None
+    delivery_date: Optional[str] = None
+    ecommerce_scheme_id: Optional[str] = None
+    buyer_legal_registration: Optional[str] = None
+    buyer_registration_id: Optional[str] = None
+    buyer_electronic_address: Optional[str] = None
+    buyer_scheme_id: Optional[str] = None
+    margin_credit_note_reason_code: Optional[str] = None
+    margin_process_control: Optional[str] = None
+    margin_preceding_ref: Optional[str] = None
+    margin_preceding_date: Optional[str] = None
+    contract_reference: Optional[str] = None
+    contract_value: Optional[float] = None
+    invoice_note: Optional[str] = None
+    billing_frequency: Optional[str] = None
+    invoicing_period_start: Optional[str] = None
+    invoicing_period_end: Optional[str] = None
+    principal_id: Optional[str] = None
+    beneficiary_id: Optional[str] = None
+    mls_status: Optional[str] = None
+    peppol_deemed_accepted: Optional[bool] = None
 
     # Documents
     xml_file_path: Optional[str]
@@ -5499,6 +5675,34 @@ def create_invoice(
         share_token=f"share_{uuid4().hex[:16]}",
     )
 
+    # UAE PINT-AE transaction type fields (Task 3e)
+    invoice.invoice_transaction_type = payload.invoice_transaction_type or "STANDARD"
+    invoice.tax_exemption_reason_code = payload.tax_exemption_reason_code
+    invoice.tax_exemption_reason = payload.tax_exemption_reason
+    invoice.payment_due_date = parse_date(payload.payment_due_date) if payload.payment_due_date else None
+    invoice.payment_type_code = payload.payment_type_code
+    invoice.deliver_to_location_id = payload.deliver_to_location_id
+    invoice.deliver_to_party_name = payload.deliver_to_party_name
+    invoice.deliver_to_address = payload.deliver_to_address
+    invoice.delivery_date = parse_date(payload.delivery_date) if payload.delivery_date else None
+    invoice.ecommerce_scheme_id = payload.ecommerce_scheme_id
+    invoice.buyer_legal_registration = payload.buyer_legal_registration
+    invoice.buyer_registration_id = payload.buyer_registration_id
+    invoice.buyer_electronic_address = payload.buyer_electronic_address
+    invoice.buyer_scheme_id = payload.buyer_scheme_id
+    invoice.margin_credit_note_reason_code = payload.margin_credit_note_reason_code
+    invoice.margin_process_control = payload.margin_process_control
+    invoice.margin_preceding_ref = payload.margin_preceding_ref
+    invoice.margin_preceding_date = parse_date(payload.margin_preceding_date) if payload.margin_preceding_date else None
+    invoice.contract_reference = payload.contract_reference
+    invoice.contract_value = payload.contract_value
+    invoice.invoice_note = payload.invoice_note
+    invoice.billing_frequency = payload.billing_frequency
+    invoice.invoicing_period_start = parse_date(payload.invoicing_period_start) if payload.invoicing_period_start else None
+    invoice.invoicing_period_end = parse_date(payload.invoicing_period_end) if payload.invoicing_period_end else None
+    invoice.principal_id = payload.principal_id
+    invoice.beneficiary_id = payload.beneficiary_id
+
     db.add(invoice)
     db.flush()  # Get invoice ID
 
@@ -5762,8 +5966,12 @@ def transmit_invoice_via_peppol(
     if not invoice.supplier_peppol_id:
         raise HTTPException(400, "Supplier PEPPOL ID is required for transmission")
 
-    if not invoice.customer_peppol_id:
-        raise HTTPException(400, "Customer PEPPOL ID is required for transmission")
+    # Resolve receiver endpoint based on transaction type (Task 4c)
+    from utils.peppol_provider import resolve_receiver_peppol_id
+    receiver_id = resolve_receiver_peppol_id(
+        invoice_transaction_type=invoice.invoice_transaction_type or "STANDARD",
+        customer_peppol_id=invoice.customer_peppol_id or ""
+    )
 
     # Load XML content
     try:
@@ -5786,7 +5994,7 @@ def transmit_invoice_via_peppol(
         invoice_xml=xml_content,
         invoice_number=invoice.invoice_number,
         sender_id=invoice.supplier_peppol_id,
-        receiver_id=invoice.customer_peppol_id,
+        receiver_id=receiver_id,
         provider_name=provider_name,
         base_url=provider_url,
         api_key=provider_key,
@@ -5891,6 +6099,123 @@ def get_peppol_transmission_status(
             else None,
             "error": f"Status check failed: {str(e)}",
         }
+
+
+# ── Task 6c: check and apply deemed acceptance ────────────────────────────────
+def _check_deemed_acceptance(invoice: InvoiceDB, db: Session) -> bool:
+    """Return True and update invoice if 10-minute MLS window has passed without response."""
+    if invoice.peppol_sent_at and invoice.mls_status is None and not invoice.peppol_deemed_accepted:
+        from datetime import timezone
+        sent = invoice.peppol_sent_at
+        # Make tz-aware if naive
+        if sent.tzinfo is None:
+            sent = sent.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        elapsed = (now - sent).total_seconds()
+        if elapsed >= 600:  # 10 minutes
+            invoice.mls_status = "DEEMED_ACCEPTED"
+            invoice.peppol_deemed_accepted = True
+            db.commit()
+            return True
+    return False
+
+
+# ── Task 6b: MLS callback endpoint ───────────────────────────────────────────
+class MLSCallbackPayload(BaseModel):
+    message_id: str
+    status: str          # "ACCEPTED" or "REJECTED"
+    rejection_reason: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+@app.post("/invoices/mls-callback", tags=["Invoices"])
+def receive_mls_callback(
+    payload: MLSCallbackPayload,
+    db: Session = Depends(get_db),
+):
+    """Receive Message Level Status (MLS) from Corner 3 PEPPOL provider."""
+    invoice = (
+        db.query(InvoiceDB)
+        .filter(InvoiceDB.peppol_message_id == payload.message_id)
+        .first()
+    )
+    if not invoice:
+        raise HTTPException(404, f"No invoice found for message_id {payload.message_id}")
+
+    invoice.mls_status = payload.status.upper()
+    invoice.mls_received_at = datetime.utcnow()
+    if payload.rejection_reason:
+        invoice.mls_rejection_reason = payload.rejection_reason
+    db.commit()
+
+    return {"ok": True, "invoice_id": invoice.id, "mls_status": invoice.mls_status}
+
+
+# ── Task 6b: MLS retry endpoint ───────────────────────────────────────────────
+@app.post("/invoices/{invoice_id}/mls-retry", tags=["Invoices"])
+def retry_peppol_transmission(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Retry PEPPOL transmission for a REJECTED invoice (Task 6b)."""
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    if invoice.company_id != current_user.company_id:
+        raise HTTPException(403, "Access denied")
+    if invoice.mls_status != "REJECTED":
+        raise HTTPException(400, "Only REJECTED invoices can be retried")
+
+    MAX_RETRIES = 3
+    retry_count = invoice.mls_retry_count or 0
+    if retry_count >= MAX_RETRIES:
+        raise HTTPException(400, f"Maximum retry attempts ({MAX_RETRIES}) reached")
+
+    # Reset MLS state for retry
+    invoice.mls_status = None
+    invoice.mls_rejection_reason = None
+    invoice.peppol_status = "SENDING"
+    invoice.mls_retry_count = retry_count + 1
+    invoice.mls_last_retry_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "ok": True,
+        "invoice_id": invoice_id,
+        "retry_count": invoice.mls_retry_count,
+        "message": "Invoice queued for retransmission",
+    }
+
+
+# ── Task 6b: MLS status endpoint ─────────────────────────────────────────────
+@app.get("/invoices/{invoice_id}/mls-status", tags=["Invoices"])
+def get_mls_status(
+    invoice_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Get MLS (Message Level Status) for a transmitted invoice (Task 6b)."""
+    invoice = db.query(InvoiceDB).filter(InvoiceDB.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(404, "Invoice not found")
+    if invoice.company_id != current_user.company_id:
+        raise HTTPException(403, "Access denied")
+
+    # Auto-apply deemed acceptance if eligible
+    _check_deemed_acceptance(invoice, db)
+
+    return {
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.invoice_number,
+        "peppol_message_id": invoice.peppol_message_id,
+        "mls_status": invoice.mls_status,
+        "mls_received_at": invoice.mls_received_at.isoformat() if invoice.mls_received_at else None,
+        "mls_rejection_reason": invoice.mls_rejection_reason,
+        "mls_retry_count": invoice.mls_retry_count or 0,
+        "mls_last_retry_at": invoice.mls_last_retry_at.isoformat() if invoice.mls_last_retry_at else None,
+        "peppol_deemed_accepted": invoice.peppol_deemed_accepted or False,
+    }
 
 
 @app.get("/invoices", tags=["Invoices"], response_model=List[InvoiceListOut])
@@ -6216,6 +6541,60 @@ def update_invoice(
         invoice.payment_due_days = data.payment_due_days or 30
         invoice.invoice_notes = data.invoice_notes
         invoice.reference_number = data.reference_number
+
+        # UAE PINT-AE transaction type fields (Task 3e update)
+        if data.invoice_transaction_type is not None:
+            invoice.invoice_transaction_type = data.invoice_transaction_type
+        if data.tax_exemption_reason_code is not None:
+            invoice.tax_exemption_reason_code = data.tax_exemption_reason_code
+        if data.tax_exemption_reason is not None:
+            invoice.tax_exemption_reason = data.tax_exemption_reason
+        if data.payment_due_date is not None:
+            invoice.payment_due_date = parse_date(data.payment_due_date)
+        if data.payment_type_code is not None:
+            invoice.payment_type_code = data.payment_type_code
+        if data.deliver_to_location_id is not None:
+            invoice.deliver_to_location_id = data.deliver_to_location_id
+        if data.deliver_to_party_name is not None:
+            invoice.deliver_to_party_name = data.deliver_to_party_name
+        if data.deliver_to_address is not None:
+            invoice.deliver_to_address = data.deliver_to_address
+        if data.delivery_date is not None:
+            invoice.delivery_date = parse_date(data.delivery_date)
+        if data.ecommerce_scheme_id is not None:
+            invoice.ecommerce_scheme_id = data.ecommerce_scheme_id
+        if data.buyer_legal_registration is not None:
+            invoice.buyer_legal_registration = data.buyer_legal_registration
+        if data.buyer_registration_id is not None:
+            invoice.buyer_registration_id = data.buyer_registration_id
+        if data.buyer_electronic_address is not None:
+            invoice.buyer_electronic_address = data.buyer_electronic_address
+        if data.buyer_scheme_id is not None:
+            invoice.buyer_scheme_id = data.buyer_scheme_id
+        if data.margin_credit_note_reason_code is not None:
+            invoice.margin_credit_note_reason_code = data.margin_credit_note_reason_code
+        if data.margin_process_control is not None:
+            invoice.margin_process_control = data.margin_process_control
+        if data.margin_preceding_ref is not None:
+            invoice.margin_preceding_ref = data.margin_preceding_ref
+        if data.margin_preceding_date is not None:
+            invoice.margin_preceding_date = parse_date(data.margin_preceding_date)
+        if data.contract_reference is not None:
+            invoice.contract_reference = data.contract_reference
+        if data.contract_value is not None:
+            invoice.contract_value = data.contract_value
+        if data.invoice_note is not None:
+            invoice.invoice_note = data.invoice_note
+        if data.billing_frequency is not None:
+            invoice.billing_frequency = data.billing_frequency
+        if data.invoicing_period_start is not None:
+            invoice.invoicing_period_start = parse_date(data.invoicing_period_start)
+        if data.invoicing_period_end is not None:
+            invoice.invoicing_period_end = parse_date(data.invoicing_period_end)
+        if data.principal_id is not None:
+            invoice.principal_id = data.principal_id
+        if data.beneficiary_id is not None:
+            invoice.beneficiary_id = data.beneficiary_id
 
         # Clear existing line items
         db.query(InvoiceLineItemDB).filter(

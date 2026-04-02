@@ -516,6 +516,69 @@ export default function InvoiceDetail() {
               )}
             </div>
 
+            {/* UAE PINT-AE Transaction Type (Task 9) */}
+            {invoice.invoice_transaction_type && invoice.invoice_transaction_type !== "STANDARD" && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-indigo-800 uppercase mb-3">UAE Transaction Scenario</h3>
+                <div className="flex flex-wrap gap-2 items-center mb-3">
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-semibold">
+                    {invoice.invoice_transaction_type.replace(/_/g, " ")}
+                  </span>
+                  {invoice.mls_status && (
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                      invoice.mls_status === "ACCEPTED" || invoice.mls_status === "DEEMED_ACCEPTED"
+                        ? "bg-green-100 text-green-800"
+                        : invoice.mls_status === "REJECTED"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-yellow-100 text-yellow-800"
+                    }`}>
+                      MLS: {invoice.mls_status === "DEEMED_ACCEPTED" ? "Deemed Accepted (10 min)" : invoice.mls_status}
+                    </span>
+                  )}
+                  {invoice.peppol_deemed_accepted && (
+                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                      Deemed Accepted — FTA 10-minute rule applied
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {invoice.tax_exemption_reason_code && (
+                    <div><span className="text-gray-500">Exemption Code:</span> <span className="font-medium">{invoice.tax_exemption_reason_code}</span></div>
+                  )}
+                  {invoice.tax_exemption_reason && (
+                    <div><span className="text-gray-500">Exemption Reason:</span> <span className="font-medium">{invoice.tax_exemption_reason}</span></div>
+                  )}
+                  {invoice.deliver_to_party_name && (
+                    <div><span className="text-gray-500">Deliver To:</span> <span className="font-medium">{invoice.deliver_to_party_name}</span></div>
+                  )}
+                  {invoice.deliver_to_address && (
+                    <div><span className="text-gray-500">Delivery Address:</span> <span className="font-medium">{invoice.deliver_to_address}</span></div>
+                  )}
+                  {invoice.delivery_date && (
+                    <div><span className="text-gray-500">Delivery Date:</span> <span className="font-medium">{new Date(invoice.delivery_date).toLocaleDateString("en-AE")}</span></div>
+                  )}
+                  {invoice.buyer_legal_registration && (
+                    <div><span className="text-gray-500">Buyer Registration:</span> <span className="font-medium">{invoice.buyer_legal_registration}</span></div>
+                  )}
+                  {invoice.contract_reference && (
+                    <div><span className="text-gray-500">Contract Ref:</span> <span className="font-medium">{invoice.contract_reference}</span></div>
+                  )}
+                  {invoice.billing_frequency && (
+                    <div><span className="text-gray-500">Billing Freq:</span> <span className="font-medium">{invoice.billing_frequency}</span></div>
+                  )}
+                  {invoice.invoicing_period_start && invoice.invoicing_period_end && (
+                    <div className="col-span-2"><span className="text-gray-500">Invoicing Period:</span> <span className="font-medium">{new Date(invoice.invoicing_period_start).toLocaleDateString("en-AE")} – {new Date(invoice.invoicing_period_end).toLocaleDateString("en-AE")}</span></div>
+                  )}
+                  {invoice.principal_id && (
+                    <div><span className="text-gray-500">Principal ID:</span> <span className="font-medium">{invoice.principal_id}</span></div>
+                  )}
+                  {invoice.beneficiary_id && (
+                    <div><span className="text-gray-500">Beneficiary ID:</span> <span className="font-medium">{invoice.beneficiary_id}</span></div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Line Items */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
