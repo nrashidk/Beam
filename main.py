@@ -5520,6 +5520,17 @@ def create_invoice(
     if not company:
         raise HTTPException(404, "Company not found")
 
+    # Credit note compliance: UAE VAT law requires a stated reason for every credit note.
+    # This check runs before any db.commit() so invalid payloads produce no side-effects.
+    if payload.invoice_type in (
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+    ) and not (payload.credit_note_reason or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="credit_note_reason is required for credit notes",
+        )
+
     # Enforce Super Admin configured free plan invoice limits (invoice-count based)
     if (
         company.free_plan_type == "INVOICE_COUNT"
@@ -5623,16 +5634,6 @@ def create_invoice(
         company.trial_start_date = datetime.utcnow()
         company.trial_invoice_count = 0
         db.commit()
-
-    # Credit note compliance: UAE VAT law requires a stated reason for every credit note
-    if payload.invoice_type in (
-        InvoiceType.TAX_CREDIT_NOTE,
-        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
-    ) and not (payload.credit_note_reason or "").strip():
-        raise HTTPException(
-            status_code=400,
-            detail="credit_note_reason is required for credit notes",
-        )
 
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
