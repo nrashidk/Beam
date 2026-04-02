@@ -2041,6 +2041,9 @@ class InvoiceCreate(BaseModel):
 
     # Credit note specific
     preceding_invoice_id: Optional[str] = None
+    # credit_note_reason: Optional at Pydantic level; programmatically required
+    # (HTTP 400) when invoice_type is TAX_CREDIT_NOTE (381) or
+    # CREDIT_NOTE_OUT_OF_SCOPE (81) — UAE VAT law mandates a stated reason.
     credit_note_reason: Optional[str] = None
 
     # UAE Transaction Type (Task 3c)
@@ -5620,6 +5623,16 @@ def create_invoice(
         company.trial_start_date = datetime.utcnow()
         company.trial_invoice_count = 0
         db.commit()
+
+    # Credit note compliance: UAE VAT law requires a stated reason for every credit note
+    if payload.invoice_type in (
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+    ) and not (payload.credit_note_reason or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="credit_note_reason is required for credit notes",
+        )
 
     # Generate invoice number
     invoice_id = f"inv_{uuid4().hex[:12]}"
