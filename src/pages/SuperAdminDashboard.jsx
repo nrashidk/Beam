@@ -182,8 +182,21 @@ export default function SuperAdminDashboard() {
     if (!confirm("Start a new database backup now? This may take a few seconds.")) return;
     try {
       setBackupTriggering(true);
-      await api.post("/admin/backup/trigger");
-      setTimeout(fetchBackups, 1500);
+      const res = await api.post("/admin/backup/trigger");
+      const newId = res.data?.backup_id;
+      await fetchBackups();
+      if (newId) {
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          const listRes = await api.get("/admin/backup/list");
+          const entry = (listRes.data || []).find((b) => b.id === newId);
+          setBackups(listRes.data || []);
+          if (!entry || entry.status !== "PENDING" || attempts >= 12) {
+            clearInterval(poll);
+          }
+        }, 2000);
+      }
     } catch (err) {
       alert("Failed to trigger backup: " + (err.response?.data?.detail || err.message));
     } finally {
@@ -194,12 +207,15 @@ export default function SuperAdminDashboard() {
   function handleDownloadBackup(backupId, filename) {
     const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token") || "";
     const url = `${api.defaults.baseURL || ""}/admin/backup/${backupId}/download`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    const headers = token ? `?_token=${encodeURIComponent(token)}` : "";
     fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
+      .then((r) => {
+        if (!r.ok) {
+          return r.json().then((body) => {
+            throw new Error(body?.detail || `HTTP ${r.status}`);
+          });
+        }
+        return r.blob();
+      })
       .then((blob) => {
         const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -208,7 +224,7 @@ export default function SuperAdminDashboard() {
         link.click();
         URL.revokeObjectURL(blobUrl);
       })
-      .catch(() => alert("Download failed. Please try again."));
+      .catch((err) => alert("Download failed: " + err.message));
   }
 
   function exportCompaniesCsv(rows) {

@@ -1600,6 +1600,21 @@ try:
         _conn.execute(text(
             "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP DEFAULT NOW()"
         ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS filename VARCHAR"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS file_size_bytes INTEGER"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS status VARCHAR NOT NULL DEFAULT 'PENDING'"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS error_message TEXT"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP"
+        ))
         _conn.commit()
     print("✅ backup_logs table ensured")
 except Exception as _e:
