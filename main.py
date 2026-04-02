@@ -370,6 +370,8 @@ class CompanyDB(Base):
     peppol_configured_at = Column(DateTime, nullable=True)
     peppol_last_tested_at = Column(DateTime, nullable=True)
 
+    version = Column(Integer, default=1)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
     rejected_at = Column(DateTime, nullable=True)
@@ -1001,6 +1003,8 @@ class InwardInvoiceDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    version = Column(Integer, default=1)
+
     # Relationships
     company = relationship(
         "CompanyDB", foreign_keys=[company_id], backref="inward_invoices"
@@ -1379,6 +1383,7 @@ class VATReturnDB(Base):
     box13_net_vat_payable = Column(Float, default=0.0)
     total_sales_invoices = Column(Integer, default=0)
     total_purchase_invoices = Column(Integer, default=0)
+    version = Column(Integer, default=1)
     generated_at = Column(DateTime, default=datetime.utcnow)
     company = relationship("CompanyDB", backref="vat_returns")
 
@@ -1573,6 +1578,24 @@ try:
     print("✅ inward_invoices.supplier_country column ensured")
 except Exception as _e:
     print(f"⚠️  inward_invoices.supplier_country migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Optimistic locking version columns ───────────────────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
+        ))
+        _conn.commit()
+    print("✅ Optimistic locking version columns ensured")
+except Exception as _e:
+    print(f"⚠️  Optimistic locking migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── BackupLog table migration ─────────────────────────────────────────────────
@@ -2567,6 +2590,7 @@ class InwardInvoiceOut(BaseModel):
     reference_number: Optional[str]
     created_at: str
     updated_at: str
+    version: Optional[int] = 1
     line_items: List[InwardInvoiceLineItemOut] = []
 
 
@@ -7925,6 +7949,7 @@ def list_vat_returns(
                 "box13_net_vat_payable": r.box13_net_vat_payable,
                 "total_sales_invoices": r.total_sales_invoices,
                 "generated_at": r.generated_at.isoformat() if r.generated_at else None,
+                "version": r.version or 1,
             }
             for r in returns
         ]
@@ -8066,6 +8091,7 @@ def update_tourist_refund(
     amount: float,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
 ):
     """Update the tourist refund amount (Box 2) on an existing VAT return."""
     vr = db.query(VATReturnDB).filter(
@@ -8074,10 +8100,27 @@ def update_tourist_refund(
     ).first()
     if not vr:
         raise HTTPException(404, "VAT return not found")
+
+    if if_match is not None:
+        try:
+            client_version = int(if_match)
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version")
+        if client_version != (vr.version or 1):
+            raise HTTPException(
+                409,
+                f"Conflict: VAT return has been modified by another request (current version: {vr.version or 1})",
+            )
+
     vr.box2_tax_refunds = float(amount)
     vr.box13_net_vat_payable = round(vr.box3_output_vat - vr.box2_tax_refunds - vr.box12_total_input_vat, 2)
+    vr.version = (vr.version or 1) + 1
     db.commit()
-    return {"tax_refunds_provided": vr.box2_tax_refunds, "net_vat_payable": vr.box13_net_vat_payable}
+    return {
+        "tax_refunds_provided": vr.box2_tax_refunds,
+        "net_vat_payable": vr.box13_net_vat_payable,
+        "version": vr.version,
+    }
 
 
 @app.get("/vat-return/{return_id}/export", tags=["VAT Return"])
@@ -11442,6 +11485,7 @@ def get_inward_invoice(
         reference_number=invoice.reference_number,
         created_at=invoice.created_at.isoformat(),
         updated_at=invoice.updated_at.isoformat(),
+        version=invoice.version or 1,
         line_items=[
             InwardInvoiceLineItemOut(
                 id=li.id,
@@ -11472,6 +11516,7 @@ def approve_inward_invoice(
     approval_data: InwardInvoiceApprove,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
 ):
     """
     Approve inward invoice for payment
@@ -11490,6 +11535,17 @@ def approve_inward_invoice(
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
 
+    if if_match is not None:
+        try:
+            client_version = int(if_match)
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version")
+        if client_version != (invoice.version or 1):
+            raise HTTPException(
+                409,
+                f"Conflict: invoice has been modified by another request (current version: {invoice.version or 1})",
+            )
+
     if invoice.status == InwardInvoiceStatus.APPROVED:
         raise HTTPException(400, "Invoice already approved")
 
@@ -11498,6 +11554,7 @@ def approve_inward_invoice(
 
     # Update invoice
     invoice.status = InwardInvoiceStatus.APPROVED
+    invoice.version = (invoice.version or 1) + 1
     invoice.approved_by_user_id = current_user.id
     invoice.approved_at = datetime.utcnow()
 
@@ -11537,6 +11594,7 @@ def reject_inward_invoice(
     rejection_data: InwardInvoiceReject,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
 ):
     """
     Reject inward invoice with reason
@@ -11553,6 +11611,17 @@ def reject_inward_invoice(
     if not invoice:
         raise HTTPException(404, "Inward invoice not found")
 
+    if if_match is not None:
+        try:
+            client_version = int(if_match)
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version")
+        if client_version != (invoice.version or 1):
+            raise HTTPException(
+                409,
+                f"Conflict: invoice has been modified by another request (current version: {invoice.version or 1})",
+            )
+
     if invoice.status == InwardInvoiceStatus.REJECTED:
         raise HTTPException(400, "Invoice already rejected")
 
@@ -11561,6 +11630,7 @@ def reject_inward_invoice(
 
     # Update invoice
     invoice.status = InwardInvoiceStatus.REJECTED
+    invoice.version = (invoice.version or 1) + 1
     invoice.reviewed_by_user_id = current_user.id
     invoice.reviewed_at = datetime.utcnow()
     invoice.rejection_reason = rejection_data.rejection_reason
@@ -13154,6 +13224,7 @@ def get_peppol_settings(
         "peppol_last_tested_at": company.peppol_last_tested_at.isoformat()
         if company.peppol_last_tested_at
         else None,
+        "version": company.version or 1,
     }
 
 
@@ -13162,6 +13233,7 @@ def update_peppol_settings(
     settings: dict,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
 ):
     """Update PEPPOL configuration for the company"""
     company = (
@@ -13169,6 +13241,17 @@ def update_peppol_settings(
     )
     if not company:
         raise HTTPException(404, "Company not found")
+
+    if if_match is not None:
+        try:
+            client_version = int(if_match)
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version")
+        if client_version != (company.version or 1):
+            raise HTTPException(
+                409,
+                f"Conflict: company record has been modified by another request (current version: {company.version or 1})",
+            )
 
     # Validate provider
     valid_providers = ["tradeshift", "basware", "mock"]
@@ -13203,6 +13286,8 @@ def update_peppol_settings(
 
     company.peppol_configured_at = datetime.utcnow()
 
+    company.version = (company.version or 1) + 1
+
     _log_audit_event(
         db,
         company_id=current_user.company_id,
@@ -13228,6 +13313,7 @@ def update_peppol_settings(
         "peppol_enabled": company.peppol_enabled,
         "peppol_provider": company.peppol_provider,
         "peppol_participant_id": company.peppol_participant_id,
+        "version": company.version,
     }
 
 
@@ -13319,6 +13405,7 @@ def get_vat_settings(
         else None,
         "formatted_trn": format_trn(company.trn) if company.trn else None,
         "vat_certificate_uploaded": company.vat_certificate_path is not None,
+        "version": company.version or 1,
     }
 
 
@@ -13327,6 +13414,7 @@ def update_vat_settings(
     settings: dict,
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
+    if_match: Optional[str] = Header(None, alias="If-Match"),
 ):
     """Update VAT registration configuration for the company"""
     if current_user.role not in [
@@ -13341,6 +13429,17 @@ def update_vat_settings(
     )
     if not company:
         raise HTTPException(404, "Company not found")
+
+    if if_match is not None:
+        try:
+            client_version = int(if_match)
+        except ValueError:
+            raise HTTPException(400, "If-Match header must be an integer version")
+        if client_version != (company.version or 1):
+            raise HTTPException(
+                409,
+                f"Conflict: company record has been modified by another request (current version: {company.version or 1})",
+            )
 
     # Get VAT enabled status from request
     vat_enabled = settings.get("vat_enabled", False)
@@ -13383,6 +13482,8 @@ def update_vat_settings(
             # Use UTC datetime to ensure consistency across timezones
             company.vat_registration_date = datetime.utcnow().date()
 
+        company.version = (company.version or 1) + 1
+
         _log_audit_event(
             db,
             company_id=current_user.company_id,
@@ -13411,10 +13512,12 @@ def update_vat_settings(
             "vat_registration_date": company.vat_registration_date.isoformat()
             if company.vat_registration_date
             else None,
+            "version": company.version,
         }
     else:
         # Disabling VAT - just set vat_enabled to False, keep TRN for records
         company.vat_enabled = False
+        company.version = (company.version or 1) + 1
 
         _log_audit_event(
             db,
@@ -13434,6 +13537,7 @@ def update_vat_settings(
             "success": True,
             "message": "VAT registration disabled",
             "vat_enabled": False,
+            "version": company.version,
         }
 
 
