@@ -736,6 +736,16 @@ class InvoiceTaxBreakdownDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class InvoiceSequenceDB(Base):
+    """Per-company, per-prefix monotonic invoice number sequence (rollback-safe)."""
+    __tablename__ = "invoice_sequences"
+    company_id = Column(
+        String, ForeignKey("companies.id"), primary_key=True, nullable=False
+    )
+    prefix = Column(String, primary_key=True, nullable=False)
+    last_number = Column(Integer, nullable=False, default=0)
+
+
 # ==================== CORNER 4: AP MANAGEMENT (Inward Invoicing) ====================
 
 
@@ -1648,6 +1658,36 @@ except Exception as _e:
 import pathlib as _pathlib
 _BACKUP_DIR = _pathlib.Path("backups")
 _BACKUP_DIR.mkdir(exist_ok=True)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Gapless invoice sequence table ────────────────────────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS invoice_sequences (
+                company_id VARCHAR NOT NULL REFERENCES companies(id),
+                prefix     VARCHAR NOT NULL,
+                last_number INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (company_id, prefix)
+            )
+        """))
+        # Seed from existing invoices so we never go backwards
+        _conn.execute(text("""
+            INSERT INTO invoice_sequences (company_id, prefix, last_number)
+            SELECT
+                company_id,
+                split_part(invoice_number, '-', 1) AS prefix,
+                MAX(CAST(split_part(invoice_number, '-', 2) AS INTEGER)) AS last_number
+            FROM invoices
+            WHERE invoice_number ~ '^[A-Z]+-[0-9]+$'
+            GROUP BY company_id, split_part(invoice_number, '-', 1)
+            ON CONFLICT (company_id, prefix) DO UPDATE
+                SET last_number = GREATEST(invoice_sequences.last_number, EXCLUDED.last_number)
+        """))
+        _conn.commit()
+    print("✅ Invoice sequence table created and seeded")
+except Exception as _e:
+    print(f"⚠️  Invoice sequence migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── INVOLINKS_VENDOR_TRN startup check ───────────────────────────────────────
@@ -5783,36 +5823,44 @@ def update_user_role(
 def generate_invoice_number(
     company_id: str, db: Session, invoice_type: str = "380"
 ) -> str:
-    """Generate sequential invoice number for company with type-specific prefix"""
-    # Map invoice type to prefix
+    """Generate a gapless sequential invoice number using an atomic DB sequence.
+
+    Uses INSERT … ON CONFLICT DO UPDATE RETURNING to atomically increment the
+    per-(company, prefix) counter.  Because the increment lives in a regular
+    table row (not a PostgreSQL SEQUENCE), a rolled-back transaction also rolls
+    back the increment, so the next successful transaction reuses that number.
+    This means no gaps are introduced by rollbacks — only intentional
+    cancellations leave gaps, which is FTA-compliant and auditable.
+    Concurrent inserts for the same (company, prefix) are serialised by
+    PostgreSQL's implicit row-level lock on the ON CONFLICT UPDATE path.
+    """
     prefix_map = {
-        "380": "TI",  # Tax Invoice
+        "380": "TI",   # Tax Invoice
         "381": "TCN",  # Tax Credit Note
-        "383": "DN",  # Debit Note
-        "480": "CI",  # Commercial Invoice
-        "81": "CN",  # Credit Note
+        "383": "DN",   # Debit Note
+        "480": "CI",   # Commercial Invoice
+        "81": "CN",    # Credit Note
     }
 
-    # Handle both enum and string types
     if hasattr(invoice_type, "value"):
-        invoice_type_value = invoice_type.value  # Extract enum value
+        invoice_type_value = invoice_type.value
     else:
         invoice_type_value = str(invoice_type)
 
-    # Get prefix, default to TI if unknown type
     prefix = prefix_map.get(invoice_type_value, "TI")
 
-    # Count existing invoices of this type for this company
-    count = (
-        db.query(InvoiceDB)
-        .filter(
-            InvoiceDB.company_id == company_id, InvoiceDB.invoice_type == invoice_type
-        )
-        .count()
+    result = db.execute(
+        text("""
+            INSERT INTO invoice_sequences (company_id, prefix, last_number)
+            VALUES (:company_id, :prefix, 1)
+            ON CONFLICT (company_id, prefix) DO UPDATE
+                SET last_number = invoice_sequences.last_number + 1
+            RETURNING last_number
+        """),
+        {"company_id": company_id, "prefix": prefix},
     )
-    next_num = count + 1
+    next_num = result.scalar()
 
-    # Format: PREFIX-XXXXX (e.g., TI-00001, CN-00001)
     return f"{prefix}-{next_num:05d}"
 
 
