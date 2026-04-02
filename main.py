@@ -9131,6 +9131,9 @@ def download_invoice_pdf(
         "invoice_type": invoice.invoice_type.value,
         "status": invoice.status.value,
         "issue_date": invoice.issue_date.isoformat() if invoice.issue_date else "",
+        "issue_datetime": invoice.created_at.isoformat() if invoice.created_at else (
+            (invoice.issue_date.isoformat() + "T00:00:00") if invoice.issue_date else ""
+        ),
         "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
         "currency_code": invoice.currency_code,
         # Supplier

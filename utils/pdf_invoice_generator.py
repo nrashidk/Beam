@@ -695,7 +695,11 @@ class PDFInvoiceGenerator:
         tlv_payload = generate_fta_tlv_payload(
             seller_name=invoice_data.get("supplier_name") or "",
             trn=invoice_data.get("supplier_trn") or "",
-            timestamp=str(invoice_data.get("issue_date") or ""),
+            timestamp=str(
+                invoice_data.get("issue_datetime")
+                or invoice_data.get("issue_date")
+                or ""
+            ),
             total_incl_vat=float(invoice_data.get("total_amount") or 0),
             vat_total=float(invoice_data.get("tax_amount") or 0),
         )
