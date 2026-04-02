@@ -74,7 +74,7 @@ def generate_pint_ae_xml(invoice_data: Dict[str, Any]) -> str:
             <!-- Supplier Legal Entity -->
             <cac:PartyLegalEntity>
                 <cbc:RegistrationName>{_xml_escape(invoice["supplier_name"])}</cbc:RegistrationName>
-                <cbc:CompanyID>{invoice.get("supplier_peppol_id", invoice["supplier_trn"][:10])}</cbc:CompanyID>
+                <cbc:CompanyID>{invoice.get("supplier_peppol_id", invoice["supplier_trn"])}</cbc:CompanyID>
             </cac:PartyLegalEntity>
         </cac:Party>
     </cac:AccountingSupplierParty>

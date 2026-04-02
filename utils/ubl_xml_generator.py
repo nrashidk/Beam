@@ -70,6 +70,7 @@ class UBLXMLGenerator:
         self._add_supplier_party(invoice_data)
         self._add_customer_party(invoice_data)
         self._add_payment_terms(invoice_data)
+        self._add_payment_means(invoice_data)
         self._add_tax_total(invoice_data)
         self._add_monetary_total(invoice_data)
         self._add_invoice_lines(line_items)
@@ -171,10 +172,18 @@ class UBLXMLGenerator:
         self._add_element(self.root, 'InvoiceTypeCode', type_code)
         
         # Document currency
-        self._add_element(self.root, 'DocumentCurrencyCode', invoice_data.get('currency_code', 'AED'))
-        
+        currency = invoice_data.get('currency_code', 'AED')
+        self._add_element(self.root, 'DocumentCurrencyCode', currency)
+
         # Tax currency (always AED for UAE)
         self._add_element(self.root, 'TaxCurrencyCode', 'AED')
+
+        # TaxExchangeRate — FTA Article 60: exchange rate must be stated for foreign-currency invoices
+        if currency != 'AED' and invoice_data.get('exchange_rate'):
+            tax_exchange_rate = SubElement(self.root, 'cac:TaxExchangeRate')
+            self._add_element(tax_exchange_rate, 'SourceCurrencyCode', currency)
+            self._add_element(tax_exchange_rate, 'TargetCurrencyCode', 'AED')
+            self._add_element(tax_exchange_rate, 'CalculationRate', f"{float(invoice_data['exchange_rate']):.6f}")
         
         # Note/Description
         if invoice_data.get('invoice_notes'):
@@ -415,7 +424,38 @@ class UBLXMLGenerator:
         if invoice_data.get('payment_terms'):
             payment_terms = SubElement(self.root, 'cac:PaymentTerms')
             self._add_element(payment_terms, 'Note', invoice_data['payment_terms'])
-    
+
+    def _add_payment_means(self, invoice_data: Dict[str, Any]):
+        """
+        Add cac:PaymentMeans — mandatory per PEPPOL BIS 3.0 / PINT-AE.
+        Skipped for DEEMED_SUPPLY (already handled by _add_transaction_type_fields).
+        Maps payment_method strings to UN/EDIFACT 4461 PaymentMeansCode values.
+        """
+        tx_type = invoice_data.get('invoice_transaction_type', 'STANDARD')
+        if tx_type == 'DEEMED_SUPPLY':
+            return  # Already emitted by _add_transaction_type_fields
+
+        payment_means = SubElement(self.root, 'cac:PaymentMeans')
+        method = (invoice_data.get('payment_method') or '').upper().strip()
+        code_map = {
+            'CASH': '10',
+            'CHEQUE': '20',
+            'CHECK': '20',
+            'BANK TRANSFER': '30',
+            'CREDIT TRANSFER': '30',
+            'CARD': '48',
+            'CREDIT CARD': '48',
+            'POS': '48',
+            'DIRECT DEBIT': '49',
+        }
+        means_code = code_map.get(method, '30')  # Default: credit transfer
+        self._add_element(payment_means, 'PaymentMeansCode', means_code)
+        if invoice_data.get('payment_due_date'):
+            pdd = invoice_data['payment_due_date']
+            if hasattr(pdd, 'strftime'):
+                pdd = pdd.strftime('%Y-%m-%d')
+            self._add_element(payment_means, 'PaymentDueDate', str(pdd))
+
     def _add_tax_total(self, invoice_data: Dict[str, Any]):
         """Add tax total (VAT) information"""
         tax_total = SubElement(self.root, 'cac:TaxTotal')
@@ -512,14 +552,29 @@ class UBLXMLGenerator:
             )
             quantity.set('unitCode', item.get('unit_code', 'C62'))  # C62 = piece
             
-            # Line extension amount
+            # Line extension amount (net of discount)
             line_ext = self._add_element(
                 inv_line,
                 'LineExtensionAmount',
                 f"{item.get('line_extension_amount', 0.0):.2f}"
             )
             line_ext.set('currencyID', 'AED')
-            
+
+            # AllowanceCharge — line-level discount per PINT-AE / EN 16931
+            discount = float(item.get('discount_amount', 0.0) or 0.0)
+            if discount > 0:
+                ac = SubElement(inv_line, 'cac:AllowanceCharge')
+                self._add_element(ac, 'ChargeIndicator', 'false')
+                self._add_element(ac, 'AllowanceChargeReasonCode', '95')
+                self._add_element(ac, 'AllowanceChargeReason', 'Discount')
+                amount_el = self._add_element(ac, 'Amount', f"{discount:.2f}")
+                amount_el.set('currencyID', item.get('currency_code', 'AED'))
+                base_el = self._add_element(
+                    ac, 'BaseAmount',
+                    f"{(item.get('line_extension_amount', 0.0) + discount):.2f}"
+                )
+                base_el.set('currencyID', item.get('currency_code', 'AED'))
+
             # Item
             item_elem = SubElement(inv_line, 'cac:Item')
             self._add_element(item_elem, 'Description', item.get('item_description', item.get('item_name', '')))

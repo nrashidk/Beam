@@ -564,6 +564,7 @@ class InvoiceDB(Base):
 
     # AED conversion (mandatory if currency != AED)
     total_amount_aed = Column(Float, nullable=True)
+    exchange_rate = Column(Float, nullable=True)  # FTA Art. 60: rate used for AED conversion
 
     # Payment Terms
     payment_terms = Column(Text, nullable=True)
@@ -715,6 +716,9 @@ class InvoiceLineItemDB(Base):
     tax_code = Column(
         String, default="SR"
     )  # UAE tax code: SR, ZR, ES, RC, OP (Phase 1)
+
+    # Discount (FTA PINT-AE AllowanceCharge)
+    discount_amount = Column(Float, default=0.0)  # Line-level discount (AED)
 
     # Total
     line_total_amount = Column(Float, nullable=False)  # Including tax
@@ -1590,6 +1594,21 @@ except Exception as _e:
     print(f"⚠️  inward_invoices.supplier_country migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── FTA gap-fix: discount_amount on invoice lines + exchange_rate on invoices ─
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "ALTER TABLE invoice_line_items ADD COLUMN IF NOT EXISTS discount_amount FLOAT DEFAULT 0.0"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate FLOAT"
+        ))
+        _conn.commit()
+    print("✅ discount_amount + exchange_rate columns ensured")
+except Exception as _e:
+    print(f"⚠️  discount_amount/exchange_rate migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Optimistic locking version columns ───────────────────────────────────────
 try:
     with engine.connect() as _conn:
@@ -2214,6 +2233,7 @@ class InvoiceLineItemCreate(BaseModel):
     quantity: float
     unit_code: str = "C62"  # UN/ECE code (C62 = piece)
     unit_price: float
+    discount_amount: Optional[float] = 0.0  # FTA PINT-AE: line-level discount (AED)
     tax_category: TaxCategory
     tax_percent: float = 5.0  # UAE standard VAT rate
     tax_code: Optional[str] = (
@@ -2280,6 +2300,10 @@ class InvoiceCreate(BaseModel):
     principal_id: Optional[str] = None
     beneficiary_id: Optional[str] = None
 
+    # FTA Art. 60: exchange rate used for AED conversion (required if currency != AED)
+    exchange_rate: Optional[float] = None
+    total_amount_aed: Optional[float] = None
+
     @validator("customer_country", pre=True, always=True)
     def validate_customer_country(cls, v: str) -> str:
         code = (v or "AE").strip().upper()
@@ -2298,6 +2322,7 @@ class InvoiceLineItemOut(BaseModel):
     quantity: float
     unit_code: str
     unit_price: float
+    discount_amount: float = 0.0
     line_extension_amount: float
     tax_category: TaxCategory
     tax_percent: float
@@ -2343,6 +2368,8 @@ class InvoiceOut(BaseModel):
     tax_amount: float
     total_amount: float
     amount_due: float
+    total_amount_aed: Optional[float] = None
+    exchange_rate: Optional[float] = None
 
     # Credit note fields
     preceding_invoice_id: Optional[str] = None
@@ -5867,8 +5894,10 @@ def generate_invoice_number(
 def calculate_line_item_totals(
     line_item: InvoiceLineItemCreate, vat_enabled: bool
 ) -> dict:
-    """Calculate tax and totals for a line item"""
-    line_extension = line_item.quantity * line_item.unit_price
+    """Calculate tax and totals for a line item, accounting for line-level discount."""
+    gross_extension = line_item.quantity * line_item.unit_price
+    discount = float(getattr(line_item, "discount_amount", None) or 0.0)
+    line_extension = max(gross_extension - discount, 0.0)  # Net of discount
     if vat_enabled and line_item.tax_category == TaxCategory.STANDARD:
         tax_amount = line_extension * (line_item.tax_percent / 100)
     else:
@@ -5876,6 +5905,7 @@ def calculate_line_item_totals(
     line_total = line_extension + tax_amount
 
     return {
+        "discount_amount": round(discount, 2),
         "line_extension_amount": round(line_extension, 2),
         "tax_amount": round(tax_amount, 2),
         "line_total_amount": round(line_total, 2),
@@ -6092,6 +6122,9 @@ def create_invoice(
     invoice.invoicing_period_end = parse_date(payload.invoicing_period_end) if payload.invoicing_period_end else None
     invoice.principal_id = payload.principal_id
     invoice.beneficiary_id = payload.beneficiary_id
+    # FTA Art. 60: exchange rate and AED equivalent for foreign-currency invoices
+    invoice.exchange_rate = payload.exchange_rate
+    invoice.total_amount_aed = payload.total_amount_aed
 
     db.add(invoice)
     db.flush()  # Get invoice ID
@@ -6119,6 +6152,7 @@ def create_invoice(
             quantity=line_item.quantity,
             unit_code=line_item.unit_code,
             unit_price=line_item.unit_price,
+            discount_amount=totals["discount_amount"],
             line_extension_amount=totals["line_extension_amount"],
             tax_category=effective_tax_category,
             tax_percent=effective_tax_percent,
@@ -6284,6 +6318,7 @@ def create_invoice(
                 quantity=li.quantity,
                 unit_code=li.unit_code,
                 unit_price=li.unit_price,
+                discount_amount=float(li.discount_amount or 0.0),
                 line_extension_amount=li.line_extension_amount,
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
@@ -6862,6 +6897,7 @@ def get_invoice(
                 quantity=li.quantity,
                 unit_code=li.unit_code,
                 unit_price=li.unit_price,
+                discount_amount=float(li.discount_amount or 0.0),
                 line_extension_amount=li.line_extension_amount,
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
@@ -7110,6 +7146,7 @@ def update_invoice(
                     quantity=li.quantity,
                     unit_code=li.unit_code,
                     unit_price=li.unit_price,
+                    discount_amount=float(li.discount_amount or 0.0),
                     line_extension_amount=li.line_extension_amount,
                     tax_category=li.tax_category,
                     tax_percent=li.tax_percent,
@@ -9567,10 +9604,16 @@ def issue_invoice(
         "total_amount": invoice.total_amount,
         "amount_due": invoice.amount_due,
         "payment_terms": invoice.payment_terms,
+        "payment_method": invoice.payment_method,
+        "payment_due_date": invoice.payment_due_date,
         "invoice_notes": invoice.invoice_notes,
         "reference_number": invoice.reference_number,
         "preceding_invoice_id": invoice.preceding_invoice_id,
         "prev_invoice_hash": invoice.prev_invoice_hash,
+        "total_amount_aed": invoice.total_amount_aed,
+        "exchange_rate": invoice.exchange_rate,
+        "invoice_transaction_type": invoice.invoice_transaction_type or "STANDARD",
+        "payment_type_code": invoice.payment_type_code,
     }
     # Validate required fields before XML generation (TRN is optional for non-VAT parties)
     missing_fields = []
@@ -9597,6 +9640,7 @@ def issue_invoice(
                 "quantity": line.quantity,
                 "unit_code": line.unit_code,
                 "unit_price": line.unit_price,
+                "discount_amount": float(line.discount_amount or 0.0),
                 "line_extension_amount": line.line_extension_amount,
                 "tax_category": line.tax_category.value,
                 "tax_percent": line.tax_percent,
@@ -10246,6 +10290,7 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
                 quantity=li.quantity,
                 unit_code=li.unit_code,
                 unit_price=li.unit_price,
+                discount_amount=float(li.discount_amount or 0.0),
                 line_extension_amount=li.line_extension_amount,
                 tax_category=li.tax_category,
                 tax_percent=li.tax_percent,
