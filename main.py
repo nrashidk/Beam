@@ -930,6 +930,9 @@ class InwardInvoiceDB(Base):
         String, ForeignKey("companies.id"), nullable=True
     )  # If supplier uses InvoLinks
 
+    # Supplier country — used in FAF [PurchaseData] SupplierCountry column
+    supplier_country = Column(String, default="AE")
+
     # Customer (Our company - the buyer)
     customer_trn = Column(
         String, nullable=True
@@ -1528,6 +1531,18 @@ try:
         print("✅ supplier_peppol_id — all invoices already in correct 0230: format")
 except Exception as _e:
     print(f"⚠️  supplier_peppol_id migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── InwardInvoice supplier_country column migration ──────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS supplier_country VARCHAR DEFAULT 'AE'"
+        ))
+        _conn.commit()
+    print("✅ inward_invoices.supplier_country column ensured")
+except Exception as _e:
+    print(f"⚠️  inward_invoices.supplier_country migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── INVOLINKS_VENDOR_TRN startup check ───────────────────────────────────────
@@ -12481,11 +12496,13 @@ def generate_fta_audit_file(
 
         inward_data = [
             {
+                "id": inv.id,
                 "supplier_invoice_number": inv.supplier_invoice_number,
                 "invoice_date": inv.invoice_date,
                 "invoice_type": inv.invoice_type.value,
                 "supplier_trn": inv.supplier_trn,
                 "supplier_name": inv.supplier_name,
+                "supplier_country": getattr(inv, "supplier_country", "AE") or "AE",
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,

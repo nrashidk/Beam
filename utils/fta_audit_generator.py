@@ -409,7 +409,7 @@ class FTAAuditFileGenerator:
             purch_supply_date = inv.get("supply_date") or inv_date
             writer.writerow(
                 {
-                    "TransactionID": inv.get("supplier_invoice_number", ""),
+                    "TransactionID": inv.get("supplier_invoice_number") or f"INW-{inv.get('id', '')}",
                     "InvoiceDate": _format_date(inv_date),
                     "SupplyDate": _format_date(purch_supply_date),
                     "InvoiceType": inv_type,

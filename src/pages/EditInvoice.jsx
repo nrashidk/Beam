@@ -85,6 +85,7 @@ export default function EditInvoice() {
     customer_trn: "",
     customer_address: "",
     customer_city: "",
+    customer_country: "AE",
     payment_due_days: 30,
     invoice_notes: "",
     reference_number: "",
@@ -163,6 +164,7 @@ export default function EditInvoice() {
           customer_trn: invoiceData.customer_trn || "",
           customer_address: invoiceData.customer_address || "",
           customer_city: invoiceData.customer_city || "",
+          customer_country: invoiceData.customer_country || "AE",
           payment_due_days: 30,
           invoice_notes: invoiceData.invoice_notes || "",
           reference_number: invoiceData.reference_number || "",
@@ -633,6 +635,43 @@ export default function EditInvoice() {
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer Country
+                  </label>
+                  <select
+                    value={formData.customer_country}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_country: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="AE">🇦🇪 UAE</option>
+                    <option value="SA">🇸🇦 Saudi Arabia</option>
+                    <option value="BH">🇧🇭 Bahrain</option>
+                    <option value="KW">🇰🇼 Kuwait</option>
+                    <option value="OM">🇴🇲 Oman</option>
+                    <option value="QA">🇶🇦 Qatar</option>
+                    <option value="IN">🇮🇳 India</option>
+                    <option value="PK">🇵🇰 Pakistan</option>
+                    <option value="GB">🇬🇧 United Kingdom</option>
+                    <option value="US">🇺🇸 United States</option>
+                    <option value="DE">🇩🇪 Germany</option>
+                    <option value="FR">🇫🇷 France</option>
+                    <option value="CN">🇨🇳 China</option>
+                    <option value="SG">🇸🇬 Singapore</option>
+                    <option value="JP">🇯🇵 Japan</option>
+                    <option value="TR">🇹🇷 Türkiye</option>
+                    <option value="EG">🇪🇬 Egypt</option>
+                    <option value="JO">🇯🇴 Jordan</option>
+                    <option value="LB">🇱🇧 Lebanon</option>
+                    <option value="OTHER">Other</option>
+                  </select>
                 </div>
 
                 <div className="col-span-2">
