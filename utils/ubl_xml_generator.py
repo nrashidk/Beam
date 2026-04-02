@@ -17,13 +17,12 @@ from utils.peppol_provider import resolve_receiver_peppol_id
 
 def get_tin_from_trn(trn: str) -> str:
     """
-    Extract TIN from TRN for UAE PEPPOL participant ID.
-    TIN = first 10 digits of the Corporate Tax TRN.
-    Falls back to full TRN if length < 10.
+    Build the UAE PEPPOL supplier participant ID from a TRN.
+    UAE PINT-AE requires ICD scheme 0230 (UAE TRN) with the full 15-digit TRN:
+      format: "0230:{trn}"
+    Falls back to "0230:{trn}" even when TRN is short; returns "" for empty TRN.
     """
-    if trn and len(trn) >= 10:
-        return trn[:10]
-    return trn or ""
+    return f"0230:{trn}" if trn else ""
 
 
 class UBLXMLGenerator:
@@ -305,12 +304,18 @@ class UBLXMLGenerator:
         supplier_party = SubElement(self.root, 'cac:AccountingSupplierParty')
         party = SubElement(supplier_party, 'cac:Party')
         
-        # Supplier PEPPOL endpoint — use explicit peppol_id or derive TIN from TRN (Task 2)
-        supplier_endpoint = invoice_data.get('supplier_peppol_id') or get_tin_from_trn(invoice_data.get('supplier_trn', ''))
-        if supplier_endpoint:
+        # Supplier PEPPOL endpoint — use explicit peppol_id or derive from TRN (PINT-AE: ICD 0230)
+        supplier_peppol_raw = invoice_data.get('supplier_peppol_id') or get_tin_from_trn(invoice_data.get('supplier_trn', ''))
+        if supplier_peppol_raw:
             endpoint_id = SubElement(party, 'cbc:EndpointID')
-            endpoint_id.set('schemeID', '0235')  # UAE TIN-based scheme
-            endpoint_id.text = supplier_endpoint
+            if supplier_peppol_raw.startswith('0230:'):
+                # UAE TRN scheme (ICD 0230) — strip prefix, store bare TRN as text
+                endpoint_id.set('schemeID', '0230')
+                endpoint_id.text = supplier_peppol_raw[5:]
+            else:
+                # Legacy / fallback: keep as-is with TIN scheme
+                endpoint_id.set('schemeID', '0235')
+                endpoint_id.text = supplier_peppol_raw
         
         # Party identification (TRN) - only if provided
         if invoice_data.get('supplier_trn'):

@@ -102,6 +102,10 @@ import stripe
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./.dev.db")
 # Allow overriding artifact root via env to avoid issues when working directory differs
 ARTIFACT_ROOT = os.getenv("ARTIFACT_ROOT", os.path.join(os.getcwd(), "artifacts"))
+
+# InvoLinks platform TRN — used in VAT Return XLSX/XML exports as VendorTRN.
+# Set INVOLINKS_VENDOR_TRN in environment for FTA accreditation exports.
+INVOLINKS_VENDOR_TRN = os.getenv("INVOLINKS_VENDOR_TRN", "")
 os.makedirs(ARTIFACT_ROOT, exist_ok=True)
 os.makedirs(os.path.join(ARTIFACT_ROOT, "documents"), exist_ok=True)
 
@@ -1496,6 +1500,45 @@ try:
     print("✅ UAE PINT-AE columns migrated")
 except Exception as _e:
     print(f"⚠️  UAE PINT-AE migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── PEPPOL supplier_peppol_id migration ───────────────────────────────────────
+# Fix any existing invoices that have the old truncated TIN format (first 10
+# digits) instead of the required "0230:{full-TRN}" PEPPOL participant ID.
+try:
+    with engine.connect() as _conn:
+        _rows = _conn.execute(text(
+            "SELECT id, supplier_trn FROM invoices "
+            "WHERE supplier_trn IS NOT NULL "
+            "AND (supplier_peppol_id IS NULL "
+            "     OR supplier_peppol_id NOT LIKE '0230:%')"
+        )).fetchall()
+        _migrated = 0
+        for _row in _rows:
+            _inv_id, _trn = _row[0], _row[1]
+            if _trn:
+                _conn.execute(text(
+                    "UPDATE invoices SET supplier_peppol_id = :pid WHERE id = :iid"
+                ), {"pid": f"0230:{_trn}", "iid": _inv_id})
+                _migrated += 1
+        _conn.commit()
+    if _migrated:
+        print(f"✅ supplier_peppol_id migrated to 0230: format for {_migrated} invoice(s)")
+    else:
+        print("✅ supplier_peppol_id — all invoices already in correct 0230: format")
+except Exception as _e:
+    print(f"⚠️  supplier_peppol_id migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── INVOLINKS_VENDOR_TRN startup check ───────────────────────────────────────
+_vendor_trn = INVOLINKS_VENDOR_TRN.strip()
+if not _vendor_trn:
+    logging.warning(
+        "INVOLINKS_VENDOR_TRN environment variable is not set. "
+        "VAT Return XLSX/XML exports will show 'VENDOR-TRN-NOT-SET' in the "
+        "VendorTRN field. Set this variable to InvoLinks' UAE TRN for "
+        "FTA accreditation-compliant exports."
+    )
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -5667,9 +5710,9 @@ def create_invoice(
         or None,
         supplier_city=company.city,
         supplier_country="AE",
-        supplier_peppol_id=company.trn[:10]
+        supplier_peppol_id=f"0230:{company.trn}"
         if company.trn
-        else None,  # First 10 digits of TRN as TIN
+        else None,  # ICD 0230 = UAE TRN; full 15-digit TRN per PINT-AE spec
         # Customer
         customer_trn=payload.customer_trn,
         customer_name=payload.customer_name,
@@ -7797,7 +7840,9 @@ def export_vat_return(
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "VAT Return"
+        _vtmp = INVOLINKS_VENDOR_TRN.strip() or "VENDOR-TRN-NOT-SET"
         ws.append(["UAE FTA VAT Return — Form 301"])
+        ws.append(["VendorTRN", _vtmp])
         ws.append(["Period", f"{vr.period_start} to {vr.period_end}"])
         ws.append([])
         ws.append(["Box", "Description", "Amount (AED)"])
@@ -7825,9 +7870,11 @@ def export_vat_return(
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="vat_return_{vr.period_start}_{vr.period_end}.xlsx"'})
     else:
+        _vtmp_xml = INVOLINKS_VENDOR_TRN.strip() or "VENDOR-TRN-NOT-SET"
         xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <VATReturn xmlns="urn:ae:fta:vat:return:v1.0">
   <ReturnId>{return_id}</ReturnId>
+  <VendorTRN>{_vtmp_xml}</VendorTRN>
   <PeriodStart>{vr.period_start}</PeriodStart>
   <PeriodEnd>{vr.period_end}</PeriodEnd>
   <Box1>{vr.box1_standard_rated_sales}</Box1>
