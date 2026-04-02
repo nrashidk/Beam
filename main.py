@@ -5596,11 +5596,18 @@ def update_user_status(
         raise HTTPException(400, "Cannot change your own active status")
 
     old_status = getattr(target, "is_active", True)
+    if old_status == payload.is_active:
+        return {
+            "success": True,
+            "user_id": user_id,
+            "is_active": payload.is_active,
+            "message": "No change — user status already set to requested value",
+        }
     target.is_active = payload.is_active
     action = "USER_REACTIVATED" if payload.is_active else "USER_DEACTIVATED"
     _log_audit_event(
         db,
-        company_id=current_user.company_id,
+        company_id=target.company_id,
         user_id=current_user.id,
         action=action,
         resource_type="USER",
@@ -5650,10 +5657,18 @@ def update_user_role(
         raise HTTPException(403, "Only super admins can assign the SUPER_ADMIN role")
 
     old_role = target.role.value if target.role else None
+    if old_role == new_role.value:
+        return {
+            "success": True,
+            "user_id": user_id,
+            "old_role": old_role,
+            "new_role": new_role.value,
+            "message": "No change — user already has the requested role",
+        }
     target.role = new_role
     _log_audit_event(
         db,
-        company_id=current_user.company_id,
+        company_id=target.company_id,
         user_id=current_user.id,
         action="USER_ROLE_UPDATED",
         resource_type="USER",
