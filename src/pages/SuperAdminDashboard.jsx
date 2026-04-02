@@ -413,6 +413,12 @@ export default function SuperAdminDashboard() {
     fetchPlatformStats();
   }, [fromISO, toISO]);
 
+  useEffect(() => {
+    if (user?.role === "SUPER_ADMIN") {
+      fetchBackups();
+    }
+  }, [user?.role]);
+
   const filteredCompanies = useMemo(() => {
     const list = stats?.companies.all || [];
     const ql = q.trim().toLowerCase();

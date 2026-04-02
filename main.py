@@ -8665,31 +8665,37 @@ async def trigger_backup(
     db.commit()
     db.refresh(log)
 
-    TABLES_TO_BACKUP = [
-        "companies", "users", "invoices", "invoice_line_items",
-        "inward_invoices", "inward_invoice_line_items",
-        "vat_returns", "gl_accounts", "journal_entries", "journal_entry_lines",
-        "audit_logs", "backup_logs",
-    ]
-
-    def _run_backup(backup_id: str, file_path: str, tables: list):
+    def _run_backup(backup_id: str, file_path: str):
         from sqlalchemy.orm import Session as _Session
+        from sqlalchemy import inspect as sa_inspect
         _db: _Session = SessionLocal()
         try:
-            dump = {"exported_at": datetime.utcnow().isoformat(), "tables": {}}
+            inspector = sa_inspect(engine)
+            tables = inspector.get_table_names()
+            dump = {
+                "exported_at": datetime.utcnow().isoformat(),
+                "total_tables": len(tables),
+                "tables": {},
+            }
+            table_errors = {}
             for table in tables:
                 try:
-                    rows = _db.execute(sa_text(f"SELECT * FROM {table}")).mappings().all()
+                    rows = _db.execute(sa_text(f'SELECT * FROM "{table}"')).mappings().all()
                     dump["tables"][table] = [dict(r) for r in rows]
                 except Exception as te:
-                    dump["tables"][table] = {"error": str(te)}
+                    table_errors[table] = str(te)
+                    dump["tables"][table] = {"_export_error": str(te)}
             payload = _json.dumps(dump, default=str).encode("utf-8")
             with _gzip.open(file_path, "wb") as f:
                 f.write(payload)
             size = os.path.getsize(file_path)
             rec = _db.get(BackupLogDB, backup_id)
             if rec:
-                rec.status = "COMPLETED"
+                if table_errors:
+                    rec.status = "FAILED"
+                    rec.error_message = f"{len(table_errors)} table(s) failed: " + _json.dumps(table_errors)[:1900]
+                else:
+                    rec.status = "COMPLETED"
                 rec.file_size_bytes = size
                 rec.completed_at = datetime.utcnow()
                 _db.commit()
@@ -8703,7 +8709,7 @@ async def trigger_backup(
         finally:
             _db.close()
 
-    background_tasks.add_task(_run_backup, backup_id, file_path, TABLES_TO_BACKUP)
+    background_tasks.add_task(_run_backup, backup_id, file_path)
 
     return {
         "backup_id": backup_id,
