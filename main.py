@@ -274,6 +274,9 @@ class UserDB(Base):
     mfa_enrolled_at = Column(DateTime, nullable=True)
     mfa_last_verified_at = Column(DateTime, nullable=True)
 
+    # Active flag — used for deactivation/reactivation without deleting the record
+    is_active = Column(Boolean, default=True)
+
 
 class CompanyDB(Base):
     __tablename__ = "companies"
@@ -1533,6 +1536,18 @@ except Exception as _e:
     print(f"⚠️  supplier_peppol_id migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── UserDB.is_active column migration ────────────────────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE"
+        ))
+        _conn.commit()
+    print("✅ users.is_active column ensured")
+except Exception as _e:
+    print(f"⚠️  users.is_active migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── InwardInvoice supplier_country column migration ──────────────────────────
 try:
     with engine.connect() as _conn:
@@ -1707,6 +1722,9 @@ def get_current_user_from_header(
         if user is None:
             print(f"[DEBUG] User not found for user_id={user_id}")
             raise HTTPException(401, "User not found")
+
+        if not getattr(user, "is_active", True):
+            raise HTTPException(401, "Account is deactivated")
 
         return user
     except JWTError as e:
@@ -5516,6 +5534,144 @@ def remove_team_member(
     return {"success": True, "message": "User removed successfully"}
 
 
+# ── Audit helper ─────────────────────────────────────────────────────────────
+def _log_audit_event(
+    db: Session,
+    *,
+    company_id: Optional[str],
+    user_id: Optional[str],
+    action: str,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    description: Optional[str] = None,
+    old_value: Optional[str] = None,
+    new_value: Optional[str] = None,
+) -> None:
+    """Append an immutable audit log entry to the session (caller must commit)."""
+    db.add(AuditLogDB(
+        id=str(uuid4()),
+        company_id=company_id,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        description=description,
+        old_value=old_value,
+        new_value=new_value,
+    ))
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+
+class UserRoleUpdate(BaseModel):
+    role: str
+
+
+@app.patch("/users/{user_id}/status", tags=["Users"])
+@app.patch("/company/users/{user_id}/status", tags=["Users"])
+def update_user_status(
+    user_id: str,
+    payload: UserStatusUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Deactivate or reactivate a team member (Company Admin only). Audited."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only admins can change user status")
+
+    target = db.get(UserDB, user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Cannot modify users in other companies")
+
+    if target.is_owner and not payload.is_active:
+        raise HTTPException(400, "Cannot deactivate the company owner")
+
+    if target.id == current_user.id:
+        raise HTTPException(400, "Cannot change your own active status")
+
+    old_status = getattr(target, "is_active", True)
+    target.is_active = payload.is_active
+    action = "USER_REACTIVATED" if payload.is_active else "USER_DEACTIVATED"
+    _log_audit_event(
+        db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        action=action,
+        resource_type="USER",
+        resource_id=user_id,
+        description=f"{action.replace('_', ' ').title()}: {target.email}",
+        old_value=json.dumps({"is_active": old_status}),
+        new_value=json.dumps({"is_active": payload.is_active}),
+    )
+    db.commit()
+    return {
+        "success": True,
+        "user_id": user_id,
+        "is_active": payload.is_active,
+        "message": f"User {'reactivated' if payload.is_active else 'deactivated'} successfully",
+    }
+
+
+@app.patch("/users/{user_id}/role", tags=["Users"])
+@app.patch("/company/users/{user_id}/role", tags=["Users"])
+def update_user_role(
+    user_id: str,
+    payload: UserRoleUpdate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Update a team member's role (Company Admin only). Audited."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN]:
+        raise HTTPException(403, "Only admins can change user roles")
+
+    target = db.get(UserDB, user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    if target.company_id != current_user.company_id and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Cannot modify users in other companies")
+
+    if target.id == current_user.id:
+        raise HTTPException(400, "Cannot change your own role")
+
+    try:
+        new_role = Role(payload.role)
+    except ValueError:
+        valid = [r.value for r in Role]
+        raise HTTPException(400, f"Invalid role. Must be one of: {', '.join(valid)}")
+
+    if new_role == Role.SUPER_ADMIN and current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only super admins can assign the SUPER_ADMIN role")
+
+    old_role = target.role.value if target.role else None
+    target.role = new_role
+    _log_audit_event(
+        db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        action="USER_ROLE_UPDATED",
+        resource_type="USER",
+        resource_id=user_id,
+        description=f"Role changed for {target.email}: {old_role} → {new_role.value}",
+        old_value=json.dumps({"role": old_role}),
+        new_value=json.dumps({"role": new_role.value}),
+    )
+    db.commit()
+    return {
+        "success": True,
+        "user_id": user_id,
+        "old_role": old_role,
+        "new_role": new_role.value,
+        "message": "User role updated successfully",
+    }
+
+
 # ==================== INVOICE ENDPOINTS ====================
 
 
@@ -7980,6 +8136,109 @@ def list_accounts(
             for a in accounts
         ]
     }
+
+
+class AccountCreate(BaseModel):
+    account_code: str
+    account_name: str
+    account_name_ar: Optional[str] = None
+    account_type: str
+    description: Optional[str] = None
+
+
+@app.post("/accounts", tags=["General Ledger"])
+def create_account(
+    payload: AccountCreate,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Create a new GL account for the company. Audited."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Only admins can create GL accounts")
+
+    valid_types = {"ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"}
+    if payload.account_type.upper() not in valid_types:
+        raise HTTPException(400, f"account_type must be one of: {', '.join(sorted(valid_types))}")
+
+    existing = db.query(AccountDB).filter(
+        AccountDB.company_id == current_user.company_id,
+        AccountDB.account_code == payload.account_code,
+    ).first()
+    if existing:
+        raise HTTPException(400, f"GL account with code '{payload.account_code}' already exists")
+
+    import uuid as _uuid
+    account = AccountDB(
+        id=str(_uuid.uuid4()),
+        company_id=current_user.company_id,
+        account_code=payload.account_code,
+        account_name=payload.account_name,
+        account_name_ar=payload.account_name_ar,
+        account_type=payload.account_type.upper(),
+        description=payload.description,
+        is_active=True,
+    )
+    db.add(account)
+    _log_audit_event(
+        db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        action="GL_ACCOUNT_CREATED",
+        resource_type="GL_ACCOUNT",
+        resource_id=account.id,
+        description=f"GL account created: {payload.account_code} — {payload.account_name}",
+        new_value=json.dumps({
+            "account_code": payload.account_code,
+            "account_name": payload.account_name,
+            "account_type": payload.account_type.upper(),
+        }),
+    )
+    db.commit()
+    return {
+        "success": True,
+        "id": account.id,
+        "account_code": account.account_code,
+        "account_name": account.account_name,
+        "account_type": account.account_type,
+        "is_active": account.is_active,
+    }
+
+
+@app.delete("/accounts/{account_id}", tags=["General Ledger"])
+def delete_account(
+    account_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Delete a GL account (Company Admin only). Audited."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Only admins can delete GL accounts")
+
+    account = db.query(AccountDB).filter(
+        AccountDB.id == account_id,
+        AccountDB.company_id == current_user.company_id,
+    ).first()
+    if not account:
+        raise HTTPException(404, "GL account not found")
+
+    snapshot = json.dumps({
+        "account_code": account.account_code,
+        "account_name": account.account_name,
+        "account_type": account.account_type,
+    })
+    db.delete(account)
+    _log_audit_event(
+        db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        action="GL_ACCOUNT_DELETED",
+        resource_type="GL_ACCOUNT",
+        resource_id=account_id,
+        description=f"GL account deleted: {account.account_code} — {account.account_name}",
+        old_value=snapshot,
+    )
+    db.commit()
+    return {"success": True, "message": "GL account deleted successfully"}
 
 
 @app.get("/journal-entries", tags=["General Ledger"])
@@ -12703,6 +12962,14 @@ def update_peppol_settings(
             400, f"Invalid provider. Must be one of: {', '.join(valid_providers)}"
         )
 
+    # Capture old values before update
+    old_peppol = json.dumps({
+        "peppol_enabled": company.peppol_enabled,
+        "peppol_provider": company.peppol_provider,
+        "peppol_participant_id": company.peppol_participant_id,
+        "peppol_base_url": company.peppol_base_url,
+    })
+
     # Update settings
     company.peppol_enabled = settings.get("peppol_enabled", False)
     company.peppol_provider = settings.get("peppol_provider")
@@ -12718,6 +12985,22 @@ def update_peppol_settings(
 
     company.peppol_configured_at = datetime.utcnow()
 
+    _log_audit_event(
+        db,
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        action="SETTINGS_UPDATED",
+        resource_type="SETTINGS",
+        resource_id="peppol",
+        description="PEPPOL settings updated",
+        old_value=old_peppol,
+        new_value=json.dumps({
+            "peppol_enabled": company.peppol_enabled,
+            "peppol_provider": company.peppol_provider,
+            "peppol_participant_id": company.peppol_participant_id,
+            "peppol_base_url": company.peppol_base_url,
+        }),
+    )
     db.commit()
     db.refresh(company)
 
@@ -12844,6 +13127,14 @@ def update_vat_settings(
     # Get VAT enabled status from request
     vat_enabled = settings.get("vat_enabled", False)
 
+    # Capture old state before any mutation
+    old_vat = json.dumps({
+        "vat_enabled": company.vat_enabled,
+        "trn": company.trn,
+        "vat_registration_date": company.vat_registration_date.isoformat()
+        if company.vat_registration_date else None,
+    })
+
     # If enabling VAT, validate TRN
     if vat_enabled:
         trn = settings.get("tax_registration_number", "").strip()
@@ -12874,6 +13165,22 @@ def update_vat_settings(
             # Use UTC datetime to ensure consistency across timezones
             company.vat_registration_date = datetime.utcnow().date()
 
+        _log_audit_event(
+            db,
+            company_id=current_user.company_id,
+            user_id=current_user.id,
+            action="SETTINGS_UPDATED",
+            resource_type="SETTINGS",
+            resource_id="vat",
+            description="VAT registration enabled",
+            old_value=old_vat,
+            new_value=json.dumps({
+                "vat_enabled": True,
+                "trn": company.trn,
+                "vat_registration_date": company.vat_registration_date.isoformat()
+                if company.vat_registration_date else None,
+            }),
+        )
         db.commit()
         db.refresh(company)
 
@@ -12891,6 +13198,17 @@ def update_vat_settings(
         # Disabling VAT - just set vat_enabled to False, keep TRN for records
         company.vat_enabled = False
 
+        _log_audit_event(
+            db,
+            company_id=current_user.company_id,
+            user_id=current_user.id,
+            action="SETTINGS_UPDATED",
+            resource_type="SETTINGS",
+            resource_id="vat",
+            description="VAT registration disabled",
+            old_value=old_vat,
+            new_value=json.dumps({"vat_enabled": False}),
+        )
         db.commit()
         db.refresh(company)
 
