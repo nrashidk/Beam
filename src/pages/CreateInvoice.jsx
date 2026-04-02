@@ -1295,7 +1295,6 @@ export default function CreateInvoice() {
                     <option value="EG">🇪🇬 Egypt</option>
                     <option value="JO">🇯🇴 Jordan</option>
                     <option value="LB">🇱🇧 Lebanon</option>
-                    <option value="OTHER">Other</option>
                   </select>
                 </div>
 

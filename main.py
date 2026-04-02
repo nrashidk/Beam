@@ -17,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Pydantic & FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from fastapi import (
     FastAPI,
     Request,
@@ -2131,6 +2131,15 @@ class InvoiceCreate(BaseModel):
     invoicing_period_end: Optional[str] = None
     principal_id: Optional[str] = None
     beneficiary_id: Optional[str] = None
+
+    @validator("customer_country", pre=True, always=True)
+    def validate_customer_country(cls, v: str) -> str:
+        code = (v or "AE").strip().upper()
+        if not (len(code) == 2 and code.isalpha()):
+            raise ValueError(
+                f"customer_country must be an ISO 3166-1 alpha-2 country code (e.g. 'AE', 'GB'). Got: '{v}'"
+            )
+        return code
 
 
 class InvoiceLineItemOut(BaseModel):
