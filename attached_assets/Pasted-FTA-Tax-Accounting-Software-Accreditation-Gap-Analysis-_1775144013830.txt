@@ -1,0 +1,755 @@
+FTA Tax Accounting Software Accreditation — Gap Analysis Report
+Platform: InvoLinks (involinks.ae) | Analysis Date: 2026-04-02
+CODEBASE OVERVIEW
+Layer	Technology
+Backend	Python / FastAPI (main.py, 17,650 lines)
+Frontend	React + Vite + Tailwind CSS
+Database	PostgreSQL (Neon), SQLAlchemy ORM
+Invoice XML	UBL 2.1 (utils/ubl_xml_generator.py)
+PDF	ReportLab (utils/pdf_invoice_generator.py)
+Crypto	cryptography library, RSA-2048 PSS (utils/crypto_utils.py)
+E-Delivery	PEPPOL (Tradeshift/Basware/Mock) (utils/peppol_provider.py)
+Audit File	FAF v1.0.0 CSV+SHA256+ZIP (utils/fta_audit_generator.py)
+VAT Utils	5 tax codes, 13-box return (utils/vat_utils.py)
+PART A — INVOICE REQUIREMENTS (UAE VAT Executive Regulations, Article 59)
+A-1. Mandatory Invoice Fields
+Supplier Name & Address
+✅ Present and compliant
+
+main.py:7233-7239 — create_invoice() populates supplier_name, supplier_address, supplier_city, supplier_country from company profile.
+PDF: pdf_invoice_generator.py:199-213 — rendered in the header block.
+UBL: ubl_xml_generator.py:176-219 — _add_supplier_party() with cac:PostalAddress.
+Supplier TRN
+✅ Present and compliant
+
+main.py:7129-7133 — enforced when vat_enabled=True: invoice creation blocked if TRN is absent.
+vat_utils.py:251-277 — is_valid_trn() validates 15-digit UAE TRN format.
+PDF: pdf_invoice_generator.py:218-220 — conditionally renders TRN / الرقم الضريبي: only if vat_enabled.
+UBL: ubl_xml_generator.py:187-215 — cac:PartyTaxScheme/cbc:CompanyID.
+Customer Name & Address
+✅ Present and compliant
+
+main.py:7244-7249 — customer fields captured at invoice creation.
+PDF: pdf_invoice_generator.py:357-391 — _create_billing_section().
+UBL: ubl_xml_generator.py:221-258 — _add_customer_party().
+Customer TRN (Full Tax Invoice ≥ AED 10,000)
+✅ Present and compliant
+
+vat_utils.py:300-332 — classify_invoice_type() auto-classifies: full (≥ AED 10,000), simplified (< AED 10,000), standard (non-VAT).
+main.py:735 — invoice_classification column stores classification.
+PDF: pdf_invoice_generator.py:380-389 — customer TRN shown if present, else (Non-VAT Registered Customer).
+Gap note: Customer TRN is optional (not enforced) even for full invoices — the system stores it if provided but does not block issuance when absent for invoices ≥ AED 10,000.
+Invoice Number (unique sequential)
+✅ Present and compliant
+
+main.py:7034-7088 — generate_invoice_number() generates sequential numbers per company.
+DB: migrations/2025_01_001_init_schema.sql:266 — invoice_number TEXT NOT NULL with index.
+Issue Date
+✅ Present and compliant
+
+main.py:7218, 7228 — issue_date field, stored as DATE.
+UBL: ubl_xml_generator.py:122-126 — cbc:IssueDate.
+Supply / Delivery Date
+✅ Present and compliant
+
+main.py:736 — supply_date = Column(Date, nullable=True) on InvoiceDB.
+Added via runtime migration: main.py:3002 — ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supply_date DATE.
+UBL: ubl_xml_generator.py:134-140 — cac:Delivery/cbc:ActualDeliveryDate emitted when supply_date present.
+Note: Not present in the baseline migrations/2025_01_001_init_schema.sql — added only through runtime ALTER TABLE at app startup.
+Invoice Type Code (380/381/383/480/81)
+✅ Present and compliant
+
+main.py:380-384 — enum InvoiceType: 380 (Tax Invoice), 381 (Credit Note), 383 (Debit Note), 480 (Commercial), 81 (Credit Note Out of Scope).
+UBL: ubl_xml_generator.py:143-153 — maps type to UBL cbc:InvoiceTypeCode.
+DB: migrations/2025_01_001_init_schema.sql:29 — invoice_type_t ENUM matches.
+Currency Code + Tax Currency (AED)
+✅ Present and compliant
+
+UBL: ubl_xml_generator.py:156-158 — cbc:DocumentCurrencyCode (document currency) + cbc:TaxCurrencyCode = 'AED' (always AED, FTA-compliant).
+DB: main.py:770 — total_amount_aed column stores AED equivalent for multi-currency.
+Subtotal (excl. VAT), VAT Amount, Total (incl. VAT)
+✅ Present and compliant
+
+vat_utils.py:107-176 — calculate_vat() with ROUND_HALF_UP, tax-exclusive default.
+vat_utils.py:207-248 — aggregate_invoice_vat() for multi-line.
+UBL: ubl_xml_generator.py:312-348 — cac:LegalMonetaryTotal with LineExtensionAmount, TaxExclusiveAmount, TaxInclusiveAmount, PayableAmount.
+PDF: pdf_invoice_generator.py:488-506 — _create_totals_section().
+Payment Terms / Due Date
+✅ Present and compliant
+
+main.py:735, 292 — due_date, payment_terms, payment_due_days columns.
+UBL: ubl_xml_generator.py:264-268 — cac:PaymentTerms/cbc:Note.
+Invoice Label ("TAX INVOICE" / "SIMPLIFIED TAX INVOICE")
+✅ Present and compliant
+
+vat_utils.py:335-361 — get_invoice_type_label() returns bilingual labels.
+PDF: pdf_invoice_generator.py:232-265 — conditional rendering based on VAT status and classification. Non-VAT businesses cannot use "TAX" label.
+Arabic translation: pdf_invoice_generator.py:273-279 — Arabic invoice type title rendered.
+A-2. Credit Notes & Debit Notes
+Credit Note (Type 381) with Preceding Invoice Reference
+✅ Present and compliant
+
+main.py:783-786 — preceding_invoice_id (FK to invoices) + credit_note_reason columns.
+UBL: ubl_xml_generator.py:170-174 — cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID populated from preceding_invoice_id.
+GL: main.py:1947-1974 — create_journal_entry_for_invoice() handles credit notes with reversed debit/credit entries.
+Debit Note (Type 383)
+✅ Present and compliant
+
+main.py:382 — DEBIT_NOTE = "383" in InvoiceType enum.
+UBL: ubl_xml_generator.py:149 — maps DEBIT type to UBL code 383.
+A-3. QR Code on Invoice
+⚠️ Partially present — content is non-compliant with FTA specification
+
+What exists:
+
+PDF: pdf_invoice_generator.py:160-188, 634-635 — QR code generated via qrcode library, printed on PDF.
+API: main.py:11134-11184 — GET /invoices/{id}/qr-code endpoint returning PNG.
+Frontend: src/components/InvoiceDeliveryActions.jsx:58 — QR image via external api.qrserver.com.
+What is missing:
+
+The QR code encodes a plain URL ({base_url}/invoices/view/{share_token}) pointing to the InvoLinks platform.
+The FTA specification (aligned with ZATCA Phase 1) requires the QR code to encode TLV (Tag-Length-Value) encoded fields in Base64, containing at minimum:
+Tag 1 — Seller name
+Tag 2 — Seller TRN
+Tag 3 — Invoice date/time (ISO 8601)
+Tag 4 — Invoice total (incl. VAT)
+Tag 5 — VAT amount
+A URL-only QR cannot be verified offline by an FTA auditor or scanner tool.
+No TLV encoding function exists anywhere in the codebase (Grep for TLV, tlv, ZATCA returns zero matches in utility files).
+PART B — XML / ELECTRONIC INVOICE REQUIREMENTS
+B-1. UBL 2.1 Structure
+✅ Present and compliant (structure)
+
+utils/ubl_xml_generator.py — Full UBL 2.1 document with correct namespaces (urn:oasis:names:specification:ubl:schema:xsd:Invoice-2, cac:, cbc:).
+All major blocks present: UBLVersionID, CustomizationID, ProfileID, ID, IssueDate, InvoiceTypeCode, DocumentCurrencyCode, TaxCurrencyCode, cac:AccountingSupplierParty, cac:AccountingCustomerParty, cac:TaxTotal, cac:LegalMonetaryTotal, cac:InvoiceLine.
+B-2. UAE PINT-AE CustomizationID
+⚠️ Partially present — uses generic PEPPOL BIS 3.0 ID, not UAE-specific PINT-AE ID
+
+What exists:
+
+ubl_xml_generator.py:100-113 — Hardcoded to:
+CustomizationID: urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0 (PEPPOL BIS 3.0)
+ProfileID: urn:fdc:peppol.eu:2017:poacc:billing:01:1.0
+What is missing:
+
+The UAE PINT-AE specification requires the CustomizationID to reference the UAE-specific profile: urn:peppol:pint:billing-1@ae-1 (or equivalent UAE-issued PINT-AE URN).
+The current ID is the generic EU/global PEPPOL BIS 3.0 identifier — an FTA validator will reject invoices with the wrong customization URN.
+B-3. Tax Category in XML (per Line Item and Header)
+⚠️ Partially present — tax category hardcoded to 'S' (Standard Rate) regardless of actual tax code
+
+What exists:
+
+ubl_xml_generator.py:296-304 — cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory/cbc:ID is hardcoded to 'S'.
+ubl_xml_generator.py:385-390 — cac:InvoiceLine/cac:Item/cac:ClassifiedTaxCategory/cbc:ID is also hardcoded to 'S'.
+What is missing:
+
+For zero-rated invoices (ZR), the category ID must be Z (not S) and Percent must be 0.00.
+For exempt invoices (ES), the category ID must be E and Percent must be absent/0.00.
+For reverse-charge (RC), the category ID must be AE.
+For out-of-scope (OP), the category ID must be O.
+The tax_category field exists on line items in the DB (TaxCategory enum: S, Z, E, O) and is passed to the XML generator in line_items_data, but the XML generator ignores it and hardcodes 'S'.
+B-4. XSD Validation of Generated XML
+⚠️ Not enforced at runtime
+
+What exists:
+
+ubl_xml_generator.py:7-8 — Comment: "XSD validation: Enable via UBL_XSD_PATH environment variable (requires full schema set)".
+ubl_xml_generator.py:404-444 — validate_invoice_data() performs field-level Python validation (required fields, amount math, TRN format) but not XSD validation against the UBL 2.1 schema.
+What is missing:
+
+No XSD validation code exists in the UBL generator or anywhere in the backend.
+No UBL 2.1 schema files exist in the repository (only utils/fta_vat_return_schema.xsd for the VAT return, not for the invoice).
+FTA accreditation typically requires demonstrable XSD validation against the PINT-AE schema before invoices are issued.
+B-5. XML Digital Signature (XMLdsig / XAdES)
+⚠️ Partially present — signature is detached (not embedded in XML), and uses self-signed keys
+
+What exists:
+
+utils/crypto_utils.py — RSA-2048 PSS signing, SHA-256 hash chain, X.509 certificate loading.
+main.py:10620-10757 — issue_invoice() generates invoice hash, XML hash, RSA signature, stores in DB columns (signature_b64, xml_hash, signing_cert_serial, signing_timestamp).
+Hash chain: links each invoice to previous via prev_invoice_hash.
+ubl_xml_generator.py:5-6 — Comment: "Canonicalization: For strict FTA compliance, apply C14N before signing".
+What is missing:
+
+The signature is NOT embedded in the XML as a ds:Signature element (XMLdsig standard). It is stored in a database column separately. An FTA validator inspecting the XML file will see no signature block.
+No C14N (XML Canonicalization) is applied before signing — required for XMLdsig compliance.
+The signing certificate is explicitly MOCK-CERT-001 in production code (main.py:10756): invoice.signing_cert_serial = "MOCK-CERT-001".
+crypto_utils.py:68-69, 205-207 — Falls back to mock signature if no private key is set. In dev mode (no SIGNING_PRIVATE_KEY_PEM env var), mock signatures are generated.
+The production guide (PRODUCTION_SIGNING_KEYS_SETUP.md) advises using self-signed OpenSSL certificates — not FTA-issued or FTA-CA certificates.
+PART C — VAT CALCULATION & TAX CODES
+C-1. Tax Code Support (SR / ZR / ES / RC / OP)
+✅ Present and compliant
+
+vat_utils.py:26-72 — All 5 UAE tax codes defined with rates, PEPPOL codes, Arabic names.
+vat_utils.py:75-85 — is_valid_tax_code() validation.
+vat_utils.py:107-176 — calculate_vat() with inclusive/exclusive modes, ROUND_HALF_UP.
+DB: main.py:339 (line items) — tax_code TEXT DEFAULT 'SR'.
+C-2. Standard Rate (5%)
+✅ Present and compliant
+
+vat_utils.py:27-36 — SR rate = Decimal('0.05').
+main.py:7267-7274 — VAT forced to zero / OP for non-VAT-enabled businesses.
+C-3. Zero-Rated (0%)
+✅ Present and compliant
+
+vat_utils.py:37-46 — ZR rate = Decimal('0.00'), taxable=True.
+main.py:380-384 — Captured in TaxCategory.ZERO enum.
+C-4. Exempt and Out-of-Scope
+✅ Present and compliant
+
+vat_utils.py:47-72 — ES and OP codes defined with rate=None, taxable=False.
+C-5. Reverse Charge (RC)
+⚠️ Partially present — modelled but VAT return categorization is ambiguous
+
+vat_utils.py:57-66 — RC code defined, rate = 5%, PEPPOL code = AE.
+main.py:1347-1350 — VAT return model has out_of_scope_sales and reverse_charge_sales as separate columns but they share the same TaxCategory.OUT_OF_SCOPE DB enum value.
+main.py:16238-16252 — VAT return generation uses TaxCategory.OUT_OF_SCOPE to populate Box 6 (out-of-scope / reverse-charge combined). Reverse charge VAT is tracked in reverse_charge_vat column but the FAF generator maps both RC and OOS to "OOS" tax code.
+There is no separate FTA-level differentiation between Out-of-Scope (OP) and Reverse Charge (RC) in the invoice tax breakdown table — they share the O DB enum.
+C-6. Invoice-Level Tax Breakdowns (per category)
+✅ Present and compliant
+
+DB: migrations/2025_01_001_init_schema.sql:347-355 — invoice_tax_breakdowns table stores per-category breakdown.
+main.py:16222-16261 — VAT return reads from InvoiceTaxBreakdownDB for accurate per-category reporting.
+PART D — VAT RETURN (FTA Form 301)
+D-1. 13-Box VAT Return Calculation
+✅ Present and compliant
+
+main.py:1321-1379 — VATReturnDB model with all 13 boxes as named columns.
+main.py:16165-16430 — POST /vat-return/generate computes all 13 boxes from live invoice data.
+vat_utils.py:364-397 — calculate_vat_return() utility.
+Box mapping: Box 1 (standard sales excl. VAT), Box 2 (tax refunds = credit/debit notes), Box 3 (output VAT), Box 4 (zero-rated sales), Box 5 (exempt), Box 6 (out-of-scope/RC), Box 7 (total supplies), Box 8 (std purchases), Box 9 (input VAT bills), Box 10 (expenses), Box 11 (input VAT expenses), Box 12 (total input VAT), Box 13 (net VAT payable/refundable).
+D-2. VAT Return Export (XLSX + XML)
+✅ Present and compliant
+
+main.py:16528-16700+ — GET /vat-return/{id}/export?format=xlsx generates a fully formatted openpyxl workbook titled "VAT Return FTA 301" with all 13 boxes.
+XML export supported as a separate format option in the same endpoint.
+utils/fta_vat_return_schema.xsd — XSD schema exists for the XML export format.
+Frontend: src/pages/VATReturn.jsx — dedicated UI page.
+D-3. VAT Return Period Validation
+✅ Present and compliant
+
+main.py:16186-16196 — Date validation: format check, start < end, end ≤ today.
+Draft/Cancelled invoices excluded from return computation.
+D-4. Electronic Submission to FTA EmaraTax Portal
+❌ Not found / needs to be built
+
+Searched for: FTA API, EmaraTax, e-services submission endpoint — zero matches.
+The system generates a local XML/XLSX for manual upload to the FTA portal. No programmatic API integration with FTA's EmaraTax system exists or is referenced in the codebase.
+This is an expected gap for most accredited accounting software (FTA does not publicly expose a real-time submission API for VAT returns as of 2026), but it should be documented.
+PART E — FTA AUDIT FILE (FAF)
+E-1. FAF v1.0.0 Format
+✅ Present and compliant
+
+utils/fta_audit_generator.py:25-28 — FAF_VERSION = "FAFv1.0.0".
+5-table structure: [CompanyData], [SalesData], [PurchaseData], [TaxData], [GeneralLedger] — all present with correct headers.
+File-level metadata: FAFVersion, TaxAgencyName, GeneratedDate.
+E-2. FAF CSV + SHA-256 Hash + ZIP
+✅ Present and compliant
+
+fta_audit_generator.py:156-193 — generate_faf_zip() produces ZIP containing {name}.csv + {name}.sha256.
+Hash file format: {sha256hex} {filename} (Unix cksum standard).
+API: main.py:14113-14200+ — POST /audit-files/generate with period validation, TRN check, active company check, up to 5-year period limit.
+E-3. TaxData Table — All 4 Categories Always Emitted
+✅ Present and compliant
+
+fta_audit_generator.py:452-482 — Always emits SR, ZR, EX, OOS rows even when amounts are zero (FTA spec requires all 4 categories).
+E-4. Multi-Currency in FAF — AED Conversion
+⚠️ Partially present — emits zeros for non-AED invoices without manual AED equivalent
+
+fta_audit_generator.py:304-326 — For non-AED invoices: if total_amount_aed is present, converts proportionally. If absent, emits 0.00 for all amounts in the FAF row.
+main.py:3029-3031 — total_amount_aed is backfilled only for AED invoices. Non-AED invoices require the user to manually supply the AED equivalent at invoice creation.
+No automated exchange rate lookup or FX rate table exists in the codebase.
+This means non-AED invoices in the FAF can show as zero-value lines — which is an audit data quality issue.
+PART F — DATA RETENTION & ARCHIVAL
+F-1. 5-Year Retention Policy
+✅ Present and compliant
+
+main.py:1695 — "Enables FTA 5-year retention guard on delete."
+main.py:3187-3199 — Startup check warns if invoices >5 years old are not yet archived.
+main.py:7789-7838 — POST /invoices/archive archives PAID/CANCELLED invoices older than configurable years_old (default: 5 years).
+main.py:8029-8119 — POST /admin/archive/fiscal-year archives by fiscal year.
+main.py:9754-9795 — Customer deletion blocked if invoices exist within 5-year retention window (HTTP 409).
+F-2. Archive Export & Restore
+✅ Present and compliant
+
+main.py:7901 — GET /invoices/archive/export (XLSX format).
+main.py:7976 — POST /invoices/{id}/restore from archive.
+src/pages/DataArchival.jsx — dedicated UI page.
+PART G — AUDIT TRAIL
+G-1. Audit Log with Immutability
+✅ Present and compliant
+
+main.py:1271-1297 — AuditLogDB with: action, resource_type, resource_id, old_value (JSON), new_value (JSON), ip_address, user_agent, created_at.
+main.py:3060-3113 — PostgreSQL BEFORE UPDATE + BEFORE DELETE triggers on audit_logs table raise exception 'Audit log records are immutable'. Idempotent installation at startup.
+main.py:1835-1870 — log_audit_event() — fire-and-forget helper, never raises.
+IP address captured: main.py:3405, 3418, 3479 — request.client.host at login, logout, and other sensitive actions.
+API: main.py:15921 — GET /audit-logs with pagination; main.py:16004 — GET /audit-logs/export.
+Frontend: src/pages/AuditTrail.jsx.
+G-2. Audit Events Logged
+✅ Present and compliant
+
+Confirmed events: USER_LOGIN, INVOICE_ISSUED, invoice status changes, VAT settings updates, team management, company approvals/rejections, password resets, MFA changes, archival events.
+Role-based access: FINANCE_USER cannot view/export audit logs (main.py:263-264).
+PART H — DIGITAL SIGNATURE & HASH CHAIN
+H-1. Invoice Hash Chain
+✅ Present and compliant
+
+main.py:10625-10663 — Finds immediate predecessor invoice (by issue_date + created_at), computes compute_invoice_hash() of predecessor, stores result as prev_invoice_hash on current invoice.
+crypto_utils.py:162-185 — Canonical hash covers: invoice_number, issue_date, supplier_trn, customer_trn, total_amount, tax_amount, prev_invoice_hash.
+Chain starts cleanly for first invoice (prev_invoice_hash = None).
+H-2. Invoice Digital Signature Storage
+⚠️ Partially present — detached signature, mock cert in production code
+
+See B-5 above. The signature infrastructure exists but is detached from the XML and the production cert serial is "MOCK-CERT-001".
+main.py:10756 — invoice.signing_cert_serial = "MOCK-CERT-001" is hardcoded, not reading from the actual loaded certificate.
+PART I — PEPPOL E-DELIVERY
+I-1. PEPPOL Provider Integration
+✅ Present and compliant (infrastructure)
+
+utils/peppol_provider.py — TradeshiftProvider, BaswareProvider, MockPeppolProvider, PeppolProviderFactory.
+API: main.py:7503 — POST /invoices/{id}/transmit-peppol; main.py:7615 — GET /invoices/{id}/peppol-status.
+DB: companies table has peppol_enabled, peppol_provider, peppol_participant_id, peppol_base_url, peppol_api_key.
+Frontend: src/pages/PEPPOLSettings.jsx.
+I-2. UAE PINT-AE PEPPOL Profile
+⚠️ Partially present — uses PEPPOL BIS 3.0, not PINT-AE-specific profile
+
+As noted in B-2, the XML uses the EU PEPPOL BIS 3.0 CustomizationID rather than the UAE-specific PINT-AE URN.
+No UAE-specific SMP (Service Metadata Provider) or PEPPOL APN (Access Point Network) registration is configured or referenced.
+Scheme ID 0195 is used in cbc:EndpointID — this is the correct UAE TRN scheme for PEPPOL UAE.
+I-3. PEPPOL Transmission Tracking
+✅ Present and compliant
+
+DB columns: peppol_message_id, peppol_status, peppol_provider, peppol_sent_at, peppol_response on both invoices and inward_invoices tables.
+peppol_usage table tracks per-invoice PEPPOL usage for billing.
+PART J — ACCOUNTS PAYABLE / INWARD INVOICES
+J-1. AP Inbox (Inward Invoice Capture)
+✅ Present and compliant
+
+migrations/2025_01_001_init_schema.sql:453-505 — Full inward_invoices table with supplier TRN, amounts, status workflow (RECEIVED → PENDING_REVIEW → MATCHED → APPROVED → REJECTED → PAID → DISPUTED).
+Frontend: src/pages/APInbox.jsx.
+J-2. 3-Way PO Matching (PO / GRN / Invoice)
+✅ Present and compliant
+
+DB: purchase_orders, goods_receipts, purchase_order_line_items, goods_receipt_line_items tables — all present with FK linkages.
+inward_invoices.matching_status — NOT_MATCHED, PARTIAL_MATCH, FULL_MATCH, VARIANCE_DETECTED.
+inward_invoices.po_match_score, grn_match_score, amount_variance, quantity_variance.
+Frontend: src/pages/POList.jsx, src/components/PODetailModal.jsx.
+PART K — GENERAL LEDGER
+K-1. Automatic Journal Entry Creation
+✅ Present and compliant
+
+main.py:1926-1993 — create_journal_entry_for_invoice() auto-creates double-entry GL journals on invoice issuance. AR debit, Revenue credit, VAT Payable credit.
+main.py:1995-2060+ — create_journal_entry_for_purchase() for inward invoices. AP credit, Expense debit, VAT Receivable debit.
+Chart of accounts: main.py:1876-1884 — 7 system
+I now have all the information needed for the comprehensive gap analysis. Let me compile the full report.
+
+UAE FTA TAX ACCOUNTING SOFTWARE (TAS) ACCREDITATION GAP ANALYSIS
+InvoLinks / Beam Codebase — Audit Date: 2026-04-02
+Platform: FastAPI (Python) backend + React/Vite frontend
+Database: PostgreSQL (Neon)
+Key files: main.py (17,650 lines), utils/*, src/pages/*, migrations/
+
+SECTION 1 — INVOICE MANDATORY FIELDS & CLASSIFICATION
+1.1 Supplier TRN on Tax Invoice
+✅ Present and compliant
+
+utils/vat_utils.py:251–277 — is_valid_trn() validates exactly 15 digits via regex ^\d{15}$
+main.py:7128–7133 — TRN is required when vat_enabled=True; blocks invoice creation without it
+utils/pdf_invoice_generator.py:217–221 — TRN displayed conditionally only for VAT-registered businesses (correct: non-VAT businesses must NOT use TRN/TAX labels per FTA rules)
+utils/ubl_xml_generator.py:188–215 — TRN embedded in cac:PartyTaxScheme/cbc:CompanyID and cac:PartyIdentification/cbc:ID with schemeID="TRN"
+1.2 Invoice Type Classification (Full / Simplified / Standard)
+✅ Present and compliant
+
+utils/vat_utils.py:300–332 — classify_invoice_type() uses AED 10,000 threshold:
+≥ AED 10,000 + VAT-registered → Full Tax Invoice (requires both supplier & customer TRN)
+< AED 10,000 + VAT-registered → Simplified Tax Invoice (supplier TRN only)
+Non-VAT business → Standard Invoice (no TRN, no "TAX" label)
+utils/pdf_invoice_generator.py:228–265 — bilingual invoice type rendered on PDF: "FULL TAX INVOICE" / "فاتورة ضريبية كاملة", "SIMPLIFIED TAX INVOICE" / "فاتورة ضريبية مبسطة", etc.
+invoice_classification column stored in invoices table (migrations/2025_01_001_init_schema.sql:285)
+1.3 Invoice Type Codes (380, 381, 383, 480)
+✅ Present and compliant
+
+main.py:379–384 — InvoiceType enum:
+TAX_INVOICE = "380", TAX_CREDIT_NOTE = "381", DEBIT_NOTE = "383", COMMERCIAL_INVOICE = "480", CREDIT_NOTE_OUT_OF_SCOPE = "81"
+utils/ubl_xml_generator.py:143–153 — maps to UBL InvoiceTypeCode correctly
+invoice_type_t enum in DB schema (migrations/2025_01_001_init_schema.sql:29)
+1.4 Credit Note Mandatory Reference to Original Invoice
+✅ Present and compliant
+
+main.py:2605–2606 — preceding_invoice_id and credit_note_reason fields in InvoiceCreate schema
+utils/ubl_xml_generator.py:170–174 — cac:BillingReference / cac:InvoiceDocumentReference correctly populated
+migrations/2025_01_001_init_schema.sql:295–296 — preceding_invoice_id FK to invoices.id and credit_note_reason in DB schema
+1.5 Supply / Delivery Date (cac:Delivery/cbc:ActualDeliveryDate)
+✅ Present and compliant
+
+main.py:736 — supply_date = Column(Date, nullable=True) in InvoiceDB
+main.py:3002 — ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supply_date DATE runtime migration
+utils/ubl_xml_generator.py:135–140 — renders cac:Delivery / cbc:ActualDeliveryDate in XML when present
+main.py:7220 — parsed and stored on invoice creation; main.py:10670 — included in XML generation data
+1.6 Customer TRN on Full Tax Invoice
+✅ Present and compliant
+
+utils/ubl_xml_generator.py:233–237 — customer TRN in cac:PartyIdentification / cbc:ID with schemeID="TRN"
+utils/pdf_invoice_generator.py:380–389 — displayed in billing section; falls back to "(Non-VAT Registered Customer)" if absent
+migrations/2025_01_001_init_schema.sql:279 — customer_trn column in invoices table
+1.7 All Standard Mandatory Invoice Fields
+✅ Present and compliant
+Verified in migrations/2025_01_001_init_schema.sql:262–319 and utils/ubl_xml_generator.py:116–174:
+
+Invoice number, issue date, due date — present
+Supplier and customer name, address, country — present
+Currency code — present (AED default, TaxCurrencyCode always AED)
+Line items: description, quantity, unit code, unit price, tax %, line total — present in invoice_line_items table
+Subtotal (excl. VAT), VAT amount, total (incl. VAT) — present
+Payment terms and reference number — present
+SECTION 2 — TAX CODES & CALCULATIONS
+2.1 UAE Tax Code Definitions (SR / ZR / ES / RC / OP)
+✅ Present and compliant
+
+utils/vat_utils.py:26–72 — UAE_TAX_CODES dict with all 5 codes:
+SR (5%), ZR (0%), ES (None/exempt), RC (5% reverse charge), OP (out of scope)
+Each entry includes Arabic name, PEPPOL code, Oracle code
+utils/vat_utils.py:75–85 — is_valid_tax_code() validation function
+2.2 VAT Calculation Accuracy (ROUND_HALF_UP to 2 decimal places)
+✅ Present and compliant
+
+utils/vat_utils.py:107–176 — calculate_vat() uses Decimal arithmetic with ROUND_HALF_UP to 0.01
+Tax-inclusive and tax-exclusive modes both supported
+utils/vat_utils.py:179–248 — calculate_line_item_vat() and aggregate_invoice_vat() aggregate by tax code
+main.py:7266–7304 — line item creation applies calculate_line_item_totals() correctly
+2.3 VAT Breakdown by Tax Category on Invoice
+✅ Present and compliant
+
+invoice_tax_breakdowns table in schema (migrations/2025_01_001_init_schema.sql:347–356) — stores per-category tax breakdown (taxable_amount, tax_percent, tax_amount) per invoice
+tax_category_t enum: S (standard), Z (zero), E (exempt), O (out-of-scope)
+Line items have tax_category, tax_percent, tax_code columns
+2.4 VAT Calculation for Non-VAT Businesses
+✅ Present and compliant
+
+main.py:7267–7274 — when vat_enabled=False, all line items forced to TaxCategory.OUT_OF_SCOPE, tax_percent=0.0, tax_code="OP" — prevents VAT label abuse for non-registered businesses
+SECTION 3 — UBL XML & E-INVOICING
+3.1 UBL 2.1 Namespace and Structure
+✅ Present and compliant
+
+utils/ubl_xml_generator.py:21–25 — correct UBL 2.1 namespaces (Invoice-2, CommonAggregateComponents-2, CommonBasicComponents-2)
+utils/ubl_xml_generator.py:97–99 — UBLVersionID = "2.1"
+Full UBL structure: header, supplier party, customer party, payment terms, tax total, monetary total, invoice lines
+3.2 TaxCurrencyCode Always AED
+✅ Present and compliant
+
+utils/ubl_xml_generator.py:159 — TaxCurrencyCode hardcoded to 'AED' regardless of invoice currency (correct per FTA requirements)
+3.3 PEPPOL BIS CustomizationID
+⚠️ Partially present — incorrect UAE PINT-AE ID
+
+What exists: utils/ubl_xml_generator.py:100–114 — CustomizationID is set to:
+'urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0'
+and ProfileID to 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0'
+What is missing: The UAE PINT-AE specification requires a UAE-specific customization ID:
+urn:peppol:pint:billing-1@ae-1
+and profile urn:peppol:bis:billing
+The current IDs are the pan-European BIS 3.0 identifiers, not the UAE PINT-AE identifiers. An FTA-accredited Access Point validator running UAE PINT-AE rules would reject these.
+3.4 UBL Tax Category for Non-Standard-Rate Lines
+⚠️ Partially present — hardcoded to Standard Rate only
+
+What exists: utils/ubl_xml_generator.py:296–304 (_add_tax_total()) and :385–389 (_add_invoice_lines()) — both hardcode tax category ID to 'S' (Standard Rate, 5%) for every invoice
+What is missing: For zero-rated lines (tax code ZR → category Z), exempt lines (ES → E), reverse charge (RC → AE), or out-of-scope (OP → O), the UBL XML emits <cbc:ID>S</cbc:ID> with the computed percent, which is schema-invalid. Zero-rated invoices would show <cbc:ID>S</cbc:ID> with <cbc:Percent>0.00</cbc:Percent> instead of <cbc:ID>Z</cbc:ID>. This is a material UBL compliance defect.
+The line_items_data dictionary passed to the generator includes tax_category (e.g. "S", "Z", "E", "O") but the generator ignores it
+3.5 XSD Validation of Generated UBL XML
+⚠️ Partially present — commented out / optional only
+
+What exists: utils/ubl_xml_generator.py:9 — comment: "XSD validation: Enable via UBL_XSD_PATH environment variable (requires full schema set)"
+What is missing: No actual XSD validation code was found in the generator. The generated XML is stored and transmitted without formal validation against UBL 2.1 Invoice XSD or PINT-AE Schematron rules. FTA accreditation requires verifiable schema compliance.
+3.6 Digital Signature — RSA-2048 Computation
+⚠️ Partially present — signature not embedded in XML
+
+What exists:
+utils/crypto_utils.py:187–231 — RSA-2048 PSS signature with SHA-256, using private key from SIGNING_PRIVATE_KEY_PEM env var
+utils/crypto_utils.py:162–185 — compute_invoice_hash() SHA-256 of canonical fields
+main.py:10751–10756 — signature computed and stored in invoice.signature_b64 + invoice.signing_cert_serial columns
+utils/pdf_invoice_generator.py:538–553 — "✓ Digitally Signed" indicator with cert serial and timestamp shown on PDF
+What is missing:
+The signature is stored in a database column and shown on the PDF footer, but is NOT embedded as an XMLdsig enveloped/detached signature within the UBL XML file itself. FTA compliance typically requires ds:Signature within the XML.
+main.py:10756 hardcodes signing_cert_serial = "MOCK-CERT-001" — mock certificate serial is written to production records.
+Keys are self-generated/self-signed PEM files, not certificates from an FTA-accredited Certificate Authority.
+utils/crypto_utils.py:67–69 — when no private key is configured, falls back to "MOCK-SIGNATURE-" prefixed mock signatures silently.
+3.7 Hash Chain (Invoice Linking)
+✅ Present and compliant
+
+main.py:10625–10663 — on each invoice issuance, SHA-256 of the previous non-draft invoice's canonical fields is computed and stored in prev_invoice_hash
+utils/crypto_utils.py:162–185 — canonical hash includes: invoice_number, issue_date, supplier_trn, customer_trn, total_amount, tax_amount, prev_invoice_hash (recursive)
+utils/crypto_utils.py:300–317 — verify_hash_chain() allows chain integrity verification
+main.py:14467 — POST /audit-files/verify endpoint for verification
+SECTION 4 — QR CODE
+4.1 QR Code Generation
+⚠️ Partially present — wrong content format
+
+What exists: QR codes are generated in three places:
+utils/pdf_invoice_generator.py:160–188 — generate_qr_code(), embedded in PDF; encodes the public_url (share link)
+main.py:11134–11184 — GET /invoices/{id}/qr-code, encodes {base_url}/invoices/view/{share_token}
+src/components/InvoiceDeliveryActions.jsx:58 — frontend generates QR via third-party qrserver.com API using the public URL
+What is missing: The FTA e-invoicing specification requires QR codes to encode a TLV (Tag-Length-Value) Base64-encoded data structure containing exactly 5 fields:
+Tag 1: Seller Name
+Tag 2: Seller VAT Registration Number (TRN)
+Tag 3: Invoice Issue Date and Time (ISO 8601)
+Tag 4: Invoice Total (incl. VAT)
+Tag 5: VAT Total
+The current implementation encodes only a web URL. FTA auditors and taxpayer apps cannot independently verify the invoice from the QR code without internet access. This is a critical compliance gap for VAT-registered businesses issuing tax invoices.
+SECTION 5 — VAT RETURN (FTA FORM 301)
+5.1 13-Box VAT Return Computation
+✅ Present and compliant
+
+main.py:1321–1379 — VATReturnDB model with all 13 FTA Form 301 boxes:
+Box 1: Standard-rated sales (excl. VAT)
+Box 2: Tax adjustments (credit/debit notes)
+Box 3: Output VAT (5%)
+Box 4: Zero-rated supplies
+Box 5: Exempt supplies
+Box 6: Out-of-scope/reverse-charge supplies
+Box 7: Total supplies
+Box 8–11: Input VAT on purchases and expenses
+Box 12: Total input VAT
+Box 13: Net VAT payable/(refundable)
+main.py:16165–16432 — /vat-return/generate endpoint correctly aggregates from InvoiceTaxBreakdownDB and InwardInvoiceLineItemDB
+Fallback when no breakdowns: uses invoice-level amounts
+5.2 VAT Return Export (XLSX + XML)
+✅ Present and compliant
+
+main.py:16528–16700+ — GET /vat-return/{return_id}/export?format=xlsx generates a formatted openpyxl workbook labeled "VAT Return FTA 301" with all 13 boxes
+XML format also supported, validated against utils/fta_vat_return_schema.xsd (an internally authored XSD aligned with Form 301 field structure)
+Export includes SoftwareName, SoftwareVersion, VendorTRN metadata required for FTA accreditation audit trail
+5.3 VAT Return Box 2 — Tourist Refund Scheme
+⚠️ Partially present — incorrect mapping
+
+What exists: main.py:16307–16325 — Box 2 is populated from credit notes (type 381) and debit notes (type 383)
+What is missing: FTA Form 301 Box 2 is specifically for VAT refunds issued under the Tourist Refund Scheme (operated by Planet/Global Blue), not for credit/debit note adjustments. Credit note adjustments should reduce Box 1 (standard-rated sales) or be captured via Box 3 output VAT reduction. This mapping will cause incorrect Box 2 values for businesses that use credit notes — a potential issue at the time of FTA return filing.
+No Tourist Refund Scheme API integration or tracking data model exists.
+5.4 Direct EmaraTax Submission
+❌ Not found / needs to be built
+
+Searched for: FTA portal API, EmaraTax, tax.gov.ae, VAT return submission endpoint
+No direct integration with the FTA's EmaraTax web portal for electronic VAT return submission was found
+The system generates a local XLSX/XML file that the user must manually upload to EmaraTax
+For full FTA accreditation as a TAS, a machine-to-machine integration endpoint with the FTA portal is expected by accreditors to be documented (even if not mandatory for on-premise software)
+SECTION 6 — FTA AUDIT FILE (FAF)
+6.1 FAF Generation (5-Table Structure)
+✅ Present and compliant
+
+utils/fta_audit_generator.py — FTAAuditFileGenerator implements all 5 required tables:
+[CompanyData] — TRN, legal name, registration date, emirate, period, software name/version
+[SalesData] — all outgoing invoices with CustomerTRN, amounts, currency, tax code, status
+[PurchaseData] — all inward invoices with SupplierTRN, amounts
+[TaxData] — all 4 tax categories always present (SR, ZR, EX, OOS) with net VAT due
+[GeneralLedger] — journal entry lines with account codes
+FAF v1.0.0 version string, software name, generation date in header
+main.py:14113 — POST /audit-files/generate with period validation (not in future, ≤5 years, after registration date)
+6.2 FAF SHA-256 Integrity + ZIP Archive
+✅ Present and compliant
+
+utils/fta_audit_generator.py:172–193 — CSV content hashed with SHA-256; both .csv and .sha256 files packed into a ZIP archive
+File name format: FTA_FAF_{TRN}_{period_start}_to_{period_end}.zip
+main.py:14422 — download endpoint returns the ZIP file
+main.py:14467 — POST /audit-files/verify endpoint for integrity verification
+6.3 FAF Multi-Currency AED Conversion
+⚠️ Partially present — emits zeros for unknown rates
+
+What exists: utils/fta_audit_generator.py:304–326 — for non-AED invoices with total_amount_aed populated, the AED equivalent is computed via ratio and reported; Currency column in FAF is always "AED" (correct)
+What is missing: When total_amount_aed is NULL for a non-AED invoice (which is the common case as there is no exchange rate system), the generator emits 0.00 for all amount fields with a comment "Missing AED conversion — emit zeros to avoid reporting foreign-currency amounts as AED". This produces incomplete/inaccurate FAF rows for any multi-currency invoice where the user didn't manually enter the AED equivalent. No exchange rate management table or UAECentralBank API integration exists.
+SECTION 7 — DATA RETENTION & ARCHIVAL
+7.1 5-Year Record Retention (FTA Requirement)
+✅ Present and compliant
+
+main.py:3187–3199 — startup check warns if invoices older than 5 years are not archived
+main.py:7789–7838 — POST /invoices/archive with default cutoff of 5 years
+main.py:9754 — FTA 5-year retention guard blocks customer deletion if they have invoices within the last 5 years: "Check whether this customer has any sales invoices within the FTA 5-year retention window. Returns HTTP 409 if..."
+main.py:7901 — GET /invoices/archive/export for exporting archived records
+main.py:7976 — POST /invoices/{id}/restore for restoring archived invoices
+7.2 Immutable Audit Trail
+✅ Present and compliant
+
+main.py:3060–3113 — PostgreSQL BEFORE UPDATE and BEFORE DELETE triggers on audit_logs table raise 'Audit log records are immutable' — enforced at DB level, not just application level
+Trigger is idempotent and skipped on non-PostgreSQL dialects (SQLite for tests)
+main.py:1271 — AuditLogDB model: company_id, user_id, action, resource_type, resource_id, old_value, new_value, description, ip_address, user_agent, created_at
+main.py:1835–1870 — log_audit_event() helper; fire-and-forget, non-fatal
+7.3 Audit Trail Coverage (Login, Invoice Events, VAT Events)
+✅ Present and compliant
+
+Login events with IP address: main.py:3405, 3418, 3479, 3588, 3643, 3667, 3704, 3819
+Invoice issued: main.py:10770–10777 — INVOICE_ISSUED with old/new status
+Invoice status changes: Multiple locations
+Customer delete blocked: main.py:9779, 9795, 9849, 9865 — with IP address logged
+VAT return generation: logged to audit trail
+main.py:15921 — GET /audit-logs endpoint with filtering
+main.py:16004 — GET /audit-logs/export for export
+main.py:16139 — GET /audit-logs/actions lists all action types
+SECTION 8 — PEPPOL / E-INVOICE TRANSMISSION
+8.1 PEPPOL Network Integration
+✅ Present and compliant (infrastructure)
+
+utils/peppol_provider.py — PeppolProviderFactory supporting Tradeshift, Basware, Mock providers
+main.py:7503 — POST /invoices/{id}/transmit-peppol — generates UBL XML and transmits
+main.py:7615 — GET /invoices/{id}/peppol-status — status polling
+migrations/2025_01_001_init_schema.sql:133–140 — company-level PEPPOL settings: peppol_enabled, peppol_provider, peppol_participant_id, peppol_base_url, peppol_api_key
+migrations/2025_01_001_init_schema.sql:588–599 — peppol_usage table for billing/metering PEPPOL transmissions
+src/pages/PEPPOLSettings.jsx — UI for PEPPOL configuration
+8.2 PEPPOL UAE PINT-AE ProfileID & CustomizationID
+⚠️ Partially present (see also item 3.3 above)
+
+The ProfileID urn:fdc:peppol.eu:2017:poacc:billing:01:1.0 is the European BIS 3.0 profile, not the UAE PINT-AE profile. UAE PINT-AE uses different URNs.
+No UAE-specific Service Metadata Publisher (SMP) or PEPPOL Authority Network Provider (APN) configuration is present.
+The peppol_participant_id stores TRN-derived IDs (company.trn[:10] at main.py:7241) rather than formal PEPPOL participant IDs (which follow 0195: scheme for UAE).
+8.3 AP Inbox (Inward Invoice Reception)
+✅ Present and compliant
+
+migrations/2025_01_001_init_schema.sql:453–530 — full inward_invoices and inward_invoice_line_items tables
+src/pages/APInbox.jsx — frontend AP Inbox for managing received invoices
+src/components/InwardInvoiceDetailModal.jsx — detail view with matching status
+3-way matching: po_id, grn_id, matching_status, po_match_score, grn_match_score fields in inward_invoices
+SECTION 9 — SECURITY & ACCESS CONTROL
+9.1 Role-Based Access Control (RBAC)
+✅ Present and compliant
+
+main.py:155–300 — RBAC matrix with 5 roles: SUPER_ADMIN, COMPANY_ADMIN, BUSINESS_ADMIN, FINANCE_USER, READ_ONLY
+Granular resource/action permissions: invoices, inward_invoices, reports, vat_return, audit_logs, team, settings, gl, archival, customers
+main.py:has_permission() enforced at every sensitive endpoint
+9.2 Multi-Factor Authentication (TOTP)
+✅ Present and compliant
+
+utils/mfa_utils.py — TOTP secret generation, QR code for authenticator apps, backup codes
+src/pages/MFASettings.jsx, src/components/MFAEnrollmentWizard.jsx, src/components/MFAVerificationModal.jsx — full frontend flow
+Per-user and per-company MFA settings in DB schema
+main.py:4756 — /auth/mfa/setup endpoint returns QR code URI
+9.3 Password Expiry & Account Lockout
+✅ Present and compliant
+
+main.py:1748 — PASSWORD_EXPIRY_WARNING_DAYS = 14; configurable via env var
+main.py:1745 — MAX_FAILED_LOGINS and LOCKOUT_MINUTES = 30
+main.py:467–474 — lockout fields in UserDB: failed_login_attempts, locked_until
+main.py:2125–2138 — lockout enforcement in authenticate_user()
+main.py:1780 — _check_password_expiry() function
+src/components/PasswordExpiryBanner.jsx — UI warning banner
+9.4 JWT Session Control
+✅ Present and compliant
+
+main.py:124–125 — _jwt_expiry_hours configurable via JWT_EXPIRY_HOURS env var, min 15 minutes
+Annotated as "FTA Article 9.1 session control"
+9.5 CORS Configuration
+⚠️ Partially present — wildcard CORS is insecure
+
+main.py:2964–2970 — allow_origins=["*"] with allow_credentials=True
+Gap: Combining wildcard origins with allow_credentials=True is explicitly prohibited by the CORS specification (browsers reject it) and poses a security risk for a financial platform. For FTA accreditation, the production deployment must restrict CORS to known domains (e.g., https://involinks.ae).
+9.6 API Rate Limiting
+❌ Not found / needs to be built
+
+No rate-limiting middleware (e.g., SlowAPI, FastAPI-Limiter) was found anywhere in main.py or the application stack.
+Authentication endpoints (/auth/login), which are brute-force targets, have only DB-level lockout (after N failed attempts) but no IP-level or time-window-based rate limiting at the HTTP layer. FTA security requirements for TAS accreditation include protection against brute-force and abuse.
+SECTION 10 — GENERAL LEDGER & FINANCIAL REPORTING
+10.1 Automatic GL Journal Entry on Invoice Issuance
+✅ Present and compliant
+
+main.py:1926 — create_journal_entry_for_invoice() called at invoice issuance (main.py:10762–10766)
+Creates double-entry: Dr. Accounts Receivable / Cr. Sales Revenue + Cr. VAT Payable
+Handles credit notes with reversed entries
+main.py:1876–1883 — default chart of accounts: 1000 Cash/Bank, 1100 AR, 1200 VAT Receivable, 2100 AP, 2200 VAT Payable, 3000 Sales Revenue, 4000 COGS
+src/pages/GeneralLedger.jsx, src/pages/GLJournalEntries.jsx, src/pages/GLTrialBalance.jsx — frontend views
+10.2 Periodic Financial Reporting
+✅ Present and compliant
+
+main.py:8789 — GET /reports/periodic — periodic P&L summary
+main.py:8886 — GET /reports/periodic/export — export
+main.py:9198 — GET /reports/adhoc — ad hoc reporting
+main.py:9872 — GET /reports/daily-reconciliation — daily reconciliation
+src/pages/PeriodicReport.jsx, src/pages/DailyReconciliation.jsx, src/pages/AdvancedAnalytics.jsx
+SECTION 11 — MULTI-CURRENCY
+11.1 Multi-Currency Invoice Support
+✅ Present and compliant (data model)
+
+migrations/2025_01_001_init_schema.sql:270 — currency_code column in invoices
+migrations/2025_01_001_init_schema.sql — total_amount_aed DOUBLE PRECISION in both invoices and inward_invoices
+main.py:600 — allow_multi_currency subscription plan flag
+utils/ubl_xml_generator.py:156–159 — DocumentCurrencyCode from invoice + TaxCurrencyCode always AED
+11.2 Exchange Rate Management
+❌ Not found / needs to be built
+
+No exchange rate table, no Central Bank of UAE (CBUAE) rate integration, and no currency conversion API were found.
+The total_amount_aed field must be manually entered by the user at invoice creation.
+For multi-currency invoices in the FAF, if total_amount_aed is null, all amounts are emitted as 0.00 (per fta_audit_generator.py:319–323).
+FTA requires all VAT reporting in AED. For auditability, the exchange rate used and its source should be recorded. This is a gap for companies frequently invoicing in foreign currencies.
+SECTION 12 — BILINGUAL (ARABIC / ENGLISH) SUPPORT
+12.1 Arabic Invoice Labels on PDF
+✅ Present and compliant
+
+utils/pdf_invoice_generator.py:37–49 — Amiri Arabic font loaded via arabic_reshaper + bidi; falls back gracefully to Helvetica if unavailable
+utils/pdf_invoice_generator.py:232–278 — all invoice type labels bilingual: "TAX INVOICE" / "فاتورة ضريبية", "CREDIT NOTE" / "إشعار دائن", "DEBIT NOTE" / "إشعار مدين"
+utils/pdf_invoice_generator.py:280–306 — invoice number, date, due date displayed in both English and Arabic with right-to-left alignment
+utils/vat_utils.py:29–70 — Arabic names for all tax codes in UAE_TAX_CODES
+SUMMARY TABLE
+#	Requirement	Status	File(s) / Note
+1.1	Supplier TRN validation (15-digit)	✅	vat_utils.py:251, main.py:7129
+1.2	Full / Simplified / Standard classification	✅	vat_utils.py:300, PDF generator
+1.3	Invoice type codes 380/381/383/480	✅	main.py:379, UBL generator
+1.4	Credit note linked to original	✅	ubl_xml_generator.py:170
+1.5	Supply/delivery date in UBL	✅	ubl_xml_generator.py:135, main.py:736
+1.6	Customer TRN on full tax invoice	✅	ubl_xml_generator.py:233
+1.7	All mandatory invoice fields	✅	DB schema, UBL generator
+2.1	Tax codes (SR/ZR/ES/RC/OP)	✅	vat_utils.py:26
+2.2	VAT calculations (Decimal ROUND_HALF_UP)	✅	vat_utils.py:107
+2.3	Per-category tax breakdown	✅	invoice_tax_breakdowns table
+3.1	UBL 2.1 structure + namespaces	✅	ubl_xml_generator.py:21
+3.2	TaxCurrencyCode always AED	✅	ubl_xml_generator.py:159
+3.3	PEPPOL UAE PINT-AE CustomizationID	⚠️	Uses EU BIS 3.0 ID, not urn:peppol:pint:billing-1@ae-1
+3.4	UBL tax category per line item	⚠️	Hardcoded 'S' at lines 297, 386 — incorrect for ZR/ES/RC/OP invoices
+3.5	XSD validation of UBL XML	⚠️	Commented out; no enforcement at runtime
+3.6	Digital signature embedded in XML (XMLdsig)	⚠️	Stored in DB column only; not in XML file; mock cert serial hardcoded
+3.7	Hash chain (prev_invoice_hash)	✅	main.py:10625, crypto_utils.py:162
+4.1	QR code — TLV format (Seller Name/TRN/Date/Total/VAT)	⚠️	Encodes URL only, not FTA TLV Base64 structure
+5.1	13-box VAT Return (Form 301)	✅	main.py:1321, /vat-return/generate
+5.2	VAT Return XLSX + XML export	✅	main.py:16528, fta_vat_return_schema.xsd
+5.3	Box 2 — Tourist Refund Scheme	⚠️	Mapped to credit/debit notes, not tourist refund scheme
+5.4	Direct EmaraTax portal submission	❌	Manual upload only; no API integration with tax.gov.ae
+6.1	FAF 5-table structure + v1.0.0	✅	fta_audit_generator.py
+6.2	FAF SHA-256 + ZIP integrity	✅	fta_audit_generator.py:172
+6.3	FAF multi-currency AED conversion	⚠️	Emits 0.00 for non-AED invoices with no rate; no exchange rate system
+7.1	5-year record retention guard	✅	main.py:9754, archival endpoints
+7.2	Immutable audit trail (DB triggers)	✅	main.py:3060–3113
+7.3	Audit trail event coverage + IP	✅	main.py:3405, log_audit_event()
+8.1	PEPPOL transmission (Tradeshift/Basware)	✅	peppol_provider.py, /transmit-peppol
+8.2	PEPPOL UAE SMP/APN registration	⚠️	No UAE-specific SMP or APN configured
+8.3	AP Inbox / inward invoice reception	✅	inward_invoices schema, APInbox page
+9.1	RBAC (5 roles, granular permissions)	✅	main.py:155–300
+9.2	TOTP MFA	✅	mfa_utils.py, MFA pages
+9.3	Password expiry + account lockout	✅	main.py:1745, 1748
+9.4	JWT session control (FTA Art. 9.1)	✅	main.py:124
+9.5	CORS restriction (not wildcard)	⚠️	allow_origins=["*"] + allow_credentials=True
+9.6	API rate limiting	❌	No HTTP-layer rate limiting found
+10.1	Automatic GL journal entries	✅	main.py:1926
+10.2	Periodic/adhoc/reconciliation reports	✅	/reports/* endpoints
+11.1	Multi-currency data model	✅	total_amount_aed column
+11.2	Exchange rate management	❌	No rate table, no CBUAE API; manual entry only
+12.1	Bilingual Arabic/English PDF	✅	pdf_invoice_generator.py:37, 232
+PRIORITISED GAP REMEDIATION PLAN
+Critical (blocks FTA accreditation)
+QR code TLV encoding — Implement a build_fta_qr_tlv(seller_name, trn, datetime, total, vat_total) function that produces the 5-field TLV Base64 blob per FTA specification. Inject into PDFInvoiceGenerator.generate_qr_code() instead of the share URL, and update the API endpoint at main.py:11165. Affects: every tax invoice PDF and QR endpoint.
+
+UBL tax category per line item — In ubl_xml_generator.py:_add_tax_total() and _add_invoice_lines(), replace the hardcoded 'S' with a lookup from the passed invoice/line data. Map: SR→S, ZR→Z, ES→E, RC→AE, OP→O. This affects all zero-rated, exempt, and reverse-charge invoices.
+
+XMLdsig embedded signature — Embed the RSA-2048 signature as a ds:Signature element within the UBL XML (enveloped XML signature per W3C XML Signature spec). The current approach of storing it only in a DB column means the XML file itself is unverifiable by an FTA auditor or PEPPOL Access Point. At minimum, inject <ext:UBLExtensions> with the signature data.
+
+Production certificate (not mock) — Remove the hardcoded "MOCK-CERT-001" serial (main.py:10756). Implement certificate issuance from a production-grade CA; consider self-signed X.509 chained to a trusted root until FTA-accredited CA certificates are available. The mock fallback in crypto_utils.py:206 must be disabled in production.
+
+High Priority (required for full compliance)
+PEPPOL UAE PINT-AE CustomizationID — Update ubl_xml_generator.py:103–113 to use the UAE PINT-AE-specific customization URN (urn:peppol:pint:billing-1@ae-1) and profile URN when the invoice is destined for UAE PEPPOL routing.
+
+Box 2 VAT Return correction — Separate tourist refund scheme amounts from credit/debit note adjustments. Consider adding a dedicated tourist_refund_amount field in VATReturnDB. Credit note VAT reductions should subtract from Box 3 output VAT, not be added to Box 2.
+
+Exchange rate management — Add an exchange_rates table with date, currency pair, rate, and source (CBUAE / manual). Populate total_amount_aed automatically at invoice creation for non-AED invoices. Prevents zero-emission rows in FAF for multi-currency companies.
+
+UBL XSD validation — Enable XSD validation in ubl_xml_generator.py at runtime (or at issuance time in main.py:issue_invoice). Parse the UBL 2.1 Invoice XSD and PINT-AE Schematron rules and validate before saving the XML file.
+
+Medium Priority (security hardening)
+CORS restriction — Replace allow_origins=["*"] with explicit allowed origins (["https://involinks.ae", "https://app.involinks.ae"]) in production configuration.
+
+HTTP rate limiting — Add SlowAPI or FastAPI-Limiter middleware with IP-based rate limits on authentication endpoints (/auth/login, /auth/register) and resource-intensive report generation endpoints.
+
+EmaraTax integration documentation — Document the manual VAT return upload workflow explicitly. Consider adding a dedicated "Submit to FTA" UI button that links directly to https://www.tax.gov.ae with the pre-generated XML/XLSX, as a minimum UX improvement while a full API integration is roadmapped.
+
+Report compiled from direct static analysis of: main.py (17,650 lines), utils/vat_utils.py, utils/ubl_xml_generator.py, utils/fta_audit_generator.py, utils/pdf_invoice_generator.py, utils/crypto_utils.py, utils/peppol_provider.py, migrations/2025_01_001_init_schema.sql, and 12 frontend page components.

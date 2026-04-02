@@ -31,9 +31,9 @@ def generate_pint_ae_xml(invoice_data: Dict[str, Any]) -> str:
     # Build XML
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Invoice {namespaces}>
-    <!-- PINT-AE Profile and Customization -->
-    <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
-    <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+    <!-- PINT-AE Profile and Customization (UAE-specific URN per PINT-AE spec) -->
+    <cbc:CustomizationID>urn:peppol:pint:billing-1@ae-1</cbc:CustomizationID>
+    <cbc:ProfileID>urn:peppol:bis:billing</cbc:ProfileID>
     
     <!-- Invoice Identification -->
     <cbc:ID>{_xml_escape(invoice["invoice_number"])}</cbc:ID>

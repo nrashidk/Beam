@@ -4,7 +4,7 @@ UAE e-Invoicing Platform with Registration Wizard
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
 
-import os, enum, hashlib, secrets, json, logging, re
+import os, enum, hashlib, secrets, json, logging, re, time, threading
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
@@ -2712,13 +2712,91 @@ app = FastAPI(
     description="Multi-tenant UAE e-invoicing platform with registration wizard",
 )
 
+# CORS — restrict to known production origins; fall back to dev-safe list
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if _raw_origins:
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+else:
+    _replit_domain = os.getenv("REPLIT_DOMAINS", "")
+    _replit_origin = (
+        f"https://{_replit_domain.split(',')[0]}"
+        if _replit_domain
+        else None
+    )
+    _allowed_origins = list(filter(None, [
+        "https://involinks.ae",
+        "https://www.involinks.ae",
+        "https://app.involinks.ae",
+        _replit_origin,
+    ]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins if _allowed_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# IP-based rate limiting middleware (FTA TAS security requirement)
+# Sliding-window counter stored in memory; per-IP per-path.
+# ---------------------------------------------------------------------------
+_rl_lock = threading.Lock()
+_rl_store: dict = {}  # key: (ip, path_prefix) -> list of float timestamps
+
+_RATE_LIMIT_RULES = [
+    # (path_prefix, max_requests, window_seconds)
+    ("/auth/login",     10, 60),
+    ("/auth/register",   5, 60),
+    ("/auth/mfa/verify", 5, 60),
+]
+
+
+def _get_client_ip(scope) -> str:
+    client = scope.get("client")
+    if client:
+        return client[0]
+    for header_name, header_val in scope.get("headers", []):
+        if header_name == b"x-forwarded-for":
+            return header_val.decode().split(",")[0].strip()
+    return "unknown"
+
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse as StarletteJSONResponse
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        now = time.time()
+        ip = _get_client_ip(request.scope)
+        for prefix, limit, window in _RATE_LIMIT_RULES:
+            if path.startswith(prefix):
+                key = (ip, prefix)
+                with _rl_lock:
+                    timestamps = _rl_store.get(key, [])
+                    timestamps = [t for t in timestamps if now - t < window]
+                    if len(timestamps) >= limit:
+                        _rl_store[key] = timestamps
+                        return StarletteJSONResponse(
+                            status_code=429,
+                            content={
+                                "detail": (
+                                    f"Too many requests. "
+                                    f"Max {limit} per {window}s. Please try again later."
+                                )
+                            },
+                        )
+                    timestamps.append(now)
+                    _rl_store[key] = timestamps
+                break
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 
 # Global exception handler for domain exceptions
@@ -9671,12 +9749,12 @@ def issue_invoice(
     invoice_hash = crypto.compute_invoice_hash(invoice_data)
     invoice.xml_hash = crypto.compute_hash(xml_content)
 
-    # Sign invoice (using mock signing for now - replace with real cert in production)
+    # Sign invoice — uses real cert serial from SIGNING_CERT_PEM env var when available
     signature = crypto.sign_invoice(invoice_hash, xml_content)
     if signature:
         invoice.signature_b64 = signature
         invoice.signing_timestamp = datetime.utcnow()
-        invoice.signing_cert_serial = "MOCK-CERT-001"  # Replace with real cert serial
+        invoice.signing_cert_serial = getattr(crypto, 'cert_serial', 'MOCK-CERT-001')
 
     # Update invoice status
     invoice.status = InvoiceStatus.ISSUED
@@ -10000,8 +10078,30 @@ def get_invoice_qr_code(
             else f"https://{base_url}"
         )
 
-    # Create the full share URL
-    share_url = f"{base_url}/invoices/view/{invoice.share_token}"
+    # Build FTA-compliant TLV QR payload (FTA Phase-2 PINT-AE requirement)
+    from utils.pdf_invoice_generator import generate_fta_tlv_payload
+
+    company = db.query(CompanyDB).filter(CompanyDB.id == invoice.company_id).first()
+    supplier_name = company.company_name if company else (invoice.supplier_name or "")
+    supplier_trn = company.trn if company else (invoice.supplier_trn or "")
+
+    issue_dt = invoice.issue_date
+    if issue_dt:
+        issue_dt_str = (
+            issue_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            if hasattr(issue_dt, "strftime")
+            else str(issue_dt)
+        )
+    else:
+        issue_dt_str = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    qr_data = generate_fta_tlv_payload(
+        seller_name=supplier_name,
+        trn=supplier_trn,
+        timestamp=issue_dt_str,
+        total_incl_vat=float(invoice.total_amount or 0.0),
+        vat_total=float(invoice.tax_amount or 0.0),
+    )
 
     # Generate QR code
     qr = qrcode.QRCode(
@@ -10010,7 +10110,7 @@ def get_invoice_qr_code(
         box_size=10,
         border=4,
     )
-    qr.add_data(share_url)
+    qr.add_data(qr_data)
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")

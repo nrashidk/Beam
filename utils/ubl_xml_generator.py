@@ -3,11 +3,12 @@ UBL 2.1 XML Generator for UAE PINT-AE E-Invoicing
 Generates compliant XML invoices following PEPPOL BIS and UAE FTA requirements
 
 COMPLIANCE NOTES:
-- UBL 2.1 structure with UAE PINT-AE profile
+- UBL 2.1 structure with UAE PINT-AE profile (urn:peppol:pint:billing-1@ae-1)
 - PEPPOL BIS 3.0 specification compliance
 - XSD validation: Enable via UBL_XSD_PATH environment variable (requires full schema set)
 - Canonicalization: For strict FTA compliance, apply C14N before signing
 """
+from collections import defaultdict
 from datetime import datetime, date
 from typing import Dict, Any, List, Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring, ElementTree
@@ -58,8 +59,9 @@ class UBLXMLGenerator:
         for prefix, uri in self.NAMESPACES.items():
             self.root.set(prefix, uri)
         
-        # Store invoice_data on self so _add_invoice_lines can access it (Task 5)
+        # Store invoice_data and line_items on self for use by sub-methods
         self._current_invoice_data = invoice_data
+        self._current_line_items = line_items or []
 
         # Build XML structure
         self._add_ubl_version()
@@ -456,46 +458,105 @@ class UBLXMLGenerator:
                 pdd = pdd.strftime('%Y-%m-%d')
             self._add_element(payment_means, 'PaymentDueDate', str(pdd))
 
+    # Maps TaxCategory DB enum values + UBL codes → canonical UBL TaxCategory ID
+    _TAX_CAT_TO_UBL = {
+        'S': 'S',   # Standard Rate (SR)
+        'Z': 'Z',   # Zero-Rated (ZR)
+        'E': 'E',   # Exempt (ES)
+        'O': 'O',   # Out-of-Scope (OP)
+        'AE': 'AE', # Reverse Charge (RC) — PEPPOL code
+    }
+
     def _add_tax_total(self, invoice_data: Dict[str, Any]):
-        """Add tax total (VAT) information"""
-        tax_total = SubElement(self.root, 'cac:TaxTotal')
-        
-        # Tax amount in document currency
-        tax_amt = self._add_element(tax_total, 'TaxAmount', f"{invoice_data.get('tax_amount', 0.0):.2f}")
-        tax_amt.set('currencyID', invoice_data.get('currency_code', 'AED'))
-        
-        # Tax subtotal (VAT breakdown)
-        tax_subtotal = SubElement(tax_total, 'cac:TaxSubtotal')
-        
-        taxable_amt = self._add_element(
-            tax_subtotal,
-            'TaxableAmount',
-            f"{invoice_data.get('subtotal_amount', 0.0):.2f}"
+        """Add tax total (VAT) information with per-category TaxSubtotals.
+
+        Emits one cac:TaxSubtotal per distinct tax category found in the
+        invoice lines, using the correct UBL TaxCategory ID for each
+        (S / Z / E / AE / O).  Falls back to a single subtotal derived from
+        invoice-level totals when no line data is available.
+        """
+        currency = invoice_data.get('currency_code', 'AED')
+        is_reverse_charge = (
+            invoice_data.get('invoice_transaction_type') == 'REVERSE_CHARGE'
         )
-        taxable_amt.set('currencyID', invoice_data.get('currency_code', 'AED'))
-        
-        tax_amt_sub = self._add_element(
-            tax_subtotal,
-            'TaxAmount',
+
+        tax_total = SubElement(self.root, 'cac:TaxTotal')
+
+        # Header-level tax amount in document currency
+        tax_amt_el = self._add_element(
+            tax_total, 'TaxAmount',
             f"{invoice_data.get('tax_amount', 0.0):.2f}"
         )
-        tax_amt_sub.set('currencyID', invoice_data.get('currency_code', 'AED'))
-        
-        # Tax category
-        tax_category = SubElement(tax_subtotal, 'cac:TaxCategory')
-        self._add_element(tax_category, 'ID', 'S')  # Standard rate
-        
-        # Tax percent (5% for UAE standard rate)
-        tax_rate = (invoice_data.get('tax_amount', 0.0) / invoice_data.get('subtotal_amount', 1.0) * 100) if invoice_data.get('subtotal_amount', 0) > 0 else 5.0
-        self._add_element(tax_category, 'Percent', f"{tax_rate:.2f}")
-        
-        tax_scheme = SubElement(tax_category, 'cac:TaxScheme')
-        self._add_element(tax_scheme, 'ID', 'VAT')
-        
-        # Add tax total in AED (if different currency)
-        if invoice_data.get('currency_code', 'AED') != 'AED' and invoice_data.get('total_amount_aed'):
+        tax_amt_el.set('currencyID', currency)
+
+        line_items = getattr(self, '_current_line_items', [])
+
+        if line_items:
+            # Group line items by their effective UBL tax category ID
+            by_cat: Dict[str, Dict[str, float]] = defaultdict(
+                lambda: {'taxable': 0.0, 'tax': 0.0, 'percent': 5.0}
+            )
+            for item in line_items:
+                if is_reverse_charge:
+                    cat = 'AE'
+                else:
+                    raw = str(item.get('tax_category', 'S')).upper()
+                    cat = self._TAX_CAT_TO_UBL.get(raw, 'S')
+                by_cat[cat]['taxable'] += float(item.get('line_extension_amount', 0.0))
+                by_cat[cat]['tax'] += float(item.get('tax_amount', 0.0))
+                by_cat[cat]['percent'] = float(item.get('tax_percent', 5.0))
+
+            for cat, amounts in by_cat.items():
+                sub = SubElement(tax_total, 'cac:TaxSubtotal')
+                taxable_el = self._add_element(
+                    sub, 'TaxableAmount', f"{amounts['taxable']:.2f}"
+                )
+                taxable_el.set('currencyID', currency)
+                tax_sub_el = self._add_element(
+                    sub, 'TaxAmount', f"{amounts['tax']:.2f}"
+                )
+                tax_sub_el.set('currencyID', currency)
+                cat_elem = SubElement(sub, 'cac:TaxCategory')
+                self._add_element(cat_elem, 'ID', cat)
+                self._add_element(cat_elem, 'Percent', f"{amounts['percent']:.2f}")
+                scheme = SubElement(cat_elem, 'cac:TaxScheme')
+                self._add_element(scheme, 'ID', 'VAT')
+        else:
+            # Fallback: single subtotal from invoice-level totals
+            cat = 'AE' if is_reverse_charge else 'S'
+            subtotal = invoice_data.get('subtotal_amount', 0.0)
+            tax_amt = invoice_data.get('tax_amount', 0.0)
+            if subtotal and subtotal > 0:
+                derived_pct = (tax_amt / subtotal) * 100
+                if abs(derived_pct) < 0.01:
+                    cat = 'Z' if not is_reverse_charge else 'AE'
+            else:
+                derived_pct = 5.0
+            sub = SubElement(tax_total, 'cac:TaxSubtotal')
+            taxable_el = self._add_element(
+                sub, 'TaxableAmount', f"{subtotal:.2f}"
+            )
+            taxable_el.set('currencyID', currency)
+            tax_sub_el = self._add_element(
+                sub, 'TaxAmount', f"{tax_amt:.2f}"
+            )
+            tax_sub_el.set('currencyID', currency)
+            cat_elem = SubElement(sub, 'cac:TaxCategory')
+            self._add_element(cat_elem, 'ID', cat)
+            self._add_element(cat_elem, 'Percent', f"{derived_pct:.2f}")
+            scheme = SubElement(cat_elem, 'cac:TaxScheme')
+            self._add_element(scheme, 'ID', 'VAT')
+
+        # Second TaxTotal in AED required when document currency is not AED
+        if currency != 'AED' and invoice_data.get('total_amount_aed'):
+            aed_rate = invoice_data.get('exchange_rate', 1.0) or 1.0
+            aed_tax = invoice_data.get('tax_amount', 0.0)
+            if aed_rate and aed_rate != 1.0:
+                aed_tax = round(float(aed_tax) * float(aed_rate), 2)
             tax_total_aed = SubElement(self.root, 'cac:TaxTotal')
-            tax_amt_aed = self._add_element(tax_total_aed, 'TaxAmount', f"{invoice_data.get('tax_amount', 0.0):.2f}")
+            tax_amt_aed = self._add_element(
+                tax_total_aed, 'TaxAmount', f"{aed_tax:.2f}"
+            )
             tax_amt_aed.set('currencyID', 'AED')
     
     def _add_monetary_total(self, invoice_data: Dict[str, Any]):
