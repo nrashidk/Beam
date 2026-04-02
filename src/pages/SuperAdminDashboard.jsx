@@ -162,6 +162,55 @@ export default function SuperAdminDashboard() {
   const [freePlanType, setFreePlanType] = useState("INVOICE_COUNT"); // INVOICE_COUNT or DURATION
   const [isSuspended, setIsSuspended] = useState(false);
 
+  const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [backupTriggering, setBackupTriggering] = useState(false);
+
+  async function fetchBackups() {
+    try {
+      setBackupsLoading(true);
+      const res = await api.get("/admin/backup/list");
+      setBackups(res.data);
+    } catch (err) {
+      console.error("Failed to load backups:", err);
+    } finally {
+      setBackupsLoading(false);
+    }
+  }
+
+  async function handleTriggerBackup() {
+    if (!confirm("Start a new database backup now? This may take a few seconds.")) return;
+    try {
+      setBackupTriggering(true);
+      await api.post("/admin/backup/trigger");
+      setTimeout(fetchBackups, 1500);
+    } catch (err) {
+      alert("Failed to trigger backup: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setBackupTriggering(false);
+    }
+  }
+
+  function handleDownloadBackup(backupId, filename) {
+    const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token") || "";
+    const url = `${api.defaults.baseURL || ""}/admin/backup/${backupId}/download`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    const headers = token ? `?_token=${encodeURIComponent(token)}` : "";
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(blobUrl);
+      })
+      .catch(() => alert("Download failed. Please try again."));
+  }
+
   function exportCompaniesCsv(rows) {
     const csv = buildCompaniesCsv(rows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -937,6 +986,112 @@ export default function SuperAdminDashboard() {
             {stats?.companies.all.length || 0} companies
           </p>
         </div>
+
+        {/* Database Backups Section */}
+        {user?.role === "SUPER_ADMIN" && (
+          <Section
+            title="Database Backups"
+            action={
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchBackups}
+                  disabled={backupsLoading}
+                >
+                  {backupsLoading ? "Loading..." : "Refresh"}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleTriggerBackup}
+                  disabled={backupTriggering}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                >
+                  {backupTriggering ? "Starting..." : "Trigger Backup"}
+                </Button>
+              </div>
+            }
+          >
+            <Card className="rounded-2xl shadow-sm">
+              <CardContent className="pt-4">
+                {backups.length === 0 && !backupsLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No backups yet. Click &ldquo;Trigger Backup&rdquo; to create one,
+                    then &ldquo;Refresh&rdquo; to see the result.
+                  </p>
+                ) : (
+                  <div className="overflow-hidden rounded-xl border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/40">
+                        <tr className="text-left">
+                          <th className="px-4 py-3 font-medium">Filename</th>
+                          <th className="px-4 py-3 font-medium">Size</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                          <th className="px-4 py-3 font-medium">Created At</th>
+                          <th className="px-4 py-3 font-medium">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {backups.map((b) => (
+                          <tr key={b.id} className="border-t">
+                            <td className="px-4 py-3 font-mono text-xs max-w-[220px] truncate">
+                              {b.filename || "—"}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {b.file_size_bytes != null
+                                ? b.file_size_bytes >= 1024 * 1024
+                                  ? `${(b.file_size_bytes / (1024 * 1024)).toFixed(2)} MB`
+                                  : `${(b.file_size_bytes / 1024).toFixed(1)} KB`
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  b.status === "COMPLETED"
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : b.status === "FAILED"
+                                      ? "bg-rose-50 text-rose-700"
+                                      : "bg-amber-50 text-amber-700"
+                                }`}
+                              >
+                                {b.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">
+                              {b.created_at
+                                ? format(new Date(b.created_at), "dd MMM yyyy HH:mm")
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              {b.status === "COMPLETED" ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() =>
+                                    handleDownloadBackup(b.id, b.filename)
+                                  }
+                                  className="text-indigo-600 hover:text-indigo-700"
+                                >
+                                  Download
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">
+                                  {b.status === "FAILED"
+                                    ? (b.error_message?.slice(0, 60) || "Failed")
+                                    : "In progress..."}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </Section>
+        )}
 
         {/* Edit Company Modal */}
         {showEditModal && editingCompany && (

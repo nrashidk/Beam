@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Pydantic & FastAPI
 from pydantic import BaseModel, Field, validator
 from fastapi import (
+    BackgroundTasks,
     FastAPI,
     Request,
     UploadFile,
@@ -1434,6 +1435,20 @@ class JournalEntryLineDB(Base):
     line_number = Column(Integer, default=0)
 
 
+class BackupLogDB(Base):
+    """In-application database backup log — one record per on-demand backup attempt."""
+    __tablename__ = "backup_logs"
+    id = Column(String, primary_key=True, default=lambda: str(uuid4()))
+    filename = Column(String, nullable=True)
+    storage_path = Column(String, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+    status = Column(String, nullable=False, default="PENDING")  # PENDING | COMPLETED | FAILED
+    error_message = Column(Text, nullable=True)
+    triggered_by = Column(String, nullable=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+
 # Create tables
 Base.metadata.create_all(engine)
 
@@ -1558,6 +1573,43 @@ try:
     print("✅ inward_invoices.supplier_country column ensured")
 except Exception as _e:
     print(f"⚠️  inward_invoices.supplier_country migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── BackupLog table migration ─────────────────────────────────────────────────
+try:
+    with engine.connect() as _conn:
+        _conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS backup_logs ("
+            "  id VARCHAR PRIMARY KEY,"
+            "  filename VARCHAR,"
+            "  storage_path VARCHAR,"
+            "  file_size_bytes INTEGER,"
+            "  status VARCHAR NOT NULL DEFAULT 'PENDING',"
+            "  error_message TEXT,"
+            "  triggered_by VARCHAR,"
+            "  started_at TIMESTAMP DEFAULT NOW(),"
+            "  completed_at TIMESTAMP"
+            ")"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS storage_path VARCHAR"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS triggered_by VARCHAR"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP DEFAULT NOW()"
+        ))
+        _conn.commit()
+    print("✅ backup_logs table ensured")
+except Exception as _e:
+    print(f"⚠️  backup_logs migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Ensure backups directory exists ──────────────────────────────────────────
+import pathlib as _pathlib
+_BACKUP_DIR = _pathlib.Path("backups")
+_BACKUP_DIR.mkdir(exist_ok=True)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── INVOLINKS_VENDOR_TRN startup check ───────────────────────────────────────
@@ -3347,7 +3399,6 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
 
 
 # ==================== REFRESH TOKEN ENDPOINT ====================
-from fastapi import Cookie
 
 
 class RefreshTokenRequest(BaseModel):
@@ -8582,6 +8633,137 @@ def archive_fiscal_year(
         "archived_count": len(archived_ids),
         "message": f"Successfully archived {len(archived_ids)} invoices for FY{year}.",
     }
+
+
+@app.post("/admin/backup/trigger", tags=["Admin"])
+async def trigger_backup(
+    background_tasks: BackgroundTasks,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Trigger an on-demand JSON backup of all core tables. SUPER_ADMIN only."""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can trigger database backups")
+
+    import gzip as _gzip
+    import json as _json
+    from sqlalchemy import text as sa_text
+
+    backup_id = str(uuid4())
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"involinks_backup_{ts}_{backup_id[:8]}.json.gz"
+    file_path = str(_BACKUP_DIR / filename)
+
+    log = BackupLogDB(
+        id=backup_id,
+        filename=filename,
+        storage_path=file_path,
+        status="PENDING",
+        triggered_by=current_user.id,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    TABLES_TO_BACKUP = [
+        "companies", "users", "invoices", "invoice_line_items",
+        "inward_invoices", "inward_invoice_line_items",
+        "vat_returns", "gl_accounts", "journal_entries", "journal_entry_lines",
+        "audit_logs", "backup_logs",
+    ]
+
+    def _run_backup(backup_id: str, file_path: str, tables: list):
+        from sqlalchemy.orm import Session as _Session
+        _db: _Session = SessionLocal()
+        try:
+            dump = {"exported_at": datetime.utcnow().isoformat(), "tables": {}}
+            for table in tables:
+                try:
+                    rows = _db.execute(sa_text(f"SELECT * FROM {table}")).mappings().all()
+                    dump["tables"][table] = [dict(r) for r in rows]
+                except Exception as te:
+                    dump["tables"][table] = {"error": str(te)}
+            payload = _json.dumps(dump, default=str).encode("utf-8")
+            with _gzip.open(file_path, "wb") as f:
+                f.write(payload)
+            size = os.path.getsize(file_path)
+            rec = _db.get(BackupLogDB, backup_id)
+            if rec:
+                rec.status = "COMPLETED"
+                rec.file_size_bytes = size
+                rec.completed_at = datetime.utcnow()
+                _db.commit()
+        except Exception as e:
+            rec = _db.get(BackupLogDB, backup_id)
+            if rec:
+                rec.status = "FAILED"
+                rec.error_message = str(e)[:2000]
+                rec.completed_at = datetime.utcnow()
+                _db.commit()
+        finally:
+            _db.close()
+
+    background_tasks.add_task(_run_backup, backup_id, file_path, TABLES_TO_BACKUP)
+
+    return {
+        "backup_id": backup_id,
+        "filename": filename,
+        "status": "PENDING",
+        "message": "Backup started in background. Check /admin/backup/list for status.",
+    }
+
+
+@app.get("/admin/backup/list", tags=["Admin"])
+def list_backups(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """List all backup attempts. SUPER_ADMIN only."""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can view backup history")
+    logs = (
+        db.query(BackupLogDB)
+        .order_by(BackupLogDB.started_at.desc())
+        .limit(50)
+        .all()
+    )
+    return [
+        {
+            "id": b.id,
+            "filename": b.filename,
+            "file_size_bytes": b.file_size_bytes,
+            "status": b.status,
+            "error_message": b.error_message,
+            "triggered_by_user_id": b.triggered_by,
+            "created_at": b.started_at.isoformat() if b.started_at else None,
+            "completed_at": b.completed_at.isoformat() if b.completed_at else None,
+        }
+        for b in logs
+    ]
+
+
+@app.get("/admin/backup/{backup_id}/download", tags=["Admin"])
+def download_backup(
+    backup_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Download a completed backup file. SUPER_ADMIN only."""
+    if current_user.role != Role.SUPER_ADMIN:
+        raise HTTPException(403, "Only Super Admins can download backups")
+    from fastapi.responses import FileResponse
+    log = db.get(BackupLogDB, backup_id)
+    if not log:
+        raise HTTPException(404, "Backup not found")
+    if log.status != "COMPLETED":
+        raise HTTPException(400, f"Backup is not ready (status: {log.status})")
+    if not log.storage_path or not os.path.exists(log.storage_path):
+        raise HTTPException(404, "Backup file not found on disk")
+    return FileResponse(
+        path=log.storage_path,
+        filename=log.filename,
+        media_type="application/gzip",
+    )
 
 
 @app.post("/admin/backup/restore-verify", tags=["Admin"])
