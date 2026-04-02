@@ -308,7 +308,14 @@ class UBLXMLGenerator:
         party = SubElement(supplier_party, 'cac:Party')
         
         # Supplier PEPPOL endpoint — use explicit peppol_id or derive from TRN (PINT-AE: ICD 0230)
-        supplier_peppol_raw = invoice_data.get('supplier_peppol_id') or get_tin_from_trn(invoice_data.get('supplier_trn', ''))
+        supplier_peppol_raw = invoice_data.get('supplier_peppol_id') or ''
+        supplier_trn_fallback = invoice_data.get('supplier_trn', '') or ''
+        if not supplier_peppol_raw and supplier_trn_fallback:
+            # No stored PEPPOL ID but TRN is available: build 0230: form on the fly
+            supplier_peppol_raw = f"0230:{supplier_trn_fallback}"
+        elif not supplier_peppol_raw:
+            # Last resort: use TIN (10-digit) with legacy scheme 0235
+            supplier_peppol_raw = get_tin_from_trn(supplier_trn_fallback)
         if supplier_peppol_raw:
             endpoint_id = SubElement(party, 'cbc:EndpointID')
             if supplier_peppol_raw.startswith('0230:'):
