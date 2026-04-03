@@ -482,7 +482,7 @@ export default function BulkImport() {
                       <li className="flex items-start gap-2">
                         <span className="text-blue-400 mt-1">•</span>
                         <span>
-                          Tax is calculated automatically from your line-item amounts — the <strong>tax_code</strong> column accepts SR (5%), ZR (0%), ES (exempt), or OP (out-of-scope)
+                          Tax is calculated automatically from your line-item amounts — the <strong>tax_code</strong> column accepts: <strong>SR</strong> (Standard Rate, 5%), <strong>ZR</strong> (Zero-Rated, 0%), <strong>ES</strong> (Exempt, no VAT), or <strong>OP</strong> (Out-of-Scope, no VAT)
                         </span>
                       </li>
                     </>
