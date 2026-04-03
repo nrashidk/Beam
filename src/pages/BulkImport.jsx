@@ -428,46 +428,105 @@ export default function BulkImport() {
 
             <Card className="bg-blue-50 border-blue-200">
               <CardHeader>
-                <CardTitle className="text-blue-900">
+                <CardTitle className="text-blue-900 flex items-center gap-2">
                   Tips for Successful Import
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                    activeTab === "invoices" && invoiceMode === "vat"
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-gray-100 text-gray-600"
+                  }`}>
+                    {activeTab === "invoices"
+                      ? invoiceMode === "vat" ? "VAT Template" : "Non-VAT Template"
+                      : "Vendor Template"}
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-2 text-sm text-blue-800">
+                  {/* Shared tip 1 */}
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>
                     <span>
                       Download the template first to see the required column
-                      format
+                      format and column order before filling in your data
                     </span>
                   </li>
+
+                  {/* VAT-specific tips */}
+                  {activeTab === "invoices" && invoiceMode === "vat" && (
+                    <>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Supported invoice types: <strong>TAX_INVOICE</strong>, <strong>TAX_CREDIT_NOTE</strong>, <strong>DEBIT_NOTE</strong>, and <strong>COMMERCIAL</strong>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Your supplier TRN (15 digits) must be configured in your company settings before uploading — it is embedded in every generated tax invoice
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Customer TRN is required for full Tax Invoices (total ≥ AED 10,000) — invoices without a customer TRN at that value will be rejected
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Credit notes (TAX_CREDIT_NOTE) must include a valid <strong>preceding_invoice_number</strong> referencing the original invoice being reversed
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Tax is calculated automatically from your line-item amounts — the <strong>tax_code</strong> column accepts SR (5%), ZR (0%), ES (exempt), or OP (out-of-scope)
+                        </span>
+                      </li>
+                    </>
+                  )}
+
+                  {/* Non-VAT-specific tips */}
+                  {activeTab === "invoices" && invoiceMode === "non_vat" && (
+                    <>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          Supported invoice types for this template: <strong>COMMERCIAL</strong> and <strong>CREDIT_NOTE</strong> only — tax invoice types are not available for non-VAT companies
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          All tax amounts are automatically forced to 0 during upload — any tax values in your file will be ignored
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          TRN columns are not required and will be ignored — do not include a TRN in the customer or supplier fields
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-blue-400 mt-1">•</span>
+                        <span>
+                          If your company becomes VAT-registered in the future, switch to the VAT-Enabled template and re-upload — do not mix templates
+                        </span>
+                      </li>
+                    </>
+                  )}
+
+                  {/* Shared tip 2 */}
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>
                     <span>
-                      TRN must be exactly 15 digits for UAE tax compliance
+                      Dates should be in <strong>YYYY-MM-DD</strong> format (e.g., 2025-01-15) for issue date, due date, and supply date columns
                     </span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-400 mt-1">•</span>
-                    <span>
-                      Dates should be in YYYY-MM-DD format (e.g., 2025-01-15)
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-400 mt-1">•</span>
-                    <span>
-                      VAT upload supports TAX_INVOICE, TAX_CREDIT_NOTE,
-                      DEBIT_NOTE, and COMMERCIAL. Non-VAT upload supports
-                      COMMERCIAL and CREDIT_NOTE only.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-blue-400 mt-1">â€¢</span>
-                    <span>
-                      Non-VAT uploads always force tax to 0, even if your file
-                      contains old tax values or missing tax columns.
-                    </span>
-                  </li>
+
+                  {/* Shared tip 3 */}
                   <li className="flex items-start gap-2">
                     <span className="text-blue-400 mt-1">•</span>
                     <span>
