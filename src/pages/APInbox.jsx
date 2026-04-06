@@ -5,6 +5,7 @@ import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import { Inbox } from "lucide-react";
 import InwardInvoiceDetailModal from "../components/InwardInvoiceDetailModal";
 import Sidebar from "../components/Sidebar";
 import PageLoader from "../components/PageLoader";
@@ -160,21 +161,23 @@ export default function APInbox() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Inbox className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                AP Invoice Inbox
-              </h1>
-              <p className="text-gray-600 mt-1">
-                Manage received invoices from suppliers
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">AP Invoice Inbox</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Manage received invoices from suppliers</p>
             </div>
-            <Badge className="bg-blue-100 text-blue-800 text-lg px-4 py-2">
-              {invoices.length} Invoice{invoices.length !== 1 ? "s" : ""}
-            </Badge>
           </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-end mb-6">
+              <Badge className="bg-blue-100 text-blue-800 text-lg px-4 py-2">
+                {invoices.length} Invoice{invoices.length !== 1 ? "s" : ""}
+              </Badge>
+            </div>
 
           <Card className="mb-6">
             <CardContent className="p-6">
@@ -385,5 +388,6 @@ export default function APInbox() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

@@ -3,6 +3,7 @@ import apiClient from "../lib/api";
 import Sidebar from "../components/Sidebar";
 import {
   Plus,
+  Receipt,
   TrendingUp,
   TrendingDown,
   DollarSign,
@@ -247,13 +248,20 @@ const ExpenseTracker = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Expense Tracking
-            </h1>
-            <div className="flex gap-3">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Receipt className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Expense Tracking</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Track and categorize business expenses</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex justify-end mb-8">
+              <div className="flex gap-3">
               <button
                 onClick={() => {
                   setEditingCategory(null);
@@ -804,6 +812,7 @@ const ExpenseTracker = () => {
         </div>
       </div>
     </div>
+  </div>
   );
 };
 

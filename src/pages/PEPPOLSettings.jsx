@@ -24,7 +24,6 @@ import {
   EyeOff,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 
 export default function PEPPOLSettings() {
@@ -168,13 +167,21 @@ export default function PEPPOLSettings() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-5xl mx-auto px-6 py-8">
-          <BackToDashboard />
-
-          <div className="space-y-6">
-            {/* Info Banner */}
-            <Card className="border-blue-200 bg-blue-50">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Network className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">PEPPOL Settings</h1>
+              <p className="text-sm text-gray-500 mt-0.5">PEPPOL e-invoicing network integration for UAE FTA compliance</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="space-y-6">
+              {/* Info Banner */}
+              <Card className="border-blue-200 bg-blue-50">
               <CardContent className="pt-6">
                 <div className="flex gap-4">
                   <Info className="text-blue-600 flex-shrink-0" size={24} />
@@ -511,5 +518,6 @@ export default function PEPPOLSettings() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

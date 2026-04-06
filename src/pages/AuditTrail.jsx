@@ -4,6 +4,7 @@ import { apiClient } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import {
   Shield,
+  ShieldCheck,
   RefreshCw,
   Filter,
   ChevronDown,
@@ -199,19 +200,18 @@ export default function AuditTrail() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 ml-64 p-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center gap-3 mb-2">
-              <Shield className="h-8 w-8 text-indigo-600" />
-              <h1 className="text-3xl font-bold text-gray-900">Audit Trail</h1>
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">Audit Trail</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Immutable log of all create, update, and delete actions — FTA compliance requirement</p>
             </div>
-            <p className="text-gray-500">
-              Immutable log of all create, update, and delete actions — FTA compliance requirement
-            </p>
           </div>
-
+        </div>
+        <div className="flex-1 p-6">
+        <div className="max-w-6xl mx-auto">
           {/* Filters */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
             <div className="flex flex-wrap gap-3 items-end">
@@ -396,6 +396,7 @@ export default function AuditTrail() {
             <strong>FTA Compliance:</strong> This audit trail is retained for 5 years as required by UAE VAT regulations.
             All entries are immutable — modifications are not permitted after creation.
           </div>
+        </div>
         </div>
       </div>
     </div>

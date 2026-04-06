@@ -387,27 +387,31 @@ export default function InvoiceDashboard() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
 
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          {/* Task 22: Password expiry warning banner */}
-          <PasswordExpiryBanner />
-          <div className="flex items-center justify-between mb-6">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <FileText className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-              <p className="text-gray-600 mt-1">
-                Create and manage UAE-compliant e-invoices
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Invoices</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Create and manage UAE-compliant e-invoices</p>
             </div>
-            <button
-              onClick={() => navigate("/invoices/create")}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
-            >
-              <Plus className="w-5 h-5" />
-              Create Invoice
-            </button>
           </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Task 22: Password expiry warning banner */}
+            <PasswordExpiryBanner />
+            <div className="flex justify-end mb-6">
+              <button
+                onClick={() => navigate("/invoices/create")}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                <Plus className="w-5 h-5" />
+                Create Invoice
+              </button>
+            </div>
 
-          {/* Filters */}
+            {/* Filters */}
           <div className="space-y-4 mt-6">
             <div>
               <label className="text-sm font-medium text-gray-700 mb-2 block">
@@ -616,11 +620,11 @@ export default function InvoiceDashboard() {
                                 ? "Tax Credit Note"
                                 : invoice.invoice_type === "383"
                                   ? "Debit Note"
-                                : invoice.invoice_type === "480"
-                                  ? "Commercial"
-                                  : invoice.invoice_type === "81"
-                                    ? "Credit Note"
-                                    : "Other"}
+                                  : invoice.invoice_type === "480"
+                                    ? "Commercial"
+                                    : invoice.invoice_type === "81"
+                                      ? "Credit Note"
+                                      : "Other"}
                           </span>
                         </div>
                       </div>
@@ -861,5 +865,6 @@ export default function InvoiceDashboard() {
         </div>
       )}
     </div>
+  </div>
   );
 }

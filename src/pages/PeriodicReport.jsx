@@ -9,7 +9,6 @@ import {
   Search,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
 
 const MONTHS = [
@@ -307,18 +306,13 @@ export default function PeriodicReport() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <div className="bg-white border-b px-6 py-4">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-3">
-            <BackToDashboard />
+            <CalendarDays className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-blue-600" />
-                Invoice Reports
-              </h1>
-              <p className="text-sm text-gray-500">
-                Periodic &amp; ad hoc invoice summaries for FTA compliance
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Periodic Report</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Periodic &amp; ad hoc invoice summaries for FTA compliance</p>
             </div>
           </div>
         </div>

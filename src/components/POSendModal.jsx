@@ -40,7 +40,8 @@ export default function POSendModal({
     }
 
     if (methodId === "sms" || methodId === "whatsapp") {
-      if (!trimmed) return `Please enter a mobile number for ${methodId === "sms" ? "SMS" : "WhatsApp"}.`;
+      if (!trimmed)
+        return `Please enter a mobile number for ${methodId === "sms" ? "SMS" : "WhatsApp"}.`;
       const validation = validateDeliveryPhone(formatDeliveryPhone(trimmed));
       return validation.isValid ? "" : validation.error;
     }

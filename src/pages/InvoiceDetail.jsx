@@ -23,7 +23,11 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
-  const [lockedModal, setLockedModal] = useState({ isOpen: false, title: "", message: "" });
+  const [lockedModal, setLockedModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     action: null,
@@ -172,7 +176,8 @@ export default function InvoiceDetail() {
       }
     } catch (error) {
       const status = error.response?.status;
-      const detail = error.response?.data?.detail || `Failed to ${action} invoice`;
+      const detail =
+        error.response?.data?.detail || `Failed to ${action} invoice`;
       if (status === 409) {
         setLockedModal({
           isOpen: true,
@@ -315,7 +320,11 @@ export default function InvoiceDetail() {
                     ? "bg-blue-600 text-white hover:bg-blue-700"
                     : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                 }`}
-                title={invoice.status !== "DRAFT" ? "Invoice is locked — click to learn more" : "Edit invoice"}
+                title={
+                  invoice.status !== "DRAFT"
+                    ? "Invoice is locked — click to learn more"
+                    : "Edit invoice"
+                }
               >
                 {invoice.status === "DRAFT" ? (
                   <Edit2 className="w-5 h-5" />
@@ -359,27 +368,37 @@ export default function InvoiceDetail() {
             )}
 
             {/* Credit Note & Debit Note quick actions for posted tax invoices */}
-            {(invoice.status === "ISSUED" || invoice.status === "SENT" || invoice.status === "VIEWED") &&
+            {(invoice.status === "ISSUED" ||
+              invoice.status === "SENT" ||
+              invoice.status === "VIEWED") &&
               invoice.invoice_type === "380" && (
-              <>
-                <button
-                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`)}
-                  className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
-                  title="Issue a credit note against this invoice"
-                >
-                  <FileText className="w-5 h-5" />
-                  Credit Note
-                </button>
-                <button
-                  onClick={() => navigate(`/invoices/create?preceding_invoice_id=${id}&type=debit_note`)}
-                  className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
-                  title="Issue a debit note against this invoice"
-                >
-                  <FileText className="w-5 h-5" />
-                  Debit Note
-                </button>
-              </>
-            )}
+                <>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/invoices/create?preceding_invoice_id=${id}&type=credit_note`,
+                      )
+                    }
+                    className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
+                    title="Issue a credit note against this invoice"
+                  >
+                    <FileText className="w-5 h-5" />
+                    Credit Note
+                  </button>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/invoices/create?preceding_invoice_id=${id}&type=debit_note`,
+                      )
+                    }
+                    className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
+                    title="Issue a debit note against this invoice"
+                  >
+                    <FileText className="w-5 h-5" />
+                    Debit Note
+                  </button>
+                </>
+              )}
 
             {invoice.status !== "CANCELLED" && invoice.status !== "PAID" && (
               <button
@@ -496,6 +515,69 @@ export default function InvoiceDetail() {
                 </div>
               )}
             </div>
+
+            {/* UAE PINT-AE Transaction Type (Task 9) */}
+            {invoice.invoice_transaction_type && invoice.invoice_transaction_type !== "STANDARD" && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-indigo-800 uppercase mb-3">UAE Transaction Scenario</h3>
+                <div className="flex flex-wrap gap-2 items-center mb-3">
+                  <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-semibold">
+                    {invoice.invoice_transaction_type.replace(/_/g, " ")}
+                  </span>
+                  {invoice.mls_status && (
+                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                      invoice.mls_status === "ACCEPTED" || invoice.mls_status === "DEEMED_ACCEPTED"
+                        ? "bg-green-100 text-green-800"
+                        : invoice.mls_status === "REJECTED"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-yellow-100 text-yellow-800"
+                    }`}>
+                      MLS: {invoice.mls_status === "DEEMED_ACCEPTED" ? "Deemed Accepted (10 min)" : invoice.mls_status}
+                    </span>
+                  )}
+                  {invoice.peppol_deemed_accepted && (
+                    <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                      Deemed Accepted — FTA 10-minute rule applied
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  {invoice.tax_exemption_reason_code && (
+                    <div><span className="text-gray-500">Exemption Code:</span> <span className="font-medium">{invoice.tax_exemption_reason_code}</span></div>
+                  )}
+                  {invoice.tax_exemption_reason && (
+                    <div><span className="text-gray-500">Exemption Reason:</span> <span className="font-medium">{invoice.tax_exemption_reason}</span></div>
+                  )}
+                  {invoice.deliver_to_party_name && (
+                    <div><span className="text-gray-500">Deliver To:</span> <span className="font-medium">{invoice.deliver_to_party_name}</span></div>
+                  )}
+                  {invoice.deliver_to_address && (
+                    <div><span className="text-gray-500">Delivery Address:</span> <span className="font-medium">{invoice.deliver_to_address}</span></div>
+                  )}
+                  {invoice.delivery_date && (
+                    <div><span className="text-gray-500">Delivery Date:</span> <span className="font-medium">{new Date(invoice.delivery_date).toLocaleDateString("en-AE")}</span></div>
+                  )}
+                  {invoice.buyer_legal_registration && (
+                    <div><span className="text-gray-500">Buyer Registration:</span> <span className="font-medium">{invoice.buyer_legal_registration}</span></div>
+                  )}
+                  {invoice.contract_reference && (
+                    <div><span className="text-gray-500">Contract Ref:</span> <span className="font-medium">{invoice.contract_reference}</span></div>
+                  )}
+                  {invoice.billing_frequency && (
+                    <div><span className="text-gray-500">Billing Freq:</span> <span className="font-medium">{invoice.billing_frequency}</span></div>
+                  )}
+                  {invoice.invoicing_period_start && invoice.invoicing_period_end && (
+                    <div className="col-span-2"><span className="text-gray-500">Invoicing Period:</span> <span className="font-medium">{new Date(invoice.invoicing_period_start).toLocaleDateString("en-AE")} – {new Date(invoice.invoicing_period_end).toLocaleDateString("en-AE")}</span></div>
+                  )}
+                  {invoice.principal_id && (
+                    <div><span className="text-gray-500">Principal ID:</span> <span className="font-medium">{invoice.principal_id}</span></div>
+                  )}
+                  {invoice.beneficiary_id && (
+                    <div><span className="text-gray-500">Beneficiary ID:</span> <span className="font-medium">{invoice.beneficiary_id}</span></div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Line Items */}
             <div>
@@ -672,12 +754,18 @@ export default function InvoiceDetail() {
               <div className="p-3 bg-amber-100 rounded-full">
                 <Lock className="w-6 h-6 text-amber-600" />
               </div>
-              <h2 className="text-lg font-bold text-gray-900">{lockedModal.title}</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {lockedModal.title}
+              </h2>
             </div>
-            <p className="text-gray-600 mb-6 leading-relaxed">{lockedModal.message}</p>
+            <p className="text-gray-600 mb-6 leading-relaxed">
+              {lockedModal.message}
+            </p>
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setLockedModal({ isOpen: false, title: "", message: "" })}
+                onClick={() =>
+                  setLockedModal({ isOpen: false, title: "", message: "" })
+                }
                 className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200"
               >
                 Close
@@ -685,7 +773,9 @@ export default function InvoiceDetail() {
               <button
                 onClick={() => {
                   setLockedModal({ isOpen: false, title: "", message: "" });
-                  navigate(`/invoices/create?preceding_invoice_id=${id}&type=credit_note`);
+                  navigate(
+                    `/invoices/create?preceding_invoice_id=${id}&type=credit_note`,
+                  );
                 }}
                 className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700"
               >

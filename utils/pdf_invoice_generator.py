@@ -60,6 +60,54 @@ def _ar(text: str) -> str:
         return text
 
 
+def generate_fta_tlv_payload(
+    seller_name: str,
+    trn: str,
+    timestamp: str,
+    total_incl_vat: float,
+    vat_total: float,
+) -> str:
+    """
+    Build an FTA-compliant TLV (Tag-Length-Value) QR payload.
+
+    The UAE FTA Phase-2 (PINT-AE) requires a base64-encoded TLV byte string
+    on every tax invoice and simplified invoice.  Five tags are mandatory:
+
+        Tag 1 — Seller name
+        Tag 2 — VAT Registration Number (TRN)
+        Tag 3 — Invoice / supply timestamp (ISO-8601 string)
+        Tag 4 — Invoice total (including VAT), decimal string
+        Tag 5 — VAT total, decimal string
+
+    Each TLV block: 1-byte tag || 1-byte length || UTF-8 value bytes.
+    All blocks are concatenated and the result is base64-encoded.
+
+    Args:
+        seller_name:    Registered seller / company name.
+        trn:            15-digit UAE Tax Registration Number.
+        timestamp:      Invoice issue date/time string (e.g. "2025-01-15").
+        total_incl_vat: Grand total amount including VAT (numeric).
+        vat_total:      Total VAT amount (numeric).
+
+    Returns:
+        Base64-encoded TLV string ready to embed in a QR code.
+    """
+    def _tlv_block(tag: int, value: str) -> bytes:
+        safe = str(value or "").encode("utf-8")
+        if len(safe) > 255:
+            safe = safe[:255]
+        return bytes([tag, len(safe)]) + safe
+
+    blocks = (
+        _tlv_block(1, str(seller_name or ""))
+        + _tlv_block(2, str(trn or ""))
+        + _tlv_block(3, str(timestamp or ""))
+        + _tlv_block(4, f"{float(total_incl_vat or 0):.2f}")
+        + _tlv_block(5, f"{float(vat_total or 0):.2f}")
+    )
+    return base64.b64encode(blocks).decode("ascii")
+
+
 class PDFInvoiceGenerator:
     """Generates PDF invoices with professional formatting"""
     
@@ -463,7 +511,12 @@ class PDFInvoiceGenerator:
         
         return table
     
-    def _create_totals_section(self, invoice_data: Dict, qr_code: Optional[Image] = None) -> List:
+    def _create_totals_section(
+        self,
+        invoice_data: Dict,
+        qr_code: Optional[Image] = None,
+        public_url: Optional[str] = None,
+    ) -> List:
         """Create totals and summary section"""
         story = []
         
@@ -472,35 +525,43 @@ class PDFInvoiceGenerator:
         # Create two-column layout: QR code | Totals
         totals_data = []
         
-        # Left column: QR code
+        # Left column: FTA TLV QR code + optional share URL caption
         left_col = []
         if qr_code:
             left_col.append(qr_code)
             left_col.append(Paragraph(
-                "<i>Scan to view invoice online</i>",
+                "<i>FTA Compliance QR (TLV)</i>",
                 self.styles['SmallText']
             ))
+            if public_url:
+                left_col.append(Paragraph(
+                    f'<i>View online: <a href="{public_url}">{public_url}</a></i>',
+                    self.styles['SmallText']
+                ))
         
         # Right column: Totals
         right_col = []
         
         # Subtotal
+        _subtotal = float(invoice_data.get('subtotal_amount') or 0)
+        _tax = float(invoice_data.get('tax_amount') or 0)
+        _total = float(invoice_data.get('total_amount') or 0)
         right_col.append(Paragraph(
-            f"<b>Subtotal (Excl. VAT):</b> {currency} {invoice_data.get('subtotal_amount', 0):.2f}",
+            f"<b>Subtotal (Excl. VAT):</b> {currency} {_subtotal:.2f}",
             self.styles['NormalText']
         ))
         
         # VAT
-        tax_percent = (invoice_data.get('tax_amount', 0) / invoice_data.get('subtotal_amount', 1) * 100) if invoice_data.get('subtotal_amount', 0) > 0 else 0
+        tax_percent = (_tax / _subtotal * 100) if _subtotal > 0 else 0
         right_col.append(Paragraph(
-            f"<b>VAT ({tax_percent:.1f}%):</b> {currency} {invoice_data.get('tax_amount', 0):.2f}",
+            f"<b>VAT ({tax_percent:.1f}%):</b> {currency} {_tax:.2f}",
             self.styles['NormalText']
         ))
         
         # Total
         right_col.append(Spacer(1, 5))
         right_col.append(Paragraph(
-            f'<font size="14" color="{self.PRIMARY_COLOR}"><b>TOTAL: {currency} {invoice_data.get('total_amount', 0):.2f}</b></font>',
+            f'<font size="14" color="{self.PRIMARY_COLOR}"><b>TOTAL: {currency} {_total:.2f}</b></font>',
             self.styles['NormalText']
         ))
         
@@ -629,12 +690,23 @@ class PDFInvoiceGenerator:
         story.append(self._create_line_items_table(line_items))
         story.append(Spacer(1, 20))
         
-        # Totals section with QR code
-        qr_code = None
-        if public_url:
-            qr_code = self.generate_qr_code(public_url, size=100)
-        
-        story.extend(self._create_totals_section(invoice_data, qr_code))
+        # Totals section with FTA-compliant TLV QR code
+        # Always generate a QR encoding the FTA TLV payload; the public_url
+        # (if any) is shown as a plain-text caption so share functionality is
+        # preserved without putting a URL in the compliance QR.
+        tlv_payload = generate_fta_tlv_payload(
+            seller_name=invoice_data.get("supplier_name") or "",
+            trn=invoice_data.get("supplier_trn") or "",
+            timestamp=str(
+                invoice_data.get("issue_datetime")
+                or invoice_data.get("issue_date")
+                or ""
+            ),
+            total_incl_vat=float(invoice_data.get("total_amount") or 0),
+            vat_total=float(invoice_data.get("tax_amount") or 0),
+        )
+        qr_code = self.generate_qr_code(tlv_payload, size=100)
+        story.extend(self._create_totals_section(invoice_data, qr_code, public_url=public_url))
         
         # Footer
         story.extend(self._create_footer(invoice_data))

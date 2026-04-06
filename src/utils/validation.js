@@ -45,9 +45,7 @@ export const validateDeliveryPhone = (value) => {
 
   return {
     isValid,
-    error: isValid
-      ? ""
-      : "Use UAE mobile format 05XXXXXXXX or +9715XXXXXXXX",
+    error: isValid ? "" : "Use UAE mobile format 05XXXXXXXX or +9715XXXXXXXX",
   };
 };
 

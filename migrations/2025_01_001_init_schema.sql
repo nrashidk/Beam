@@ -67,10 +67,10 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT,
     role role_t NOT NULL,
-    company_id TEXT REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT REFERENCES companies (id) ON DELETE CASCADE,
     is_owner BOOLEAN DEFAULT FALSE,
     full_name TEXT,
-    invited_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    invited_by TEXT REFERENCES users (id) ON DELETE SET NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     last_login TIMESTAMP WITHOUT TIME ZONE,
     mfa_enabled BOOLEAN DEFAULT FALSE,
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS companies (
     free_plan_invoice_limit INTEGER,
     free_plan_start_date TIMESTAMP WITHOUT TIME ZONE,
     invoices_generated INTEGER DEFAULT 0,
-    subscription_plan_id TEXT REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    subscription_plan_id TEXT REFERENCES subscription_plans (id) ON DELETE SET NULL,
     trial_status TEXT DEFAULT 'ACTIVE',
     trial_start_date TIMESTAMP WITHOUT TIME ZONE,
     trial_invoice_count INTEGER DEFAULT 0,
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS companies (
     rejected_at TIMESTAMP WITHOUT TIME ZONE
 );
 
-CREATE INDEX IF NOT EXISTS idx_companies_trn ON companies(trn);
+CREATE INDEX IF NOT EXISTS idx_companies_trn ON companies (trn);
 
 -- subscription_plans
 CREATE TABLE IF NOT EXISTS subscription_plans (
@@ -167,8 +167,8 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
 -- company_subscriptions
 CREATE TABLE IF NOT EXISTS company_subscriptions (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    plan_id TEXT NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    plan_id TEXT NOT NULL REFERENCES subscription_plans (id) ON DELETE CASCADE,
     status subscription_status_t DEFAULT 'TRIAL',
     billing_cycle TEXT DEFAULT 'monthly',
     current_period_start DATE NOT NULL,
@@ -177,12 +177,12 @@ CREATE TABLE IF NOT EXISTS company_subscriptions (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_company_subs_company ON company_subscriptions(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_subs_company ON company_subscriptions (company_id);
 
 -- company_documents
 CREATE TABLE IF NOT EXISTS company_documents (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     document_type document_type_t NOT NULL,
     file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
@@ -198,7 +198,7 @@ CREATE TABLE IF NOT EXISTS company_documents (
 -- company_branding
 CREATE TABLE IF NOT EXISTS company_branding (
     id TEXT PRIMARY KEY,
-    company_id TEXT UNIQUE NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT UNIQUE NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     logo_file_name TEXT,
     logo_file_path TEXT,
     logo_file_size INTEGER,
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS company_branding (
 -- registration_progress
 CREATE TABLE IF NOT EXISTS registration_progress (
     id TEXT PRIMARY KEY,
-    company_id TEXT UNIQUE NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT UNIQUE NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     current_step INTEGER DEFAULT 1,
     step_company_info BOOLEAN DEFAULT FALSE,
     step_business_details BOOLEAN DEFAULT FALSE,
@@ -241,27 +241,27 @@ CREATE TABLE IF NOT EXISTS content_blocks (
     updated_by TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_content_blocks_section ON content_blocks(section);
+CREATE INDEX IF NOT EXISTS idx_content_blocks_section ON content_blocks (section);
 
 -- featured_businesses
 CREATE TABLE IF NOT EXISTS featured_businesses (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     display_name TEXT,
     logo_url TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     display_order INTEGER DEFAULT 0,
-    added_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    added_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_featured_company ON featured_businesses(company_id);
+CREATE INDEX IF NOT EXISTS idx_featured_company ON featured_businesses (company_id);
 
 -- invoices
 CREATE TABLE IF NOT EXISTS invoices (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     invoice_number TEXT NOT NULL,
     invoice_type invoice_type_t NOT NULL,
     status invoice_status_t DEFAULT 'DRAFT',
@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     payment_due_days INTEGER DEFAULT 30,
     invoice_notes TEXT,
     reference_number TEXT,
-    preceding_invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+    preceding_invoice_id TEXT REFERENCES invoices (id) ON DELETE SET NULL,
     credit_note_reason TEXT,
     xml_file_path TEXT,
     pdf_file_path TEXT,
@@ -310,21 +310,22 @@ CREATE TABLE IF NOT EXISTS invoices (
     sent_at TIMESTAMP WITHOUT TIME ZONE,
     viewed_at TIMESTAMP WITHOUT TIME ZONE,
     paid_at TIMESTAMP WITHOUT TIME ZONE,
-    created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
-    payment_verified_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
+    payment_verified_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     payment_verified_at TIMESTAMP WITHOUT TIME ZONE,
     payment_method TEXT,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_invoices_company ON invoices(company_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+CREATE INDEX IF NOT EXISTS idx_invoices_company ON invoices (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices (invoice_number);
 
 -- invoice_line_items
 CREATE TABLE IF NOT EXISTS invoice_line_items (
     id TEXT PRIMARY KEY,
-    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    invoice_id TEXT NOT NULL REFERENCES invoices (id) ON DELETE CASCADE,
     line_number INTEGER NOT NULL,
     item_name TEXT NOT NULL,
     item_description TEXT,
@@ -341,12 +342,12 @@ CREATE TABLE IF NOT EXISTS invoice_line_items (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_ili_invoice ON invoice_line_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_ili_invoice ON invoice_line_items (invoice_id);
 
 -- invoice_tax_breakdowns
 CREATE TABLE IF NOT EXISTS invoice_tax_breakdowns (
     id TEXT PRIMARY KEY,
-    invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    invoice_id TEXT NOT NULL REFERENCES invoices (id) ON DELETE CASCADE,
     tax_category tax_category_t NOT NULL,
     taxable_amount DOUBLE PRECISION NOT NULL,
     tax_percent DOUBLE PRECISION NOT NULL,
@@ -357,7 +358,7 @@ CREATE TABLE IF NOT EXISTS invoice_tax_breakdowns (
 -- purchase_orders
 CREATE TABLE IF NOT EXISTS purchase_orders (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     po_number TEXT NOT NULL,
     status purchase_order_status_t DEFAULT 'DRAFT',
     supplier_trn TEXT,
@@ -378,19 +379,20 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
     variance_amount DOUBLE PRECISION DEFAULT 0.0,
     reference_number TEXT,
     notes TEXT,
-    approved_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    approved_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     approved_at TIMESTAMP WITHOUT TIME ZONE,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_po_company ON purchase_orders(company_id);
-CREATE INDEX IF NOT EXISTS idx_po_number ON purchase_orders(po_number);
+CREATE INDEX IF NOT EXISTS idx_po_company ON purchase_orders (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_po_number ON purchase_orders (po_number);
 
 -- purchase_order_line_items
 CREATE TABLE IF NOT EXISTS purchase_order_line_items (
     id TEXT PRIMARY KEY,
-    po_id TEXT NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    po_id TEXT NOT NULL REFERENCES purchase_orders (id) ON DELETE CASCADE,
     line_number INTEGER NOT NULL,
     item_name TEXT NOT NULL,
     item_description TEXT,
@@ -405,17 +407,17 @@ CREATE TABLE IF NOT EXISTS purchase_order_line_items (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_poli_po ON purchase_order_line_items(po_id);
+CREATE INDEX IF NOT EXISTS idx_poli_po ON purchase_order_line_items (po_id);
 
 -- goods_receipts
 CREATE TABLE IF NOT EXISTS goods_receipts (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    po_id TEXT REFERENCES purchase_orders(id) ON DELETE SET NULL,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    po_id TEXT REFERENCES purchase_orders (id) ON DELETE SET NULL,
     grn_number TEXT NOT NULL,
     status goods_receipt_status_t DEFAULT 'PENDING',
     receipt_date DATE NOT NULL,
-    received_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    received_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     supplier_trn TEXT,
     supplier_name TEXT NOT NULL,
     supplier_delivery_note TEXT,
@@ -429,14 +431,15 @@ CREATE TABLE IF NOT EXISTS goods_receipts (
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_grn_company ON goods_receipts(company_id);
-CREATE INDEX IF NOT EXISTS idx_grn_number ON goods_receipts(grn_number);
+CREATE INDEX IF NOT EXISTS idx_grn_company ON goods_receipts (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_grn_number ON goods_receipts (grn_number);
 
 -- goods_receipt_line_items
 CREATE TABLE IF NOT EXISTS goods_receipt_line_items (
     id TEXT PRIMARY KEY,
-    grn_id TEXT NOT NULL REFERENCES goods_receipts(id) ON DELETE CASCADE,
-    po_line_item_id TEXT REFERENCES purchase_order_line_items(id) ON DELETE SET NULL,
+    grn_id TEXT NOT NULL REFERENCES goods_receipts (id) ON DELETE CASCADE,
+    po_line_item_id TEXT REFERENCES purchase_order_line_items (id) ON DELETE SET NULL,
     line_number INTEGER NOT NULL,
     item_name TEXT NOT NULL,
     item_code TEXT,
@@ -452,7 +455,7 @@ CREATE TABLE IF NOT EXISTS goods_receipt_line_items (
 -- inward_invoices
 CREATE TABLE IF NOT EXISTS inward_invoices (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     supplier_invoice_number TEXT NOT NULL,
     invoice_type invoice_type_t DEFAULT '380',
     status inward_invoice_status_t DEFAULT 'RECEIVED',
@@ -463,7 +466,7 @@ CREATE TABLE IF NOT EXISTS inward_invoices (
     supplier_name TEXT NOT NULL,
     supplier_address TEXT,
     supplier_peppol_id TEXT,
-    supplier_company_id TEXT REFERENCES companies(id) ON DELETE SET NULL,
+    supplier_company_id TEXT REFERENCES companies (id) ON DELETE SET NULL,
     customer_trn TEXT,
     customer_name TEXT NOT NULL,
     currency_code TEXT DEFAULT 'AED',
@@ -478,16 +481,16 @@ CREATE TABLE IF NOT EXISTS inward_invoices (
     peppol_sender_id TEXT,
     peppol_provider TEXT,
     peppol_received_at TIMESTAMP WITHOUT TIME ZONE,
-    po_id TEXT REFERENCES purchase_orders(id) ON DELETE SET NULL,
-    grn_id TEXT REFERENCES goods_receipts(id) ON DELETE SET NULL,
+    po_id TEXT REFERENCES purchase_orders (id) ON DELETE SET NULL,
+    grn_id TEXT REFERENCES goods_receipts (id) ON DELETE SET NULL,
     matching_status matching_status_t DEFAULT 'NOT_MATCHED',
     po_match_score DOUBLE PRECISION DEFAULT 0.0,
     grn_match_score DOUBLE PRECISION DEFAULT 0.0,
     amount_variance DOUBLE PRECISION DEFAULT 0.0,
     quantity_variance DOUBLE PRECISION DEFAULT 0.0,
-    reviewed_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     reviewed_at TIMESTAMP WITHOUT TIME ZONE,
-    approved_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    approved_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     approved_at TIMESTAMP WITHOUT TIME ZONE,
     rejection_reason TEXT,
     payment_status TEXT,
@@ -504,13 +507,14 @@ CREATE TABLE IF NOT EXISTS inward_invoices (
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_inward_company ON inward_invoices(company_id);
-CREATE INDEX IF NOT EXISTS idx_inward_supplier_invoice_number ON inward_invoices(supplier_invoice_number);
+CREATE INDEX IF NOT EXISTS idx_inward_company ON inward_invoices (company_id);
+
+CREATE INDEX IF NOT EXISTS idx_inward_supplier_invoice_number ON inward_invoices (supplier_invoice_number);
 
 -- inward_invoice_line_items
 CREATE TABLE IF NOT EXISTS inward_invoice_line_items (
     id TEXT PRIMARY KEY,
-    inward_invoice_id TEXT NOT NULL REFERENCES inward_invoices(id) ON DELETE CASCADE,
+    inward_invoice_id TEXT NOT NULL REFERENCES inward_invoices (id) ON DELETE CASCADE,
     line_number INTEGER NOT NULL,
     item_name TEXT NOT NULL,
     item_description TEXT,
@@ -523,8 +527,8 @@ CREATE TABLE IF NOT EXISTS inward_invoice_line_items (
     tax_percent DOUBLE PRECISION DEFAULT 0.0,
     tax_amount DOUBLE PRECISION DEFAULT 0.0,
     line_total_amount DOUBLE PRECISION NOT NULL,
-    po_line_item_id TEXT REFERENCES purchase_order_line_items(id) ON DELETE SET NULL,
-    grn_line_item_id TEXT REFERENCES goods_receipt_line_items(id) ON DELETE SET NULL,
+    po_line_item_id TEXT REFERENCES purchase_order_line_items (id) ON DELETE SET NULL,
+    grn_line_item_id TEXT REFERENCES goods_receipt_line_items (id) ON DELETE SET NULL,
     match_status TEXT,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
@@ -532,7 +536,7 @@ CREATE TABLE IF NOT EXISTS inward_invoice_line_items (
 -- audit_files
 CREATE TABLE IF NOT EXISTS audit_files (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     file_name TEXT NOT NULL,
     file_path TEXT NOT NULL,
     file_size INTEGER,
@@ -540,7 +544,7 @@ CREATE TABLE IF NOT EXISTS audit_files (
     period_start_date DATE NOT NULL,
     period_end_date DATE NOT NULL,
     status audit_file_status_t DEFAULT 'GENERATING',
-    generated_by_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    generated_by_user_id TEXT NOT NULL REFERENCES users (id) ON DELETE SET NULL,
     generated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     total_invoices INTEGER DEFAULT 0,
     total_customers INTEGER DEFAULT 0,
@@ -553,7 +557,7 @@ CREATE TABLE IF NOT EXISTS audit_files (
 -- payment_methods
 CREATE TABLE IF NOT EXISTS payment_methods (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     stripe_payment_method_id TEXT NOT NULL UNIQUE,
     card_brand TEXT,
     card_last4 TEXT,
@@ -565,12 +569,12 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_payment_company ON payment_methods(company_id);
+CREATE INDEX IF NOT EXISTS idx_payment_company ON payment_methods (company_id);
 
 -- subscriptions (company subscriptions in stripe style)
 CREATE TABLE IF NOT EXISTS subscriptions (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     tier TEXT NOT NULL,
     billing_cycle_months INTEGER DEFAULT 1,
     monthly_price DOUBLE PRECISION DEFAULT 0.0,
@@ -588,8 +592,8 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 -- peppol_usage
 CREATE TABLE IF NOT EXISTS peppol_usage (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    invoice_id TEXT REFERENCES invoices (id) ON DELETE SET NULL,
     transmission_date TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     status TEXT NOT NULL,
     fee_amount DOUBLE PRECISION DEFAULT 1.0,
@@ -601,7 +605,7 @@ CREATE TABLE IF NOT EXISTS peppol_usage (
 -- billing_invoices
 CREATE TABLE IF NOT EXISTS billing_invoices (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     invoice_number TEXT UNIQUE NOT NULL,
     billing_period_start DATE NOT NULL,
     billing_period_end DATE NOT NULL,
@@ -612,7 +616,7 @@ CREATE TABLE IF NOT EXISTS billing_invoices (
     status TEXT DEFAULT 'DRAFT',
     stripe_invoice_id TEXT UNIQUE,
     paid_at TIMESTAMP WITHOUT TIME ZONE,
-    payment_method_id TEXT REFERENCES payment_methods(id) ON DELETE SET NULL,
+    payment_method_id TEXT REFERENCES payment_methods (id) ON DELETE SET NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     sent_at TIMESTAMP WITHOUT TIME ZONE
 );
@@ -620,7 +624,7 @@ CREATE TABLE IF NOT EXISTS billing_invoices (
 -- expense_categories
 CREATE TABLE IF NOT EXISTS expense_categories (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
     is_default BOOLEAN DEFAULT FALSE,
@@ -630,7 +634,7 @@ CREATE TABLE IF NOT EXISTS expense_categories (
 -- expenses
 CREATE TABLE IF NOT EXISTS expenses (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     expense_date DATE NOT NULL,
     category TEXT NOT NULL,
     description TEXT,
@@ -643,17 +647,17 @@ CREATE TABLE IF NOT EXISTS expenses (
     notes TEXT,
     tax_code TEXT DEFAULT 'SR',
     vendor_id TEXT,
-    created_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_by_user_id TEXT REFERENCES users (id) ON DELETE SET NULL,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses (company_id);
 
 -- inventory_items
 CREATE TABLE IF NOT EXISTS inventory_items (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
     item_name TEXT NOT NULL,
     item_code TEXT,
     description TEXT,
@@ -665,13 +669,13 @@ CREATE TABLE IF NOT EXISTS inventory_items (
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_inventory_company ON inventory_items(company_id);
+CREATE INDEX IF NOT EXISTS idx_inventory_company ON inventory_items (company_id);
 
 -- inventory_transactions
 CREATE TABLE IF NOT EXISTS inventory_transactions (
     id TEXT PRIMARY KEY,
-    company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    inventory_item_id TEXT NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    company_id TEXT NOT NULL REFERENCES companies (id) ON DELETE CASCADE,
+    inventory_item_id TEXT NOT NULL REFERENCES inventory_items (id) ON DELETE CASCADE,
     transaction_type TEXT NOT NULL,
     quantity DOUBLE PRECISION NOT NULL,
     transaction_date DATE NOT NULL,
@@ -682,7 +686,7 @@ CREATE TABLE IF NOT EXISTS inventory_transactions (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_invtrx_item ON inventory_transactions(inventory_item_id);
+CREATE INDEX IF NOT EXISTS idx_invtrx_item ON inventory_transactions (inventory_item_id);
 
 -- Final: ensure extension for UUID if needed (optional)
 -- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

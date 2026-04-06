@@ -15,6 +15,33 @@ from typing import Dict, Any, Optional, List
 from enum import Enum
 
 
+# UAE FTA predefined PEPPOL endpoints for special transaction cases
+UAE_PEPPOL_ENDPOINT_DEEMED_SUPPLY = "0235:9900000097"
+UAE_PEPPOL_ENDPOINT_EXPORT = "0235:9900000099"
+UAE_PEPPOL_ENDPOINT_NOT_ON_PEPPOL = "0235:9900000098"
+
+
+def resolve_receiver_peppol_id(invoice_transaction_type: str, customer_peppol_id: str) -> str:
+    """
+    Resolve the correct PEPPOL receiver endpoint ID based on transaction type.
+    UAE FTA requires predefined endpoints when buyer is not on PEPPOL network.
+
+    Args:
+        invoice_transaction_type: One of InvoiceTransactionType values
+        customer_peppol_id: The buyer's registered PEPPOL ID (may be empty)
+
+    Returns:
+        The correct PEPPOL endpoint ID to use for transmission
+    """
+    if invoice_transaction_type == "DEEMED_SUPPLY":
+        return UAE_PEPPOL_ENDPOINT_DEEMED_SUPPLY
+    elif invoice_transaction_type == "EXPORT":
+        return UAE_PEPPOL_ENDPOINT_EXPORT
+    elif not customer_peppol_id:
+        return UAE_PEPPOL_ENDPOINT_NOT_ON_PEPPOL
+    return customer_peppol_id
+
+
 class PeppolStatus(str, Enum):
     """PEPPOL transmission status codes"""
     PENDING = "PENDING"

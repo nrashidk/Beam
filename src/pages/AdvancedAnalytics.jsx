@@ -26,7 +26,6 @@ import {
   ArrowDown,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 
 const AdvancedAnalytics = () => {
@@ -102,22 +101,32 @@ const AdvancedAnalytics = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
-        <div className="flex-1 ml-64">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <BackToDashboard />
-            <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-              <div className="text-red-600 text-xl font-semibold mb-2">
-                Unable to Load Analytics
+        <div className="flex-1 ml-64 flex flex-col">
+          <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">Advanced Analytics</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Comprehensive business insights and trends</p>
               </div>
-              <p className="text-red-700 mb-4">{error}</p>
-              <button
-                onClick={fetchAnalyticsData}
-                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Try Again
-              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+                <div className="text-red-600 text-xl font-semibold mb-2">
+                  Unable to Load Analytics
+                </div>
+                <p className="text-red-700 mb-4">{error}</p>
+                <button
+                  onClick={fetchAnalyticsData}
+                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -132,29 +141,36 @@ const AdvancedAnalytics = () => {
 
   if (hasNoData) {
     return (
-      <div className="min-h-screen bg-gray-50 flex">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
-        <div className="flex-1 ml-64">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            <BackToDashboard />
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">
-              Advanced Analytics
-            </h1>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
-              <Activity className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-              <div className="text-blue-900 text-xl font-semibold mb-2">
-                No Analytics Data Available
+        <div className="flex-1 ml-64 flex flex-col">
+          <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">Advanced Analytics</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Comprehensive business insights and trends</p>
               </div>
-              <p className="text-blue-700 mb-4">
-                Start issuing and receiving payments on invoices to see your
-                business analytics and insights here.
-              </p>
-              <button
-                onClick={() => navigate("/invoices")}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Go to Invoices
-              </button>
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-7xl mx-auto">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-8 text-center">
+                <Activity className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                <div className="text-blue-900 text-xl font-semibold mb-2">
+                  No Analytics Data Available
+                </div>
+                <p className="text-blue-700 mb-4">
+                  Start issuing and receiving payments on invoices to see your
+                  business analytics and insights here.
+                </p>
+                <button
+                  onClick={() => navigate("/invoices")}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Go to Invoices
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -165,19 +181,20 @@ const AdvancedAnalytics = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar />
-      <div className="flex-1 ml-64">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <BackToDashboard />
-          <div className="flex items-center justify-between mb-8">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <TrendingUp className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">
-                Advanced Analytics
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Comprehensive business insights and trends
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Advanced Analytics</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Comprehensive business insights and trends</p>
             </div>
-            <div className="flex items-center gap-4">
+          </div>
+        </div>
+        <div className="flex-1 p-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center justify-end mb-8">
+              <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-gray-700">
                 Time Period:
               </label>
@@ -468,6 +485,7 @@ const AdvancedAnalytics = () => {
         </div>
       </div>
     </div>
+  </div>
   );
 };
 

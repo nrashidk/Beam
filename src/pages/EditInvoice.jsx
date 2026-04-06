@@ -85,11 +85,39 @@ export default function EditInvoice() {
     customer_trn: "",
     customer_address: "",
     customer_city: "",
+    customer_country: "AE",
     payment_due_days: 30,
     invoice_notes: "",
     reference_number: "",
     preceding_invoice_id: "",
     line_items: [buildDefaultLineItem(false)],
+    // UAE PINT-AE Transaction Type
+    invoice_transaction_type: "STANDARD",
+    tax_exemption_reason_code: "",
+    tax_exemption_reason: "",
+    payment_due_date: "",
+    payment_type_code: "",
+    deliver_to_location_id: "",
+    deliver_to_party_name: "",
+    deliver_to_address: "",
+    delivery_date: "",
+    ecommerce_scheme_id: "",
+    buyer_legal_registration: "",
+    buyer_registration_id: "",
+    buyer_electronic_address: "",
+    buyer_scheme_id: "",
+    margin_credit_note_reason_code: "",
+    margin_process_control: "",
+    margin_preceding_ref: "",
+    margin_preceding_date: "",
+    contract_reference: "",
+    contract_value: "",
+    invoice_note: "",
+    billing_frequency: "",
+    invoicing_period_start: "",
+    invoicing_period_end: "",
+    principal_id: "",
+    beneficiary_id: "",
   });
 
   useEffect(() => {
@@ -136,6 +164,7 @@ export default function EditInvoice() {
           customer_trn: invoiceData.customer_trn || "",
           customer_address: invoiceData.customer_address || "",
           customer_city: invoiceData.customer_city || "",
+          customer_country: invoiceData.customer_country || "AE",
           payment_due_days: 30,
           invoice_notes: invoiceData.invoice_notes || "",
           reference_number: invoiceData.reference_number || "",
@@ -143,6 +172,33 @@ export default function EditInvoice() {
           line_items: invoiceData.line_items || [
             buildDefaultLineItem(vatStatus),
           ],
+          // UAE PINT-AE Transaction Type
+          invoice_transaction_type: invoiceData.invoice_transaction_type || "STANDARD",
+          tax_exemption_reason_code: invoiceData.tax_exemption_reason_code || "",
+          tax_exemption_reason: invoiceData.tax_exemption_reason || "",
+          payment_due_date: invoiceData.payment_due_date ? invoiceData.payment_due_date.split("T")[0] : "",
+          payment_type_code: invoiceData.payment_type_code || "",
+          deliver_to_location_id: invoiceData.deliver_to_location_id || "",
+          deliver_to_party_name: invoiceData.deliver_to_party_name || "",
+          deliver_to_address: invoiceData.deliver_to_address || "",
+          delivery_date: invoiceData.delivery_date ? invoiceData.delivery_date.split("T")[0] : "",
+          ecommerce_scheme_id: invoiceData.ecommerce_scheme_id || "",
+          buyer_legal_registration: invoiceData.buyer_legal_registration || "",
+          buyer_registration_id: invoiceData.buyer_registration_id || "",
+          buyer_electronic_address: invoiceData.buyer_electronic_address || "",
+          buyer_scheme_id: invoiceData.buyer_scheme_id || "",
+          margin_credit_note_reason_code: invoiceData.margin_credit_note_reason_code || "",
+          margin_process_control: invoiceData.margin_process_control || "",
+          margin_preceding_ref: invoiceData.margin_preceding_ref || "",
+          margin_preceding_date: invoiceData.margin_preceding_date ? invoiceData.margin_preceding_date.split("T")[0] : "",
+          contract_reference: invoiceData.contract_reference || "",
+          contract_value: invoiceData.contract_value || "",
+          invoice_note: invoiceData.invoice_note || "",
+          billing_frequency: invoiceData.billing_frequency || "",
+          invoicing_period_start: invoiceData.invoicing_period_start ? invoiceData.invoicing_period_start.split("T")[0] : "",
+          invoicing_period_end: invoiceData.invoicing_period_end ? invoiceData.invoicing_period_end.split("T")[0] : "",
+          principal_id: invoiceData.principal_id || "",
+          beneficiary_id: invoiceData.beneficiary_id || "",
         });
 
         // Fetch original invoices if this is a credit note
@@ -581,6 +637,42 @@ export default function EditInvoice() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Customer Country
+                  </label>
+                  <select
+                    value={formData.customer_country}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        customer_country: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  >
+                    <option value="AE">🇦🇪 UAE</option>
+                    <option value="SA">🇸🇦 Saudi Arabia</option>
+                    <option value="BH">🇧🇭 Bahrain</option>
+                    <option value="KW">🇰🇼 Kuwait</option>
+                    <option value="OM">🇴🇲 Oman</option>
+                    <option value="QA">🇶🇦 Qatar</option>
+                    <option value="IN">🇮🇳 India</option>
+                    <option value="PK">🇵🇰 Pakistan</option>
+                    <option value="GB">🇬🇧 United Kingdom</option>
+                    <option value="US">🇺🇸 United States</option>
+                    <option value="DE">🇩🇪 Germany</option>
+                    <option value="FR">🇫🇷 France</option>
+                    <option value="CN">🇨🇳 China</option>
+                    <option value="SG">🇸🇬 Singapore</option>
+                    <option value="JP">🇯🇵 Japan</option>
+                    <option value="TR">🇹🇷 Türkiye</option>
+                    <option value="EG">🇪🇬 Egypt</option>
+                    <option value="JO">🇯🇴 Jordan</option>
+                    <option value="LB">🇱🇧 Lebanon</option>
+                  </select>
+                </div>
+
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Address
@@ -599,6 +691,170 @@ export default function EditInvoice() {
                 </div>
               </div>
             </div>
+
+            {/* UAE PINT-AE Transaction Type (Task 10) */}
+            {vatEnabled && (
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-1">UAE Transaction Scenario</h2>
+                <p className="text-xs text-gray-500 mb-4">Select the PEPPOL PINT-AE transaction scenario. Conditional fields will appear below.</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Transaction Type</label>
+                    <select value={formData.invoice_transaction_type}
+                      onChange={(e) => setFormData({ ...formData, invoice_transaction_type: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                      <option value="STANDARD">Standard (Default taxable supply)</option>
+                      <option value="REVERSE_CHARGE">Reverse Charge (Buyer accounts for VAT)</option>
+                      <option value="ZERO_RATED">Zero-Rated Supply</option>
+                      <option value="EXEMPT">Exempt Supply</option>
+                      <option value="DEEMED_SUPPLY">Deemed Supply</option>
+                      <option value="ECOMMERCE">E-Commerce Supply</option>
+                      <option value="EXPORT">Export of Goods/Services</option>
+                      <option value="MARGIN_SCHEME">Margin Scheme</option>
+                      <option value="SUMMARY_INVOICE">Summary Invoice</option>
+                      <option value="CONTINUOUS_SUPPLY">Continuous Supply</option>
+                      <option value="SELF_BILLING">Self-Billing Invoice</option>
+                      <option value="DISCLOSED_AGENT">Disclosed Agent Supply</option>
+                      <option value="UNDISCLOSED_AGENT">Undisclosed Agent Supply</option>
+                      <option value="FREE_TRADE_ZONE">Free Trade Zone Supply</option>
+                      <option value="IMPORTS">Import of Goods</option>
+                      <option value="DESIGNATED_ZONE">Designated Zone Supply</option>
+                    </select>
+                  </div>
+                  {["REVERSE_CHARGE","ZERO_RATED","EXEMPT"].includes(formData.invoice_transaction_type) && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Exemption Reason Code</label>
+                        <input type="text" value={formData.tax_exemption_reason_code}
+                          onChange={(e) => setFormData({ ...formData, tax_exemption_reason_code: e.target.value })}
+                          placeholder="e.g. VATEX-AE-RCES"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Exemption Reason</label>
+                        <input type="text" value={formData.tax_exemption_reason}
+                          onChange={(e) => setFormData({ ...formData, tax_exemption_reason: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                  {formData.invoice_transaction_type === "DEEMED_SUPPLY" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Due Date</label>
+                        <input type="date" value={formData.payment_due_date}
+                          onChange={(e) => setFormData({ ...formData, payment_due_date: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Payment Type Code</label>
+                        <input type="text" value={formData.payment_type_code}
+                          onChange={(e) => setFormData({ ...formData, payment_type_code: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                  {formData.invoice_transaction_type === "ECOMMERCE" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Location ID</label>
+                        <input type="text" value={formData.deliver_to_location_id}
+                          onChange={(e) => setFormData({ ...formData, deliver_to_location_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Party Name</label>
+                        <input type="text" value={formData.deliver_to_party_name}
+                          onChange={(e) => setFormData({ ...formData, deliver_to_party_name: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Address</label>
+                        <input type="text" value={formData.deliver_to_address}
+                          onChange={(e) => setFormData({ ...formData, deliver_to_address: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Date</label>
+                        <input type="date" value={formData.delivery_date}
+                          onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                  {formData.invoice_transaction_type === "EXPORT" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Buyer Legal Registration</label>
+                        <input type="text" value={formData.buyer_legal_registration}
+                          onChange={(e) => setFormData({ ...formData, buyer_legal_registration: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Buyer Registration ID</label>
+                        <input type="text" value={formData.buyer_registration_id}
+                          onChange={(e) => setFormData({ ...formData, buyer_registration_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                  {formData.invoice_transaction_type === "CONTINUOUS_SUPPLY" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Contract Reference</label>
+                        <input type="text" value={formData.contract_reference}
+                          onChange={(e) => setFormData({ ...formData, contract_reference: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Billing Frequency</label>
+                        <select value={formData.billing_frequency}
+                          onChange={(e) => setFormData({ ...formData, billing_frequency: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                          <option value="">Select frequency</option>
+                          <option value="Monthly">Monthly</option>
+                          <option value="Quarterly">Quarterly</option>
+                          <option value="Annual">Annual</option>
+                          <option value="Weekly">Weekly</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+                  {["SUMMARY_INVOICE","CONTINUOUS_SUPPLY"].includes(formData.invoice_transaction_type) && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Invoicing Period Start</label>
+                        <input type="date" value={formData.invoicing_period_start}
+                          onChange={(e) => setFormData({ ...formData, invoicing_period_start: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Invoicing Period End</label>
+                        <input type="date" value={formData.invoicing_period_end}
+                          onChange={(e) => setFormData({ ...formData, invoicing_period_end: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                  {["DISCLOSED_AGENT","FREE_TRADE_ZONE","SELF_BILLING"].includes(formData.invoice_transaction_type) && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Principal / Supplier ID</label>
+                        <input type="text" value={formData.principal_id}
+                          onChange={(e) => setFormData({ ...formData, principal_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Beneficiary / Buyer ID</label>
+                        <input type="text" value={formData.beneficiary_id}
+                          onChange={(e) => setFormData({ ...formData, beneficiary_id: e.target.value })}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Line Items */}
             <div>

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Archive, Download, RotateCcw, AlertTriangle, CheckCircle, ShieldCheck, ShieldX, Upload, CalendarDays } from "lucide-react";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import { apiClient } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -40,7 +39,7 @@ export default function DataArchival() {
     setError(null);
     try {
       const res = await apiClient.get("/invoices/archived");
-      setArchivedInvoices(res.data);
+      setArchivedInvoices(res.data.archived_invoices || []);
     } catch (err) {
       setError(
         err.response?.data?.detail || "Failed to load archived invoices."
@@ -203,35 +202,30 @@ export default function DataArchival() {
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <div className="bg-white border-b px-6 py-4">
+      <div className="flex-1 ml-64 flex flex-col">
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center gap-3">
-            <BackToDashboard />
+            <Archive className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
-              <h1 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                <Archive className="h-5 w-5 text-amber-600" />
-                Data Archival & Restoration
-              </h1>
-              <p className="text-sm text-gray-500">
-                Archive old invoices for FTA compliance; restore them for audit access
-              </p>
+              <h1 className="text-xl font-semibold text-gray-900">Data Archival & Restoration</h1>
+              <p className="text-sm text-gray-500 mt-0.5">Archive old invoices for FTA compliance; restore them for audit access</p>
             </div>
           </div>
         </div>
 
         <div className="p-6 max-w-5xl mx-auto w-full">
           {/* Archival status banner */}
-          {archivalStatus && archivalStatus.eligible_for_archival > 0 && (
+          {archivalStatus && archivalStatus.eligible_count > 0 && (
             <div className="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
               <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-amber-800">
-                <span className="font-semibold">{archivalStatus.eligible_for_archival} invoice(s)</span> issued before{" "}
+                <span className="font-semibold">{archivalStatus.eligible_count} invoice(s)</span> issued before{" "}
                 <span className="font-medium">{archivalStatus.cutoff_date}</span> are eligible for archival (FTA 5-year
                 retention policy). Run archival below to comply.
               </div>
             </div>
           )}
-          {archivalStatus && archivalStatus.eligible_for_archival === 0 && (
+          {archivalStatus && archivalStatus.eligible_count === 0 && (
             <div className="mb-5 flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
               <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
               <p className="text-sm text-green-800">
@@ -334,16 +328,13 @@ export default function DataArchival() {
 
               {fyPreview && !fyResult && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-                  <p className="font-semibold mb-2">Preview — FY{fyPreview.year} ({fyPreview.year_start} to {fyPreview.year_end})</p>
+                  <p className="font-semibold mb-2">Preview — FY{fyPreview.fiscal_year}</p>
                   <ul className="space-y-1 text-sm">
-                    <li>Invoices (paid/cancelled): <strong>{fyPreview.counts.invoices}</strong></li>
-                    <li>Journal entries: <strong>{fyPreview.counts.journal_entries}</strong></li>
-                    <li>Expenses: <strong>{fyPreview.counts.expenses}</strong></li>
-                    <li>Inward invoices: <strong>{fyPreview.counts.inward_invoices}</strong></li>
-                    <li className="pt-1 border-t border-amber-300 font-semibold">Total: {fyPreview.counts.total} record(s)</li>
+                    <li>Invoices eligible for archival: <strong>{fyPreview.eligible_count}</strong></li>
                   </ul>
-                  {fyPreview.counts.total === 0 && (
-                    <p className="mt-2 text-amber-600 italic">No unarchived records found for FY{fyPreview.year}.</p>
+                  <p className="mt-2 text-amber-700">{fyPreview.message}</p>
+                  {fyPreview.eligible_count === 0 && (
+                    <p className="mt-2 text-amber-600 italic">No unarchived invoices found for FY{fyPreview.fiscal_year}.</p>
                   )}
                 </div>
               )}
@@ -352,15 +343,10 @@ export default function DataArchival() {
                 <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
                   <p className="font-semibold mb-2 flex items-center gap-2">
                     <CheckCircle className="h-4 w-4" />
-                    FY{fyResult.year} Archival Complete
+                    FY{fyResult.fiscal_year} Archival Complete
                   </p>
-                  <ul className="space-y-1 text-sm">
-                    <li>Invoices: <strong>{fyResult.counts.invoices}</strong></li>
-                    <li>Journal entries: <strong>{fyResult.counts.journal_entries}</strong></li>
-                    <li>Expenses: <strong>{fyResult.counts.expenses}</strong></li>
-                    <li>Inward invoices: <strong>{fyResult.counts.inward_invoices}</strong></li>
-                    <li className="pt-1 border-t border-green-300 font-semibold">Total archived: {fyResult.counts.total}</li>
-                  </ul>
+                  <p>{fyResult.message}</p>
+                  <p className="mt-1 font-semibold">Invoices archived: {fyResult.archived_count}</p>
                 </div>
               )}
 

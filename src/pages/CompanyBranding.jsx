@@ -5,13 +5,13 @@ import { apiClient, getApiBaseUrl } from "../lib/api";
 import {
   ArrowLeft,
   Upload,
+  Palette,
   X,
   CheckCircle,
   AlertCircle,
   Image as ImageIcon,
 } from "lucide-react";
 import Sidebar from "../components/Sidebar";
-import BackToDashboard from "../components/BackToDashboard";
 import PageLoader from "../components/PageLoader";
 import ConfirmationModal from "../components/ConfirmationModal";
 
@@ -216,7 +216,7 @@ export default function CompanyBranding() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
         <div className="flex-1 ml-64">
           <PageLoader />
@@ -227,22 +227,21 @@ export default function CompanyBranding() {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
 
-        <div className="flex-1 ml-64">
-          <div className="max-w-4xl mx-auto px-6 py-8">
-            <BackToDashboard />
-
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900">
-                Company Branding
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Upload your company logo and stamp to display on invoices
-              </p>
+        <div className="flex-1 ml-64 flex flex-col">
+          <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <Palette className="h-6 w-6 text-indigo-600 flex-shrink-0" />
+              <div>
+                <h1 className="text-xl font-semibold text-gray-900">Company Branding</h1>
+                <p className="text-sm text-gray-500 mt-0.5">Upload your company logo and stamp to display on invoices</p>
+              </div>
             </div>
-
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-4xl mx-auto">
             {/* Alerts */}
             {error && (
               <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
@@ -505,6 +504,7 @@ export default function CompanyBranding() {
             )}
           </div>
         </div>
+      </div>
       </div>
 
       <ConfirmationModal
