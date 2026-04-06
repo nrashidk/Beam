@@ -9,6 +9,31 @@ class BulkImportValidator:
     """Validates and parses bulk CSV/Excel uploads for invoices and vendors"""
 
     @staticmethod
+    def _parse_date_value(date_value: Any) -> str:
+        """Parse supported date inputs and normalize to YYYY-MM-DD."""
+        if date_value is None or pd.isna(date_value):
+            raise ValueError("Date value is required")
+
+        if isinstance(date_value, (datetime, date, pd.Timestamp)):
+            return date_value.strftime("%Y-%m-%d")
+
+        raw_value = str(date_value).strip()
+        supported_formats = (
+            "%Y-%m-%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%Y/%m/%d",
+        )
+
+        for fmt in supported_formats:
+            try:
+                return datetime.strptime(raw_value, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+
+        raise ValueError(f"Unsupported date format: {raw_value}")
+
+    @staticmethod
     def _normalize_invoice_mode(invoice_mode: str = "vat") -> str:
         mode = str(invoice_mode or "vat").strip().lower().replace("-", "_")
         if mode not in {"vat", "non_vat"}:
@@ -60,16 +85,16 @@ class BulkImportValidator:
 
         common_data = {
             "issue_date": [
-                "2025-01-15",
-                "2025-01-16",
-                "2025-01-17",
-                "2025-01-18",
+                "15/01/2025",
+                "16/01/2025",
+                "17/01/2025",
+                "18/01/2025",
             ],
             "due_date": [
-                "2025-02-15",
-                "2025-02-16",
-                "2025-02-17",
-                "2025-02-18",
+                "15/02/2025",
+                "16/02/2025",
+                "17/02/2025",
+                "18/02/2025",
             ],
             "customer_name": [
                 "ABC Trading LLC",
@@ -284,19 +309,12 @@ class BulkImportValidator:
                     )
                     if not pd.isna(issue_date_raw):
                         try:
-                            if isinstance(
-                                issue_date_raw, (datetime, date, pd.Timestamp)
-                            ):
-                                issue_date_str = issue_date_raw.strftime("%Y-%m-%d")
-                            else:
-                                date_value_str = str(issue_date_raw).strip()
-                                parsed_date = datetime.strptime(
-                                    date_value_str, "%Y-%m-%d"
-                                )
-                                issue_date_str = parsed_date.strftime("%Y-%m-%d")
+                            issue_date_str = BulkImportValidator._parse_date_value(
+                                issue_date_raw
+                            )
                         except (ValueError, TypeError):
                             row_errors.append(
-                                f"Row {row_num}: Invalid issue_date format. Must be YYYY-MM-DD (e.g., 2025-01-15)"
+                                f"Row {row_num}: Invalid issue_date format. Supported formats: YYYY-MM-DD or DD/MM/YYYY (e.g., 2025-01-15 or 15/01/2025)"
                             )
                     else:
                         issue_date_str = datetime.now().strftime("%Y-%m-%d")
@@ -305,17 +323,12 @@ class BulkImportValidator:
                     due_date_raw = row.get("due_date") if "due_date" in row else None
                     if not pd.isna(due_date_raw):
                         try:
-                            if isinstance(due_date_raw, (datetime, date, pd.Timestamp)):
-                                due_date_str = due_date_raw.strftime("%Y-%m-%d")
-                            else:
-                                date_value_str = str(due_date_raw).strip()
-                                parsed_date = datetime.strptime(
-                                    date_value_str, "%Y-%m-%d"
-                                )
-                                due_date_str = parsed_date.strftime("%Y-%m-%d")
+                            due_date_str = BulkImportValidator._parse_date_value(
+                                due_date_raw
+                            )
                         except (ValueError, TypeError):
                             row_errors.append(
-                                f"Row {row_num}: Invalid due_date format. Must be YYYY-MM-DD (e.g., 2025-02-15)"
+                                f"Row {row_num}: Invalid due_date format. Supported formats: YYYY-MM-DD or DD/MM/YYYY (e.g., 2025-02-15 or 15/02/2025)"
                             )
 
                     if row_errors:
