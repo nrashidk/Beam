@@ -2727,6 +2727,7 @@ else:
         "https://involinks.ae",
         "https://www.involinks.ae",
         "https://app.involinks.ae",
+        "http://localhost:5000",
         _replit_origin,
     ]))
 
