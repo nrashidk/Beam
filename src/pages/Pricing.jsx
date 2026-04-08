@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Check, X, CreditCard, Calendar, TrendingUp, Shield } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [billingCycle, setBillingCycle] = useState(1);
 
   const tiers = [
@@ -125,9 +127,9 @@ export default function Pricing() {
 
   const handleSelectPlan = (tierId) => {
     if (tierId === 'trial') {
-      navigate('/login');
+      navigate(isAuthenticated ? '/dashboard' : '/login');
     } else {
-      navigate('/billing', { state: { selectedTier: tierId, billingCycle } });
+      navigate(isAuthenticated ? '/billing' : '/login', { state: { selectedTier: tierId, billingCycle } });
     }
   };
 
@@ -142,12 +144,21 @@ export default function Pricing() {
                 InvoLinks
               </span>
             </div>
-            <button 
-              onClick={() => navigate('/login')}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-            >
-              Sign In
-            </button>
+            {isAuthenticated ? (
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                Dashboard
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                Sign In
+              </button>
+            )}
           </div>
         </div>
       </nav>
