@@ -26,11 +26,22 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
   const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [billingName, setBillingName] = useState('');
+  const [billingEmail, setBillingEmail] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!stripe || !elements) {
+      return;
+    }
+
+    if (!billingName.trim()) {
+      setError('Cardholder name is required');
+      return;
+    }
+    if (!billingEmail.trim()) {
+      setError('Billing email is required');
       return;
     }
 
@@ -43,6 +54,10 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
       const { error: stripeError, paymentMethod } = await stripe.createPaymentMethod({
         type: 'card',
         card: cardElement,
+        billing_details: {
+          name: billingName.trim(),
+          email: billingEmail.trim(),
+        },
       });
 
       if (stripeError) {
@@ -51,7 +66,11 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
         return;
       }
 
-      await onSuccess(paymentMethod.id);
+      await onSuccess({
+        paymentMethodId: paymentMethod.id,
+        billingName: billingName.trim(),
+        billingEmail: billingEmail.trim(),
+      });
       
     } catch (err) {
       setError(err.message || 'Failed to add payment method');
@@ -61,6 +80,32 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Cardholder Name
+        </label>
+        <input
+          type="text"
+          value={billingName}
+          onChange={(e) => setBillingName(e.target.value)}
+          placeholder="John Smith"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Billing Email
+        </label>
+        <input
+          type="email"
+          value={billingEmail}
+          onChange={(e) => setBillingEmail(e.target.value)}
+          placeholder="you@example.com"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        />
+      </div>
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           <CreditCard className="inline w-4 h-4 mr-1" />
