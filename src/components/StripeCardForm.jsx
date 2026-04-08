@@ -21,7 +21,7 @@ const CARD_ELEMENT_OPTIONS = {
   hidePostalCode: false,
 };
 
-export default function StripeCardForm({ onSuccess, onCancel }) {
+export default function StripeCardForm({ onSuccess, onCancel, submitLabel = 'Add Card' }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -138,10 +138,10 @@ export default function StripeCardForm({ onSuccess, onCancel }) {
           {loading ? (
             <>
               <Loader className="w-4 h-4 animate-spin" />
-              Adding...
+              Processing...
             </>
           ) : (
-            'Add Card'
+            submitLabel
           )}
         </button>
       </div>

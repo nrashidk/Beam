@@ -1,12 +1,29 @@
 import React, { useState } from 'react';
-import { Check, X, CreditCard, Calendar, TrendingUp, Shield } from 'lucide-react';
+import { Check, X, CreditCard, Calendar, TrendingUp, Shield, Loader, AlertCircle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import StripeCardForm from '../components/StripeCardForm';
+import apiClient from '../lib/api';
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 export default function Pricing() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
   const [billingCycle, setBillingCycle] = useState(1);
+
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [modalTier, setModalTier] = useState(null);
+  const [modalCycle, setModalCycle] = useState(1);
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [loadingModal, setLoadingModal] = useState(false);
+  const [showCardForm, setShowCardForm] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribeError, setSubscribeError] = useState('');
+  const [subscribeSuccess, setSubscribeSuccess] = useState(false);
 
   const tiers = [
     {
@@ -125,11 +142,84 @@ export default function Pricing() {
     return discounts[cycle];
   };
 
-  const handleSelectPlan = (tierId) => {
+  const handleSelectPlan = async (tierId) => {
     if (tierId === 'trial') {
       navigate(isAuthenticated ? '/dashboard' : '/login');
-    } else {
-      navigate(isAuthenticated ? '/billing' : '/login', { state: { selectedTier: tierId, billingCycle } });
+      return;
+    }
+    if (tierId === 'ENTERPRISE') {
+      // Contact sales — no direct payment
+      window.location.href = 'mailto:sales@involinks.com?subject=Enterprise Plan Enquiry';
+      return;
+    }
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+
+    const tier = tiers.find(t => t.id === tierId);
+    setModalTier(tier);
+    setModalCycle(billingCycle);
+    setSubscribeError('');
+    setSubscribeSuccess(false);
+    setShowCardForm(false);
+    setShowPaymentModal(true);
+    setLoadingModal(true);
+
+    try {
+      const res = await apiClient.get('/billing/payment-methods');
+      setPaymentMethods(res.data || []);
+      if (!res.data || res.data.length === 0) setShowCardForm(true);
+    } catch {
+      setPaymentMethods([]);
+      setShowCardForm(true);
+    } finally {
+      setLoadingModal(false);
+    }
+  };
+
+  const doSubscribe = async (paymentMethodId) => {
+    setSubscribing(true);
+    setSubscribeError('');
+    try {
+      const formData = new FormData();
+      formData.append('tier', modalTier.id);
+      formData.append('billing_cycle_months', modalCycle);
+      formData.append('payment_method_id', paymentMethodId);
+      await apiClient.post('/billing/subscribe', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setSubscribeSuccess(true);
+      setTimeout(() => {
+        setShowPaymentModal(false);
+        navigate('/billing');
+      }, 1800);
+    } catch (error) {
+      setSubscribeError(error.response?.data?.detail || 'Failed to create subscription. Please try again.');
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  const handlePayWithExistingCard = async () => {
+    const defaultCard = paymentMethods.find(pm => pm.is_default) || paymentMethods[0];
+    if (!defaultCard) { setShowCardForm(true); return; }
+    await doSubscribe(defaultCard.id);
+  };
+
+  const handleAddCardAndSubscribe = async ({ paymentMethodId, billingName, billingEmail }) => {
+    const formData = new FormData();
+    formData.append('payment_method_token', paymentMethodId);
+    formData.append('billing_name', billingName);
+    formData.append('billing_email', billingEmail);
+    formData.append('set_as_default', 'true');
+    try {
+      const res = await apiClient.post('/billing/payment-methods', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await doSubscribe(res.data?.id || paymentMethodId);
+    } catch (error) {
+      throw new Error(error.response?.data?.detail || 'Failed to add payment method');
     }
   };
 
@@ -372,6 +462,163 @@ export default function Pricing() {
           </button>
         </div>
       </div>
+
+      {/* ── Payment Modal ── */}
+      {showPaymentModal && modalTier && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 text-white">
+              <h2 className="text-xl font-bold">Subscribe to {modalTier.name}</h2>
+              <p className="text-blue-100 text-sm mt-1">Complete your payment to get started</p>
+            </div>
+
+            <div className="p-6">
+              {subscribeSuccess ? (
+                <div className="text-center py-8">
+                  <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Subscription Activated!</h3>
+                  <p className="text-gray-600">Redirecting to your billing dashboard…</p>
+                </div>
+              ) : (
+                <>
+                  {/* Order Summary */}
+                  <div className="bg-gray-50 rounded-xl p-4 mb-5">
+                    <div className="text-sm font-semibold text-gray-700 mb-3">Order Summary</div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-gray-600 text-sm">{modalTier.name} Plan</span>
+                      <span className="font-medium text-sm">AED {modalTier.monthlyPrice}/mo</span>
+                    </div>
+
+                    {/* Billing cycle selector */}
+                    <div className="mt-3">
+                      <label className="text-xs text-gray-500 uppercase tracking-wide font-medium">Billing Cycle</label>
+                      <div className="mt-1 flex gap-2">
+                        {[
+                          { value: 1, label: 'Monthly' },
+                          { value: 3, label: '3 Months', badge: `Save ${modalTier.monthlyPrice >= 799 ? 10 : 5}%` },
+                          { value: 6, label: '6 Months', badge: `Save ${modalTier.monthlyPrice >= 799 ? 15 : 10}%` },
+                        ].map(({ value, label, badge }) => (
+                          <button
+                            key={value}
+                            onClick={() => setModalCycle(value)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                              modalCycle === value
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'text-gray-600 border-gray-300 hover:border-blue-400'
+                            }`}
+                          >
+                            {label}
+                            {badge && <span className="block text-[10px] opacity-80">{badge}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-gray-200 mt-3 pt-3 flex justify-between font-bold text-base">
+                      <span>Total</span>
+                      <span className="text-blue-600">
+                        AED {calculatePrice(modalTier.monthlyPrice, modalCycle)}
+                        <span className="text-xs font-normal text-gray-500 ml-1">
+                          {modalCycle > 1 ? `for ${modalCycle} months` : '/month'}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {loadingModal ? (
+                    <div className="flex justify-center py-8">
+                      <Loader className="h-8 w-8 animate-spin text-blue-600" />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Existing cards */}
+                      {!showCardForm && paymentMethods.length > 0 && (
+                        <div className="space-y-3 mb-4">
+                          <div className="text-sm font-medium text-gray-700">Pay with saved card</div>
+                          {paymentMethods.map(pm => (
+                            <div key={pm.id} className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                              <CreditCard className="h-5 w-5 text-gray-400" />
+                              <div className="flex-1">
+                                <div className="font-medium text-sm">{pm.card_brand?.toUpperCase()} •••• {pm.card_last4}</div>
+                                <div className="text-xs text-gray-500">Expires {pm.exp_month}/{pm.exp_year}</div>
+                              </div>
+                              {pm.is_default && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Default</span>
+                              )}
+                            </div>
+                          ))}
+
+                          {subscribeError && (
+                            <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              {subscribeError}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={handlePayWithExistingCard}
+                            disabled={subscribing}
+                            className="w-full py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                          >
+                            {subscribing ? (
+                              <><Loader className="h-4 w-4 animate-spin" /> Processing…</>
+                            ) : (
+                              <>Pay AED {calculatePrice(modalTier.monthlyPrice, modalCycle)} <ArrowRight className="h-4 w-4" /></>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => setShowCardForm(true)}
+                            className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                          >
+                            + Use a different card
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Stripe card form */}
+                      {showCardForm && (
+                        <div>
+                          <div className="text-sm font-medium text-gray-700 mb-3">
+                            {paymentMethods.length > 0 ? 'Enter new card details' : 'Enter your card details'}
+                          </div>
+                          {subscribeError && (
+                            <div className="flex items-start gap-2 p-3 mb-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                              {subscribeError}
+                            </div>
+                          )}
+                          <Elements stripe={stripePromise}>
+                            <StripeCardForm
+                              onSuccess={handleAddCardAndSubscribe}
+                              onCancel={() => {
+                                if (paymentMethods.length > 0) setShowCardForm(false);
+                                else setShowPaymentModal(false);
+                              }}
+                              submitLabel={`Pay AED ${calculatePrice(modalTier.monthlyPrice, modalCycle)}`}
+                            />
+                          </Elements>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Close link */}
+                  {!subscribing && !subscribeSuccess && (
+                    <button
+                      onClick={() => setShowPaymentModal(false)}
+                      className="w-full mt-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
