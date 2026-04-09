@@ -2315,6 +2315,13 @@ class InvoiceCreate(BaseModel):
             )
         return code
 
+    @validator("contract_value", "exchange_rate", "total_amount_aed", pre=True)
+    def empty_numeric_to_none(cls, v):
+        # Frontend forms often submit optional numeric inputs as empty strings.
+        if v == "":
+            return None
+        return v
+
 
 class InvoiceLineItemOut(BaseModel):
     id: str
@@ -2982,15 +2989,11 @@ def quick_register(payload: QuickRegisterCreate, db: Session = Depends(get_db)):
         platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
         verification_url = f"{platform_url}/?verify={verification_token}"
 
-        # Skip verification email sending for now (temporarily disabled)
-        # email_result = email_service.send_verification_email(
-        #     to_email=company.email,
-        #     company_name=company.legal_name or company.email,
-        #     verification_url=verification_url)
-        email_result = {
-            "success": False,
-            "note": "Email sending skipped (temporarily disabled)",
-        }
+        email_result = email_service.send_verification_email(
+            to_email=company.email,
+            company_name=company.legal_name or company.email,
+            verification_url=verification_url,
+        )
 
         return {
             "success": True,
@@ -3315,18 +3318,17 @@ def send_verification_email(company_id: str, db: Session = Depends(get_db)):
     platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
     verification_url = f"{platform_url}/?verify={verification_token}"
 
-    # Skip verification email sending for now (temporarily disabled)
-    # result = email_service.send_verification_email(
-    #     to_email=company.email,
-    #     company_name=company.legal_name or company.email,
-    #     verification_url=verification_url)
-    result = {"success": False, "note": "Email sending skipped (temporarily disabled)"}
+    result = email_service.send_verification_email(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        verification_url=verification_url,
+    )
 
     return {
-        "message": "Verification email skipped",
+        "message": "Verification email sent" if result.get("success") else "Verification email failed",
         "email": company.email,
-        "email_status": "skipped",
-        "note": result.get("note", "Email sending skipped"),
+        "email_status": "sent" if result.get("success") else "failed",
+        "note": result.get("note", result.get("error", "Unknown email status")),
     }
 
 
@@ -4455,15 +4457,11 @@ def approve_company(
 
     db.commit()
 
-    # Skip approval email sending for now (temporarily disabled)
-    # email_result = email_service.send_approval_notification(
-    #     to_email=company.email,
-    #     company_name=company.legal_name or company.email,
-    #     status="APPROVED")
-    email_result = {
-        "success": False,
-        "note": "Email sending skipped (temporarily disabled)",
-    }
+    email_result = email_service.send_approval_notification(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        status="APPROVED",
+    )
 
     return {
         "success": True,
@@ -4473,7 +4471,7 @@ def approve_company(
         "free_plan_config": plan_description,
         "message": "Company approved successfully",
         "email_sent": email_result.get("success", False),
-        "email_status": "skipped",
+        "email_status": "sent" if email_result.get("success") else "failed",
     }
 
 
@@ -4509,16 +4507,12 @@ def reject_company(
     company.rejected_at = datetime.utcnow()
     db.commit()
 
-    # Skip rejection email sending for now (temporarily disabled)
-    # email_result = email_service.send_approval_notification(
-    #     to_email=company.email,
-    #     company_name=company.legal_name or company.email,
-    #     status="REJECTED",
-    #     admin_message=notes)
-    email_result = {
-        "success": False,
-        "note": "Email sending skipped (temporarily disabled)",
-    }
+    email_result = email_service.send_approval_notification(
+        to_email=company.email,
+        company_name=company.legal_name or company.email,
+        status="REJECTED",
+        admin_message=notes,
+    )
 
     return {
         "success": True,
@@ -10283,26 +10277,22 @@ async def email_invoice(
     company = db.get(CompanyDB, current_user.company_id)
     company_email = company.email if company else "support@involinks.ae"
 
-    # Send invoice email via AWS SES
-    # email_result = email_service.send_invoice_email(
-    #     to_email=email_to,
-    #     customer_name=invoice.customer_name or "Customer",
-    #     invoice_number=invoice.invoice_number,
-    #     invoice_url=share_url,
-    #     company_name=invoice.supplier_name,
-    #     company_email=company_email,
-    #     amount=invoice.total_amount,
-    #     currency="AED")
-    email_result = {
-        "success": False,
-        "note": "Email sending skipped (temporarily disabled)",
-    }
+    email_result = email_service.send_invoice_email(
+        to_email=email_to,
+        customer_name=invoice.customer_name or "Customer",
+        invoice_number=invoice.invoice_number,
+        invoice_url=share_url,
+        company_name=invoice.supplier_name,
+        company_email=company_email,
+        amount=invoice.total_amount,
+        currency="AED",
+    )
 
     return {
         "message": "Invoice email sent successfully",
         "sent_to": email_to,
         "invoice_id": invoice.id,
-        "email_status": "sent" if email_result.get("success") else "simulated",
+        "email_status": "sent" if email_result.get("success") else "failed",
         "share_url": share_url,
         "note": email_result.get("note", "Email delivered"),
     }

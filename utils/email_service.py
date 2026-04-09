@@ -1,6 +1,7 @@
 """
-AWS SES Email Service
-Handles all email sending via Amazon Simple Email Service (SES)
+Email Service
+Primary provider: SendGrid
+Fallback provider: AWS SES
 """
 
 import os
@@ -8,13 +9,21 @@ import boto3
 from botocore.exceptions import ClientError
 from typing import Optional, List
 from datetime import datetime
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Email, To, Content
+from python_http_client.exceptions import HTTPError
 
 
 class EmailService:
     """
-    AWS SES Email Service for InvoLinks
+    Email Service for InvoLinks
 
     Required Environment Variables:
+    - SENDGRID_API_KEY: SendGrid API key (preferred)
+    - SENDGRID_FROM_EMAIL: Verified sender email in SendGrid (optional)
+    - SENDGRID_FROM_NAME: Sender display name (optional)
+
+    Optional fallback variables:
     - AWS_ACCESS_KEY_ID: Your AWS access key
     - AWS_SECRET_ACCESS_KEY: Your AWS secret key
     - AWS_REGION: AWS region (e.g., 'us-east-1', 'eu-west-1')
@@ -23,34 +32,55 @@ class EmailService:
     """
 
     def __init__(self):
+        self.sendgrid_api_key = os.getenv("SENDGRID_API_KEY")
+        self.sendgrid_from_email = os.getenv("SENDGRID_FROM_EMAIL")
+        self.sendgrid_from_name = os.getenv("SENDGRID_FROM_NAME", "InvoLinks")
+
         self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
         self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.aws_region = os.getenv("AWS_REGION", "us-east-1")
-        self.sender_email = os.getenv("SENDER_EMAIL", "noreply@involinks.ae")
+        self.sender_email = (
+            self.sendgrid_from_email
+            or os.getenv("SENDER_EMAIL", "noreply@involinks.ae")
+        )
         self.platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae")
 
-        # Check if credentials are configured
-        self.is_configured = bool(self.aws_access_key and self.aws_secret_key)
+        self.provider = "simulation"
+        self.client = None
+        self.is_configured = False
 
-        if self.is_configured:
+        # Prefer SendGrid when configured
+        if self.sendgrid_api_key:
+            try:
+                self.client = SendGridAPIClient(self.sendgrid_api_key)
+                self.provider = "sendgrid"
+                self.is_configured = True
+                print(
+                    f"✅ SendGrid configured successfully (Sender: {self.sender_email})"
+                )
+            except Exception as e:
+                print(f"⚠️  SendGrid initialization error: {e}")
+
+        # Fallback to AWS SES
+        if not self.is_configured and self.aws_access_key and self.aws_secret_key:
             try:
                 self.client = boto3.client(
-                    'ses',
+                    "ses",
                     region_name=self.aws_region,
                     aws_access_key_id=self.aws_access_key,
-                    aws_secret_access_key=self.aws_secret_key)
+                    aws_secret_access_key=self.aws_secret_key,
+                )
+                self.provider = "aws_ses"
+                self.is_configured = True
                 print(
                     f"✅ AWS SES configured successfully (Region: {self.aws_region}, Sender: {self.sender_email})"
                 )
-
             except Exception as e:
                 print(f"⚠️  AWS SES client initialization error: {e}")
-                self.is_configured = False
-                self.client = None
-        else:
-            self.client = None
+
+        if not self.is_configured:
             print(
-                "⚠️  AWS SES not configured - emails will be simulated (printed to console)"
+                "⚠️  No email provider configured - emails will be simulated (printed to console)"
             )
 
     def _simulate_email(self,
@@ -59,10 +89,10 @@ class EmailService:
                         body_text: str,
                         body_html: Optional[str] = None,
                         reply_to: Optional[str] = None):
-        """Print email to console when AWS SES is not configured"""
+        """Print email to console when provider is not configured or failed"""
         print(f"""
 ╔══════════════════════════════════════════════════════════════════╗
-║                    EMAIL SIMULATION (AWS SES)                    ║
+    ║                     EMAIL SIMULATION (LOCAL)                      ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  From: {self.sender_email:<58} ║
 ║  To: {to_email:<60} ║
@@ -83,7 +113,7 @@ class EmailService:
                    reply_to: Optional[str] = None,
                    from_name: Optional[str] = "InvoLinks") -> dict:
         """
-        Send email via AWS SES
+        Send email via configured provider (SendGrid preferred)
 
         Args:
             to_email: Recipient email address
@@ -102,20 +132,91 @@ class EmailService:
         print(f"   ├─ Subject: {subject}")
         print(f"   ├─ From Name: {from_name}")
         print(f"   ├─ Sender Email: {self.sender_email}")
-        print(f"   ├─ AWS Region: {self.aws_region}")
+        print(f"   ├─ Provider: {self.provider}")
         print(f"   ├─ Is Configured: {self.is_configured}")
         print(f"   └─ Client Status: {'Active' if self.client else 'None'}")
 
         # If not configured, simulate email
         if not self.is_configured:
-            print(f"⚠️  AWS SES not configured - simulating email")
+            print(f"⚠️  Email provider not configured - simulating email")
             self._simulate_email(to_email, subject, body_text, body_html,
                                  reply_to)
             return {
                 "success": True,
                 "message_id": "simulated",
-                "note": "Email simulated - AWS SES not configured"
+                "note": "Email simulated - no provider configured"
             }
+
+        if self.provider == "sendgrid":
+            try:
+                from_email = Email(self.sender_email, from_name or self.sendgrid_from_name)
+                message = Mail(
+                    from_email=from_email,
+                    to_emails=To(to_email),
+                    subject=subject,
+                    plain_text_content=Content("text/plain", body_text),
+                )
+
+                if body_html:
+                    message.add_content(Content("text/html", body_html))
+
+                if reply_to:
+                    message.reply_to = Email(reply_to)
+
+                response = self.client.send(message)
+                message_id = response.headers.get("X-Message-Id") if response and getattr(response, "headers", None) else None
+
+                if response and 200 <= response.status_code < 300:
+                    print(f"✅ SendGrid send successful (status: {response.status_code})")
+                    return {
+                        "success": True,
+                        "message_id": message_id or "sendgrid",
+                        "note": "Email sent via SendGrid",
+                    }
+
+                print(f"❌ SendGrid send failed with status: {getattr(response, 'status_code', 'N/A')}")
+                self._simulate_email(to_email, subject, body_text, body_html, reply_to)
+                return {
+                    "success": False,
+                    "error": f"SendGrid status {getattr(response, 'status_code', 'N/A')}",
+                    "note": "Email simulated due to SendGrid error",
+                }
+            except HTTPError as e:
+                error_body = ""
+                try:
+                    if isinstance(e.body, bytes):
+                        error_body = e.body.decode("utf-8", errors="ignore")
+                    else:
+                        error_body = str(e.body or "")
+                except Exception:
+                    error_body = ""
+
+                print(f"❌ SendGrid HTTP error: {e}")
+                if error_body:
+                    print(f"   └─ SendGrid response body: {error_body}")
+
+                if getattr(e, "status_code", None) == 403:
+                    print("⚠️  SENDGRID 403 TROUBLESHOOTING:")
+                    print("   ├─ Verify SENDGRID_API_KEY has 'Mail Send' permission")
+                    print("   ├─ Verify sender identity/domain for sender email")
+                    print("   ├─ Ensure FROM email matches verified sender in this account")
+                    print("   └─ Check if account is suspended or under review")
+
+                self._simulate_email(to_email, subject, body_text, body_html, reply_to)
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "provider_error": error_body,
+                    "note": "Email simulated due to SendGrid exception",
+                }
+            except Exception as e:
+                print(f"❌ SendGrid error: {e}")
+                self._simulate_email(to_email, subject, body_text, body_html, reply_to)
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "note": "Email simulated due to SendGrid exception",
+                }
 
         try:
             print(f"🔄 Preparing SES send_email request...")
