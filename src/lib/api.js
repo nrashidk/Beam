@@ -313,7 +313,7 @@ export const publicAPI = {
   getPublicContent: () => apiClient.get("/content/public"),
   getPublicStats: () => apiClient.get("/content/stats"),
   getPublicInvoice: (shareToken) =>
-    apiClient.get(`/invoices/view/${shareToken}`),
+    apiClient.get(`/api/public/invoices/${shareToken}`),
 };
 
 export const analyticsAPI = {

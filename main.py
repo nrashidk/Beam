@@ -10396,8 +10396,8 @@ async def whatsapp_invoice(
     }
 
 
-# Public invoice viewing (no authentication required)
-@app.get("/invoices/view/{share_token}", tags=["Public"], response_model=InvoiceOut)
+# Public invoice data API (no authentication required)
+@app.get("/api/public/invoices/{share_token}", tags=["Public"], response_model=InvoiceOut)
 def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
     """View invoice via public share link (customer portal)"""
     invoice = db.query(InvoiceDB).filter(InvoiceDB.share_token == share_token).first()

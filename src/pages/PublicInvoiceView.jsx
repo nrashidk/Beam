@@ -26,7 +26,7 @@ export default function PublicInvoiceView() {
   const fetchInvoice = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(`/invoices/view/${shareToken}`);
+      const response = await apiClient.get(`/api/public/invoices/${shareToken}`);
       setInvoice(response.data);
     } catch (err) {
       setError(err.response?.data?.detail || "Invoice not found");
