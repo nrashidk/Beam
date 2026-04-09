@@ -134,7 +134,7 @@ export default function FeaturedBusinesses() {
   }
 
   const filteredCompanies = allCompanies.filter((c) =>
-    c.legal_name.toLowerCase().includes(searchQuery.toLowerCase()),
+    (c.legal_name ?? "").toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const availableCompanies = allCompanies.filter(
