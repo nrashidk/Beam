@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check, X, CreditCard, Calendar, TrendingUp, Shield, Loader, AlertCircle, CheckCircle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -25,98 +25,88 @@ export default function Pricing() {
   const [subscribeError, setSubscribeError] = useState('');
   const [subscribeSuccess, setSubscribeSuccess] = useState(false);
 
-  const tiers = [
-    {
-      name: 'Free Trial',
-      id: 'trial',
-      description: 'Test our platform before committing',
-      price: 0,
-      features: [
-        '100 invoices or 30 days',
-        'Full UAE e-Invoicing compliance',
-        'UBL/PINT-AE XML generation',
-        'Digital signatures & hash chains',
-        'Basic analytics dashboard',
-        'Email support'
-      ],
-      limitations: [
-        'No PEPPOL transmission',
-        'Limited team members (3)',
-        'No custom branding'
-      ],
-      highlighted: false,
-      cta: 'Start Free Trial',
-      available: true
-    },
-    {
-      name: 'Basic',
-      id: 'BASIC',
-      description: 'For small businesses and startups',
-      monthlyPrice: 99,
-      features: [
-        'Unlimited invoices',
-        'Full UAE e-Invoicing compliance',
-        'UBL/PINT-AE XML generation',
-        'Digital signatures & hash chains',
-        'Up to 5 team members',
-        'Basic branding (logo)',
-        'FTA Audit File generation',
-        'Priority email support',
-        'PEPPOL transmission (pay-per-use)'
-      ],
-      limitations: [
-        'Limited analytics',
-        'No AP management'
-      ],
-      highlighted: false,
-      cta: 'Get Started',
-      available: true
-    },
-    {
-      name: 'Pro',
-      id: 'PRO',
-      description: 'For growing businesses with complex needs',
-      monthlyPrice: 299,
-      features: [
-        'Everything in Basic',
-        'Unlimited team members',
-        'Full custom branding',
-        'Advanced analytics & reporting',
-        'Accounts Payable management',
-        'Purchase orders & 3-way matching',
-        'Bulk invoice import (CSV/Excel)',
-        'Custom invoice templates',
-        'API access',
-        'Priority phone & chat support'
-      ],
-      limitations: [],
-      highlighted: true,
-      cta: 'Go Pro',
-      available: true
-    },
-    {
-      name: 'Enterprise',
-      id: 'ENTERPRISE',
-      description: 'For large organizations with custom requirements',
-      monthlyPrice: 799,
-      features: [
-        'Everything in Pro',
-        'Dedicated account manager',
-        'Custom integrations',
-        'Advanced security & compliance',
-        'Multi-company management',
-        'Custom workflows',
-        'White-label options',
-        'SLA guarantee',
-        '24/7 priority support',
-        'Onboarding & training'
-      ],
-      limitations: [],
-      highlighted: false,
-      cta: 'Contact Sales',
-      available: true
+  // Plans fetched from backend
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(true);
+  const [plansError, setPlansError] = useState(null);
+
+  useEffect(() => {
+    apiClient.get('/plans')
+      .then(res => setPlans(res.data || []))
+      .catch(() => setPlansError('Failed to load plans. Please refresh.'))
+      .finally(() => setPlansLoading(false));
+  }, []);
+
+  // Map DB plan → billing tier string expected by /billing/subscribe
+  const PLAN_TIER_MAP = {
+    plan_free: null,          // not subscribable
+    plan_starter: 'BASIC',
+    plan_professional: 'PRO',
+    plan_enterprise: 'ENTERPRISE',
+  };
+
+  // Build a display-ready tier object from a raw API plan
+  const normalizePlan = (plan, index, paidPlans) => {
+    const billingTier = PLAN_TIER_MAP[plan.id] ?? plan.name.toUpperCase();
+    const isFree = plan.price_monthly === 0;
+    const isEnterprise = billingTier === 'ENTERPRISE' || plan.name.toLowerCase().includes('enterprise');
+    // Highlight middle paid plan
+    const highlighted = !isFree && paidPlans.length > 1 && index === Math.floor((paidPlans.length - 1) / 2);
+
+    const features = [
+      'Full UAE e-Invoicing compliance',
+      'UBL/PINT-AE XML generation',
+      'Digital signatures & hash chains',
+    ];
+    if (!isFree) features.push('Basic analytics dashboard');
+    if (plan.max_invoices_per_month === null || plan.max_invoices_per_month === undefined) {
+      features.push('Unlimited invoices/month');
+    } else {
+      features.push(`Up to ${plan.max_invoices_per_month} invoices/month`);
     }
-  ];
+    if (plan.max_users === 1) {
+      features.push('1 team member (owner only)');
+    } else {
+      features.push(`Up to ${plan.max_users} team members`);
+    }
+    if (plan.allow_branding) features.push('Custom branding');
+    if (plan.allow_api_access) features.push('API access');
+    if (isFree) features.push('Email support');
+    else if (plan.price_monthly < 299) features.push('Priority email support');
+    else features.push('Priority phone & chat support');
+    if (isEnterprise) {
+      features.push('Dedicated account manager');
+      features.push('SLA guarantee');
+    }
+
+    const limitations = [];
+    if (!plan.allow_branding) limitations.push('No custom branding');
+    if (!plan.allow_api_access) limitations.push('No API access');
+    if (isFree) limitations.push('No PEPPOL transmission');
+
+    return {
+      planDbId: plan.id,
+      billingTier,
+      name: plan.name,
+      description: plan.description || '',
+      monthlyPrice: plan.price_monthly,
+      features,
+      limitations,
+      highlighted,
+      isFree,
+      isEnterprise,
+      cta: isFree ? 'Start Free Trial' : isEnterprise ? 'Contact Sales' : 'Get Started',
+    };
+  };
+
+  const normalizedTiers = (() => {
+    const freePlan = plans.filter(p => p.price_monthly === 0);
+    const paidPlans = plans.filter(p => p.price_monthly > 0);
+    return [
+      ...freePlan.map((p, i) => normalizePlan(p, i, [])),
+      ...paidPlans.map((p, i) => normalizePlan(p, i, paidPlans)),
+    ];
+  })();
 
   const calculatePrice = (monthlyPrice, cycle) => {
     if (!monthlyPrice) return 0;
@@ -142,13 +132,12 @@ export default function Pricing() {
     return discounts[cycle];
   };
 
-  const handleSelectPlan = async (tierId) => {
-    if (tierId === 'trial') {
+  const handleSelectPlan = async (tier) => {
+    if (tier.isFree) {
       navigate(isAuthenticated ? '/dashboard' : '/login');
       return;
     }
-    if (tierId === 'ENTERPRISE') {
-      // Contact sales — no direct payment
+    if (tier.isEnterprise) {
       window.location.href = 'mailto:sales@involinks.com?subject=Enterprise Plan Enquiry';
       return;
     }
@@ -157,7 +146,6 @@ export default function Pricing() {
       return;
     }
 
-    const tier = tiers.find(t => t.id === tierId);
     setModalTier(tier);
     setModalCycle(billingCycle);
     setSubscribeError('');
@@ -183,7 +171,7 @@ export default function Pricing() {
     setSubscribeError('');
     try {
       const formData = new FormData();
-      formData.append('tier', modalTier.id);
+      formData.append('tier', modalTier.billingTier);
       formData.append('billing_cycle_months', modalCycle);
       formData.append('payment_method_id', paymentMethodId);
       await apiClient.post('/billing/subscribe', formData, {
@@ -308,146 +296,160 @@ export default function Pricing() {
           </div>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {tiers.map((tier) => {
-            const totalPrice = calculatePrice(tier.monthlyPrice, billingCycle);
-            const discount = getDiscount(tier.monthlyPrice, billingCycle);
-            const monthlyEquivalent = tier.monthlyPrice ? Math.round(totalPrice / billingCycle) : 0;
+        {/* Plans grid */}
+        {plansLoading ? (
+          <div className="flex justify-center items-center py-24">
+            <Loader className="h-10 w-10 animate-spin text-blue-600" />
+          </div>
+        ) : plansError ? (
+          <div className="flex justify-center items-center py-24">
+            <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-200 rounded-xl px-6 py-4">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              {plansError}
+            </div>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {normalizedTiers.map((tier) => {
+              const totalPrice = calculatePrice(tier.monthlyPrice, billingCycle);
+              const discount = getDiscount(tier.monthlyPrice, billingCycle);
+              const monthlyEquivalent = tier.monthlyPrice ? Math.round(totalPrice / billingCycle) : 0;
 
-            return (
-              <div
-                key={tier.id}
-                className={`relative rounded-2xl p-8 transition-all ${
-                  tier.highlighted
-                    ? 'bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-2xl scale-105 border-4 border-blue-400'
-                    : 'bg-white shadow-lg hover:shadow-xl border border-gray-200'
-                }`}
-              >
-                {tier.highlighted && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-yellow-400 text-gray-900 px-4 py-1 rounded-full text-sm font-bold">
-                    Most Popular
-                  </div>
-                )}
-
-                <div className="mb-6">
-                  <h3 className={`text-2xl font-bold mb-2 ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                    {tier.name}
-                  </h3>
-                  <p className={`text-sm ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
-                    {tier.description}
-                  </p>
-                </div>
-
-                <div className="mb-6">
-                  {tier.id === 'trial' ? (
-                    <div>
-                      <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                        Free
-                      </div>
-                      <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
-                        100 invoices or 30 days
-                      </div>
-                    </div>
-                  ) : tier.id === 'ENTERPRISE' ? (
-                    <div>
-                      <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                        Custom
-                      </div>
-                      <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
-                        Contact for pricing
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex items-center gap-2">
-                        {discount && (
-                          <div className={`text-sm line-through ${tier.highlighted ? 'text-blue-200' : 'text-gray-500'}`}>
-                            AED {tier.monthlyPrice * billingCycle}
-                          </div>
-                        )}
-                        {discount && (
-                          <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                            {discount}% off
-                          </div>
-                        )}
-                      </div>
-                      <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                        AED {totalPrice}
-                      </div>
-                      <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
-                        {billingCycle === 1 ? 'per month' : `for ${billingCycle} months`}
-                        {billingCycle > 1 && ` (AED ${monthlyEquivalent}/mo)`}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => handleSelectPlan(tier.id)}
-                  className={`w-full py-3 rounded-lg font-medium transition-all mb-6 ${
+              return (
+                <div
+                  key={tier.planDbId}
+                  className={`relative rounded-2xl p-8 transition-all ${
                     tier.highlighted
-                      ? 'bg-white text-blue-600 hover:bg-gray-50 shadow-lg'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? 'bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-2xl scale-105 border-4 border-blue-400'
+                      : 'bg-white shadow-lg hover:shadow-xl border border-gray-200'
                   }`}
                 >
-                  {tier.cta}
-                </button>
+                  {tier.highlighted && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-yellow-400 text-gray-900 px-4 py-1 rounded-full text-sm font-bold">
+                      Most Popular
+                    </div>
+                  )}
 
-                <div className="space-y-3">
-                  {tier.features.map((feature, idx) => (
-                    <div key={idx} className="flex items-start gap-2">
-                      <Check className={`h-5 w-5 flex-shrink-0 ${tier.highlighted ? 'text-green-300' : 'text-green-600'}`} />
-                      <span className={`text-sm ${tier.highlighted ? 'text-blue-50' : 'text-gray-700'}`}>
-                        {feature}
-                      </span>
-                    </div>
-                  ))}
-                  
-                  {tier.limitations.map((limitation, idx) => (
-                    <div key={idx} className="flex items-start gap-2 opacity-70">
-                      <X className={`h-5 w-5 flex-shrink-0 ${tier.highlighted ? 'text-red-300' : 'text-gray-400'}`} />
-                      <span className={`text-sm ${tier.highlighted ? 'text-blue-100' : 'text-gray-500'}`}>
-                        {limitation}
-                      </span>
-                    </div>
-                  ))}
+                  <div className="mb-6">
+                    <h3 className={`text-2xl font-bold mb-2 ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
+                      {tier.name}
+                    </h3>
+                    <p className={`text-sm ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
+                      {tier.description}
+                    </p>
+                  </div>
+
+                  <div className="mb-6">
+                    {tier.isFree ? (
+                      <div>
+                        <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
+                          Free
+                        </div>
+                        <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
+                          No credit card required
+                        </div>
+                      </div>
+                    ) : tier.isEnterprise ? (
+                      <div>
+                        <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
+                          AED {tier.monthlyPrice > 0 ? tier.monthlyPrice : 'Custom'}
+                        </div>
+                        <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
+                          {tier.monthlyPrice > 0 ? 'per month' : 'Contact for pricing'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2">
+                          {discount && (
+                            <div className={`text-sm line-through ${tier.highlighted ? 'text-blue-200' : 'text-gray-500'}`}>
+                              AED {tier.monthlyPrice * billingCycle}
+                            </div>
+                          )}
+                          {discount && (
+                            <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                              {discount}% off
+                            </div>
+                          )}
+                        </div>
+                        <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
+                          AED {totalPrice}
+                        </div>
+                        <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
+                          {billingCycle === 1 ? 'per month' : `for ${billingCycle} months`}
+                          {billingCycle > 1 && ` (AED ${monthlyEquivalent}/mo)`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => handleSelectPlan(tier)}
+                    className={`w-full py-3 rounded-lg font-medium transition-all mb-6 ${
+                      tier.highlighted
+                        ? 'bg-white text-blue-600 hover:bg-gray-50 shadow-lg'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {tier.cta}
+                  </button>
+
+                  <div className="space-y-3">
+                    {tier.features.map((feature, idx) => (
+                      <div key={idx} className="flex items-start gap-2">
+                        <Check className={`h-5 w-5 flex-shrink-0 ${tier.highlighted ? 'text-green-300' : 'text-green-600'}`} />
+                        <span className={`text-sm ${tier.highlighted ? 'text-blue-50' : 'text-gray-700'}`}>
+                          {feature}
+                        </span>
+                      </div>
+                    ))}
+
+                    {tier.limitations.map((limitation, idx) => (
+                      <div key={idx} className="flex items-start gap-2 opacity-70">
+                        <X className={`h-5 w-5 flex-shrink-0 ${tier.highlighted ? 'text-red-300' : 'text-gray-400'}`} />
+                        <span className={`text-sm ${tier.highlighted ? 'text-blue-100' : 'text-gray-500'}`}>
+                          {limitation}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="mt-16 bg-white rounded-2xl shadow-lg p-8">
           <h2 className="text-2xl font-bold mb-6 text-center">PEPPOL Usage Fees</h2>
           <p className="text-center text-gray-600 mb-6">Pay-as-you-go pricing for PEPPOL network transmission</p>
-          
+
           <div className="grid md:grid-cols-4 gap-6">
             <div className="text-center p-4 border-2 border-gray-200 rounded-xl">
               <div className="text-sm text-gray-600 mb-2 font-medium">Free Trial</div>
               <div className="text-2xl font-bold text-gray-400 mb-1">—</div>
               <div className="text-xs text-gray-500">No PEPPOL access</div>
             </div>
-            <div className="text-center p-4 border-2 border-blue-200 rounded-xl bg-blue-50">
-              <div className="text-sm text-gray-700 mb-2 font-medium">Basic Plan</div>
-              <div className="text-3xl font-bold text-blue-600 mb-1">AED 2.00</div>
-              <div className="text-xs text-gray-600">per invoice</div>
-            </div>
-            <div className="text-center p-4 border-2 border-purple-200 rounded-xl bg-purple-50">
-              <div className="text-sm text-gray-700 mb-2 font-medium">Pro Plan</div>
-              <div className="text-3xl font-bold text-purple-600 mb-1">AED 1.00</div>
-              <div className="text-xs text-gray-600">per invoice</div>
-            </div>
-            <div className="text-center p-4 border-2 border-green-200 rounded-xl bg-green-50">
-              <div className="text-sm text-gray-700 mb-2 font-medium">Enterprise Plan</div>
-              <div className="text-3xl font-bold text-green-600 mb-1">AED 0.50</div>
-              <div className="text-xs text-gray-600">per invoice</div>
-            </div>
+            {normalizedTiers.filter(t => !t.isFree).map((tier, idx) => {
+              const colors = ['blue', 'purple', 'green'];
+              const peppolPrices = ['2.00', '1.00', '0.50'];
+              const c = colors[idx] || 'gray';
+              const price = peppolPrices[idx] || 'Custom';
+              return (
+                <div key={tier.planDbId} className={`text-center p-4 border-2 border-${c}-200 rounded-xl bg-${c}-50`}>
+                  <div className="text-sm text-gray-700 mb-2 font-medium">{tier.name} Plan</div>
+                  <div className={`text-3xl font-bold text-${c}-600 mb-1`}>
+                    {tier.isEnterprise ? 'Custom' : `AED ${price}`}
+                  </div>
+                  <div className="text-xs text-gray-600">per invoice</div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">
             <div className="text-sm font-semibold text-blue-900 mb-2">What is PEPPOL?</div>
             <div className="text-sm text-gray-700">
-              PEPPOL is a secure network for sending invoices directly to the UAE Federal Tax Authority. 
+              PEPPOL is a secure network for sending invoices directly to the UAE Federal Tax Authority.
               Pay only for what you use.
             </div>
           </div>
