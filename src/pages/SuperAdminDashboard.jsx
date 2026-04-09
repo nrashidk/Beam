@@ -205,26 +205,20 @@ export default function SuperAdminDashboard() {
   }
 
   function handleDownloadBackup(backupId, filename) {
-    const token = localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token") || "";
-    const url = `${api.defaults.baseURL || ""}/admin/backup/${backupId}/download`;
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => {
-        if (!r.ok) {
-          return r.json().then((body) => {
-            throw new Error(body?.detail || `HTTP ${r.status}`);
-          });
-        }
-        return r.blob();
-      })
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob);
+    api
+      .get(`/admin/backup/${backupId}/download`, { responseType: "blob" })
+      .then((res) => {
+        const blobUrl = URL.createObjectURL(res.data);
         const link = document.createElement("a");
         link.href = blobUrl;
         link.download = filename;
         link.click();
         URL.revokeObjectURL(blobUrl);
       })
-      .catch((err) => alert("Download failed: " + err.message));
+      .catch((err) => {
+        const message = err.response?.data?.detail || err.message || "Unknown error";
+        alert("Download failed: " + message);
+      });
   }
 
   function exportCompaniesCsv(rows) {
