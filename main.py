@@ -5,6 +5,8 @@ InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
 
 import os, enum, hashlib, secrets, json, logging, re, time, threading
+from dotenv import load_dotenv
+load_dotenv()
 from uuid import uuid4
 from typing import List, Optional
 from datetime import datetime, date, timedelta
@@ -14193,6 +14195,108 @@ async def create_subscription(
 
     except Exception as e:
         raise HTTPException(500, f"Failed to create subscription: {str(e)}")
+
+
+@app.post("/billing/cancel", tags=["Billing"])
+async def cancel_subscription(
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Cancel the active subscription. Access ends at period end."""
+    subscription = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == current_user.company_id,
+            SubscriptionDB.status == "ACTIVE",
+        )
+        .first()
+    )
+
+    if not subscription:
+        raise HTTPException(404, "No active subscription found")
+
+    try:
+        # Cancel in Stripe if a Stripe subscription ID exists
+        if STRIPE_SECRET_KEY and subscription.stripe_subscription_id:
+            stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                cancel_at_period_end=True,
+            )
+
+        subscription.status = "CANCELLED"
+        subscription.cancelled_at = datetime.utcnow()
+        db.commit()
+
+        return {
+            "message": "Subscription cancelled successfully. Access continues until the end of the current period.",
+            "period_end": subscription.current_period_end.isoformat(),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to cancel subscription: {str(e)}")
+
+
+@app.post("/billing/change-plan", tags=["Billing"])
+async def change_subscription_plan(
+    tier: str = Form(...),
+    billing_cycle_months: int = Form(1),
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Change the active subscription plan/cycle immediately."""
+    pricing = {
+        "BASIC": {"monthly": 99.0, "3month_discount": 5, "6month_discount": 10},
+        "PRO": {"monthly": 299.0, "3month_discount": 5, "6month_discount": 10},
+        "ENTERPRISE": {"monthly": 799.0, "3month_discount": 10, "6month_discount": 15},
+    }
+
+    if tier not in pricing:
+        raise HTTPException(400, f"Invalid tier: {tier}")
+    if billing_cycle_months not in [1, 3, 6]:
+        raise HTTPException(400, "Billing cycle must be 1, 3, or 6 months")
+
+    subscription = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == current_user.company_id,
+            SubscriptionDB.status == "ACTIVE",
+        )
+        .first()
+    )
+
+    if not subscription:
+        raise HTTPException(404, "No active subscription found")
+
+    try:
+        monthly_price = pricing[tier]["monthly"]
+        discount_percent = 0.0
+        if billing_cycle_months == 3:
+            discount_percent = pricing[tier]["3month_discount"]
+        elif billing_cycle_months == 6:
+            discount_percent = pricing[tier]["6month_discount"]
+
+        subscription.tier = tier
+        subscription.billing_cycle_months = billing_cycle_months
+        subscription.monthly_price = monthly_price
+        subscription.discount_percent = discount_percent
+        subscription.current_period_start = datetime.utcnow()
+        subscription.current_period_end = datetime.utcnow() + timedelta(
+            days=30 * billing_cycle_months
+        )
+        subscription.updated_at = datetime.utcnow()
+        db.commit()
+
+        subtotal = monthly_price * billing_cycle_months
+        total_amount = round(subtotal - subtotal * (discount_percent / 100), 2)
+
+        return {
+            "message": "Subscription plan updated successfully",
+            "tier": tier,
+            "billing_cycle_months": billing_cycle_months,
+            "monthly_price": monthly_price,
+            "total_amount": total_amount,
+        }
+    except Exception as e:
+        raise HTTPException(500, f"Failed to change subscription plan: {str(e)}")
 
 
 @app.get("/billing/trial", tags=["Billing"], response_model=TrialStatusOut)

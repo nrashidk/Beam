@@ -11,6 +11,8 @@ import {
   Clock,
   Award,
   ArrowRight,
+  Loader,
+  RefreshCcw,
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import apiClient from "../lib/api";
@@ -36,6 +38,19 @@ export default function BillingSettings() {
   const [selectedCycle, setSelectedCycle] = useState(
     location.state?.billingCycle || 1,
   );
+
+  // Cancel subscription modal
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+
+  // Change plan modal
+  const [showChangePlanModal, setShowChangePlanModal] = useState(false);
+  const [changeTier, setChangeTier] = useState("");
+  const [changeCycle, setChangeCycle] = useState(1);
+  const [changing, setChanging] = useState(false);
+  const [changeError, setChangeError] = useState("");
+  const [changeSuccess, setChangeSuccess] = useState(false);
 
   useEffect(() => {
     fetchBillingData();
@@ -101,6 +116,49 @@ export default function BillingSettings() {
       fetchBillingData();
     } catch (error) {
       alert("Failed to delete payment method");
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    setCancelling(true);
+    setCancelError("");
+    try {
+      await apiClient.post("/billing/cancel");
+      setShowCancelModal(false);
+      await fetchBillingData();
+    } catch (error) {
+      setCancelError(
+        error.response?.data?.detail || "Failed to cancel subscription",
+      );
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleChangePlan = async () => {
+    if (!changeTier) return;
+    setChanging(true);
+    setChangeError("");
+    setChangeSuccess(false);
+    try {
+      const formData = new FormData();
+      formData.append("tier", changeTier);
+      formData.append("billing_cycle_months", changeCycle);
+      await apiClient.post("/billing/change-plan", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setChangeSuccess(true);
+      await fetchBillingData();
+      setTimeout(() => {
+        setShowChangePlanModal(false);
+        setChangeSuccess(false);
+      }, 1500);
+    } catch (error) {
+      setChangeError(
+        error.response?.data?.detail || "Failed to change plan",
+      );
+    } finally {
+      setChanging(false);
     }
   };
 
@@ -330,10 +388,26 @@ export default function BillingSettings() {
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t">
-                    <button className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium">
+                    <button
+                      onClick={() => {
+                        setChangeTier(subscription.tier);
+                        setChangeCycle(subscription.billing_cycle_months || 1);
+                        setChangeError("");
+                        setChangeSuccess(false);
+                        setShowChangePlanModal(true);
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"
+                    >
+                      <RefreshCcw className="h-4 w-4" />
                       Change Plan
                     </button>
-                    <button className="flex-1 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 text-sm font-medium">
+                    <button
+                      onClick={() => {
+                        setCancelError("");
+                        setShowCancelModal(true);
+                      }}
+                      className="flex-1 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 text-sm font-medium"
+                    >
                       Cancel Subscription
                     </button>
                   </div>
@@ -513,6 +587,162 @@ export default function BillingSettings() {
                 onCancel={() => setShowAddCard(false)}
               />
             </Elements>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancel Subscription Modal ── */}
+      {showCancelModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Cancel Subscription</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-5 text-sm text-amber-800">
+              Your access will continue until{" "}
+              <span className="font-semibold">
+                {subscription?.current_period_end
+                  ? new Date(subscription.current_period_end).toLocaleDateString()
+                  : "the end of the current period"}
+              </span>. After that, your account will revert to the free tier.
+            </div>
+
+            {cancelError && (
+              <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                {cancelError}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-sm"
+              >
+                Keep Subscription
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                disabled={cancelling}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed font-medium text-sm flex items-center justify-center gap-2"
+              >
+                {cancelling ? (
+                  <><Loader className="h-4 w-4 animate-spin" /> Cancelling…</>
+                ) : (
+                  "Yes, Cancel"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Change Plan Modal ── */}
+      {showChangePlanModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-6 py-4 text-white">
+              <h3 className="text-lg font-bold">Change Plan</h3>
+              <p className="text-blue-100 text-sm mt-0.5">Your new plan takes effect immediately</p>
+            </div>
+
+            <div className="p-6">
+              {changeSuccess ? (
+                <div className="text-center py-6">
+                  <CheckCircle className="h-14 w-14 text-green-500 mx-auto mb-3" />
+                  <p className="text-lg font-semibold text-gray-900">Plan updated!</p>
+                </div>
+              ) : (
+                <>
+                  {/* Plan selector */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Select Plan</label>
+                    <div className="space-y-2">
+                      {[
+                        { id: "BASIC", name: "Basic", price: 99 },
+                        { id: "PRO", name: "Pro", price: 299 },
+                        { id: "ENTERPRISE", name: "Enterprise", price: 799 },
+                      ].map((t) => (
+                        <label
+                          key={t.id}
+                          className={`flex items-center justify-between p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                            changeTier === t.id
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 hover:border-blue-200"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="radio"
+                              name="changeTier"
+                              value={t.id}
+                              checked={changeTier === t.id}
+                              onChange={() => setChangeTier(t.id)}
+                              className="h-4 w-4 text-blue-600"
+                            />
+                            <span className="font-medium text-gray-900">{t.name}</span>
+                            {subscription?.tier === t.id && (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Current</span>
+                            )}
+                          </div>
+                          <span className="text-sm font-semibold text-gray-700">AED {t.price}/mo</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Billing cycle */}
+                  <div className="mb-5">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Billing Cycle</label>
+                    <select
+                      value={changeCycle}
+                      onChange={(e) => setChangeCycle(Number(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                    >
+                      <option value={1}>Monthly</option>
+                      <option value={3}>3 Months (Save 5–10%)</option>
+                      <option value={6}>6 Months (Save 10–15%)</option>
+                    </select>
+                  </div>
+
+                  {changeError && (
+                    <div className="flex items-start gap-2 p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      {changeError}
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowChangePlanModal(false)}
+                      disabled={changing}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleChangePlan}
+                      disabled={changing || !changeTier || (changeTier === subscription?.tier && changeCycle === subscription?.billing_cycle_months)}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium text-sm flex items-center justify-center gap-2"
+                    >
+                      {changing ? (
+                        <><Loader className="h-4 w-4 animate-spin" /> Updating…</>
+                      ) : (
+                        <>Confirm Change <ArrowRight className="h-4 w-4" /></>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
