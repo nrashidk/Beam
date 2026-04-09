@@ -102,7 +102,7 @@ export default function POSendModal({
     try {
       // Generate QR code - this would be an API that returns a QR code
       // For now, we'll create a simple data URL
-      const poLink = `${window.location.origin}/purchase-orders/${poId}`;
+      const poLink = `${window.location.origin}/purchase-orders/view/${poId}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(poLink)}`;
       setQrCodeUrl(qrUrl);
     } catch (err) {
@@ -150,7 +150,7 @@ export default function POSendModal({
   };
 
   const handleCopyQRLink = () => {
-    const link = `${window.location.origin}/purchase-orders/${poId}`;
+    const link = `${window.location.origin}/purchase-orders/view/${poId}`;
     navigator.clipboard.writeText(link);
     alert("PO link copied to clipboard!");
   };

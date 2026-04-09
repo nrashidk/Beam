@@ -39,6 +39,7 @@ import GLTrialBalance from "./pages/GLTrialBalance";
 import AuditTrail from "./pages/AuditTrail";
 import SuppliersManagement from "./pages/SuppliersManagement";
 import PublicInvoiceView from "./pages/PublicInvoiceView";
+import PublicPurchaseOrderView from "./pages/PublicPurchaseOrderView";
 import PaymentVerification from "./pages/PaymentVerification";
 import DailyReconciliation from "./pages/DailyReconciliation";
 import AdvancedAnalytics from "./pages/AdvancedAnalytics";
@@ -146,6 +147,10 @@ function App() {
             <Route
               path="/invoice-view/:shareToken"
               element={<PublicInvoiceView />}
+            />
+            <Route
+              path="/purchase-orders/view/:poId"
+              element={<PublicPurchaseOrderView />}
             />
             <Route
               path="/login"

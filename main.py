@@ -12556,11 +12556,69 @@ def send_purchase_order(
     method = (payload.method if payload and payload.method else "email").lower()
     contact = payload.contact if payload else None
 
+    email_result = None
+
     if method == "email":
-        validated_contact = validate_delivery_email(
-            contact or po.supplier_contact_email
-        )
+        validated_contact = validate_delivery_email(contact or po.supplier_contact_email)
         po.supplier_contact_email = validated_contact
+
+        platform_url = os.getenv("PLATFORM_URL", "https://involinks.ae").rstrip("/")
+        po_view_url = f"{platform_url}/purchase-orders/view/{po.id}"
+
+        subject = f"Purchase Order {po.po_number} from {po.supplier_name or 'InvoLinks Customer'}"
+        body_text = f"""
+Dear Supplier,
+
+Please find purchase order details below:
+
+PO Number: {po.po_number}
+Order Date: {po.order_date.isoformat() if po.order_date else 'N/A'}
+Expected Total: {po.currency_code} {float(po.expected_total or 0):.2f}
+
+You can review the purchase order at:
+{po_view_url}
+
+If you have any questions, please reply to this email.
+
+Best regards,
+InvoLinks
+        """
+
+        body_html = f"""
+<html>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #2563eb;">Purchase Order {po.po_number}</h2>
+        <p>Dear Supplier,</p>
+        <p>Please find purchase order details below:</p>
+        <div style="background-color: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <p style="margin: 6px 0;"><strong>PO Number:</strong> {po.po_number}</p>
+            <p style="margin: 6px 0;"><strong>Order Date:</strong> {po.order_date.isoformat() if po.order_date else 'N/A'}</p>
+            <p style="margin: 6px 0;"><strong>Expected Total:</strong> {po.currency_code} {float(po.expected_total or 0):.2f}</p>
+        </div>
+        <div style="text-align: center; margin: 24px 0;">
+            <a href="{po_view_url}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">View Purchase Order</a>
+        </div>
+        <p style="color: #666; font-size: 13px;">If the button does not work, copy this URL:<br><a href="{po_view_url}">{po_view_url}</a></p>
+        <p>Best regards,<br><strong>InvoLinks</strong></p>
+    </div>
+</body>
+</html>
+        """
+
+        email_result = email_service.send_email(
+            to_email=validated_contact,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+            from_name="InvoLinks",
+        )
+
+        if not email_result.get("success"):
+            raise HTTPException(
+                502,
+                f"Failed to send PO email: {email_result.get('error') or email_result.get('provider_error') or 'Unknown provider error'}",
+            )
     elif method in {"sms", "whatsapp"}:
         validated_contact = validate_delivery_phone(contact)
     else:
@@ -12586,6 +12644,51 @@ def send_purchase_order(
         "method": method,
         "sent_to": validated_contact,
         "supplier_email": po.supplier_contact_email,
+        "email_status": "sent" if (method == "email" and email_result and email_result.get("success")) else None,
+        "email_message_id": email_result.get("message_id") if (method == "email" and email_result) else None,
+    }
+
+
+@app.get("/api/public/purchase-orders/{po_id}", tags=["Public"])
+def get_public_purchase_order(po_id: str, db: Session = Depends(get_db)):
+    """Public purchase order view for supplier email links."""
+    po = db.query(PurchaseOrderDB).filter(PurchaseOrderDB.id == po_id).first()
+
+    if not po:
+        raise HTTPException(404, "Purchase order not found")
+
+    if po.status == PurchaseOrderStatus.CANCELLED:
+        raise HTTPException(404, "Purchase order not found")
+
+    return {
+        "id": po.id,
+        "po_number": po.po_number,
+        "status": po.status.value if hasattr(po.status, "value") else str(po.status),
+        "supplier_name": po.supplier_name,
+        "supplier_trn": po.supplier_trn,
+        "supplier_address": po.supplier_address,
+        "currency_code": po.currency_code,
+        "order_date": po.order_date.isoformat() if po.order_date else None,
+        "expected_delivery_date": po.expected_delivery_date.isoformat() if po.expected_delivery_date else None,
+        "expected_subtotal": float(po.expected_subtotal or 0.0),
+        "expected_tax": float(po.expected_tax or 0.0),
+        "expected_total": float(po.expected_total or 0.0),
+        "reference_number": po.reference_number,
+        "notes": po.notes,
+        "line_items": [
+            {
+                "id": li.id,
+                "line_number": li.line_number,
+                "item_name": li.item_name,
+                "item_description": li.item_description,
+                "quantity_ordered": float(li.quantity_ordered or 0.0),
+                "unit_code": li.unit_code,
+                "unit_price": float(li.unit_price or 0.0),
+                "line_total": float(li.line_total or 0.0),
+                "tax_percent": float(li.tax_percent or 0.0),
+            }
+            for li in po.line_items
+        ],
     }
 
 
