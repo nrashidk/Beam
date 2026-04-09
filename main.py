@@ -4724,28 +4724,42 @@ def get_admin_stats(
     companies = db.query(CompanyDB).all()
     all_companies_list = []
     for company in companies:
-        # Get plan info - prefer active company subscription, fallback to legacy subscription_plan_id
+        # Get plan info: prefer new SubscriptionDB (Stripe billing), then legacy subscription_plan_id
         plan = None
         arpu = 0
-        # Check for latest company subscription
-        latest_sub = (
-            db.query(CompanySubscriptionDB)
-            .filter(CompanySubscriptionDB.company_id == company.id)
-            .order_by(CompanySubscriptionDB.created_at.desc())
+        # 1) Check SubscriptionDB (written by /billing/subscribe)
+        billing_sub = (
+            db.query(SubscriptionDB)
+            .filter(
+                SubscriptionDB.company_id == company.id,
+                SubscriptionDB.status == "ACTIVE",
+            )
+            .order_by(SubscriptionDB.created_at.desc())
             .first()
         )
-        if latest_sub and latest_sub.plan:
-            plan = latest_sub.plan.name
-            arpu = latest_sub.plan.price_monthly or 0
-        elif company.subscription_plan_id:
-            plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
-            if plan_obj:
-                plan = plan_obj.name
-                arpu = plan_obj.price_monthly
+        if billing_sub:
+            TIER_NAME_MAP = {"BASIC": "Starter", "PRO": "Professional", "ENTERPRISE": "Enterprise"}
+            plan = TIER_NAME_MAP.get(billing_sub.tier, billing_sub.tier.capitalize())
+            arpu = billing_sub.monthly_price or 0
         else:
-            # No plan assigned — default to Free
-            plan = "Free"
-            arpu = 0
+            # 2) Check legacy CompanySubscriptionDB
+            latest_sub = (
+                db.query(CompanySubscriptionDB)
+                .filter(CompanySubscriptionDB.company_id == company.id)
+                .order_by(CompanySubscriptionDB.created_at.desc())
+                .first()
+            )
+            if latest_sub and latest_sub.plan:
+                plan = latest_sub.plan.name
+                arpu = latest_sub.plan.price_monthly or 0
+            elif company.subscription_plan_id:
+                plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
+                if plan_obj:
+                    plan = plan_obj.name
+                    arpu = plan_obj.price_monthly
+            else:
+                plan = "Free"
+                arpu = 0
 
         # Get invoice count for this month
         now = datetime.utcnow()
@@ -4817,15 +4831,39 @@ def get_admin_stats(
         .count()
     )
 
-    # Revenue calculations by tier
+    # Revenue calculations by tier — include both SubscriptionDB (new) and legacy subscription_plan_id
     tiers_data = []
     all_plans = (
         db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
     )
     total_mrr = 0
 
+    # Tier → monthly_price map from SubscriptionDB
+    BILLING_TIER_PRICE = {"BASIC": 99.0, "PRO": 299.0, "ENTERPRISE": 799.0}
+
+    # Count active SubscriptionDB subs per tier
+    from sqlalchemy import func as sqlfunc
+    billing_tier_counts = dict(
+        db.query(SubscriptionDB.tier, sqlfunc.count(SubscriptionDB.id))
+        .filter(SubscriptionDB.status == "ACTIVE")
+        .group_by(SubscriptionDB.tier)
+        .all()
+    )
+
+    # Map billing tier → plan name for merging
+    BILLING_TIER_PLAN = {"BASIC": None, "PRO": None, "ENTERPRISE": None}
     for plan in all_plans:
-        active_on_plan = (
+        n = plan.name.upper()
+        if "STARTER" in n or "BASIC" in n:
+            BILLING_TIER_PLAN["BASIC"] = plan.name
+        elif "PROFESSIONAL" in n or "PRO" in n:
+            BILLING_TIER_PLAN["PRO"] = plan.name
+        elif "ENTERPRISE" in n:
+            BILLING_TIER_PLAN["ENTERPRISE"] = plan.name
+
+    for plan in all_plans:
+        # Legacy: companies with subscription_plan_id pointing to this plan
+        legacy_count = (
             db.query(CompanyDB)
             .filter(
                 CompanyDB.subscription_plan_id == plan.id,
@@ -4834,6 +4872,15 @@ def get_admin_stats(
             .count()
         )
 
+        # New SubscriptionDB: find the billing tier that maps to this plan
+        billing_tier_for_plan = None
+        for tier_key, plan_name in BILLING_TIER_PLAN.items():
+            if plan_name == plan.name:
+                billing_tier_for_plan = tier_key
+                break
+        new_sub_count = billing_tier_counts.get(billing_tier_for_plan, 0) if billing_tier_for_plan else 0
+
+        active_on_plan = legacy_count + new_sub_count
         mrr = active_on_plan * plan.price_monthly
         total_mrr += mrr
 
@@ -5237,7 +5284,21 @@ def get_platform_statistics(
         invoice_query = invoice_query.filter(InvoiceDB.created_at <= to_dt)
     total_invoices = invoice_query.count()
 
-    # Total revenue (filtered) - subtract credit notes from revenue
+    # Total revenue: sum subscription payments from SubscriptionDB (billing table)
+    # within the date range, plus any paid invoice revenue already tracked
+    billing_sub_query = db.query(SubscriptionDB).filter(SubscriptionDB.status == "ACTIVE")
+    if from_dt:
+        billing_sub_query = billing_sub_query.filter(SubscriptionDB.created_at >= from_dt)
+    if to_dt:
+        billing_sub_query = billing_sub_query.filter(SubscriptionDB.created_at <= to_dt)
+
+    TIER_MONTHLY = {"BASIC": 99.0, "PRO": 299.0, "ENTERPRISE": 799.0}
+    billing_revenue = sum(
+        (sub.monthly_price or TIER_MONTHLY.get(sub.tier, 0)) * sub.billing_cycle_months
+        for sub in billing_sub_query.all()
+    )
+
+    # Also include paid invoice revenue (already existed)
     invoice_list_query = db.query(InvoiceDB)
     if from_dt:
         invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at >= from_dt)
@@ -5245,7 +5306,7 @@ def get_platform_statistics(
         invoice_list_query = invoice_list_query.filter(InvoiceDB.created_at <= to_dt)
 
     invoices_for_revenue = invoice_list_query.all()
-    total_revenue = sum(
+    invoice_revenue = sum(
         (inv.total_amount or 0.0)
         * (
             -1
@@ -5255,13 +5316,20 @@ def get_platform_statistics(
         )
         for inv in invoices_for_revenue
     )
+    total_revenue = billing_revenue + invoice_revenue
 
-    # Active subscriptions (company_subscriptions table)
-    active_subscriptions = (
+    # Active subscriptions: count from both SubscriptionDB and legacy CompanySubscriptionDB
+    active_billing_subs = (
+        db.query(SubscriptionDB)
+        .filter(SubscriptionDB.status == "ACTIVE")
+        .count()
+    )
+    active_legacy_subs = (
         db.query(CompanySubscriptionDB)
         .filter(CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE)
         .count()
     )
+    active_subscriptions = active_billing_subs + active_legacy_subs
 
     # Free vs paid tier users - consider company_subscriptions (company_subscriptions.plan -> subscription_plans)
     # and legacy Company.subscription_plan_id
