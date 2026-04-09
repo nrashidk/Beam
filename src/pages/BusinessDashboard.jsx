@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { companiesAPI } from "../lib/api";
+import apiClient from "../lib/api";
 import {
   Card,
   CardContent,
@@ -37,6 +38,7 @@ export default function BusinessDashboard() {
   const navigate = useNavigate();
   const [company, setCompany] = useState(null);
   const [subscription, setSubscription] = useState(null);
+  const [billingSubscription, setBillingSubscription] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -58,6 +60,16 @@ export default function BusinessDashboard() {
       setCompany(companyRes.data);
       setSubscription(subRes.data);
       setInvoices(invoicesRes.data || []);
+
+      // Also fetch the billing subscription (created via /billing/subscribe)
+      try {
+        const billingRes = await apiClient.get("/billing/subscription");
+        if (billingRes.data?.tier) {
+          setBillingSubscription(billingRes.data);
+        }
+      } catch {
+        // No billing subscription found
+      }
     } catch (error) {
       console.error("Failed to fetch dashboard data", error);
     } finally {
@@ -181,10 +193,12 @@ export default function BusinessDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {subscription?.plan_name || "Free"}
+                  {billingSubscription?.tier
+                    ? billingSubscription.tier.charAt(0) + billingSubscription.tier.slice(1).toLowerCase()
+                    : (subscription?.plan?.name || subscription?.plan_name || "Free")}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  {subscription?.status || "Active"}
+                  {billingSubscription?.status || subscription?.status || "Active"}
                 </p>
               </CardContent>
             </Card>

@@ -95,13 +95,14 @@ export default function Pricing() {
       highlighted,
       isFree,
       isEnterprise,
-      cta: isFree ? 'Start Free Trial' : isEnterprise ? 'Contact Sales' : 'Get Started',
+      cta: isFree ? 'Start Free Trial' : 'Get Started',
     };
   };
 
   const normalizedTiers = (() => {
-    const freePlan = plans.filter(p => p.price_monthly === 0);
-    const paidPlans = plans.filter(p => p.price_monthly > 0);
+    const sorted = [...plans].sort((a, b) => a.price_monthly - b.price_monthly);
+    const freePlan = sorted.filter(p => p.price_monthly === 0);
+    const paidPlans = sorted.filter(p => p.price_monthly > 0);
     return [
       ...freePlan.map((p, i) => normalizePlan(p, i, [])),
       ...paidPlans.map((p, i) => normalizePlan(p, i, paidPlans)),
@@ -135,10 +136,6 @@ export default function Pricing() {
   const handleSelectPlan = async (tier) => {
     if (tier.isFree) {
       navigate(isAuthenticated ? '/dashboard' : '/login');
-      return;
-    }
-    if (tier.isEnterprise) {
-      window.location.href = 'mailto:sales@involinks.com?subject=Enterprise Plan Enquiry';
       return;
     }
     if (!isAuthenticated) {
@@ -347,15 +344,6 @@ export default function Pricing() {
                         </div>
                         <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
                           No credit card required
-                        </div>
-                      </div>
-                    ) : tier.isEnterprise ? (
-                      <div>
-                        <div className={`text-4xl font-bold ${tier.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                          AED {tier.monthlyPrice > 0 ? tier.monthlyPrice : 'Custom'}
-                        </div>
-                        <div className={`text-sm mt-1 ${tier.highlighted ? 'text-blue-100' : 'text-gray-600'}`}>
-                          {tier.monthlyPrice > 0 ? 'per month' : 'Contact for pricing'}
                         </div>
                       </div>
                     ) : (
