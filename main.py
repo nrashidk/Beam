@@ -55,6 +55,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
+from sqlalchemy.exc import IntegrityError
 
 # Password & JWT
 import bcrypt
@@ -1496,6 +1497,49 @@ try:
             _conn.commit()
 except Exception as _e:
     print(f"⚠️  InvoiceType enum migration skipped: {_e}")
+
+try:
+    if engine.dialect.name == "postgresql":
+        with engine.connect() as _conn:
+            _role_enum_types = [
+                r[0]
+                for r in _conn.execute(
+                    text(
+                        "SELECT t.typname "
+                        "FROM pg_type t "
+                        "JOIN pg_enum e ON t.oid = e.enumtypid "
+                        "GROUP BY t.typname "
+                        "HAVING bool_or(e.enumlabel = 'SUPER_ADMIN') "
+                        "   AND bool_or(e.enumlabel = 'COMPANY_ADMIN') "
+                        "   AND bool_or(e.enumlabel = 'FINANCE_USER')"
+                    )
+                )
+            ]
+
+            for _typ in _role_enum_types:
+                if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", _typ or ""):
+                    continue
+
+                _labels = {
+                    r[0]
+                    for r in _conn.execute(
+                        text(
+                            "SELECT e.enumlabel "
+                            "FROM pg_type t "
+                            "JOIN pg_enum e ON t.oid = e.enumtypid "
+                            "WHERE t.typname = :typ"
+                        ),
+                        {"typ": _typ},
+                    )
+                }
+
+                if "BUSINESS_ADMIN" not in _labels:
+                    _conn.execute(text(f"ALTER TYPE {_typ} ADD VALUE 'BUSINESS_ADMIN'"))
+
+            _conn.commit()
+        print("✅ users role enum values ensured")
+except Exception as _e:
+    print(f"⚠️  users role enum migration skipped: {_e}")
 
 # ── UAE PINT-AE schema migration (Task 8) ────────────────────────────────────
 _UAE_PINT_COLUMNS = [
@@ -4194,6 +4238,50 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
     }
 
 
+def _resolve_company_effective_plan_limit(company: CompanyDB, db: Session) -> Optional[int]:
+    """Resolve active company invoice limit from SubscriptionPlanDB, preferring current paid billing subscription."""
+    # 1) New billing subscription flow
+    billing_sub = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == company.id,
+            SubscriptionDB.status == "ACTIVE",
+        )
+        .order_by(SubscriptionDB.created_at.desc())
+        .first()
+    )
+    if billing_sub:
+        plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
+        tier = (billing_sub.tier or "").upper()
+        for plan in plans:
+            name_u = (plan.name or "").upper()
+            if tier == "BASIC" and ("STARTER" in name_u or "BASIC" in name_u):
+                return plan.max_invoices_per_month
+            if tier == "PRO" and ("PROFESSIONAL" in name_u or "PRO" in name_u):
+                return plan.max_invoices_per_month
+            if tier == "ENTERPRISE" and "ENTERPRISE" in name_u:
+                return plan.max_invoices_per_month
+
+    # 2) Legacy company_subscriptions flow
+    latest_sub = (
+        db.query(CompanySubscriptionDB)
+        .filter(CompanySubscriptionDB.company_id == company.id)
+        .order_by(CompanySubscriptionDB.created_at.desc())
+        .first()
+    )
+    if latest_sub and latest_sub.plan:
+        return latest_sub.plan.max_invoices_per_month
+
+    # 3) Legacy direct plan link on company
+    if company.subscription_plan_id:
+        plan_obj = db.get(SubscriptionPlanDB, company.subscription_plan_id)
+        if plan_obj:
+            return plan_obj.max_invoices_per_month
+
+    # 4) Backward-compat fallback
+    return company.free_plan_invoice_limit
+
+
 @app.get(
     "/companies/{company_id}/invoices",
     tags=["Companies"],
@@ -4791,6 +4879,8 @@ def get_admin_stats(
                 )
         except Exception:
             company_revenue = 0.0
+        effective_invoice_limit = _resolve_company_effective_plan_limit(company, db)
+
         all_companies_list.append(
             {
                 "id": company.id,
@@ -4798,7 +4888,7 @@ def get_admin_stats(
                 "status": company.status.value if company.status else "UNKNOWN",
                 "invoicesThisMonth": invoices_this_month,
                 "invoicesUsed": invoices_used_total,
-                "invoicesLimit": company.free_plan_invoice_limit,
+            "invoicesLimit": effective_invoice_limit,
                 "free_plan_type": company.free_plan_type,
                 "free_plan_duration_months": company.free_plan_duration_months,
                 "plan": plan,
@@ -5749,7 +5839,19 @@ def invite_user(
     )
 
     db.add(new_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        err_text = str(getattr(e, "orig", e))
+        if "duplicate key" in err_text.lower() and "email" in err_text.lower():
+            raise HTTPException(400, "User with this email already exists")
+        if "invalid input value for enum" in err_text.lower() and "role" in err_text.lower():
+            raise HTTPException(
+                500,
+                "Database role enum is outdated. Please restart the server so migrations can update role values.",
+            )
+        raise HTTPException(500, f"Failed to invite user: {err_text}")
 
     # Simulate email notification
     print("\n" + "=" * 70)
@@ -6080,31 +6182,34 @@ def create_invoice(
             detail="credit_note_reason is required for credit notes",
         )
 
-    # Enforce Super Admin configured free plan invoice limits (invoice-count based)
-    if (
-        company.free_plan_type == "INVOICE_COUNT"
-        and company.free_plan_invoice_limit is not None
-    ):
-        active_paid_subscription = (
-            db.query(SubscriptionDB)
+    # Enforce paid plan invoice limits using current plan values from Tier Management.
+    active_paid_subscription = (
+        db.query(SubscriptionDB)
+        .filter(
+            SubscriptionDB.company_id == company.id,
+            SubscriptionDB.status == "ACTIVE",
+            SubscriptionDB.tier != "FREE",
+        )
+        .first()
+    )
+    effective_plan_limit = _resolve_company_effective_plan_limit(company, db)
+    if active_paid_subscription and effective_plan_limit is not None:
+        now = datetime.utcnow()
+        month_start = datetime(now.year, now.month, 1)
+        used_invoice_count_month = (
+            db.query(InvoiceDB)
             .filter(
-                SubscriptionDB.company_id == company.id,
-                SubscriptionDB.status == "ACTIVE",
-                SubscriptionDB.tier != "FREE",
+                InvoiceDB.company_id == company.id,
+                InvoiceDB.created_at >= month_start,
             )
-            .first()
+            .count()
         )
 
-        if not active_paid_subscription:
-            used_invoice_count = (
-                db.query(InvoiceDB).filter(InvoiceDB.company_id == company.id).count()
+        if used_invoice_count_month >= effective_plan_limit:
+            raise HTTPException(
+                403,
+                f"Invoice monthly limit reached ({effective_plan_limit}). Please contact Super Admin to adjust your plan limit.",
             )
-
-            if used_invoice_count >= company.free_plan_invoice_limit:
-                raise HTTPException(
-                    403,
-                    f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin.",
-                )
 
     # Only require TRN when VAT is enabled
     if company.vat_enabled and not company.trn:
@@ -14234,42 +14339,90 @@ def get_subscription_plan_info(
             SubscriptionDB.company_id == current_user.company_id,
             SubscriptionDB.status == "ACTIVE",
         )
+        .order_by(SubscriptionDB.created_at.desc())
         .first()
     )
 
+    active_plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
+
+    def _plan_for_tier(tier: Optional[str]) -> Optional[SubscriptionPlanDB]:
+        tier_u = (tier or "").upper()
+        for plan in active_plans:
+            name_u = (plan.name or "").upper()
+            if tier_u == "BASIC" and ("STARTER" in name_u or "BASIC" in name_u):
+                return plan
+            if tier_u == "PRO" and ("PROFESSIONAL" in name_u or "PRO" in name_u):
+                return plan
+            if tier_u == "ENTERPRISE" and "ENTERPRISE" in name_u:
+                return plan
+        return None
+
     if subscription:
-        # Return paid plan details
-        tier_limits = {
-            "BASIC": {
-                "name": "Basic",
-                "max_business_admins": 2,
-                "max_finance_users": 5,
-            },
-            "PRO": {"name": "Pro", "max_business_admins": 5, "max_finance_users": 15},
-            "ENTERPRISE": {
-                "name": "Enterprise",
-                "max_business_admins": 999,
-                "max_finance_users": 999,
-            },
-        }
-        plan_info = tier_limits.get(subscription.tier, tier_limits["BASIC"])
+        # Return paid plan details from live SubscriptionPlanDB limits.
+        plan = _plan_for_tier(subscription.tier)
+        if not plan and company.subscription_plan_id:
+            plan = db.get(SubscriptionPlanDB, company.subscription_plan_id)
+
+        if plan:
+            return {
+                "plan": {
+                    "name": plan.name,
+                    "tier": subscription.tier,
+                    "max_users": plan.max_users,
+                    "max_business_admins": plan.max_business_admins,
+                    "max_finance_users": plan.max_finance_users,
+                    "max_invoices_per_month": plan.max_invoices_per_month,
+                },
+                "status": "ACTIVE",
+            }
+
+        # Safety fallback for old records where tier cannot be mapped to a plan row.
         return {
             "plan": {
-                "name": plan_info["name"],
+                "name": subscription.tier.title() if subscription.tier else "Paid Plan",
                 "tier": subscription.tier,
-                "max_business_admins": plan_info["max_business_admins"],
-                "max_finance_users": plan_info["max_finance_users"],
+                "max_users": 1,
+                "max_business_admins": 0,
+                "max_finance_users": 0,
+                "max_invoices_per_month": None,
             },
             "status": "ACTIVE",
         }
     else:
-        # Return free trial limits
+        # Return free/trial limits from the configured free plan.
+        free_plan = (
+            db.query(SubscriptionPlanDB)
+            .filter(
+                SubscriptionPlanDB.active == True,
+                func.lower(SubscriptionPlanDB.name) == "free",
+            )
+            .first()
+        )
+        if not free_plan:
+            free_plan = db.get(SubscriptionPlanDB, "plan_free")
+
+        if free_plan:
+            return {
+                "plan": {
+                    "name": free_plan.name,
+                    "tier": "TRIAL",
+                    "max_users": free_plan.max_users,
+                    "max_business_admins": free_plan.max_business_admins,
+                    "max_finance_users": free_plan.max_finance_users,
+                    "max_invoices_per_month": free_plan.max_invoices_per_month,
+                },
+                "status": company.trial_status or "ACTIVE",
+            }
+
+        # Final fallback
         return {
             "plan": {
                 "name": "Free Trial",
                 "tier": "TRIAL",
+                "max_users": 1,
                 "max_business_admins": 1,
                 "max_finance_users": 3,
+                "max_invoices_per_month": 100,
             },
             "status": company.trial_status or "ACTIVE",
         }
@@ -14714,45 +14867,46 @@ async def bulk_import_invoices(
                 "errors": errors,
             }
 
-        # Enforce the same Super Admin free-plan invoice limit used by /invoices create endpoint.
-        if (
-            company.free_plan_type == "INVOICE_COUNT"
-            and company.free_plan_invoice_limit is not None
-        ):
-            active_paid_subscription = (
-                db.query(SubscriptionDB)
-                .filter(
-                    SubscriptionDB.company_id == company.id,
-                    SubscriptionDB.status == "ACTIVE",
-                    SubscriptionDB.tier != "FREE",
-                )
-                .first()
+        # Enforce paid plan monthly invoice limit using current Tier Management values.
+        active_paid_subscription = (
+            db.query(SubscriptionDB)
+            .filter(
+                SubscriptionDB.company_id == company.id,
+                SubscriptionDB.status == "ACTIVE",
+                SubscriptionDB.tier != "FREE",
             )
-
-            if not active_paid_subscription:
-                used_invoice_count = (
-                    db.query(InvoiceDB)
-                    .filter(InvoiceDB.company_id == company.id)
-                    .count()
+            .first()
+        )
+        effective_plan_limit = _resolve_company_effective_plan_limit(company, db)
+        if active_paid_subscription and effective_plan_limit is not None:
+            now = datetime.utcnow()
+            month_start = datetime(now.year, now.month, 1)
+            used_invoice_count = (
+                db.query(InvoiceDB)
+                .filter(
+                    InvoiceDB.company_id == company.id,
+                    InvoiceDB.created_at >= month_start,
                 )
-                available_slots = company.free_plan_invoice_limit - used_invoice_count
+                .count()
+            )
+            available_slots = effective_plan_limit - used_invoice_count
 
-                if available_slots <= 0:
-                    raise HTTPException(
-                        403,
-                        f"Invoice limit reached ({company.free_plan_invoice_limit}). Please upgrade or request additional invoices from Super Admin.",
-                    )
+            if available_slots <= 0:
+                raise HTTPException(
+                    403,
+                    f"Invoice monthly limit reached ({effective_plan_limit}). Please contact Super Admin to adjust your plan limit.",
+                )
 
-                if len(parsed_invoices) > available_slots:
-                    return {
-                        "success": False,
-                        "total_rows": len(parsed_invoices),
-                        "valid_rows": 0,
-                        "errors": [
-                            f"Invoice limit is {company.free_plan_invoice_limit}. You already used {used_invoice_count}.",
-                            f"Can only import {available_slots} more invoice(s).",
-                        ],
-                    }
+            if len(parsed_invoices) > available_slots:
+                return {
+                    "success": False,
+                    "total_rows": len(parsed_invoices),
+                    "valid_rows": 0,
+                    "errors": [
+                        f"Invoice monthly limit is {effective_plan_limit}. You already used {used_invoice_count} this month.",
+                        f"Can only import {available_slots} more invoice(s) this month.",
+                    ],
+                }
 
         from decimal import Decimal
 

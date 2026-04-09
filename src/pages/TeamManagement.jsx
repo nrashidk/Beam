@@ -419,11 +419,15 @@ export default function TeamManagement() {
     return <Badge className={config.className}>{config.label}</Badge>;
   };
 
+  const getActiveMembers = () =>
+    teamMembers.filter((m) => m.is_active !== false);
+
   const getCurrentRoleCounts = () => {
-    const businessAdmins = teamMembers.filter(
+    const activeMembers = getActiveMembers();
+    const businessAdmins = activeMembers.filter(
       (m) => m.role === "BUSINESS_ADMIN",
     ).length;
-    const financeUsers = teamMembers.filter(
+    const financeUsers = activeMembers.filter(
       (m) => m.role === "FINANCE_USER",
     ).length;
     return { businessAdmins, financeUsers };
@@ -440,6 +444,10 @@ export default function TeamManagement() {
     if (!canManageTeamInvites) return false;
     if (isBusinessAdmin && !["FINANCE_USER", "READ_ONLY"].includes(role)) return false;
     if (!tierLimits) return true;
+    const activeCount = getActiveMembers().length;
+    if (tierLimits.max_users != null && activeCount >= tierLimits.max_users) {
+      return false;
+    }
     const counts = getCurrentRoleCounts();
 
     if (role === "BUSINESS_ADMIN") {
@@ -462,6 +470,11 @@ export default function TeamManagement() {
       return `${counts.financeUsers} / ${tierLimits.max_finance_users}`;
     }
     return null;
+  };
+
+  const getTotalUsersUsage = () => {
+    if (!tierLimits || tierLimits.max_users == null) return null;
+    return `${getActiveMembers().length} / ${tierLimits.max_users}`;
   };
 
   if (loading) {
@@ -526,7 +539,13 @@ export default function TeamManagement() {
 
           <Card className="mb-6">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Team Members ({teamMembers.length})</CardTitle>
+              <CardTitle>
+                Team Members ({getActiveMembers().length}
+                {teamMembers.length !== getActiveMembers().length
+                  ? ` active, ${teamMembers.length - getActiveMembers().length} deactivated`
+                  : ""}
+                )
+              </CardTitle>
               <Button
                 onClick={() => setShowInviteForm(!showInviteForm)}
                 className="gap-2"
@@ -667,8 +686,10 @@ export default function TeamManagement() {
                       {tierLimits && (
                         <p className="text-blue-600 mt-2">
                           <strong>Your Plan:</strong> {tierLimits.name} -{" "}
-                          {tierLimits.max_business_admins} Business Admins,{" "}
+                          {tierLimits.max_users ?? "Unlimited"} Total Users, {" "}
+                          {tierLimits.max_business_admins} Business Admins, {" "}
                           {tierLimits.max_finance_users} Finance Users
+                          {getTotalUsersUsage() ? ` (Using ${getTotalUsersUsage()})` : ""}
                         </p>
                       )}
                     </div>
