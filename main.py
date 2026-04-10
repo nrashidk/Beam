@@ -1724,6 +1724,36 @@ except Exception as _e:
     print(f"⚠️  Optimistic locking migration skipped: {_e}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── vat_returns column migration (add columns added after initial table creation) ─
+try:
+    with engine.connect() as _conn:
+        for _col, _type in [
+            ("box1_standard_rated_sales", "FLOAT DEFAULT 0.0"),
+            ("box2_tax_refunds",          "FLOAT DEFAULT 0.0"),
+            ("box3_output_vat",           "FLOAT DEFAULT 0.0"),
+            ("box4_zero_rated_sales",     "FLOAT DEFAULT 0.0"),
+            ("box5_exempt_sales",         "FLOAT DEFAULT 0.0"),
+            ("box6_out_of_scope_sales",   "FLOAT DEFAULT 0.0"),
+            ("box7_total_sales",          "FLOAT DEFAULT 0.0"),
+            ("box8_standard_rated_purchases", "FLOAT DEFAULT 0.0"),
+            ("box9_input_vat_bills",      "FLOAT DEFAULT 0.0"),
+            ("box10_purchase_expenses",   "FLOAT DEFAULT 0.0"),
+            ("box11_input_vat_expenses",  "FLOAT DEFAULT 0.0"),
+            ("box12_total_input_vat",     "FLOAT DEFAULT 0.0"),
+            ("box13_net_vat_payable",     "FLOAT DEFAULT 0.0"),
+            ("total_sales_invoices",      "INTEGER DEFAULT 0"),
+            ("total_purchase_invoices",   "INTEGER DEFAULT 0"),
+            ("generated_at",              "TIMESTAMP DEFAULT NOW()"),
+        ]:
+            _conn.execute(text(
+                f"ALTER TABLE vat_returns ADD COLUMN IF NOT EXISTS {_col} {_type}"
+            ))
+        _conn.commit()
+    print("✅ vat_returns columns ensured")
+except Exception as _e:
+    print(f"⚠️  vat_returns column migration skipped: {_e}")
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── BackupLog table migration ─────────────────────────────────────────────────
 try:
     with engine.connect() as _conn:
