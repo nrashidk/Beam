@@ -388,9 +388,13 @@ export default function TeamManagement() {
     setRemoveLoading(true);
     try {
       if (action === "deactivate") {
-        await api.post(`/company/users/${userId}/deactivate`);
+        await api.patch(`/company/users/${userId}/status`, {
+          is_active: false,
+        });
       } else if (action === "reactivate") {
-        await api.post(`/company/users/${userId}/reactivate`);
+        await api.patch(`/company/users/${userId}/status`, {
+          is_active: true,
+        });
       } else {
         await usersAPI.removeUser(userId);
       }

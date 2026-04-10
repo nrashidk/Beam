@@ -56,6 +56,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, Session, sessionmaker, relationship
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.types import TypeDecorator
 
 # Password & JWT
 import bcrypt
@@ -176,6 +177,56 @@ class InvoiceType(str, enum.Enum):
     DEBIT_NOTE = "383"  # Debit note
     COMMERCIAL_INVOICE = "480"  # Invoice out of scope of tax
     CREDIT_NOTE_OUT_OF_SCOPE = "81"  # Credit note related to goods/services
+
+    @classmethod
+    def _missing_(cls, value):
+        if value is None:
+            return None
+
+        normalized = str(value).strip()
+        if not normalized:
+            return None
+
+        member = cls.__members__.get(normalized)
+        if member is not None:
+            return member
+
+        for enum_member in cls:
+            if enum_member.value == normalized:
+                return enum_member
+
+        return None
+
+
+class InvoiceTypeType(TypeDecorator):
+    """Accept both UBL codes and enum names while binding DB enum labels."""
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+
+        coerced = value if isinstance(value, InvoiceType) else InvoiceType(value)
+        if coerced is None:
+            raise ValueError(f"Invalid invoice type: {value}")
+        return coerced.name
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+
+        coerced = InvoiceType(value)
+        if coerced is None:
+            raise LookupError(
+                f"'{value}' is not a recognized invoice type. Expected one of: "
+                f"{', '.join(member.value for member in InvoiceType)} or enum names."
+            )
+        return coerced
+
+
+InvoiceTypeDBEnum = InvoiceTypeType()
 
 
 class InvoiceTransactionType(str, enum.Enum):
@@ -530,7 +581,7 @@ class InvoiceDB(Base):
 
     # UBL/PINT-AE Core Fields
     invoice_number = Column(String, nullable=False, index=True)
-    invoice_type = Column(SQLEnum(InvoiceType), nullable=False)
+    invoice_type = Column(InvoiceTypeDBEnum, nullable=False)
     status = Column(SQLEnum(InvoiceStatus), default=InvoiceStatus.DRAFT)
     issue_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=True)
@@ -934,7 +985,7 @@ class InwardInvoiceDB(Base):
 
     # Invoice Identification
     supplier_invoice_number = Column(String, nullable=False, index=True)
-    invoice_type = Column(SQLEnum(InvoiceType), default=InvoiceType.TAX_INVOICE)
+    invoice_type = Column(InvoiceTypeDBEnum, default=InvoiceType.TAX_INVOICE)
     status = Column(SQLEnum(InwardInvoiceStatus), default=InwardInvoiceStatus.RECEIVED)
 
     # Dates
@@ -1492,8 +1543,8 @@ try:
         _existing = [r[0] for r in _conn.execute(text(
             "SELECT unnest(enum_range(NULL::invoicetype))::text"
         ))]
-        if "383" not in _existing:
-            _conn.execute(text("ALTER TYPE invoicetype ADD VALUE '383'"))
+        if "DEBIT_NOTE" not in _existing:
+            _conn.execute(text("ALTER TYPE invoicetype ADD VALUE 'DEBIT_NOTE'"))
             _conn.commit()
 except Exception as _e:
     print(f"⚠️  InvoiceType enum migration skipped: {_e}")
@@ -3546,6 +3597,9 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     # Try user authentication first (for super admins, company admins, etc)
     user = authenticate_user(payload.email, payload.password, db)
     if user:
+        if not getattr(user, "is_active", True):
+            raise HTTPException(401, "Account is deactivated")
+
         # Check company status for non-super-admin users
         if user.role != Role.SUPER_ADMIN and user.company_id:
             company = db.get(CompanyDB, user.company_id)
@@ -3659,6 +3713,8 @@ def refresh_token_endpoint(payload: RefreshTokenRequest, db: Session = Depends(g
             else None
         )
         if user:
+            if not getattr(user, "is_active", True):
+                raise HTTPException(401, "Account is deactivated")
             access_token = create_access_token({"sub": user_id, "type": "user"})
         else:
             # Try company
@@ -3783,6 +3839,8 @@ def verify_mfa_login(payload: MFALoginVerifyRequest, db: Session = Depends(get_d
         user = db.query(UserDB).filter(UserDB.id == user_id).first()
         if not user:
             raise HTTPException(401, "User not found")
+        if not getattr(user, "is_active", True):
+            raise HTTPException(401, "Account is deactivated")
 
     except JWTError:
         raise HTTPException(401, "Invalid or expired temporary token")
@@ -5788,6 +5846,7 @@ class UserOut(BaseModel):
     full_name: Optional[str]
     role: str
     is_owner: bool
+    is_active: bool
     created_at: str
     last_login: Optional[str]
 
@@ -5892,6 +5951,7 @@ def get_team_members(
             "full_name": user.full_name,
             "role": user.role.value,
             "is_owner": user.is_owner,
+            "is_active": getattr(user, "is_active", True),
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "last_login": user.last_login.isoformat() if user.last_login else None,
         }
@@ -6025,6 +6085,38 @@ def update_user_status(
         "is_active": payload.is_active,
         "message": f"User {'reactivated' if payload.is_active else 'deactivated'} successfully",
     }
+
+
+@app.post("/users/{user_id}/deactivate", tags=["Users"])
+@app.post("/company/users/{user_id}/deactivate", tags=["Users"])
+def deactivate_user_compat(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Backward-compatible endpoint: deactivate a user via POST."""
+    return update_user_status(
+        user_id=user_id,
+        payload=UserStatusUpdate(is_active=False),
+        current_user=current_user,
+        db=db,
+    )
+
+
+@app.post("/users/{user_id}/reactivate", tags=["Users"])
+@app.post("/company/users/{user_id}/reactivate", tags=["Users"])
+def reactivate_user_compat(
+    user_id: str,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Backward-compatible endpoint: reactivate a user via POST."""
+    return update_user_status(
+        user_id=user_id,
+        payload=UserStatusUpdate(is_active=True),
+        current_user=current_user,
+        db=db,
+    )
 
 
 @app.patch("/users/{user_id}/role", tags=["Users"])
@@ -8067,7 +8159,10 @@ def get_adhoc_report(
         InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
     )
     if type and type != "all":
-        q = q.filter(InvoiceDB.invoice_type == type)
+        try:
+            q = q.filter(InvoiceDB.invoice_type == InvoiceType(type))
+        except ValueError:
+            raise HTTPException(400, f"Invalid invoice type: {type}")
     invoices = q.all()
     label = f"{start.isoformat()} to {end.isoformat()}"
     return _build_report_payload(invoices, label, start, end)
@@ -8109,7 +8204,10 @@ def export_adhoc_report(
         InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
     )
     if type and type != "all":
-        q = q.filter(InvoiceDB.invoice_type == type)
+        try:
+            q = q.filter(InvoiceDB.invoice_type == InvoiceType(type))
+        except ValueError:
+            raise HTTPException(400, f"Invalid invoice type: {type}")
     invoices = q.all()
     label = f"{start.isoformat()} to {end.isoformat()}"
     payload = _build_report_payload(invoices, label, start, end)
