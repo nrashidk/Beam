@@ -289,15 +289,28 @@ export default function BillingSettings() {
     },
   };
 
-  const currentPlanLabel =
-    pricingTiers[subscription?.tier]?.name ||
-    TIER_DISPLAY_NAME[subscription?.tier] ||
-    subscription?.tier ||
-    "N/A";
+  const hasActiveSubscription = Boolean(subscription?.id && subscription?.tier);
 
-  const currentPlanMonthlyPrice =
-    pricingTiers[subscription?.tier]?.monthly ?? subscription?.monthly_price;
-  const isCancellationScheduled = Boolean(subscription?.cancel_at_period_end);
+  const currentPlanLabel = hasActiveSubscription
+    ? pricingTiers[subscription?.tier]?.name ||
+      TIER_DISPLAY_NAME[subscription?.tier] ||
+      subscription?.tier ||
+      "N/A"
+    : isTrialActive
+      ? "Free Trial"
+      : "Free";
+
+  const currentPlanMonthlyPrice = hasActiveSubscription
+    ? (pricingTiers[subscription?.tier]?.monthly ?? subscription?.monthly_price)
+    : 0;
+  const currentBillingCycleMonths = hasActiveSubscription
+    ? (subscription?.billing_cycle_months || 1)
+    : 1;
+  const currentStatusLabel = hasActiveSubscription
+    ? (subscription?.status || "ACTIVE")
+    : (trialStatus?.trial_status || "ACTIVE");
+  const isCancellationScheduled =
+    hasActiveSubscription && Boolean(subscription?.cancel_at_period_end);
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -406,7 +419,7 @@ export default function BillingSettings() {
               </div>
             )}
 
-            {subscription && (
+            {(hasActiveSubscription || isTrialActive) && (
               <div className="lg:col-span-2 bg-white rounded-xl shadow-sm p-6 border border-gray-200">
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -425,7 +438,7 @@ export default function BillingSettings() {
                     </div>
                     <div className="text-sm text-gray-600">
                       AED {currentPlanMonthlyPrice}/month • Billed every{" "}
-                      {subscription.billing_cycle_months} month(s)
+                      {currentBillingCycleMonths} month(s)
                     </div>
                   </div>
 
@@ -448,7 +461,7 @@ export default function BillingSettings() {
                         <div className="text-gray-600 mb-1">Status</div>
                         <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                           <CheckCircle className="h-3 w-3" />
-                          {subscription.status}
+                          {currentStatusLabel}
                         </div>
                       </div>
                     </div>
@@ -468,6 +481,10 @@ export default function BillingSettings() {
                   <div className="flex gap-3 pt-4 border-t">
                     <button
                       onClick={() => {
+                        if (!hasActiveSubscription) {
+                          navigate("/pricing");
+                          return;
+                        }
                         setChangeTier(subscription.tier);
                         setChangeCycle(subscription.billing_cycle_months || 1);
                         setChangeError("");
@@ -477,7 +494,7 @@ export default function BillingSettings() {
                       className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"
                     >
                       <RefreshCcw className="h-4 w-4" />
-                      Change Plan
+                      {hasActiveSubscription ? "Change Plan" : "Upgrade Plan"}
                     </button>
                     <button
                       onClick={() => {
@@ -580,7 +597,7 @@ export default function BillingSettings() {
             </div>
           </div>
 
-          {!subscription && selectedTier && (
+          {!hasActiveSubscription && selectedTier && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
               <h3 className="text-lg font-bold text-gray-900 mb-4">
                 Complete Your Subscription
