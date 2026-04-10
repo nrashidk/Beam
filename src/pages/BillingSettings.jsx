@@ -24,12 +24,25 @@ import PageLoader from "../components/PageLoader";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
+const PLAN_TIER_MAP = {
+  plan_starter: "BASIC",
+  plan_professional: "PRO",
+  plan_enterprise: "ENTERPRISE",
+};
+
+const TIER_DISPLAY_NAME = {
+  BASIC: "Starter",
+  PRO: "Professional",
+  ENTERPRISE: "Enterprise",
+};
+
 export default function BillingSettings() {
   const navigate = useNavigate();
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [trialStatus, setTrialStatus] = useState(null);
   const [subscription, setSubscription] = useState(null);
+  const [plans, setPlans] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [showAddCard, setShowAddCard] = useState(false);
   const [selectedTier, setSelectedTier] = useState(
@@ -59,13 +72,15 @@ export default function BillingSettings() {
   const fetchBillingData = async () => {
     try {
       setLoading(true);
-      const [trialRes, paymentRes] = await Promise.all([
+      const [trialRes, paymentRes, plansRes] = await Promise.all([
         apiClient.get("/billing/trial"),
         apiClient.get("/billing/payment-methods"),
+        apiClient.get("/plans"),
       ]);
 
       setTrialStatus(trialRes.data);
       setPaymentMethods(paymentRes.data);
+      setPlans(plansRes.data || []);
 
       try {
         const subRes = await apiClient.get("/billing/subscription");
@@ -227,11 +242,61 @@ export default function BillingSettings() {
     ? Math.min(100, (daysUsed / trialTotalDays) * 100)
     : 0;
 
-  const pricingTiers = {
-    BASIC: { monthly: 99, name: "Basic" },
-    PRO: { monthly: 299, name: "Pro" },
-    ENTERPRISE: { monthly: 799, name: "Enterprise" },
+  const resolveTierPlan = (tier) => {
+    const tierU = (tier || "").toUpperCase();
+    // Prefer explicit plan-id mapping (same as Pricing page)
+    const byId = plans.find((p) => PLAN_TIER_MAP[p.id] === tierU);
+    if (byId) return byId;
+
+    // Fallback to name matching for older/custom IDs
+    return plans.find((p) => {
+      const nameU = (p?.name || "").toUpperCase();
+      if (tierU === "BASIC") return nameU.includes("STARTER") || nameU.includes("BASIC");
+      if (tierU === "PRO") return nameU.includes("PROFESSIONAL") || nameU.includes("PRO");
+      if (tierU === "ENTERPRISE") return nameU.includes("ENTERPRISE");
+      return false;
+    });
   };
+
+  const calculatePrice = (tier) => {
+    const monthlyPrice = pricingTiers[tier]?.monthly || 0;
+    if (!monthlyPrice) return 0;
+
+    const discounts = {
+      1: 0,
+      3: monthlyPrice >= 799 ? 10 : 5,
+      6: monthlyPrice >= 799 ? 15 : 10,
+    };
+
+    const discount = discounts[selectedCycle] || 0;
+    const subtotal = monthlyPrice * selectedCycle;
+    const discountAmount = subtotal * (discount / 100);
+    return Math.round(subtotal - discountAmount);
+  };
+
+  const pricingTiers = {
+    BASIC: {
+      monthly: resolveTierPlan("BASIC")?.price_monthly ?? 99,
+      name: resolveTierPlan("BASIC")?.name || TIER_DISPLAY_NAME.BASIC,
+    },
+    PRO: {
+      monthly: resolveTierPlan("PRO")?.price_monthly ?? 299,
+      name: resolveTierPlan("PRO")?.name || TIER_DISPLAY_NAME.PRO,
+    },
+    ENTERPRISE: {
+      monthly: resolveTierPlan("ENTERPRISE")?.price_monthly ?? 799,
+      name: resolveTierPlan("ENTERPRISE")?.name || TIER_DISPLAY_NAME.ENTERPRISE,
+    },
+  };
+
+  const currentPlanLabel =
+    pricingTiers[subscription?.tier]?.name ||
+    TIER_DISPLAY_NAME[subscription?.tier] ||
+    subscription?.tier ||
+    "N/A";
+
+  const currentPlanMonthlyPrice =
+    pricingTiers[subscription?.tier]?.monthly ?? subscription?.monthly_price;
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -355,10 +420,10 @@ export default function BillingSettings() {
                 <div className="space-y-4">
                   <div>
                     <div className="text-3xl font-bold text-gray-900 mb-1">
-                      {subscription.tier}
+                      {currentPlanLabel}
                     </div>
                     <div className="text-sm text-gray-600">
-                      AED {subscription.monthly_price}/month • Billed every{" "}
+                      AED {currentPlanMonthlyPrice}/month • Billed every{" "}
                       {subscription.billing_cycle_months} month(s)
                     </div>
                   </div>
@@ -682,9 +747,21 @@ export default function BillingSettings() {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Select Plan</label>
                     <div className="space-y-2">
                       {[
-                        { id: "BASIC", name: "Basic", price: 99 },
-                        { id: "PRO", name: "Pro", price: 299 },
-                        { id: "ENTERPRISE", name: "Enterprise", price: 799 },
+                        {
+                          id: "BASIC",
+                          name: pricingTiers.BASIC.name,
+                          price: pricingTiers.BASIC.monthly,
+                        },
+                        {
+                          id: "PRO",
+                          name: pricingTiers.PRO.name,
+                          price: pricingTiers.PRO.monthly,
+                        },
+                        {
+                          id: "ENTERPRISE",
+                          name: pricingTiers.ENTERPRISE.name,
+                          price: pricingTiers.ENTERPRISE.monthly,
+                        },
                       ].map((t) => (
                         <label
                           key={t.id}
