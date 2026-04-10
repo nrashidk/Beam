@@ -1451,6 +1451,7 @@ class VATReturnDB(Base):
     box13_net_vat_payable = Column(Float, default=0.0)
     total_sales_invoices = Column(Integer, default=0)
     total_purchase_invoices = Column(Integer, default=0)
+    generated_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
     version = Column(Integer, default=1)
     generated_at = Column(DateTime, default=datetime.utcnow)
     company = relationship("CompanyDB", backref="vat_returns")
@@ -1743,6 +1744,7 @@ try:
             ("box13_net_vat_payable",     "FLOAT DEFAULT 0.0"),
             ("total_sales_invoices",      "INTEGER DEFAULT 0"),
             ("total_purchase_invoices",   "INTEGER DEFAULT 0"),
+            ("generated_by_user_id",      "VARCHAR"),
             ("generated_at",              "TIMESTAMP DEFAULT NOW()"),
         ]:
             _conn.execute(text(
@@ -8520,6 +8522,7 @@ def generate_vat_return(
         box13_net_vat_payable=_r(box13),
         total_sales_invoices=len(sales_invoices),
         total_purchase_invoices=len(purchase_invoices),
+        generated_by_user_id=current_user.id,
     )
     db.add(vat_return)
     db.commit()
