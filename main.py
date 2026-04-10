@@ -4,7 +4,7 @@ UAE e-Invoicing Platform with Registration Wizard
 InvoLinks API - Multi-tenant e-invoicing with subscription plans
 """
 
-import os, enum, hashlib, secrets, json, logging, re, time, threading
+import os, enum, hashlib, secrets, json, logging, re, time, threading, uuid
 from dotenv import load_dotenv
 load_dotenv()
 from uuid import uuid4
@@ -8499,7 +8499,7 @@ def generate_vat_return(
     box13 = box3 - box12
 
     def _r(d: Decimal) -> float:
-        return float(d.quantize(Decimal("0.01")))
+        return float(Decimal(str(d)).quantize(Decimal("0.01")))
 
     vat_return = VATReturnDB(
         company_id=current_user.company_id,
