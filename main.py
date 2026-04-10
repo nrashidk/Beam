@@ -141,6 +141,7 @@ class Role(str, enum.Enum):
     COMPANY_ADMIN = "COMPANY_ADMIN"
     BUSINESS_ADMIN = "BUSINESS_ADMIN"  # Phase 2: Business Super Admin role
     FINANCE_USER = "FINANCE_USER"
+    READ_ONLY = "READ_ONLY"
 
 
 class CompanyStatus(str, enum.Enum):
@@ -1589,6 +1590,9 @@ try:
 
                 if "BUSINESS_ADMIN" not in _labels:
                     _conn.execute(text(f"ALTER TYPE {_typ} ADD VALUE 'BUSINESS_ADMIN'"))
+
+                if "READ_ONLY" not in _labels:
+                    _conn.execute(text(f"ALTER TYPE {_typ} ADD VALUE 'READ_ONLY'"))
 
             _conn.commit()
         print("✅ users role enum values ensured")
@@ -5996,6 +6000,22 @@ class UserOut(BaseModel):
     last_login: Optional[str]
 
 
+def _assert_finance_write_access(current_user: UserDB):
+    """Allow write access for Company Admin, Business Admin, and Finance User only."""
+    if current_user.role not in [
+        Role.COMPANY_ADMIN,
+        Role.BUSINESS_ADMIN,
+        Role.FINANCE_USER,
+    ]:
+        raise HTTPException(403, "Insufficient permissions")
+
+
+def _assert_inventory_write_access(current_user: UserDB):
+    """Inventory mutations are restricted to Company Admin and Business Admin."""
+    if current_user.role not in [Role.COMPANY_ADMIN, Role.BUSINESS_ADMIN]:
+        raise HTTPException(403, "Insufficient permissions")
+
+
 @app.post("/users/invite", tags=["Users"])
 @app.post("/company/users/invite", tags=["Users"])
 def invite_user(
@@ -6012,10 +6032,13 @@ def invite_user(
     if current_user.role not in allowed_inviter_roles:
         raise HTTPException(403, "Only admins can invite users")
 
-    if current_user.role == Role.BUSINESS_ADMIN and payload.role != Role.FINANCE_USER:
+    if current_user.role == Role.BUSINESS_ADMIN and payload.role not in [
+        Role.FINANCE_USER,
+        Role.READ_ONLY,
+    ]:
         raise HTTPException(
             403,
-            "Business admins can only invite finance users",
+            "Business admins can only invite finance users or read-only users",
         )
 
     if not current_user.company_id and current_user.role != Role.SUPER_ADMIN:
@@ -6401,6 +6424,8 @@ def create_invoice(
     db: Session = Depends(get_db),
 ):
     """Create a new invoice"""
+    _assert_finance_write_access(current_user)
+
     # Get company
     company = (
         db.query(CompanyDB).filter(CompanyDB.id == current_user.company_id).first()
@@ -7201,6 +7226,7 @@ def get_pending_payment_invoices(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(403, "Insufficient permissions to view pending payments")
 
@@ -7412,6 +7438,8 @@ def update_invoice(
     db: Session = Depends(get_db),
 ):
     """Update a DRAFT invoice (only DRAFT invoices can be edited)"""
+    _assert_finance_write_access(current_user)
+
     invoice = (
         db.query(InvoiceDB)
         .filter(
@@ -7782,6 +7810,7 @@ def get_daily_reconciliation_report(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(
             403, "Insufficient permissions to view reconciliation reports"
@@ -8192,6 +8221,7 @@ def get_periodic_report(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(403, "Insufficient permissions to view reports")
     if year is None:
@@ -8234,6 +8264,7 @@ def export_periodic_report(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(403, "Insufficient permissions")
     if year is None:
@@ -8286,6 +8317,7 @@ def get_adhoc_report(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(403, "Insufficient permissions to view reports")
     try:
@@ -8331,6 +8363,7 @@ def export_adhoc_report(
         Role.COMPANY_ADMIN,
         Role.BUSINESS_ADMIN,
         Role.FINANCE_USER,
+        Role.READ_ONLY,
     ]:
         raise HTTPException(403, "Insufficient permissions")
     try:
@@ -11043,6 +11076,8 @@ def create_expense(
     - Salaries: AED 15,000 (no VAT)
     - Raw Materials: AED 4,000 (includes VAT 190.48)
     """
+    _assert_finance_write_access(current_user)
+
     from dateutil import parser
     from uuid import uuid4
 
@@ -11390,6 +11425,8 @@ def delete_expense(
     db: Session = Depends(get_db),
 ):
     """Delete an expense record"""
+    _assert_finance_write_access(current_user)
+
     expense = (
         db.query(ExpenseDB)
         .filter(
@@ -11422,6 +11459,8 @@ def update_expense(
     db: Session = Depends(get_db),
 ):
     """Update an expense record"""
+    _assert_finance_write_access(current_user)
+
     expense = (
         db.query(ExpenseDB)
         .filter(
@@ -11498,6 +11537,8 @@ def create_inventory_item(
     db: Session = Depends(get_db),
 ):
     """Create inventory item (e.g., Shampoo Bottles, Mani Kits)"""
+    _assert_inventory_write_access(current_user)
+
     from uuid import uuid4
 
     item_id = f"inv_{uuid4().hex[:12]}"
@@ -11590,6 +11631,8 @@ def adjust_inventory(
     - Sold 5 shampoo bottles: quantity=-5, type=SALE
     - Used 200 mani kits for services: quantity=-200, type=SERVICE_USAGE
     """
+    _assert_inventory_write_access(current_user)
+
     from uuid import uuid4
     from datetime import date
 
@@ -15092,6 +15135,8 @@ async def bulk_import_invoices(
     db: Session = Depends(get_db),
 ):
     """Upload and validate CSV/Excel file for bulk invoice creation"""
+    _assert_finance_write_access(current_user)
+
     try:
         company_id = current_user.company_id
         if not company_id:
