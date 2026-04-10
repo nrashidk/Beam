@@ -39,6 +39,7 @@ export default function BusinessDashboard() {
   const [company, setCompany] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [billingSubscription, setBillingSubscription] = useState(null);
+  const [plans, setPlans] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -51,15 +52,17 @@ export default function BusinessDashboard() {
     if (!user?.company_id) return;
 
     try {
-      const [companyRes, subRes, invoicesRes] = await Promise.all([
+      const [companyRes, subRes, invoicesRes, plansRes] = await Promise.all([
         companiesAPI.getCompanyById(user.company_id),
         companiesAPI.getSubscription(user.company_id),
         companiesAPI.getInvoices(user.company_id),
+        apiClient.get("/plans"),
       ]);
 
       setCompany(companyRes.data);
       setSubscription(subRes.data);
       setInvoices(invoicesRes.data || []);
+      setPlans(plansRes.data || []);
 
       // Also fetch the billing subscription (created via /billing/subscribe)
       try {
@@ -87,6 +90,27 @@ export default function BusinessDashboard() {
       </div>
     );
   }
+
+  const resolveTierPlanName = (tier) => {
+    const tierU = (tier || "").toUpperCase();
+    const matched = (plans || []).find((p) => {
+      const nameU = (p?.name || "").toUpperCase();
+      if (tierU === "BASIC") return nameU.includes("STARTER") || nameU.includes("BASIC");
+      if (tierU === "PRO") return nameU.includes("PROFESSIONAL") || nameU.includes("PRO");
+      if (tierU === "ENTERPRISE") return nameU.includes("ENTERPRISE");
+      return false;
+    });
+    return matched?.name;
+  };
+
+  const subscriptionPlanLabel = billingSubscription?.tier
+    ? resolveTierPlanName(billingSubscription.tier) ||
+      ({ BASIC: "Starter", PRO: "Professional", ENTERPRISE: "Enterprise" }[
+        billingSubscription.tier
+      ] ||
+        (billingSubscription.tier.charAt(0) +
+          billingSubscription.tier.slice(1).toLowerCase()))
+    : (subscription?.plan?.name || subscription?.plan_name || "Free");
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -193,9 +217,7 @@ export default function BusinessDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {billingSubscription?.tier
-                    ? billingSubscription.tier.charAt(0) + billingSubscription.tier.slice(1).toLowerCase()
-                    : (subscription?.plan?.name || subscription?.plan_name || "Free")}
+                  {subscriptionPlanLabel}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   {billingSubscription?.status || subscription?.status || "Active"}
