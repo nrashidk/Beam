@@ -394,6 +394,7 @@ class CompanyDB(Base):
     free_plan_type = Column(String, nullable=True)  # "DURATION" or "INVOICE_COUNT"
     free_plan_duration_months = Column(Integer, nullable=True)  # If duration-based
     free_plan_invoice_limit = Column(Integer, nullable=True)  # If invoice count-based
+    invoice_limit_override = Column(Integer, nullable=True)  # Super Admin MTD override
     free_plan_start_date = Column(DateTime, nullable=True)  # When free plan started
     invoices_generated = Column(Integer, default=0)  # Total lifetime invoices
 
@@ -1712,6 +1713,9 @@ try:
     with engine.connect() as _conn:
         _conn.execute(text(
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS invoice_limit_override INTEGER"
         ))
         _conn.execute(text(
             "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
@@ -4329,7 +4333,14 @@ def get_company_subscription(company_id: str, db: Session = Depends(get_db)):
 
 
 def _resolve_company_effective_plan_limit(company: CompanyDB, db: Session) -> Optional[int]:
-    """Resolve active company invoice limit from SubscriptionPlanDB, preferring current paid billing subscription."""
+    """Resolve active company invoice limit from SubscriptionPlanDB.
+
+    Precedence: Super Admin override -> active paid plan -> free/trial limit.
+    """
+    # 0) Super Admin override limit takes precedence over all plan limits.
+    if company.invoice_limit_override is not None:
+        return company.invoice_limit_override
+
     # 1) New billing subscription flow
     billing_sub = (
         db.query(SubscriptionDB)
@@ -4515,6 +4526,8 @@ def get_all_companies(
             "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
             "subscription_plan": c.subscription_plan_id,
             "invoices_generated": invoice_counts.get(c.id, 0),
+            "effective_invoice_limit": _resolve_company_effective_plan_limit(c, db),
+            "invoice_limit_override": c.invoice_limit_override,
             "free_plan_type": c.free_plan_type,
             "free_plan_invoice_limit": c.free_plan_invoice_limit,
             "free_plan_duration_months": c.free_plan_duration_months,
@@ -4560,6 +4573,8 @@ def get_company_by_id(
         "rejected_at": company.rejected_at.isoformat() if company.rejected_at else None,
         "subscription_plan": company.subscription_plan_id,
         "invoices_generated": invoices_generated,
+        "effective_invoice_limit": _resolve_company_effective_plan_limit(company, db),
+        "invoice_limit_override": company.invoice_limit_override,
         "free_plan_type": company.free_plan_type,
         "free_plan_invoice_limit": company.free_plan_invoice_limit,
         "free_plan_duration_months": company.free_plan_duration_months,
@@ -4806,6 +4821,7 @@ def update_company(
     if payload.invoices_generated is not None:
         company.invoices_generated = payload.invoices_generated
     if payload.free_plan_invoice_limit is not None:
+        company.invoice_limit_override = payload.free_plan_invoice_limit
         company.free_plan_invoice_limit = payload.free_plan_invoice_limit
     if payload.free_plan_duration_months is not None:
         company.free_plan_duration_months = payload.free_plan_duration_months
@@ -4832,6 +4848,7 @@ def update_company(
         "company_id": company_id,
         "message": "Company updated successfully",
         "invoices_generated": company.invoices_generated,
+        "invoice_limit_override": company.invoice_limit_override,
         "free_plan_invoice_limit": company.free_plan_invoice_limit,
         "free_plan_duration_months": company.free_plan_duration_months,
     }
@@ -4978,7 +4995,9 @@ def get_admin_stats(
                 "status": company.status.value if company.status else "UNKNOWN",
                 "invoicesThisMonth": invoices_this_month,
                 "invoicesUsed": invoices_used_total,
-            "invoicesLimit": effective_invoice_limit,
+                "invoicesLimit": effective_invoice_limit,
+                "effective_invoice_limit": effective_invoice_limit,
+                "free_plan_invoice_limit": company.free_plan_invoice_limit,
                 "free_plan_type": company.free_plan_type,
                 "free_plan_duration_months": company.free_plan_duration_months,
                 "plan": plan,
@@ -14463,6 +14482,8 @@ def get_subscription_plan_info(
     if not company:
         raise HTTPException(404, "Company not found")
 
+    effective_invoice_limit = _resolve_company_effective_plan_limit(company, db)
+
     # Check for active paid subscription
     subscription = (
         db.query(SubscriptionDB)
@@ -14502,7 +14523,7 @@ def get_subscription_plan_info(
                     "max_users": plan.max_users,
                     "max_business_admins": plan.max_business_admins,
                     "max_finance_users": plan.max_finance_users,
-                    "max_invoices_per_month": plan.max_invoices_per_month,
+                    "max_invoices_per_month": effective_invoice_limit,
                 },
                 "status": "ACTIVE",
             }
@@ -14515,7 +14536,7 @@ def get_subscription_plan_info(
                 "max_users": 1,
                 "max_business_admins": 0,
                 "max_finance_users": 0,
-                "max_invoices_per_month": None,
+                "max_invoices_per_month": effective_invoice_limit,
             },
             "status": "ACTIVE",
         }
@@ -14540,7 +14561,7 @@ def get_subscription_plan_info(
                     "max_users": free_plan.max_users,
                     "max_business_admins": free_plan.max_business_admins,
                     "max_finance_users": free_plan.max_finance_users,
-                    "max_invoices_per_month": free_plan.max_invoices_per_month,
+                    "max_invoices_per_month": effective_invoice_limit,
                 },
                 "status": company.trial_status or "ACTIVE",
             }
@@ -14553,7 +14574,7 @@ def get_subscription_plan_info(
                 "max_users": 1,
                 "max_business_admins": 1,
                 "max_finance_users": 3,
-                "max_invoices_per_month": 100,
+                "max_invoices_per_month": effective_invoice_limit if effective_invoice_limit is not None else 100,
             },
             "status": company.trial_status or "ACTIVE",
         }

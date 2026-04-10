@@ -240,12 +240,18 @@ export default function SuperAdminDashboard() {
       );
       const fullCompany = response.data.find((c) => c.id === company.id);
       if (fullCompany) {
+        const effectiveMtdLimit =
+          fullCompany.invoice_limit_override ??
+          fullCompany.effective_invoice_limit ??
+          fullCompany.free_plan_invoice_limit ??
+          0;
         setEditingCompany({
           id: fullCompany.id,
           legal_name: fullCompany.legal_name,
           status: fullCompany.status,
           invoices_generated: fullCompany.invoices_generated || 0,
-          free_plan_invoice_limit: fullCompany.free_plan_invoice_limit || 0,
+          mtd_invoice_limit: effectiveMtdLimit,
+          free_plan_invoice_limit: fullCompany.free_plan_invoice_limit ?? null,
           free_plan_duration_months: fullCompany.free_plan_duration_months || 0,
           vat_enabled: fullCompany.vat_enabled || false,
         });
@@ -275,7 +281,7 @@ export default function SuperAdminDashboard() {
 
       // Calculate new limits by adding extras to current limits
       const newInvoiceLimit =
-        (parseInt(editingCompany.free_plan_invoice_limit) || 0) + extraInvoices;
+        (parseInt(editingCompany.mtd_invoice_limit) || 0) + extraInvoices;
       const newMonthsLimit =
         (parseInt(editingCompany.free_plan_duration_months) || 0) + extraMonths;
 
@@ -1118,7 +1124,7 @@ export default function SuperAdminDashboard() {
                   Manage Company: {editingCompany.legal_name}
                 </CardTitle>
                 <p className="text-sm text-gray-500 mt-1">
-                  View usage and adjust free plan limits
+                  View usage and adjust MTD invoice limit (override)
                 </p>
               </CardHeader>
               <CardContent className="space-y-6 pt-6">
@@ -1219,25 +1225,25 @@ export default function SuperAdminDashboard() {
                       <div className="bg-green-50 rounded p-3">
                         <p className="text-xs text-gray-600 mb-1">Available</p>
                         <p className="text-2xl font-bold text-green-700">
-                          {(parseInt(editingCompany.free_plan_invoice_limit) ||
+                          {(parseInt(editingCompany.mtd_invoice_limit) ||
                             0) + (parseInt(addExtraInvoices) || 0)}
                         </p>
-                        <p className="text-xs text-gray-500">total limit</p>
+                        <p className="text-xs text-gray-500">effective MTD limit</p>
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <label className="block text-sm font-medium">
-                        Current Invoice Limit
+                        Current MTD Invoice Limit
                       </label>
                       <Input
                         type="number"
                         min={0}
-                        value={editingCompany.free_plan_invoice_limit}
+                        value={editingCompany.mtd_invoice_limit}
                         onChange={(e) =>
                           setEditingCompany({
                             ...editingCompany,
-                            free_plan_invoice_limit: e.target.value,
+                            mtd_invoice_limit: e.target.value,
                           })
                         }
                         className="bg-white"
@@ -1257,9 +1263,9 @@ export default function SuperAdminDashboard() {
                         className="bg-indigo-50 border-indigo-300"
                       />
                       <p className="text-xs text-gray-500">
-                        Add extra invoices to increase the limit. New limit will
-                        be:{" "}
-                        {(parseInt(editingCompany.free_plan_invoice_limit) ||
+                        Add extra invoices to increase the MTD limit. New limit
+                        will be:{" "}
+                        {(parseInt(editingCompany.mtd_invoice_limit) ||
                           0) + (parseInt(addExtraInvoices) || 0)}
                       </p>
                     </div>
