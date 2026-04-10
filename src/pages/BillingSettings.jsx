@@ -297,6 +297,7 @@ export default function BillingSettings() {
 
   const currentPlanMonthlyPrice =
     pricingTiers[subscription?.tier]?.monthly ?? subscription?.monthly_price;
+  const isCancellationScheduled = Boolean(subscription?.cancel_at_period_end);
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -451,6 +452,17 @@ export default function BillingSettings() {
                         </div>
                       </div>
                     </div>
+                    {isCancellationScheduled && (
+                      <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        Your subscription is scheduled to cancel on{" "}
+                        <span className="font-semibold">
+                          {subscription?.current_period_end
+                            ? formatDate(subscription.current_period_end)
+                            : "period end"}
+                        </span>
+                        . Access remains active until then.
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex gap-3 pt-4 border-t">
@@ -469,19 +481,25 @@ export default function BillingSettings() {
                     </button>
                     <button
                       onClick={() => {
-                        if (isTrialActive) return;
+                        if (isTrialActive || isCancellationScheduled) return;
                         setCancelError("");
                         setShowCancelModal(true);
                       }}
-                      disabled={isTrialActive}
+                      disabled={isTrialActive || isCancellationScheduled}
                       title={
                         isTrialActive
                           ? "Cancel subscription is disabled during active free trial"
-                          : "Cancel current subscription"
+                          : isCancellationScheduled
+                            ? "Subscription already scheduled for cancellation at period end"
+                            : "Cancel current subscription"
                       }
                       className="flex-1 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed text-sm font-medium"
                     >
-                      {isTrialActive ? "Cancel Disabled During Trial" : "Cancel Subscription"}
+                      {isTrialActive
+                        ? "Cancel Disabled During Trial"
+                        : isCancellationScheduled
+                          ? "Cancellation Scheduled"
+                          : "Cancel Subscription"}
                     </button>
                   </div>
                   {isTrialActive && (
@@ -489,6 +507,15 @@ export default function BillingSettings() {
                       Free trial is active. Cancellation is disabled until trial ends.
                     </p>
                   )}
+                  {/* {isCancellationScheduled && (
+                    <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                      Cancellation request recorded. Your subscription will end on{" "}
+                      {subscription?.current_period_end
+                        ? formatDate(subscription.current_period_end)
+                        : "period end"}
+                      .
+                    </p>
+                  )} */}
                 </div>
               </div>
             )}

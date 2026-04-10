@@ -1213,6 +1213,7 @@ class SubscriptionDB(Base):
 
     # Status
     status = Column(String, default="ACTIVE")  # ACTIVE, CANCELLED, PAST_DUE, TRIAL
+    cancel_at_period_end = Column(Boolean, default=False)
 
     # Stripe details
     stripe_subscription_id = Column(String, nullable=True, unique=True)
@@ -1716,6 +1717,9 @@ try:
         ))
         _conn.execute(text(
             "ALTER TABLE companies ADD COLUMN IF NOT EXISTS invoice_limit_override INTEGER"
+        ))
+        _conn.execute(text(
+            "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS cancel_at_period_end BOOLEAN DEFAULT FALSE"
         ))
         _conn.execute(text(
             "ALTER TABLE inward_invoices ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1"
@@ -14443,6 +14447,16 @@ async def get_current_subscription(
         .first()
     )
 
+    # Finalize scheduled cancellations when period has ended.
+    if (
+        subscription
+        and bool(getattr(subscription, "cancel_at_period_end", False))
+        and subscription.current_period_end <= datetime.utcnow()
+    ):
+        subscription.status = "CANCELLED"
+        db.commit()
+        subscription = None
+
     if not subscription:
         return {
             "id": None,
@@ -14464,6 +14478,7 @@ async def get_current_subscription(
         "monthly_price": subscription.monthly_price,
         "discount_percent": subscription.discount_percent,
         "status": subscription.status,
+        "cancel_at_period_end": bool(getattr(subscription, "cancel_at_period_end", False)),
         "current_period_start": subscription.current_period_start.isoformat(),
         "current_period_end": subscription.current_period_end.isoformat(),
         "created_at": subscription.created_at.isoformat(),
@@ -14681,6 +14696,12 @@ async def cancel_subscription(
     if not subscription:
         raise HTTPException(404, "No active subscription found")
 
+    if bool(getattr(subscription, "cancel_at_period_end", False)):
+        return {
+            "message": "Subscription is already scheduled for cancellation at period end.",
+            "period_end": subscription.current_period_end.isoformat(),
+        }
+
     try:
         # Cancel in Stripe if a Stripe subscription ID exists
         if STRIPE_SECRET_KEY and subscription.stripe_subscription_id:
@@ -14689,7 +14710,7 @@ async def cancel_subscription(
                 cancel_at_period_end=True,
             )
 
-        subscription.status = "CANCELLED"
+        subscription.cancel_at_period_end = True
         subscription.cancelled_at = datetime.utcnow()
         db.commit()
 
@@ -14744,6 +14765,8 @@ async def change_subscription_plan(
         subscription.billing_cycle_months = billing_cycle_months
         subscription.monthly_price = monthly_price
         subscription.discount_percent = discount_percent
+        subscription.cancel_at_period_end = False
+        subscription.cancelled_at = None
         subscription.current_period_start = datetime.utcnow()
         subscription.current_period_end = datetime.utcnow() + timedelta(
             days=30 * billing_cycle_months
