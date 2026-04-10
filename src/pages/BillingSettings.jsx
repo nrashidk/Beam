@@ -218,6 +218,7 @@ export default function BillingSettings() {
   // Default to INVOICE_COUNT if not explicitly set to DURATION
   const showInvoiceCount = trialStatus?.free_plan_type !== "DURATION";
   const showDaysRemaining = trialStatus?.free_plan_type === "DURATION";
+  const isTrialActive = trialStatus?.trial_status === "ACTIVE";
 
   const trialProgress = invoicesUsed
     ? Math.min(100, (invoicesUsed / trialInvoiceLimit) * 100)
@@ -403,14 +404,26 @@ export default function BillingSettings() {
                     </button>
                     <button
                       onClick={() => {
+                        if (isTrialActive) return;
                         setCancelError("");
                         setShowCancelModal(true);
                       }}
-                      className="flex-1 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 text-sm font-medium"
+                      disabled={isTrialActive}
+                      title={
+                        isTrialActive
+                          ? "Cancel subscription is disabled during active free trial"
+                          : "Cancel current subscription"
+                      }
+                      className="flex-1 px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed text-sm font-medium"
                     >
-                      Cancel Subscription
+                      {isTrialActive ? "Cancel Disabled During Trial" : "Cancel Subscription"}
                     </button>
                   </div>
+                  {isTrialActive && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                      Free trial is active. Cancellation is disabled until trial ends.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -631,11 +644,13 @@ export default function BillingSettings() {
               </button>
               <button
                 onClick={handleCancelSubscription}
-                disabled={cancelling}
+                disabled={cancelling || isTrialActive}
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed font-medium text-sm flex items-center justify-center gap-2"
               >
                 {cancelling ? (
                   <><Loader className="h-4 w-4 animate-spin" /> Cancelling…</>
+                ) : isTrialActive ? (
+                  "Disabled During Trial"
                 ) : (
                   "Yes, Cancel"
                 )}
