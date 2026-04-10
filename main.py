@@ -4345,16 +4345,23 @@ def _resolve_company_effective_plan_limit(company: CompanyDB, db: Session) -> Op
     if company.invoice_limit_override is not None:
         return company.invoice_limit_override
 
-    # 1) New billing subscription flow
-    billing_sub = (
-        db.query(SubscriptionDB)
-        .filter(
-            SubscriptionDB.company_id == company.id,
-            SubscriptionDB.status == "ACTIVE",
+    def _effective_billing_sub(company_id: str) -> Optional[SubscriptionDB]:
+        now = datetime.utcnow()
+        subs = (
+            db.query(SubscriptionDB)
+            .filter(SubscriptionDB.company_id == company_id)
+            .order_by(SubscriptionDB.created_at.desc())
+            .all()
         )
-        .order_by(SubscriptionDB.created_at.desc())
-        .first()
-    )
+        for s in subs:
+            if s.status == "ACTIVE":
+                return s
+            if s.status == "CANCELLED" and s.current_period_end and s.current_period_end > now:
+                return s
+        return None
+
+    # 1) New billing subscription flow
+    billing_sub = _effective_billing_sub(company.id)
     if billing_sub:
         plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
         tier = (billing_sub.tier or "").upper()
@@ -4517,31 +4524,82 @@ def get_all_companies(
             .all()
         )
 
-    return [
-        {
-            "id": c.id,
-            "legal_name": c.legal_name,
-            "email": c.email,
-            "business_type": c.business_type,
-            "phone": c.phone,
-            "status": c.status.value,
-            "created_at": c.created_at.isoformat() if c.created_at else None,
-            "approved_at": c.approved_at.isoformat() if c.approved_at else None,
-            "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
-            "subscription_plan": c.subscription_plan_id,
-            "invoices_generated": invoice_counts.get(c.id, 0),
-            "effective_invoice_limit": _resolve_company_effective_plan_limit(c, db),
-            "invoice_limit_override": c.invoice_limit_override,
-            "free_plan_type": c.free_plan_type,
-            "free_plan_invoice_limit": c.free_plan_invoice_limit,
-            "free_plan_duration_months": c.free_plan_duration_months,
-            "free_plan_start_date": c.free_plan_start_date.isoformat()
-            if c.free_plan_start_date
-            else None,
-            "has_logo": c.id in companies_with_logos,
-        }
-        for c in companies
-    ]
+    all_active_plans = db.query(SubscriptionPlanDB).filter(SubscriptionPlanDB.active == True).all()
+
+    def _effective_billing_sub(company_id: str) -> Optional[SubscriptionDB]:
+        now = datetime.utcnow()
+        subs = (
+            db.query(SubscriptionDB)
+            .filter(SubscriptionDB.company_id == company_id)
+            .order_by(SubscriptionDB.created_at.desc())
+            .all()
+        )
+        for s in subs:
+            if s.status == "ACTIVE":
+                return s
+            if s.status == "CANCELLED" and s.current_period_end and s.current_period_end > now:
+                return s
+        return None
+
+    def _plan_name_from_tier(tier: Optional[str]) -> Optional[str]:
+        tier_u = (tier or "").upper()
+        for p in all_active_plans:
+            name_u = (p.name or "").upper()
+            if tier_u == "BASIC" and ("STARTER" in name_u or "BASIC" in name_u):
+                return p.name
+            if tier_u == "PRO" and ("PROFESSIONAL" in name_u or "PRO" in name_u):
+                return p.name
+            if tier_u == "ENTERPRISE" and "ENTERPRISE" in name_u:
+                return p.name
+        return None
+
+    result = []
+    for c in companies:
+        plan_name = "Free"
+        billing_sub = _effective_billing_sub(c.id)
+        if billing_sub and (billing_sub.tier or "").upper() != "FREE":
+            plan_name = _plan_name_from_tier(billing_sub.tier) or billing_sub.tier.title()
+        else:
+            latest_sub = (
+                db.query(CompanySubscriptionDB)
+                .filter(CompanySubscriptionDB.company_id == c.id)
+                .order_by(CompanySubscriptionDB.created_at.desc())
+                .first()
+            )
+            if latest_sub and latest_sub.plan:
+                plan_name = latest_sub.plan.name
+            elif c.subscription_plan_id:
+                plan_obj = db.get(SubscriptionPlanDB, c.subscription_plan_id)
+                if plan_obj:
+                    plan_name = plan_obj.name
+
+        result.append(
+            {
+                "id": c.id,
+                "legal_name": c.legal_name,
+                "email": c.email,
+                "business_type": c.business_type,
+                "phone": c.phone,
+                "status": c.status.value,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "approved_at": c.approved_at.isoformat() if c.approved_at else None,
+                "rejected_at": c.rejected_at.isoformat() if c.rejected_at else None,
+                "subscription_plan": c.subscription_plan_id,
+                "plan": plan_name,
+                "invoices_generated": invoice_counts.get(c.id, 0),
+                "effective_invoice_limit": _resolve_company_effective_plan_limit(c, db),
+                "invoice_limit_override": c.invoice_limit_override,
+                "free_plan_type": c.free_plan_type,
+                "free_plan_invoice_limit": c.free_plan_invoice_limit,
+                "free_plan_duration_months": c.free_plan_duration_months,
+                "free_plan_start_date": c.free_plan_start_date.isoformat()
+                if c.free_plan_start_date
+                else None,
+                "has_logo": c.id in companies_with_logos,
+            }
+        )
+
+    return result
 
 
 @app.get("/admin/companies/{company_id}", tags=["Admin"])
@@ -4916,20 +4974,28 @@ def get_admin_stats(
     # Get all companies with details for explorer
     companies = db.query(CompanyDB).all()
     all_companies_list = []
+
+    def _effective_billing_sub(company_id: str) -> Optional[SubscriptionDB]:
+        now = datetime.utcnow()
+        subs = (
+            db.query(SubscriptionDB)
+            .filter(SubscriptionDB.company_id == company_id)
+            .order_by(SubscriptionDB.created_at.desc())
+            .all()
+        )
+        for s in subs:
+            if s.status == "ACTIVE":
+                return s
+            if s.status == "CANCELLED" and s.current_period_end and s.current_period_end > now:
+                return s
+        return None
+
     for company in companies:
         # Get plan info: prefer new SubscriptionDB (Stripe billing), then legacy subscription_plan_id
         plan = None
         arpu = 0
         # 1) Check SubscriptionDB (written by /billing/subscribe)
-        billing_sub = (
-            db.query(SubscriptionDB)
-            .filter(
-                SubscriptionDB.company_id == company.id,
-                SubscriptionDB.status == "ACTIVE",
-            )
-            .order_by(SubscriptionDB.created_at.desc())
-            .first()
-        )
+        billing_sub = _effective_billing_sub(company.id)
         if billing_sub:
             TIER_NAME_MAP = {"BASIC": "Starter", "PRO": "Professional", "ENTERPRISE": "Enterprise"}
             plan = TIER_NAME_MAP.get(billing_sub.tier, billing_sub.tier.capitalize())
@@ -5457,6 +5523,21 @@ def get_platform_statistics(
     company_query = db.query(CompanyDB)
     total_companies = company_query.count()
 
+    def _effective_billing_sub(company_id: str) -> Optional[SubscriptionDB]:
+        now = datetime.utcnow()
+        subs = (
+            db.query(SubscriptionDB)
+            .filter(SubscriptionDB.company_id == company_id)
+            .order_by(SubscriptionDB.created_at.desc())
+            .all()
+        )
+        for s in subs:
+            if s.status == "ACTIVE":
+                return s
+            if s.status == "CANCELLED" and s.current_period_end and s.current_period_end > now:
+                return s
+        return None
+
     active_query = db.query(CompanyDB).filter(CompanyDB.status == CompanyStatus.ACTIVE)
     if from_dt:
         active_query = active_query.filter(CompanyDB.created_at >= from_dt)
@@ -5515,12 +5596,12 @@ def get_platform_statistics(
     )
     total_revenue = billing_revenue + invoice_revenue
 
-    # Active subscriptions: count from both SubscriptionDB and legacy CompanySubscriptionDB
-    active_billing_subs = (
-        db.query(SubscriptionDB)
-        .filter(SubscriptionDB.status == "ACTIVE")
-        .count()
-    )
+    # Active subscriptions: include effective billing subscriptions (active or still in paid period)
+    active_billing_subs = 0
+    for company in db.query(CompanyDB).all():
+        s = _effective_billing_sub(company.id)
+        if s and (s.tier or "").upper() != "FREE":
+            active_billing_subs += 1
     active_legacy_subs = (
         db.query(CompanySubscriptionDB)
         .filter(CompanySubscriptionDB.status == SubscriptionStatus.ACTIVE)
@@ -5628,11 +5709,20 @@ def get_platform_statistics(
 
     paid_tier = len(paid_plan_company_ids)
 
-    # Recompute tier totals from the in-scope companies so each company is counted
-    # once against its current effective plan.
+    # Recompute tier totals so each company is counted once against its current effective plan.
     free_tier = 0
     paid_tier = 0
     for company in company_query.all():
+        # 0) New billing subscription flow (authoritative)
+        billing_sub = _effective_billing_sub(company.id)
+        if billing_sub:
+            if (billing_sub.tier or "").upper() == "FREE":
+                free_tier += 1
+            else:
+                paid_tier += 1
+            continue
+
+        # 1) Legacy company_subscriptions flow
         latest_sub = (
             db.query(CompanySubscriptionDB)
             .filter(
