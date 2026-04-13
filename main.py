@@ -6404,8 +6404,31 @@ def generate_invoice_number(
         {"company_id": company_id, "prefix": prefix},
     )
     next_num = result.scalar()
+    generated_number = f"{prefix}-{next_num:05d}"
 
-    return f"{prefix}-{next_num:05d}"
+    # Safety net: if sequence state is ever behind real data, keep advancing
+    # until we find an unused number for this company.
+    while (
+        db.query(InvoiceDB)
+        .filter(
+            InvoiceDB.company_id == company_id,
+            InvoiceDB.invoice_number == generated_number,
+        )
+        .first()
+    ):
+        result = db.execute(
+            text("""
+                UPDATE invoice_sequences
+                SET last_number = last_number + 1
+                WHERE company_id = :company_id AND prefix = :prefix
+                RETURNING last_number
+            """),
+            {"company_id": company_id, "prefix": prefix},
+        )
+        next_num = result.scalar()
+        generated_number = f"{prefix}-{next_num:05d}"
+
+    return generated_number
 
 
 def calculate_line_item_totals(
@@ -15204,9 +15227,6 @@ async def bulk_import_invoices(
                 "errors": bulk_errors,
             }
 
-        # Track invoice counts per type for this batch to avoid duplicate numbers
-        invoice_type_counts = {}
-
         for prepared in prepared_invoices:
             invoice_data = prepared["invoice_data"]
             invoice_type = prepared["invoice_type"]
@@ -15214,50 +15234,9 @@ async def bulk_import_invoices(
             tax_amount_calc = prepared["tax_amount_calc"]
             total_amount_calc = prepared["total_amount_calc"]
 
-            # Always auto-generate invoice number for bulk import.
-            # Any uploaded invoice_number is intentionally ignored.
-            invoice_type_value = (
-                invoice_type.value
-                if hasattr(invoice_type, "value")
-                else str(invoice_type)
-            )
-
-            if invoice_type_value not in invoice_type_counts:
-                invoice_type_counts[invoice_type_value] = (
-                    db.query(InvoiceDB)
-                    .filter(
-                        InvoiceDB.company_id == company_id,
-                        InvoiceDB.invoice_type == invoice_type,
-                    )
-                    .count()
-                )
-
-            invoice_type_counts[invoice_type_value] += 1
-
-            prefix_map = {
-                "380": "TI",  # Tax Invoice
-                "381": "TCN",  # Tax Credit Note
-                "383": "DN",  # Debit Note
-                "480": "CI",  # Commercial Invoice
-                "81": "CN",  # Credit Note
-            }
-            prefix = prefix_map.get(invoice_type_value, "TI")
-            generated_number = f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
-
-            while (
-                db.query(InvoiceDB)
-                .filter(
-                    InvoiceDB.company_id == company_id,
-                    InvoiceDB.invoice_number == generated_number,
-                )
-                .first()
-            ):
-                invoice_type_counts[invoice_type_value] += 1
-                generated_number = (
-                    f"{prefix}-{invoice_type_counts[invoice_type_value]:05d}"
-                )
-
-            invoice_number = generated_number
+            # Always auto-generate invoice number for bulk import using the same
+            # sequence path as manual creation to prevent cross-flow collisions.
+            invoice_number = generate_invoice_number(company_id, db, invoice_type)
 
             new_invoice = InvoiceDB(
                 id=str(uuid4()),
