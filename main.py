@@ -1437,7 +1437,7 @@ class AuditLogDB(Base):
 
 
 class VATReturnDB(Base):
-    """UAE FTA Form 301 — 13-box VAT Return records."""
+    """UAE FTA Form 201 — 13-box VAT Return records."""
     __tablename__ = "vat_returns"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     company_id = Column(String, ForeignKey("companies.id"), nullable=False, index=True)
@@ -8525,7 +8525,7 @@ def generate_vat_return(
     current_user: UserDB = Depends(get_current_user_from_header),
     db: Session = Depends(get_db),
 ):
-    """Generate UAE FTA Form 301 (13-box VAT return) for a given period."""
+    """Generate UAE FTA Form 201 (13-box VAT return) for a given period."""
     from datetime import date as dt_date
     from decimal import Decimal
     try:
@@ -8541,7 +8541,11 @@ def generate_vat_return(
             InvoiceDB.company_id == current_user.company_id,
             func.date(InvoiceDB.issue_date) >= ps,
             func.date(InvoiceDB.issue_date) <= pe,
-            InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+            or_(InvoiceDB.is_archived == False, InvoiceDB.is_archived.is_(None)),
+            or_(
+                InvoiceDB.status.is_(None),
+                InvoiceDB.status.notin_([InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED]),
+            ),
         )
         .all()
     )
@@ -8708,7 +8712,7 @@ def export_vat_return(
         ws = wb.active
         ws.title = "VAT Return"
         _vtmp = INVOLINKS_VENDOR_TRN.strip() or "VENDOR-TRN-NOT-SET"
-        ws.append(["UAE FTA VAT Return — Form 301"])
+        ws.append(["UAE FTA VAT Return — Form 201"])
         ws.append(["VendorTRN", _vtmp])
         ws.append(["Period", f"{vr.period_start} to {vr.period_end}"])
         ws.append([])

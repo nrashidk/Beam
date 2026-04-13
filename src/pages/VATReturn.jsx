@@ -39,7 +39,12 @@ function BoxRow({ num, label, value, highlight }) {
 export default function VATReturn() {
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const fmtDate = (d) => d.toISOString().slice(0, 10);
+  const fmtDate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
 
   const [periodStart, setPeriodStart] = useState(fmtDate(firstOfMonth));
   const [periodEnd, setPeriodEnd] = useState(fmtDate(today));
@@ -164,7 +169,7 @@ export default function VATReturn() {
             <ClipboardList className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
               <h1 className="text-xl font-semibold text-gray-900">VAT Return</h1>
-              <p className="text-sm text-gray-500 mt-0.5">UAE FTA Form 301 — 13-box VAT return computation</p>
+              <p className="text-sm text-gray-500 mt-0.5">UAE FTA Form 201 — 13-box VAT return computation</p>
             </div>
           </div>
         </div>
@@ -251,7 +256,7 @@ export default function VATReturn() {
               {/* Box table */}
               <div className="px-6 py-2 bg-gray-50 border-b border-gray-100">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                  FTA Form 301 — Box-by-Box Breakdown
+                  FTA Form 201 — Box-by-Box Breakdown
                 </p>
               </div>
               <div className="overflow-x-auto">
