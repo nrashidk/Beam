@@ -470,7 +470,7 @@ export default function BulkImport() {
                       <li className="flex items-start gap-2">
                         <span className="text-blue-400 mt-1">•</span>
                         <span>
-                          Customer TRN is required for full Tax Invoices (total ≥ AED 10,000) — invoices without a customer TRN at that value will be rejected
+                          Customer TRN is optional for Tax Invoices below AED 10,000 — it becomes mandatory for invoices totalling AED 10,000 or above and will be included in the generated invoice when provided
                         </span>
                       </li>
                       <li className="flex items-start gap-2">
@@ -506,7 +506,7 @@ export default function BulkImport() {
                       <li className="flex items-start gap-2">
                         <span className="text-blue-400 mt-1">•</span>
                         <span>
-                          TRN columns are not required and will be ignored — do not include a TRN in the customer or supplier fields
+                          Customer TRN is optional — when provided it will be reflected on the invoice. It is not required and does not apply to your own business TRN
                         </span>
                       </li>
                       <li className="flex items-start gap-2">

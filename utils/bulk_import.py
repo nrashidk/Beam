@@ -331,6 +331,21 @@ class BulkImportValidator:
                                 f"Row {row_num}: Invalid due_date format. Supported formats: YYYY-MM-DD or DD/MM/YYYY (e.g., 2025-02-15 or 15/02/2025)"
                             )
 
+                    # For VAT tax invoices, customer TRN becomes mandatory when the
+                    # invoice total (incl. VAT) reaches AED 10,000 (UAE FTA rule).
+                    if invoice_mode == "vat" and invoice_type == "TAX_INVOICE" and not trn_value:
+                        try:
+                            _qty = float(row.get("quantity") or 0)
+                            _price = float(row.get("unit_price") or 0)
+                            _tax_pct = float(row.get("tax_percent") or 5.0)
+                            _est_total = _qty * _price * (1 + _tax_pct / 100)
+                            if _est_total >= 10000:
+                                row_errors.append(
+                                    f"Row {row_num}: Customer TRN is required for Tax Invoices totalling AED 10,000 or above"
+                                )
+                        except Exception:
+                            pass  # quantity/price errors already caught above
+
                     if row_errors:
                         errors.extend(row_errors)
                     else:
