@@ -421,11 +421,11 @@ export default function TeamManagement() {
     teamMembers.filter((m) => m.is_active !== false);
 
   const getCurrentRoleCounts = () => {
-    const activeMembers = getActiveMembers();
-    const businessAdmins = activeMembers.filter(
+    const allMembers = teamMembers;
+    const businessAdmins = allMembers.filter(
       (m) => m.role === "BUSINESS_ADMIN",
     ).length;
-    const financeUsers = activeMembers.filter(
+    const financeUsers = allMembers.filter(
       (m) => m.role === "FINANCE_USER",
     ).length;
     return { businessAdmins, financeUsers };
@@ -442,8 +442,8 @@ export default function TeamManagement() {
     if (!canManageTeamInvites) return false;
     if (isBusinessAdmin && !["FINANCE_USER", "READ_ONLY"].includes(role)) return false;
     if (!tierLimits) return true;
-    const activeCount = getActiveMembers().length;
-    if (tierLimits.max_users != null && activeCount >= tierLimits.max_users) {
+    const totalMemberCount = teamMembers.length;
+    if (tierLimits.max_users != null && totalMemberCount >= tierLimits.max_users) {
       return false;
     }
     const counts = getCurrentRoleCounts();
@@ -462,8 +462,8 @@ export default function TeamManagement() {
       return "Tier limit reached. Please upgrade your plan to invite more team members.";
     }
 
-    const activeCount = getActiveMembers().length;
-    if (tierLimits.max_users != null && activeCount >= tierLimits.max_users) {
+    const totalMemberCount = teamMembers.length;
+    if (tierLimits.max_users != null && totalMemberCount >= tierLimits.max_users) {
       return `Your ${tierLimits?.name || "current"} plan allows ${tierLimits.max_users} total users. Please upgrade your plan to invite more team members.`;
     }
 
@@ -493,7 +493,7 @@ export default function TeamManagement() {
 
   const getTotalUsersUsage = () => {
     if (!tierLimits || tierLimits.max_users == null) return null;
-    return `${getActiveMembers().length} / ${tierLimits.max_users}`;
+    return `${teamMembers.length} / ${tierLimits.max_users}`;
   };
 
   if (loading) {
