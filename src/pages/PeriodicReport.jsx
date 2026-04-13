@@ -201,18 +201,21 @@ export default function PeriodicReport() {
     if (!report) return;
     const rows = [
       ["Period", report.period_label],
+      ["Start Date", report.start_date],
+      ["End Date", report.end_date],
       ["Generated At", report.generated_at],
       [],
-      ["Invoice Type", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"],
+      ["Invoice Type", "Code", "Count", "Net (AED)", "VAT (AED)", "Gross (AED)"],
       ...report.breakdown_by_type.map((row) => [
         row.invoice_type_label,
+        row.invoice_type_code,
         row.count,
         row.subtotal,
         row.tax_amount,
         row.total_amount,
       ]),
       [],
-      ["TOTAL", report.summary.count, report.summary.subtotal, report.summary.tax_amount, report.summary.total_amount],
+      ["TOTAL", "", report.summary.count, report.summary.subtotal, report.summary.tax_amount, report.summary.total_amount],
     ];
     const csvContent =
       "data:text/csv;charset=utf-8," + rows.map((r) => r.join(",")).join("\n");
@@ -227,7 +230,7 @@ export default function PeriodicReport() {
   const handleExportFile = async (fmt) => {
     setExporting(fmt);
     try {
-      const params = { period_type: periodType, year, format: fmt };
+      const params = { period_type: periodType, year, format: fmt, generated_at: report?.generated_at };
       if (periodType !== "annual") params.period = period;
       const res = await apiClient.get("/reports/periodic/export", { params, responseType: "blob" });
       const mimeType =
@@ -289,7 +292,7 @@ export default function PeriodicReport() {
     setAdhocExporting(format);
     try {
       const res = await apiClient.get("/reports/adhoc/export", {
-        params: { from_date: adhocFrom, to_date: adhocTo, type: adhocType, format },
+        params: { from_date: adhocFrom, to_date: adhocTo, type: adhocType, format, generated_at: adhocReport?.generated_at },
         responseType: "blob",
       });
       let mimeType = "text/csv";

@@ -8199,6 +8199,7 @@ def export_periodic_report(
     year: int = None,
     period: int = None,
     format: str = "xlsx",
+    generated_at: Optional[str] = None,
 ):
     """Export periodic report as XLSX or PDF."""
     from datetime import datetime
@@ -8228,6 +8229,8 @@ def export_periodic_report(
         .all()
     )
     payload = _build_report_payload(invoices, label, start, end)
+    if generated_at:
+        payload["generated_at"] = generated_at
     if format == "xlsx":
         data = _export_report_xlsx(payload)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -8300,6 +8303,7 @@ def export_adhoc_report(
     to_date: str = None,
     type: str = "all",
     format: str = "xlsx",
+    generated_at: Optional[str] = None,
 ):
     """Export ad-hoc report as XLSX or PDF."""
     from datetime import datetime, date
@@ -8336,6 +8340,8 @@ def export_adhoc_report(
     invoices = q.all()
     label = f"{start.isoformat()} to {end.isoformat()}"
     payload = _build_report_payload(invoices, label, start, end)
+    if generated_at:
+        payload["generated_at"] = generated_at
     if format == "xlsx":
         data = _export_report_xlsx(payload)
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
