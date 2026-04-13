@@ -20,6 +20,7 @@ export default function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState(null);
+  const [peppolVisibilityUnlocked, setPeppolVisibilityUnlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -45,8 +46,14 @@ export default function InvoiceDetail() {
   const loadInvoice = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(`/invoices/${id}`);
-      setInvoice(response.data);
+      const [invoiceResponse, peppolResponse] = await Promise.all([
+        apiClient.get(`/invoices/${id}`),
+        apiClient.get("/settings/peppol").catch(() => null),
+      ]);
+      setInvoice(invoiceResponse.data);
+      setPeppolVisibilityUnlocked(
+        !!peppolResponse?.data?.peppol_visibility_unlocked,
+      );
     } catch (error) {
       console.error("Failed to load invoice:", error);
       setToast({
@@ -406,7 +413,7 @@ export default function InvoiceDetail() {
                       {invoice.supplier_city}
                     </p>
                   )}
-                  {invoice.supplier_peppol_id && (
+                  {peppolVisibilityUnlocked && invoice.supplier_peppol_id && (
                     <p className="text-gray-600 text-sm">
                       Peppol ID: {invoice.supplier_peppol_id}
                     </p>
@@ -442,7 +449,7 @@ export default function InvoiceDetail() {
                       {invoice.customer_city}
                     </p>
                   )}
-                  {invoice.customer_peppol_id && (
+                  {peppolVisibilityUnlocked && invoice.customer_peppol_id && (
                     <p className="text-gray-600 text-sm">
                       Peppol ID: {invoice.customer_peppol_id}
                     </p>
@@ -512,7 +519,7 @@ export default function InvoiceDetail() {
                       MLS: {invoice.mls_status === "DEEMED_ACCEPTED" ? "Deemed Accepted (10 min)" : invoice.mls_status}
                     </span>
                   )}
-                  {invoice.peppol_deemed_accepted && (
+                  {peppolVisibilityUnlocked && invoice.peppol_deemed_accepted && (
                     <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs">
                       Deemed Accepted — FTA 10-minute rule applied
                     </span>
