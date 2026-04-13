@@ -720,6 +720,10 @@ class InvoiceDB(Base):
     viewed_at = Column(DateTime, nullable=True)
     paid_at = Column(DateTime, nullable=True)
 
+    # Data archival
+    is_archived = Column(Boolean, default=False)
+    archived_at = Column(DateTime, nullable=True)
+
     # User Tracking (Phase 2)
     created_by_user_id = Column(
         String, ForeignKey("users.id"), nullable=True, index=True
@@ -8152,6 +8156,8 @@ def get_periodic_report(
     """
     Generate a periodic invoice summary report.
 
+    Includes all non-archived invoices in the selected period.
+
     Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
     """
     from datetime import datetime, date
@@ -8178,7 +8184,7 @@ def get_periodic_report(
             InvoiceDB.company_id == current_user.company_id,
             func.date(InvoiceDB.issue_date) >= start,
             func.date(InvoiceDB.issue_date) <= end,
-            InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+            or_(InvoiceDB.is_archived == False, InvoiceDB.is_archived.is_(None)),
         )
         .all()
     )
@@ -8217,7 +8223,7 @@ def export_periodic_report(
             InvoiceDB.company_id == current_user.company_id,
             func.date(InvoiceDB.issue_date) >= start,
             func.date(InvoiceDB.issue_date) <= end,
-            InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+            or_(InvoiceDB.is_archived == False, InvoiceDB.is_archived.is_(None)),
         )
         .all()
     )
@@ -8248,6 +8254,8 @@ def get_adhoc_report(
     """
     Generate an ad-hoc invoice summary report for a custom date range.
 
+    Includes all non-archived invoices in the selected period.
+
     Role Access: BUSINESS_ADMIN, FINANCE_USER, COMPANY_ADMIN
     """
     from datetime import datetime, date
@@ -8272,7 +8280,7 @@ def get_adhoc_report(
         InvoiceDB.company_id == current_user.company_id,
         func.date(InvoiceDB.issue_date) >= start,
         func.date(InvoiceDB.issue_date) <= end,
-        InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+        or_(InvoiceDB.is_archived == False, InvoiceDB.is_archived.is_(None)),
     )
     if type and type != "all":
         try:
@@ -8318,7 +8326,7 @@ def export_adhoc_report(
         InvoiceDB.company_id == current_user.company_id,
         func.date(InvoiceDB.issue_date) >= start,
         func.date(InvoiceDB.issue_date) <= end,
-        InvoiceDB.status.notin_([InvoiceStatus.DRAFT]),
+        or_(InvoiceDB.is_archived == False, InvoiceDB.is_archived.is_(None)),
     )
     if type and type != "all":
         try:
