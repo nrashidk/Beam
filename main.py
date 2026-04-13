@@ -9187,7 +9187,54 @@ def restore_invoice(
     if not result.fetchone():
         raise HTTPException(404, "Archived invoice not found")
     db.commit()
-    return {"restored": True, "invoice_id": invoice_id}
+    return {
+        "restored": True,
+        "invoice_id": invoice_id,
+        "message": "Invoice restored successfully",
+    }
+
+
+class BulkRestoreInvoicesRequest(BaseModel):
+    invoice_ids: List[str]
+
+
+@app.post("/invoices/restore-bulk", tags=["Invoices"])
+def restore_invoices_bulk(
+    payload: BulkRestoreInvoicesRequest,
+    current_user: UserDB = Depends(get_current_user_from_header),
+    db: Session = Depends(get_db),
+):
+    """Restore multiple archived invoices for the current company."""
+    from sqlalchemy import text as sa_text
+
+    invoice_ids = [iid for iid in (payload.invoice_ids or []) if iid]
+    unique_invoice_ids = list(dict.fromkeys(invoice_ids))
+
+    if not unique_invoice_ids:
+        raise HTTPException(400, "Please provide at least one invoice ID")
+
+    result = db.execute(
+        sa_text(
+            """UPDATE invoices
+               SET is_archived = false, archived_at = NULL
+               WHERE company_id = :cid
+                 AND is_archived = true
+                 AND id = ANY(:ids)
+               RETURNING id"""
+        ),
+        {"cid": current_user.company_id, "ids": unique_invoice_ids},
+    )
+
+    restored_ids = [r[0] for r in result.fetchall()]
+    db.commit()
+
+    return {
+        "restored": len(restored_ids) > 0,
+        "requested_count": len(unique_invoice_ids),
+        "restored_count": len(restored_ids),
+        "restored_ids": restored_ids,
+        "message": f"Restored {len(restored_ids)} invoice(s)",
+    }
 
 
 class FiscalYearArchiveRequest(BaseModel):

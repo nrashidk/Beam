@@ -11,6 +11,8 @@ export default function DataArchival() {
   const [loading, setLoading] = useState(true);
   const [archiving, setArchiving] = useState(false);
   const [restoringId, setRestoringId] = useState(null);
+  const [bulkRestoring, setBulkRestoring] = useState(false);
+  const [selectedArchivedIds, setSelectedArchivedIds] = useState([]);
   const [yearsOld, setYearsOld] = useState(5);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
@@ -39,7 +41,11 @@ export default function DataArchival() {
     setError(null);
     try {
       const res = await apiClient.get("/invoices/archived");
-      setArchivedInvoices(res.data.archived_invoices || []);
+      const invoices = res.data.archived_invoices || [];
+      setArchivedInvoices(invoices);
+      setSelectedArchivedIds((prev) =>
+        prev.filter((id) => invoices.some((inv) => inv.id === id)),
+      );
     } catch (err) {
       setError(
         err.response?.data?.detail || "Failed to load archived invoices."
@@ -93,12 +99,72 @@ export default function DataArchival() {
       const res = await apiClient.post(`/invoices/${invoiceId}/restore`);
       setMessage(res.data.message);
       setArchivedInvoices((prev) => prev.filter((inv) => inv.id !== invoiceId));
+      setSelectedArchivedIds((prev) => prev.filter((id) => id !== invoiceId));
     } catch (err) {
       setError(
         err.response?.data?.detail || "Failed to restore invoice."
       );
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  const allSelected =
+    archivedInvoices.length > 0 &&
+    selectedArchivedIds.length === archivedInvoices.length;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedArchivedIds([]);
+      return;
+    }
+    setSelectedArchivedIds(archivedInvoices.map((inv) => inv.id));
+  };
+
+  const toggleSelectInvoice = (invoiceId) => {
+    setSelectedArchivedIds((prev) =>
+      prev.includes(invoiceId)
+        ? prev.filter((id) => id !== invoiceId)
+        : [...prev, invoiceId],
+    );
+  };
+
+  const handleRestoreSelected = async () => {
+    if (selectedArchivedIds.length === 0) return;
+
+    const shouldProceed = window.confirm(
+      `Restore ${selectedArchivedIds.length} selected invoice(s)?`,
+    );
+    if (!shouldProceed) return;
+
+    setBulkRestoring(true);
+    setMessage(null);
+    setError(null);
+
+    try {
+      const res = await apiClient.post("/invoices/restore-bulk", {
+        invoice_ids: selectedArchivedIds,
+      });
+
+      const restoredIds = res.data?.restored_ids || [];
+      const restoredCount = res.data?.restored_count || 0;
+
+      if (restoredCount === 0) {
+        setError("No selected archived invoices could be restored.");
+        return;
+      }
+
+      setMessage(
+        `Successfully restored ${restoredCount} invoice(s).`,
+      );
+      setArchivedInvoices((prev) =>
+        prev.filter((inv) => !restoredIds.includes(inv.id)),
+      );
+      setSelectedArchivedIds([]);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to restore selected invoices.");
+    } finally {
+      setBulkRestoring(false);
     }
   };
 
@@ -477,16 +543,30 @@ export default function DataArchival() {
                   </span>
                 )}
               </h3>
-              {archivedInvoices.length > 0 && canExportArchive && (
-                <button
-                  onClick={handleExportXlsx}
-                  disabled={exporting}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
-                >
-                  <Download className="h-4 w-4" />
-                  {exporting ? "Exporting..." : "Export XLSX"}
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {archivedInvoices.length > 0 && (
+                  <button
+                    onClick={handleRestoreSelected}
+                    disabled={bulkRestoring || selectedArchivedIds.length === 0}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    {bulkRestoring
+                      ? "Restoring..."
+                      : `Restore Selected${selectedArchivedIds.length > 0 ? ` (${selectedArchivedIds.length})` : ""}`}
+                  </button>
+                )}
+                {archivedInvoices.length > 0 && canExportArchive && (
+                  <button
+                    onClick={handleExportXlsx}
+                    disabled={exporting}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+                  >
+                    <Download className="h-4 w-4" />
+                    {exporting ? "Exporting..." : "Export XLSX"}
+                  </button>
+                )}
+              </div>
             </div>
 
             {loading ? (
@@ -501,6 +581,14 @@ export default function DataArchival() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b">
+                      <th className="px-5 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Select all archived invoices"
+                        />
+                      </th>
                       <th className="text-left px-5 py-3 font-medium text-gray-600">Invoice #</th>
                       <th className="text-left px-5 py-3 font-medium text-gray-600">Type</th>
                       <th className="text-left px-5 py-3 font-medium text-gray-600">Customer</th>
@@ -513,6 +601,14 @@ export default function DataArchival() {
                   <tbody>
                     {archivedInvoices.map((inv) => (
                       <tr key={inv.id} className="border-b hover:bg-gray-50">
+                        <td className="px-5 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedArchivedIds.includes(inv.id)}
+                            onChange={() => toggleSelectInvoice(inv.id)}
+                            aria-label={`Select ${inv.invoice_number}`}
+                          />
+                        </td>
                         <td className="px-5 py-3 font-mono text-gray-900">{inv.invoice_number}</td>
                         <td className="px-5 py-3 text-gray-600">{inv.invoice_type}</td>
                         <td className="px-5 py-3 text-gray-700">{inv.customer_name}</td>
