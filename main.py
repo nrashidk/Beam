@@ -6352,6 +6352,18 @@ def update_user_role(
 # ==================== INVOICE ENDPOINTS ====================
 
 
+def parse_date(value) -> Optional[date]:
+    """Parse a date string (YYYY-MM-DD or ISO) to a date object. Returns None for empty/None input."""
+    if not value:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def generate_invoice_number(
     company_id: str, db: Session, invoice_type: str = "380"
 ) -> str:
