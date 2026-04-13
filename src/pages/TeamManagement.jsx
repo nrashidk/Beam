@@ -139,28 +139,28 @@ function StaticRoleDescriptions() {
         </div>
       </div> */}
       <div className="flex items-start gap-3">
-        <Badge className="bg-blue-600 mt-1">Admin</Badge>
+        <Badge className="bg-blue-600 mt-1 text-white ">Admin</Badge>
         <div>
           <p className="font-medium text-gray-900">Owner</p>
           <p className="text-sm text-gray-600">Full access to all features, settings, billing, and team management.</p>
         </div>
       </div>
       <div className="flex items-start gap-3">
-        <Badge className="bg-indigo-600 mt-1">Business Admin</Badge>
+        <Badge className="bg-indigo-600 mt-1 text-white">Business Admin</Badge>
         <div>
           <p className="font-medium text-gray-900">Manager</p>
           <p className="text-sm text-gray-600">Create, edit, and approve invoices, expenses, suppliers, and inventory.</p>
         </div>
       </div>
       <div className="flex items-start gap-3">
-        <Badge className="bg-green-600 mt-1">Finance User</Badge>
+        <Badge className="bg-green-600 mt-1 text-white">Finance User</Badge>
         <div>
           <p className="font-medium text-gray-900">Accountant</p>
           <p className="text-sm text-gray-600">Create and manage invoices and expenses. View financial data and reports. </p>
         </div>
       </div>
       <div className="flex items-start gap-3">
-        <Badge className="bg-gray-500 mt-1">Read Only</Badge>
+        <Badge className="bg-gray-500 mt-1 text-white">Read Only</Badge>
         <div>
           <p className="font-medium text-gray-900">Viewer</p>
           <p className="text-sm text-gray-600">View-only access to invoices and reports. Cannot create or edit anything.</p>

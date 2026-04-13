@@ -11,7 +11,8 @@ export const Badge = ({ className, variant = 'default', ...props }) => {
   };
 
   return (
-    <span
+    <div className='w-full max-w-[110px] mx-[unset]'>
+      <span
       className={cn(
         'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
         variants[variant],
@@ -19,5 +20,6 @@ export const Badge = ({ className, variant = 'default', ...props }) => {
       )}
       {...props}
     />
+    </div>
   );
 };
