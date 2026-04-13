@@ -48,7 +48,9 @@ COMPANY_DATA_HEADERS = [
 
 SALES_DATA_HEADERS = [
     "TransactionID",
+    "TransactionType",
     "InvoiceDate",
+    "DueDate",
     "SupplyDate",
     "InvoiceType",
     "CustomerTRN",
@@ -60,12 +62,17 @@ SALES_DATA_HEADERS = [
     "Currency",
     "TaxCode",
     "VATRatePct",
+    "PaymentDate",
+    "PaymentMethod",
+    "PaymentStatus",
     "Status",
 ]
 
 PURCHASE_DATA_HEADERS = [
     "TransactionID",
+    "TransactionType",
     "InvoiceDate",
+    "DueDate",
     "SupplyDate",
     "InvoiceType",
     "SupplierTRN",
@@ -77,6 +84,9 @@ PURCHASE_DATA_HEADERS = [
     "Currency",
     "TaxCode",
     "VATRatePct",
+    "PaymentDate",
+    "PaymentMethod",
+    "PaymentStatus",
     "Status",
 ]
 
@@ -326,11 +336,14 @@ class FTAAuditFileGenerator:
                 vat_aed = vat
 
             issue_date = inv.get("issue_date", "")
+            due_date = inv.get("due_date", "")
             supply_date_val = inv.get("supply_date") or issue_date
             writer.writerow(
                 {
                     "TransactionID": inv.get("invoice_number", ""),
+                    "TransactionType": "SALE",
                     "InvoiceDate": _format_date(issue_date),
+                    "DueDate": _format_date(due_date),
                     "SupplyDate": _format_date(supply_date_val),
                     "InvoiceType": inv_type,
                     "CustomerTRN": inv.get("customer_trn", "") or "N/A",
@@ -342,6 +355,9 @@ class FTAAuditFileGenerator:
                     "Currency": "AED",
                     "TaxCode": tax_code,
                     "VATRatePct": f"{vat_rate:.1f}",
+                    "PaymentDate": _format_date(inv.get("paid_at", "")),
+                    "PaymentMethod": inv.get("payment_method", "") or "",
+                    "PaymentStatus": "PAID" if inv.get("paid_at") else "UNPAID",
                     "Status": inv.get("status", ""),
                 }
             )
@@ -406,11 +422,14 @@ class FTAAuditFileGenerator:
                 vat_aed = vat
 
             inv_date = inv.get("invoice_date", "")
+            due_date = inv.get("due_date", "")
             purch_supply_date = inv.get("supply_date") or inv_date
             writer.writerow(
                 {
                     "TransactionID": (inv.get("supplier_invoice_number") or "").strip() or f"INW-{inv.get('id', '')}",
+                    "TransactionType": "PURCHASE",
                     "InvoiceDate": _format_date(inv_date),
+                    "DueDate": _format_date(due_date),
                     "SupplyDate": _format_date(purch_supply_date),
                     "InvoiceType": inv_type,
                     "SupplierTRN": inv.get("supplier_trn", ""),
@@ -422,6 +441,9 @@ class FTAAuditFileGenerator:
                     "Currency": "AED",
                     "TaxCode": tax_code,
                     "VATRatePct": f"{vat_rate:.1f}",
+                    "PaymentDate": _format_date(inv.get("paid_at", "")),
+                    "PaymentMethod": inv.get("payment_method", "") or "",
+                    "PaymentStatus": inv.get("payment_status", "") or ("PAID" if inv.get("paid_at") else "PENDING"),
                     "Status": inv.get("status", ""),
                 }
             )

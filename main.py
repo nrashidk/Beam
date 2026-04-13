@@ -13665,6 +13665,8 @@ def generate_fta_audit_file(
             {
                 "invoice_number": inv.invoice_number,
                 "issue_date": inv.issue_date,
+                "due_date": inv.due_date,
+                "supply_date": inv.delivery_date or inv.issue_date,
                 "invoice_type": inv.invoice_type.value,
                 "customer_trn": inv.customer_trn,
                 "customer_name": inv.customer_name,
@@ -13672,7 +13674,10 @@ def generate_fta_audit_file(
                 "subtotal_amount": inv.subtotal_amount,
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
+                "total_amount_aed": inv.total_amount_aed,
                 "currency_code": inv.currency_code,
+                "payment_method": inv.payment_method,
+                "paid_at": inv.paid_at,
                 "status": inv.status.value,
             }
             for inv in outgoing_invoices
@@ -13683,6 +13688,8 @@ def generate_fta_audit_file(
                 "id": inv.id,
                 "supplier_invoice_number": inv.supplier_invoice_number,
                 "invoice_date": inv.invoice_date,
+                "due_date": inv.due_date,
+                "supply_date": inv.invoice_date,
                 "invoice_type": inv.invoice_type.value,
                 "supplier_trn": inv.supplier_trn,
                 "supplier_name": inv.supplier_name,
@@ -13691,6 +13698,9 @@ def generate_fta_audit_file(
                 "tax_amount": inv.tax_amount,
                 "total_amount": inv.total_amount,
                 "currency_code": inv.currency_code,
+                "payment_method": inv.payment_method,
+                "payment_status": inv.payment_status,
+                "paid_at": inv.paid_at,
                 "status": inv.status.value,
             }
             for inv in inward_invoices
@@ -13702,9 +13712,12 @@ def generate_fta_audit_file(
         company_data = {
             "trn": company.trn,
             "legal_name": company.legal_name,
+            "registration_date": company.registration_date,
             "address": f"{company.address_line1 or ''} {company.address_line2 or ''}".strip(),
             "city": company.city,
             "emirate": company.emirate,
+            "period_start": start_date,
+            "period_end": end_date,
         }
 
         generator = FTAAuditFileGenerator(company_data)
