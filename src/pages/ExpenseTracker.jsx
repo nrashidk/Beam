@@ -22,6 +22,13 @@ import {
   SelectValue,
 } from "../components/ui/select";
 
+const toLocalDateInput = (d) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const ExpenseTracker = () => {
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -34,8 +41,8 @@ const ExpenseTracker = () => {
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
     return {
-      from_date: startOfMonth.toISOString().slice(0, 10),
-      to_date: today.toISOString().slice(0, 10),
+      from_date: toLocalDateInput(startOfMonth),
+      to_date: toLocalDateInput(today),
     };
   });
 
@@ -336,8 +343,8 @@ const ExpenseTracker = () => {
                   );
 
                   setDateRange({
-                    from_date: startOfMonth.toISOString().slice(0, 10),
-                    to_date: today.toISOString().slice(0, 10),
+                    from_date: toLocalDateInput(startOfMonth),
+                    to_date: toLocalDateInput(today),
                   });
                 }}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
