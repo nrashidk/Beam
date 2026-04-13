@@ -6429,6 +6429,101 @@ def calculate_line_item_totals(
     }
 
 
+def _invoice_out(inv) -> InvoiceOut:
+    """Map InvoiceDB to InvoiceOut including all UAE transaction type fields."""
+    return InvoiceOut(
+        id=inv.id,
+        company_id=inv.company_id,
+        invoice_number=inv.invoice_number,
+        invoice_type=inv.invoice_type,
+        status=inv.status,
+        issue_date=inv.issue_date.isoformat(),
+        due_date=inv.due_date.isoformat() if inv.due_date else None,
+        currency_code=inv.currency_code,
+        supplier_trn=inv.supplier_trn,
+        supplier_name=inv.supplier_name,
+        supplier_address=inv.supplier_address,
+        supplier_peppol_id=inv.supplier_peppol_id,
+        customer_trn=inv.customer_trn,
+        customer_name=inv.customer_name,
+        customer_email=inv.customer_email,
+        customer_address=inv.customer_address,
+        customer_city=inv.customer_city,
+        invoice_notes=inv.invoice_notes,
+        customer_peppol_id=inv.customer_peppol_id,
+        subtotal_amount=inv.subtotal_amount,
+        tax_amount=inv.tax_amount,
+        total_amount=inv.total_amount,
+        amount_due=inv.amount_due,
+        preceding_invoice_id=inv.preceding_invoice_id,
+        credit_note_reason=inv.credit_note_reason,
+        invoice_transaction_type=inv.invoice_transaction_type,
+        tax_exemption_reason_code=inv.tax_exemption_reason_code,
+        tax_exemption_reason=inv.tax_exemption_reason,
+        payment_due_date=inv.payment_due_date.isoformat() if inv.payment_due_date else None,
+        payment_type_code=inv.payment_type_code,
+        deliver_to_location_id=inv.deliver_to_location_id,
+        deliver_to_party_name=inv.deliver_to_party_name,
+        deliver_to_address=inv.deliver_to_address,
+        delivery_date=inv.delivery_date.isoformat() if inv.delivery_date else None,
+        ecommerce_scheme_id=inv.ecommerce_scheme_id,
+        buyer_legal_registration=inv.buyer_legal_registration,
+        buyer_registration_id=inv.buyer_registration_id,
+        buyer_electronic_address=inv.buyer_electronic_address,
+        buyer_scheme_id=inv.buyer_scheme_id,
+        margin_credit_note_reason_code=inv.margin_credit_note_reason_code,
+        margin_process_control=inv.margin_process_control,
+        margin_preceding_ref=inv.margin_preceding_ref,
+        margin_preceding_date=inv.margin_preceding_date.isoformat() if inv.margin_preceding_date else None,
+        contract_reference=inv.contract_reference,
+        contract_value=inv.contract_value,
+        invoice_note=inv.invoice_note,
+        billing_frequency=inv.billing_frequency,
+        invoicing_period_start=inv.invoicing_period_start.isoformat() if inv.invoicing_period_start else None,
+        invoicing_period_end=inv.invoicing_period_end.isoformat() if inv.invoicing_period_end else None,
+        principal_id=inv.principal_id,
+        beneficiary_id=inv.beneficiary_id,
+        mls_status=inv.mls_status,
+        peppol_deemed_accepted=inv.peppol_deemed_accepted,
+        total_amount_aed=inv.total_amount_aed,
+        exchange_rate=inv.exchange_rate,
+        xml_file_path=inv.xml_file_path,
+        pdf_file_path=inv.pdf_file_path,
+        share_token=inv.share_token,
+        created_at=inv.created_at.isoformat(),
+        sent_at=inv.sent_at.isoformat() if inv.sent_at else None,
+        viewed_at=inv.viewed_at.isoformat() if inv.viewed_at else None,
+        line_items=[
+            InvoiceLineItemOut(
+                id=li.id,
+                line_number=li.line_number,
+                item_name=li.item_name,
+                item_description=li.item_description,
+                quantity=li.quantity,
+                unit_code=li.unit_code,
+                unit_price=li.unit_price,
+                discount_amount=float(li.discount_amount or 0.0),
+                line_extension_amount=li.line_extension_amount,
+                tax_category=li.tax_category,
+                tax_percent=li.tax_percent,
+                tax_amount=li.tax_amount,
+                line_total_amount=li.line_total_amount,
+            )
+            for li in inv.line_items
+        ],
+        tax_breakdowns=[
+            InvoiceTaxBreakdownOut(
+                id=tb.id,
+                tax_category=tb.tax_category,
+                taxable_amount=tb.taxable_amount,
+                tax_percent=tb.tax_percent,
+                tax_amount=tb.tax_amount,
+            )
+            for tb in inv.tax_breakdowns
+        ],
+    )
+
+
 @app.post("/invoices", tags=["Invoices"], response_model=InvoiceOut)
 def create_invoice(
     payload: InvoiceCreate,
@@ -6788,67 +6883,7 @@ def create_invoice(
     db.refresh(invoice)
 
     # Format response
-    return InvoiceOut(
-        id=invoice.id,
-        company_id=invoice.company_id,
-        invoice_number=invoice.invoice_number,
-        invoice_type=invoice.invoice_type,
-        status=invoice.status,
-        issue_date=invoice.issue_date.isoformat(),
-        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        currency_code=invoice.currency_code,
-        supplier_trn=invoice.supplier_trn,
-        supplier_name=invoice.supplier_name,
-        supplier_address=invoice.supplier_address,
-        supplier_peppol_id=invoice.supplier_peppol_id,
-        customer_trn=invoice.customer_trn,
-        customer_name=invoice.customer_name,
-        customer_email=invoice.customer_email,
-        customer_address=invoice.customer_address,
-        customer_city=invoice.customer_city,
-        invoice_notes=invoice.invoice_notes,
-        customer_peppol_id=invoice.customer_peppol_id,
-        subtotal_amount=invoice.subtotal_amount,
-        tax_amount=invoice.tax_amount,
-        total_amount=invoice.total_amount,
-        amount_due=invoice.amount_due,
-        preceding_invoice_id=invoice.preceding_invoice_id,
-        credit_note_reason=invoice.credit_note_reason,
-        xml_file_path=invoice.xml_file_path,
-        pdf_file_path=invoice.pdf_file_path,
-        share_token=invoice.share_token,
-        created_at=invoice.created_at.isoformat(),
-        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
-        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
-        line_items=[
-            InvoiceLineItemOut(
-                id=li.id,
-                line_number=li.line_number,
-                item_name=li.item_name,
-                item_description=li.item_description,
-                quantity=li.quantity,
-                unit_code=li.unit_code,
-                unit_price=li.unit_price,
-                discount_amount=float(li.discount_amount or 0.0),
-                line_extension_amount=li.line_extension_amount,
-                tax_category=li.tax_category,
-                tax_percent=li.tax_percent,
-                tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount,
-            )
-            for li in invoice.line_items
-        ],
-        tax_breakdowns=[
-            InvoiceTaxBreakdownOut(
-                id=tb.id,
-                tax_category=tb.tax_category,
-                taxable_amount=tb.taxable_amount,
-                tax_percent=tb.tax_percent,
-                tax_amount=tb.tax_amount,
-            )
-            for tb in invoice.tax_breakdowns
-        ],
-    )
+    return _invoice_out(invoice)
 
 
 @app.post("/invoices/{invoice_id}/transmit-peppol", tags=["Invoices"])
@@ -7368,67 +7403,7 @@ def get_invoice(
     if not invoice:
         raise HTTPException(404, "Invoice not found")
 
-    return InvoiceOut(
-        id=invoice.id,
-        company_id=invoice.company_id,
-        invoice_number=invoice.invoice_number,
-        invoice_type=invoice.invoice_type,
-        status=invoice.status,
-        issue_date=invoice.issue_date.isoformat(),
-        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        currency_code=invoice.currency_code,
-        supplier_trn=invoice.supplier_trn,
-        supplier_name=invoice.supplier_name,
-        supplier_address=invoice.supplier_address,
-        supplier_peppol_id=invoice.supplier_peppol_id,
-        customer_trn=invoice.customer_trn,
-        customer_name=invoice.customer_name,
-        customer_email=invoice.customer_email,
-        customer_address=invoice.customer_address,
-        customer_city=invoice.customer_city,
-        invoice_notes=invoice.invoice_notes,
-        customer_peppol_id=invoice.customer_peppol_id,
-        subtotal_amount=invoice.subtotal_amount,
-        tax_amount=invoice.tax_amount,
-        total_amount=invoice.total_amount,
-        amount_due=invoice.amount_due,
-        preceding_invoice_id=invoice.preceding_invoice_id,
-        credit_note_reason=invoice.credit_note_reason,
-        xml_file_path=invoice.xml_file_path,
-        pdf_file_path=invoice.pdf_file_path,
-        share_token=invoice.share_token,
-        created_at=invoice.created_at.isoformat(),
-        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
-        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
-        line_items=[
-            InvoiceLineItemOut(
-                id=li.id,
-                line_number=li.line_number,
-                item_name=li.item_name,
-                item_description=li.item_description,
-                quantity=li.quantity,
-                unit_code=li.unit_code,
-                unit_price=li.unit_price,
-                discount_amount=float(li.discount_amount or 0.0),
-                line_extension_amount=li.line_extension_amount,
-                tax_category=li.tax_category,
-                tax_percent=li.tax_percent,
-                tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount,
-            )
-            for li in invoice.line_items
-        ],
-        tax_breakdowns=[
-            InvoiceTaxBreakdownOut(
-                id=tb.id,
-                tax_category=tb.tax_category,
-                taxable_amount=tb.taxable_amount,
-                tax_percent=tb.tax_percent,
-                tax_amount=tb.tax_amount,
-            )
-            for tb in invoice.tax_breakdowns
-        ],
-    )
+    return _invoice_out(invoice)
 
 
 @app.put("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceOut)
@@ -7619,67 +7594,7 @@ def update_invoice(
         db.commit()
 
         # Return updated invoice
-        return InvoiceOut(
-            id=invoice.id,
-            company_id=invoice.company_id,
-            invoice_number=invoice.invoice_number,
-            invoice_type=invoice.invoice_type,
-            status=invoice.status,
-            issue_date=invoice.issue_date.isoformat(),
-            due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-            currency_code=invoice.currency_code,
-            supplier_trn=invoice.supplier_trn,
-            supplier_name=invoice.supplier_name,
-            supplier_address=invoice.supplier_address,
-            supplier_peppol_id=invoice.supplier_peppol_id,
-            customer_trn=invoice.customer_trn,
-            customer_name=invoice.customer_name,
-            customer_email=invoice.customer_email,
-            customer_address=invoice.customer_address,
-            customer_city=invoice.customer_city,
-            invoice_notes=invoice.invoice_notes,
-            customer_peppol_id=invoice.customer_peppol_id,
-            subtotal_amount=invoice.subtotal_amount,
-            tax_amount=invoice.tax_amount,
-            total_amount=invoice.total_amount,
-            amount_due=invoice.amount_due,
-            preceding_invoice_id=invoice.preceding_invoice_id,
-            credit_note_reason=invoice.credit_note_reason,
-            xml_file_path=invoice.xml_file_path,
-            pdf_file_path=invoice.pdf_file_path,
-            share_token=invoice.share_token,
-            created_at=invoice.created_at.isoformat(),
-            sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
-            viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
-            line_items=[
-                InvoiceLineItemOut(
-                    id=li.id,
-                    line_number=li.line_number,
-                    item_name=li.item_name,
-                    item_description=li.item_description,
-                    quantity=li.quantity,
-                    unit_code=li.unit_code,
-                    unit_price=li.unit_price,
-                    discount_amount=float(li.discount_amount or 0.0),
-                    line_extension_amount=li.line_extension_amount,
-                    tax_category=li.tax_category,
-                    tax_percent=li.tax_percent,
-                    tax_amount=li.tax_amount,
-                    line_total_amount=li.line_total_amount,
-                )
-                for li in invoice.line_items
-            ],
-            tax_breakdowns=[
-                InvoiceTaxBreakdownOut(
-                    id=tb.id,
-                    tax_category=tb.tax_category,
-                    taxable_amount=tb.taxable_amount,
-                    tax_percent=tb.tax_percent,
-                    tax_amount=tb.tax_amount,
-                )
-                for tb in invoice.tax_breakdowns
-            ],
-        )
+        return _invoice_out(invoice)
     except Exception as e:
         db.rollback()
         raise HTTPException(500, f"Failed to update invoice: {str(e)}")
@@ -10793,67 +10708,7 @@ def view_shared_invoice(share_token: str, db: Session = Depends(get_db)):
         invoice.viewed_at = datetime.utcnow()
         db.commit()
 
-    return InvoiceOut(
-        id=invoice.id,
-        company_id=invoice.company_id,
-        invoice_number=invoice.invoice_number,
-        invoice_type=invoice.invoice_type,
-        status=invoice.status,
-        issue_date=invoice.issue_date.isoformat(),
-        due_date=invoice.due_date.isoformat() if invoice.due_date else None,
-        currency_code=invoice.currency_code,
-        supplier_trn=invoice.supplier_trn,
-        supplier_name=invoice.supplier_name,
-        supplier_address=invoice.supplier_address,
-        supplier_peppol_id=invoice.supplier_peppol_id,
-        customer_trn=invoice.customer_trn,
-        customer_name=invoice.customer_name,
-        customer_email=invoice.customer_email,
-        customer_address=invoice.customer_address,
-        customer_city=invoice.customer_city,
-        invoice_notes=invoice.invoice_notes,
-        customer_peppol_id=invoice.customer_peppol_id,
-        subtotal_amount=invoice.subtotal_amount,
-        tax_amount=invoice.tax_amount,
-        total_amount=invoice.total_amount,
-        amount_due=invoice.amount_due,
-        preceding_invoice_id=invoice.preceding_invoice_id,
-        credit_note_reason=invoice.credit_note_reason,
-        xml_file_path=invoice.xml_file_path,
-        pdf_file_path=invoice.pdf_file_path,
-        share_token=invoice.share_token,
-        created_at=invoice.created_at.isoformat(),
-        sent_at=invoice.sent_at.isoformat() if invoice.sent_at else None,
-        viewed_at=invoice.viewed_at.isoformat() if invoice.viewed_at else None,
-        line_items=[
-            InvoiceLineItemOut(
-                id=li.id,
-                line_number=li.line_number,
-                item_name=li.item_name,
-                item_description=li.item_description,
-                quantity=li.quantity,
-                unit_code=li.unit_code,
-                unit_price=li.unit_price,
-                discount_amount=float(li.discount_amount or 0.0),
-                line_extension_amount=li.line_extension_amount,
-                tax_category=li.tax_category,
-                tax_percent=li.tax_percent,
-                tax_amount=li.tax_amount,
-                line_total_amount=li.line_total_amount,
-            )
-            for li in invoice.line_items
-        ],
-        tax_breakdowns=[
-            InvoiceTaxBreakdownOut(
-                id=tb.id,
-                tax_category=tb.tax_category,
-                taxable_amount=tb.taxable_amount,
-                tax_percent=tb.tax_percent,
-                tax_amount=tb.tax_amount,
-            )
-            for tb in invoice.tax_breakdowns
-        ],
-    )
+    return _invoice_out(invoice)
 
 
 # ==================== EXPENSE TRACKING (SIMPLE FINANCIAL MANAGEMENT) ====================

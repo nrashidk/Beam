@@ -105,7 +105,7 @@ export default function CreateInvoice() {
     due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0],
-    supply_date: null,
+    delivery_date: "",
     currency_code: "AED",
     customer_name: "",
     customer_email: "",
@@ -909,27 +909,24 @@ export default function CreateInvoice() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Supply / Delivery Date{" "}
+                    Delivery Date{" "}
                     <span className="text-xs text-gray-400">(optional)</span>
                   </label>
                   <input
                     type="date"
-                    value={formData.supply_date || ""}
+                    value={formData.delivery_date || ""}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        supply_date: e.target.value || null,
-                      })
+                      setFormData({ ...formData, delivery_date: e.target.value || "" })
                     }
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${
-                      !formData.supply_date && calculateTotal() >= 10000
+                      !formData.delivery_date && calculateTotal() >= 10000
                         ? "border-amber-400 bg-amber-50"
                         : "border-gray-300"
                     }`}
                   />
-                  {!formData.supply_date && calculateTotal() >= 10000 ? (
+                  {!formData.delivery_date && calculateTotal() >= 10000 ? (
                     <p className="mt-1 text-xs text-amber-600 font-medium">
-                      ⚠️ FTA requires supply date on full tax invoices ≥ AED
+                      ⚠️ FTA requires delivery date on full tax invoices ≥ AED
                       10,000 when it differs from the issue date.
                     </p>
                   ) : (
@@ -1037,12 +1034,6 @@ export default function CreateInvoice() {
                         <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Address</label>
                         <input type="text" value={formData.deliver_to_address}
                           onChange={(e) => setFormData({ ...formData, deliver_to_address: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Date</label>
-                        <input type="date" value={formData.delivery_date}
-                          onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                       </div>
                       <div>

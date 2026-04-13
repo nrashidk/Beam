@@ -562,6 +562,21 @@ export default function EditInvoice() {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Delivery Date{" "}
+                    <span className="text-xs text-gray-400">(optional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.delivery_date || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, delivery_date: e.target.value || "" })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
               </div>
             </div>
 
@@ -774,12 +789,6 @@ export default function EditInvoice() {
                         <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Address</label>
                         <input type="text" value={formData.deliver_to_address}
                           onChange={(e) => setFormData({ ...formData, deliver_to_address: e.target.value })}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Delivery Date</label>
-                        <input type="date" value={formData.delivery_date}
-                          onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
                           className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                       </div>
                     </>

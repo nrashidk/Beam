@@ -498,6 +498,14 @@ export default function InvoiceDetail() {
                   </p>
                 </div>
               )}
+              {invoice.delivery_date && (
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Delivery Date</p>
+                  <p className="font-semibold">
+                    {new Date(invoice.delivery_date).toLocaleDateString("en-AE")}
+                  </p>
+                </div>
+              )}
               {invoice.supply_date && (
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Supply Date</p>
