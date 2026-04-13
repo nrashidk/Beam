@@ -321,7 +321,8 @@ export const AuthProvider = ({ children }) => {
       user?.role === "COMPANY_ADMIN" ||
       user?.role === "COMPANY" ||
       user?.role === "BUSINESS_ADMIN" ||
-      user?.role === "FINANCE_USER",
+      user?.role === "FINANCE_USER" ||
+      user?.role === "READ_ONLY",
     mfaRequired,
     mfaMethod,
     userEmail,
