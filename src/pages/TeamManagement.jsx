@@ -317,13 +317,7 @@ export default function TeamManagement() {
 
     // Validate tier limits before submission
     if (!canInviteRole(inviteForm.role)) {
-      setError(
-        `Tier limit reached! Your ${tierLimits?.name || "current"} plan allows ${
-          inviteForm.role === "BUSINESS_ADMIN"
-            ? `${tierLimits?.max_business_admins || 0} Business Admins`
-            : `${tierLimits?.max_finance_users || 0} Finance Users`
-        }. Please upgrade your plan to invite more team members.`,
-      );
+      setError(`Tier limit reached! ${getInviteLimitMessage(inviteForm.role)}`);
       return;
     }
 
@@ -461,6 +455,27 @@ export default function TeamManagement() {
       return counts.financeUsers < tierLimits.max_finance_users;
     }
     return true;
+  };
+
+  const getInviteLimitMessage = (role) => {
+    if (!tierLimits) {
+      return "Tier limit reached. Please upgrade your plan to invite more team members.";
+    }
+
+    const activeCount = getActiveMembers().length;
+    if (tierLimits.max_users != null && activeCount >= tierLimits.max_users) {
+      return `Your ${tierLimits?.name || "current"} plan allows ${tierLimits.max_users} total users. Please upgrade your plan to invite more team members.`;
+    }
+
+    if (role === "BUSINESS_ADMIN") {
+      return `Your ${tierLimits?.name || "current"} plan allows ${tierLimits?.max_business_admins || 0} Business Admins. Please upgrade your plan to invite more team members.`;
+    }
+
+    if (role === "FINANCE_USER") {
+      return `Your ${tierLimits?.name || "current"} plan allows ${tierLimits?.max_finance_users || 0} Finance Users. Please upgrade your plan to invite more team members.`;
+    }
+
+    return "Please upgrade your plan to invite more team members.";
   };
 
   const getRoleLimit = (role) => {
@@ -651,11 +666,17 @@ export default function TeamManagement() {
                             </div>
                           </SelectItem>
                         )}
-                        <SelectItem value="READ_ONLY">
+                        <SelectItem
+                          value="READ_ONLY"
+                          disabled={!canInviteRole("READ_ONLY")}
+                        >
                           Read Only (view access only)
                         </SelectItem>
                         {!isBusinessAdmin && (
-                          <SelectItem value="COMPANY_ADMIN">
+                          <SelectItem
+                            value="COMPANY_ADMIN"
+                            disabled={!canInviteRole("COMPANY_ADMIN")}
+                          >
                             Company Admin (Owner-level)
                           </SelectItem>
                         )}
@@ -716,12 +737,7 @@ export default function TeamManagement() {
                   </div>
                   {!canInviteRole(inviteForm.role) && (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-lg text-sm">
-                      <strong>Tier limit reached!</strong> Upgrade your plan to
-                      invite more{" "}
-                      {inviteForm.role === "BUSINESS_ADMIN"
-                        ? "Business Admins"
-                        : "Finance Users"}
-                      .
+                      <strong>Tier limit reached!</strong> {getInviteLimitMessage(inviteForm.role)}
                     </div>
                   )}
                 </form>
