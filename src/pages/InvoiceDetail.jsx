@@ -367,38 +367,7 @@ export default function InvoiceDetail() {
               </button>
             )}
 
-            {/* Credit Note & Debit Note quick actions for posted tax invoices */}
-            {(invoice.status === "ISSUED" ||
-              invoice.status === "SENT" ||
-              invoice.status === "VIEWED") &&
-              invoice.invoice_type === "380" && (
-                <>
-                  <button
-                    onClick={() =>
-                      navigate(
-                        `/invoices/create?preceding_invoice_id=${id}&type=credit_note`,
-                      )
-                    }
-                    className="flex items-center gap-2 px-5 py-3 bg-amber-100 text-amber-800 rounded-xl font-semibold hover:bg-amber-200"
-                    title="Issue a credit note against this invoice"
-                  >
-                    <FileText className="w-5 h-5" />
-                    Credit Note
-                  </button>
-                  <button
-                    onClick={() =>
-                      navigate(
-                        `/invoices/create?preceding_invoice_id=${id}&type=debit_note`,
-                      )
-                    }
-                    className="flex items-center gap-2 px-5 py-3 bg-purple-100 text-purple-800 rounded-xl font-semibold hover:bg-purple-200"
-                    title="Issue a debit note against this invoice"
-                  >
-                    <FileText className="w-5 h-5" />
-                    Debit Note
-                  </button>
-                </>
-              )}
+       
 
             {invoice.status !== "CANCELLED" && invoice.status !== "PAID" && (
               <button
