@@ -131,39 +131,39 @@ function PermissionMatrixTable({ matrix }) {
 function StaticRoleDescriptions() {
   return (
     <div className="space-y-4">
-      <div className="flex items-start gap-3">
+      {/* <div className="flex items-start gap-3">
         <Badge className="bg-purple-600 mt-1">Super Admin</Badge>
         <div>
           <p className="font-medium text-gray-900">Platform Administrator</p>
           <p className="text-sm text-gray-600">Full platform access, can approve companies, view all analytics, manage all users</p>
         </div>
-      </div>
+      </div> */}
       <div className="flex items-start gap-3">
         <Badge className="bg-blue-600 mt-1">Admin</Badge>
         <div>
-          <p className="font-medium text-gray-900">Company Administrator</p>
-          <p className="text-sm text-gray-600">Full company access, can invite/remove team members, manage all invoices, branding, and settings</p>
+          <p className="font-medium text-gray-900">Owner</p>
+          <p className="text-sm text-gray-600">Full access to all features, settings, billing, and team management.</p>
         </div>
       </div>
       <div className="flex items-start gap-3">
         <Badge className="bg-indigo-600 mt-1">Business Admin</Badge>
         <div>
-          <p className="font-medium text-gray-900">Business Operations Admin</p>
-          <p className="text-sm text-gray-600">Can manage operational modules and invite finance users for the company team</p>
+          <p className="font-medium text-gray-900">Manager</p>
+          <p className="text-sm text-gray-600">Create, edit, and approve invoices, expenses, suppliers, and inventory.</p>
         </div>
       </div>
       <div className="flex items-start gap-3">
         <Badge className="bg-green-600 mt-1">Finance User</Badge>
         <div>
-          <p className="font-medium text-gray-900">Finance Team Member</p>
-          <p className="text-sm text-gray-600">Can create, view, and manage invoices. Cannot invite users or change company settings</p>
+          <p className="font-medium text-gray-900">Accountant</p>
+          <p className="text-sm text-gray-600">Create and manage invoices and expenses. View financial data and reports. </p>
         </div>
       </div>
       <div className="flex items-start gap-3">
         <Badge className="bg-gray-500 mt-1">Read Only</Badge>
         <div>
-          <p className="font-medium text-gray-900">Read-Only Viewer</p>
-          <p className="text-sm text-gray-600">Can view invoices, reports, audit trail, and GL entries. Cannot create, edit, or approve anything</p>
+          <p className="font-medium text-gray-900">Viewer</p>
+          <p className="text-sm text-gray-600">View-only access to invoices and reports. Cannot create or edit anything.</p>
         </div>
       </div>
     </div>
