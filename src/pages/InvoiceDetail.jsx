@@ -162,8 +162,24 @@ export default function InvoiceDetail() {
         });
       } else if (action === "send") {
         const response = await apiClient.post(`/invoices/${id}/send`);
+        const sharePath =
+          response.data?.share_link ||
+          `/invoices/view/${response.data?.share_token || invoice.share_token}`;
+        const shareUrl = `${window.location.origin}${sharePath}`;
         setToast({
-          message: `Invoice sent successfully! Customer share link: ${window.location.origin}/invoices/view/${invoice.share_token}`,
+          message: (
+            <div className="space-y-2">
+              <div>Invoice sent successfully.</div>
+              <a
+                href={shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block break-all text-sm font-semibold text-indigo-700 underline underline-offset-2"
+              >
+                {shareUrl}
+              </a>
+            </div>
+          ),
           type: "success",
           onClose: () => {
             setToast(null);

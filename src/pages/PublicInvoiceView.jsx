@@ -1,15 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import {
-  Download,
-  FileText,
-  Building2,
-  Calendar,
-  CreditCard,
-  CheckCircle,
-  Mail,
-  Phone,
-} from "lucide-react";
+import { Download, FileText, CheckCircle, Mail } from "lucide-react";
 import { apiClient } from "../lib/api";
 import PageLoader from "../components/PageLoader";
 
@@ -36,8 +27,6 @@ export default function PublicInvoiceView() {
   };
 
   const downloadPDF = () => {
-    // In production, this would download the actual PDF
-    // For now, trigger a print dialog as a fallback
     window.print();
   };
 
@@ -67,9 +56,9 @@ export default function PublicInvoiceView() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="public-invoice-page min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="no-print bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -88,17 +77,17 @@ export default function PublicInvoiceView() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md"
             >
               <Download className="h-4 w-4" />
-              Download PDF
+              Print / Save PDF
             </button>
           </div>
         </div>
       </div>
 
       {/* Invoice Content */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+      <div className="public-invoice-shell max-w-4xl mx-auto px-6 py-8">
+        <div className="public-invoice-document bg-white rounded-2xl shadow-lg overflow-hidden">
           {/* Invoice Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8">
+          <div className="public-invoice-header bg-gradient-to-r from-blue-600 to-purple-600 text-white p-8">
             <div className="grid md:grid-cols-2 gap-8">
               <div>
                 <div className="text-sm opacity-80 mb-2">From</div>
@@ -282,13 +271,13 @@ export default function PublicInvoiceView() {
         </div>
 
         {/* Action Buttons */}
-        <div className="mt-6 text-center space-y-3">
+        <div className="no-print mt-6 text-center space-y-3">
           <button
             onClick={downloadPDF}
             className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-all shadow-lg"
           >
             <Download className="h-5 w-5" />
-            Save as PDF
+            Print / Save PDF
           </button>
           <p className="text-sm text-gray-600">
             Invoice viewed{" "}

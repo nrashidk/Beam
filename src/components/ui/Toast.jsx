@@ -26,8 +26,8 @@ export default function Toast({ message, onClose, type = "success" }) {
                 <X className="w-8 h-8 text-red-600" />
               )}
             </div>
-            <div className="flex-1 pt-1">
-              <p className="text-lg font-semibold text-gray-900">{message}</p>
+            <div className="flex-1 pt-1 text-lg font-semibold text-gray-900">
+              {message}
             </div>
           </div>
         </div>

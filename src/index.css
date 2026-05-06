@@ -61,3 +61,59 @@
     animation: slideUp 0.3s ease-out;
   }
 }
+
+@media print {
+  html,
+  body,
+  #root {
+    background: #ffffff !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .public-invoice-page {
+    min-height: auto !important;
+    background: #ffffff !important;
+  }
+
+  .public-invoice-shell {
+    max-width: none !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .public-invoice-document {
+    width: 100% !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    break-inside: auto;
+  }
+
+  .public-invoice-header {
+    background: linear-gradient(90deg, #2563eb, #9333ea) !important;
+    color: #ffffff !important;
+  }
+
+  .public-invoice-document table {
+    break-inside: auto;
+  }
+
+  .public-invoice-document tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
