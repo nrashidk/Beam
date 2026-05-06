@@ -1,7 +1,12 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
-export const Badge = ({ className, variant = 'default', ...props }) => {
+export const Badge = ({
+  className,
+  wrapperClassName,
+  variant = 'default',
+  ...props
+}) => {
   const variants = {
     default: 'bg-gray-100 text-gray-800',
     success: 'bg-green-100 text-green-800',
@@ -11,15 +16,15 @@ export const Badge = ({ className, variant = 'default', ...props }) => {
   };
 
   return (
-    <div className='w-full max-w-[110px] mx-[unset]'>
+    <div className={cn('w-full max-w-[110px] mx-[unset]', wrapperClassName)}>
       <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-        variants[variant],
-        className
-      )}
-      {...props}
-    />
+        className={cn(
+          'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+          variants[variant],
+          className
+        )}
+        {...props}
+      />
     </div>
   );
 };

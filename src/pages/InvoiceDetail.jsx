@@ -174,7 +174,7 @@ export default function InvoiceDetail() {
                 href={shareUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block break-all text-sm font-semibold text-indigo-700 underline underline-offset-2"
+                className="block break-all text-lg font-semibold text-gray-900"
               >
                 {shareUrl}
               </a>

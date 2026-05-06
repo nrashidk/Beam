@@ -281,7 +281,7 @@ export default function DailyReconciliation() {
 
       <div className="flex-1 ml-64 flex flex-col">
         <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 w-1/2">
             <FileSpreadsheet className="h-6 w-6 text-indigo-600 flex-shrink-0" />
             <div>
               <h1 className="text-xl font-semibold text-gray-900">Daily Reconciliation Report</h1>
@@ -470,15 +470,16 @@ export default function DailyReconciliation() {
                       {filteredPaymentBreakdown.map((method, index) => (
                         <div key={index} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 w-1/2">
                               <Badge
+                                wrapperClassName="w-[fit-content]"
                                 className={getPaymentMethodColor(
                                   method.payment_method,
                                 )}
                               >
                                 {method.payment_method}
                               </Badge>
-                              <span className="text-sm text-gray-600">
+                              <span className="flex items-center text-sm text-gray-600">
                                 {method.count} transaction
                                 {method.count !== 1 ? "s" : ""}
                               </span>
