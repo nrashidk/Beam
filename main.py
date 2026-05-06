@@ -8410,6 +8410,7 @@ def list_audit_logs(
                 "id": l.id, "action": l.action, "resource_type": l.resource_type,
                 "resource_id": l.resource_id, "description": l.description,
                 "user_id": l.user_id, "company_id": l.company_id,
+                "user_email": l.user.email if l.user else None,
                 "ip_address": l.ip_address,
                 "created_at": l.created_at.isoformat() if l.created_at else None,
                 "old_value": l.old_value, "new_value": l.new_value,
@@ -8450,7 +8451,16 @@ def export_audit_logs(
     if resource_type:
         q = q.filter(AuditLogDB.resource_type == resource_type)
     logs = q.order_by(AuditLogDB.created_at.desc()).all()
-    headers_row = ["Timestamp", "Action", "Resource Type", "Resource ID", "Description", "User ID", "IP Address"]
+    headers_row = [
+        "Timestamp",
+        "Action",
+        "Resource Type",
+        "Resource ID",
+        "Description",
+        "User ID",
+        "User Email",
+        "IP Address",
+    ]
     if format == "xlsx":
         import openpyxl
         wb = openpyxl.Workbook()
@@ -8461,7 +8471,9 @@ def export_audit_logs(
             ws.append([
                 l.created_at.isoformat() if l.created_at else "",
                 l.action, l.resource_type or "", l.resource_id or "",
-                l.description or "", l.user_id or "", l.ip_address or "",
+                l.description or "", l.user_id or "",
+                l.user.email if l.user else "",
+                l.ip_address or "",
             ])
         buf = io.BytesIO()
         wb.save(buf)
@@ -8477,7 +8489,9 @@ def export_audit_logs(
             w.writerow([
                 l.created_at.isoformat() if l.created_at else "",
                 l.action, l.resource_type or "", l.resource_id or "",
-                l.description or "", l.user_id or "", l.ip_address or "",
+                l.description or "", l.user_id or "",
+                l.user.email if l.user else "",
+                l.ip_address or "",
             ])
         content = buf.getvalue().encode("utf-8-sig")
         return StreamingResponse(io.BytesIO(content), media_type="text/csv",
