@@ -135,6 +135,17 @@ function renderPlanUsage(company) {
   return `${company.invoicesUsed || 0}/${company.invoicesLimit || 0}`;
 }
 
+const PLAN_DISPLAY_ORDER = {
+  Free: 0,
+  Starter: 1,
+  Professional: 2,
+  Enterprise: 3,
+};
+
+function getPlanDisplayRank(planName) {
+  return PLAN_DISPLAY_ORDER[planName] ?? 99;
+}
+
 export default function SuperAdminDashboard() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
@@ -791,23 +802,30 @@ export default function SuperAdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(stats?.revenue.tiers || []).map((t) => (
-                      <tr key={t.plan} className="border-t">
-                        <td className="px-4 py-3">{t.plan}</td>
-                        <td className="px-4 py-3">
-                          {t.activeCompanies.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          AED {t.pricePerCompany.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 font-medium">
-                          AED {t.mrr.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          AED {t.arr.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))}
+                    {[...(stats?.revenue.tiers || [])]
+                      .sort(
+                        (a, b) =>
+                          getPlanDisplayRank(a.plan) -
+                            getPlanDisplayRank(b.plan) ||
+                          (a.plan || "").localeCompare(b.plan || ""),
+                      )
+                      .map((t) => (
+                        <tr key={t.plan} className="border-t">
+                          <td className="px-4 py-3">{t.plan}</td>
+                          <td className="px-4 py-3">
+                            {t.activeCompanies.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            AED {t.pricePerCompany.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 font-medium">
+                            AED {t.mrr.toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            AED {t.arr.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
