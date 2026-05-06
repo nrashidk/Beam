@@ -639,10 +639,14 @@ export default function TeamManagement() {
                           value="FINANCE_USER"
                           disabled={!canInviteRole("FINANCE_USER")}
                         >
-                          <div className="flex items-center justify-between w-full">
-                            <span>Finance User</span>
+                          <div className="flex w-full items-center justify-between gap-3 whitespace-nowrap">
+                            <span className="shrink-0">Finance User</span>
                             {tierLimits && (
-                              <Badge variant="outline" className="ml-2 text-xs">
+                              <Badge
+                                variant="outline"
+                                wrapperClassName="w-auto max-w-none shrink-0"
+                                className="text-xs"
+                              >
                                 {getRoleLimit("FINANCE_USER")}
                               </Badge>
                             )}
@@ -653,12 +657,13 @@ export default function TeamManagement() {
                             value="BUSINESS_ADMIN"
                             disabled={!canInviteRole("BUSINESS_ADMIN")}
                           >
-                            <div className="flex items-center justify-between w-full">
-                              <span>Business Admin</span>
+                            <div className="flex w-full items-center justify-between gap-3 whitespace-nowrap">
+                              <span className="shrink-0">Business Admin</span>
                               {tierLimits && (
                                 <Badge
                                   variant="outline"
-                                  className="ml-2 text-xs"
+                                  wrapperClassName="w-auto max-w-none shrink-0"
+                                  className="text-xs"
                                 >
                                   {getRoleLimit("BUSINESS_ADMIN")}
                                 </Badge>
