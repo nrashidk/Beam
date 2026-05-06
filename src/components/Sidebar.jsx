@@ -46,7 +46,7 @@ export default function Sidebar() {
     { path: "/payment-verification", icon: CheckCircle, label: "Payment Verification" },
     { path: "/settings/peppol", icon: Network, label: "PEPPOL" },
     { path: "/reports/periodic", icon: CalendarDays, label: "Periodic Report" },
-    { path: "/ap/purchase-orders", icon: ShoppingCart, label: "Purchase Orders" },
+    { path: "/ap/purchase-orders", icon: ShoppingCart, label: "Sales Orders" },
     { path: "/reconciliation", icon: FileSpreadsheet, label: "Reconciliation" },
     { path: "/settings/security", icon: Shield, label: "Security" },
     { path: "/settings/team", icon: Users, label: "Team" },
