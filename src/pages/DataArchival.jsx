@@ -357,7 +357,7 @@ export default function DataArchival() {
                 for a completed fiscal year in one operation. Preview the counts before committing.
               </p>
 
-              <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="flex flex-wrap items-end gap-3 mb-4">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Fiscal Year</label>
                   <select
