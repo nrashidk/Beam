@@ -413,7 +413,7 @@ export default function FinanceDashboard() {
                 <div className="text-sm text-gray-600">Healthy</div>
               </div>
               <div className="text-2xl font-bold text-gray-900">
-                {summary.profitMargin}%
+                {Number(summary.profitMargin || 0).toFixed(2)}%
               </div>
               <div className="text-sm text-gray-600 mt-1">Profit Margin</div>
             </div>
