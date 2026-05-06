@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Upload,
   Download,
@@ -18,6 +19,7 @@ import { Button } from "../components/ui/button";
 import Sidebar from "../components/Sidebar";
 
 export default function BulkImport() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("invoices");
   const [invoiceMode, setInvoiceMode] = useState("vat");
   const [selectedFile, setSelectedFile] = useState(null);
@@ -400,6 +402,17 @@ export default function BulkImport() {
                     >
                       {uploadResult.message}
                     </p>
+                  )}
+
+                  {uploadResult.success && activeTab === "invoices" && (
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={() => navigate("/invoices")}
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                      >
+                        Go to Invoices
+                      </Button>
+                    </div>
                   )}
 
                   {uploadResult.errors && uploadResult.errors.length > 0 && (
