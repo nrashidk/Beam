@@ -10463,6 +10463,45 @@ def cancel_invoice(
     if invoice.status in [InvoiceStatus.PAID, InvoiceStatus.CANCELLED]:
         raise HTTPException(400, f"Cannot cancel invoice with status: {invoice.status}")
 
+    posted_statuses = [InvoiceStatus.ISSUED, InvoiceStatus.SENT]
+    credit_note_types = [
+        InvoiceType.TAX_CREDIT_NOTE,
+        InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE,
+    ]
+    correcting_document_types = credit_note_types + [InvoiceType.DEBIT_NOTE]
+
+    if invoice.status in posted_statuses:
+        if invoice.invoice_type in correcting_document_types:
+            raise HTTPException(
+                409,
+                "Posted credit notes and debit notes are locked for audit trail integrity. "
+                "Create a correcting document instead of cancelling this posted document.",
+            )
+
+        expected_credit_note_type = None
+        if invoice.invoice_type == InvoiceType.TAX_INVOICE:
+            expected_credit_note_type = InvoiceType.TAX_CREDIT_NOTE
+        elif invoice.invoice_type == InvoiceType.COMMERCIAL_INVOICE:
+            expected_credit_note_type = InvoiceType.CREDIT_NOTE_OUT_OF_SCOPE
+
+        if expected_credit_note_type:
+            existing_credit_note = (
+                db.query(InvoiceDB)
+                .filter(
+                    InvoiceDB.company_id == current_user.company_id,
+                    InvoiceDB.preceding_invoice_id == invoice.id,
+                    InvoiceDB.invoice_type == expected_credit_note_type,
+                    InvoiceDB.status.in_([InvoiceStatus.ISSUED, InvoiceStatus.SENT]),
+                )
+                .first()
+            )
+
+            if not existing_credit_note:
+                raise HTTPException(
+                    409,
+                    "Cannot cancel a posted invoice directly. Issue the required Credit Note first, then try cancellation again.",
+                )
+
     # If cancelling a credit note, restore the original invoice's amount_due
     if invoice.invoice_type in [
         InvoiceType.TAX_CREDIT_NOTE,
