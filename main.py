@@ -7939,6 +7939,7 @@ def validate_delivery_phone(value: Optional[str]) -> str:
 def _build_report_payload(invoices, period_label: str, start_date, end_date):
     from collections import defaultdict
 
+    credit_note_types = {"381", "81"}
     breakdown = defaultdict(
         lambda: {"count": 0, "subtotal": 0.0, "tax_amount": 0.0, "total_amount": 0.0}
     )
@@ -7948,10 +7949,11 @@ def _build_report_payload(invoices, period_label: str, start_date, end_date):
             if hasattr(inv.invoice_type, "value")
             else str(inv.invoice_type)
         )
+        sign = -1 if code in credit_note_types else 1
         breakdown[code]["count"] += 1
-        breakdown[code]["subtotal"] += float(inv.subtotal_amount or 0.0)
-        breakdown[code]["tax_amount"] += float(inv.tax_amount or 0.0)
-        breakdown[code]["total_amount"] += float(inv.total_amount or 0.0)
+        breakdown[code]["subtotal"] += sign * float(inv.subtotal_amount or 0.0)
+        breakdown[code]["tax_amount"] += sign * float(inv.tax_amount or 0.0)
+        breakdown[code]["total_amount"] += sign * float(inv.total_amount or 0.0)
     breakdown_list = [
         {
             "invoice_type_code": code,
